@@ -70,6 +70,9 @@ Node ≥ 24 runs the TypeScript directly (type stripping); nothing is built.
   pi-mcp with a unix-socket transport (`src/unix-socket-transport.ts`).
 - **SATAN tools are not replay-safe.** A crash mid-call gives the model an
   `interrupted` error result instead of rerunning a side-effecting tool.
+- **satan-mcp may restart under the daemon** (Emacs restarts it). The next
+  SATAN tool call reconnects; a call made while it is down fails and is not
+  retried. The tool list is the one satan-mcp offered at daemon start.
 - **Persona is live.** The section re-reads the corpus files on each request;
   the harness resends only changed sections, so prompt caching survives.
 - **Model catalog.** pi-ai 1.3.0's built-in catalog lags the coding agent's

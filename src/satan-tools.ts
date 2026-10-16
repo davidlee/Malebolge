@@ -19,23 +19,62 @@ const objectSchema = (schema: Tool["inputSchema"]) =>
     properties: schema?.properties ?? {},
   });
 
-const toDurableTool = (client: McpClient, tool: Tool) =>
+/** Logs one line of daemon diagnostics. */
+export type Log = (text: string) => void;
+
+/**
+ * One live MCP client at a time. A client that has closed (satan-mcp restarted
+ * with Emacs) is replaced on the next use; concurrent callers share the attempt.
+ */
+function reconnectingClient(socketPath: string, log: Log) {
+  const open = async () => {
+    const client = new McpClient({ name: "malebolge", version: "0.0.0" });
+    client.onClose(() => log("satan-mcp connection closed; reconnecting on next SATAN tool call"));
+    await client.connect(new UnixSocketTransport(socketPath));
+    return client;
+  };
+  let current = open();
+  const get = async () => {
+    const pending = current;
+    const client = await pending.catch(() => undefined);
+    if (client?.connectionState === "connected") return client;
+    if (current === pending) {
+      current = open();
+      current.then(() => log("satan-mcp reconnected")).catch(() => {});
+    }
+    return current;
+  };
+  const close = async () => (await current.catch(() => undefined))?.close();
+  return { first: current, get, close };
+}
+
+const toDurableTool = (client: () => Promise<McpClient>, tool: Tool) =>
   defineTool({
     name: tool.name,
     description: tool.description ?? `SATAN tool: ${tool.name}`,
     parameters: objectSchema(tool.inputSchema),
     execute: async (args, _api, context) => {
-      const result = await client.callTool(tool.name, args, { signal: context.abortSignal });
+      const result = await (await client()).callTool(tool.name, args, {
+        signal: context.abortSignal,
+      });
       return { output: toLlmContent(result), isError: result.isError === true };
     },
   });
 
-/** Connect to satan-mcp at `socketPath` and wrap the tools it lists. */
-export async function connectSatanTools(
-  socketPath: string,
-): Promise<{ client: McpClient; extension: Extension }> {
-  const client = new McpClient({ name: "malebolge", version: "0.0.0" });
-  await client.connect(new UnixSocketTransport(socketPath));
-  const tools = (await client.listTools()).map((tool) => toDurableTool(client, tool));
-  return { client, extension: defineExtension({ name: SATAN_EXTENSION, tools }) };
+export type SatanTools = { extension: Extension; close: () => Promise<void> };
+
+/**
+ * Connect to satan-mcp at `socketPath` and wrap the tools it lists. The tool
+ * list is fixed here; a call made while satan-mcp is down fails, and is never
+ * retried, since SATAN tools have side effects.
+ */
+export async function connectSatanTools(socketPath: string, log: Log): Promise<SatanTools> {
+  const connection = reconnectingClient(socketPath, log);
+  const tools = (await (await connection.first).listTools()).map((tool) =>
+    toDurableTool(connection.get, tool),
+  );
+  return {
+    extension: defineExtension({ name: SATAN_EXTENSION, tools }),
+    close: connection.close,
+  };
 }

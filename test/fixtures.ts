@@ -36,22 +36,18 @@ export type LineClient = {
   close: () => void;
 };
 
-/** An NDJSON client of the daemon socket that records everything received. */
-export async function lineClient(socketPath: string): Promise<LineClient> {
-  const socket = await connectUnix(socketPath);
-  const messages: Record<string, unknown>[] = [];
+/** Items in arrival order, and a wait for the first that matches, received or still to come. */
+export function recorder<T>() {
+  const items: T[] = [];
   const waiters = new Set<() => void>();
-  socket.on(
-    "data",
-    lineSplitter((line) => {
-      messages.push(JSON.parse(line));
-      for (const wake of waiters) wake();
-    }),
-  );
-  const next = <T>(match: (message: T) => boolean) =>
-    new Promise<T>((resolve) => {
+  const push = (item: T) => {
+    items.push(item);
+    for (const wake of waiters) wake();
+  };
+  const next = <U = T>(match: (item: U) => boolean) =>
+    new Promise<U>((resolve) => {
       const check = () => {
-        const found = (messages as T[]).find(match);
+        const found = (items as unknown as U[]).find(match);
         if (found === undefined) return;
         waiters.delete(check);
         resolve(found);
@@ -59,10 +55,21 @@ export async function lineClient(socketPath: string): Promise<LineClient> {
       waiters.add(check);
       check();
     });
+  return { items: items as readonly T[], push, next };
+}
+
+/** An NDJSON client of the daemon socket that records everything received. */
+export async function lineClient(socketPath: string): Promise<LineClient> {
+  const socket = await connectUnix(socketPath);
+  const messages = recorder<Record<string, unknown>>();
+  socket.on(
+    "data",
+    lineSplitter((line) => messages.push(JSON.parse(line))),
+  );
   return {
     send: (value) => socket.write(encodeLine(value)),
-    next,
-    received: () => messages,
+    next: messages.next,
+    received: () => messages.items,
     close: () => socket.destroy(),
   };
 }

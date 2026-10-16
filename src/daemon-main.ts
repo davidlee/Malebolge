@@ -22,10 +22,9 @@ if (!models.getModelOfType("chat", provider, modelId)) {
   throw new Error(`unknown model ${provider}/${modelId}`);
 }
 
-const satan = await connectSatanTools(config.mcpSocket).catch((error) => {
+const satan = await connectSatanTools(config.mcpSocket, log).catch((error) => {
   throw new Error(`satan-mcp not reachable at ${config.mcpSocket} (satan-mcp-start?): ${error}`);
 });
-satan.client.onClose(() => log("satan-mcp connection closed; SATAN tools will fail"));
 
 mkdirSync(dirname(config.storagePath), { recursive: true });
 mkdirSync(dirname(config.daemonSocket), { recursive: true });
@@ -45,7 +44,7 @@ const stop = async () => {
   stopping = true;
   await daemon.close();
   await session.harness.close(context);
-  await satan.client.close();
+  await satan.close();
   process.exit(0);
 };
 process.on("SIGINT", stop);

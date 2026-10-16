@@ -1,10 +1,9 @@
 import { join } from "node:path";
 import type { JsonObject } from "@earendil-works/pi-durable";
-import type { McpClient } from "@earendil-works/pi-mcp";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { context } from "../src/context.ts";
-import { connectSatanTools } from "../src/satan-tools.ts";
-import { type Fixture, fakeMcpServer, tempDir } from "./fixtures.ts";
+import { connectSatanTools, type SatanTools } from "../src/satan-tools.ts";
+import { type Fixture, fakeMcpServer, recorder, tempDir } from "./fixtures.ts";
 import {
   callThenAnswer,
   openTestHarness,
@@ -25,38 +24,54 @@ const tools = [
 
 describe("connectSatanTools", () => {
   let cleanup: () => Promise<void>;
-  let server: Fixture;
-  let client: McpClient;
+  let socketPath: string;
+  let server: Fixture | undefined;
+  let satan: SatanTools | undefined;
   let test: TestHarness | undefined;
+  let logs: ReturnType<typeof recorder<string>>;
 
   beforeEach(async () => {
     const tmp = await tempDir();
     cleanup = tmp.cleanup;
-    server = await fakeMcpServer(join(tmp.dir, "mcp.sock"), tools);
+    socketPath = join(tmp.dir, "mcp.sock");
+    server = await fakeMcpServer(socketPath, tools);
+    logs = recorder<string>();
   });
 
   afterEach(async () => {
     await test?.harness.close(context);
-    await client?.close();
-    await server.close();
+    await satan?.close();
+    await server?.close();
     await cleanup();
   });
 
-  const run = async (call: string, args: JsonObject) => {
-    const satan = await connectSatanTools(server.socketPath);
-    client = satan.client;
+  const connect = async () => {
+    satan = await connectSatanTools(socketPath, logs.push);
     test = await openTestHarness([satan.extension]);
+  };
+
+  /** Drive one model turn that calls `call`; returns that call's result. */
+  const callTool = async (call: string, args: JsonObject) => {
+    if (!test) throw new Error("connect first");
     test.faux.setResponses(callThenAnswer(call, args, "done"));
     const settled = await (await test.root.submit({ type: "input", content: "go" }, context)).wait(
       context,
     );
     expect(settled.status).toBe("done");
-    return toolResults(test.harness);
+    const result = (await toolResults(test.harness)).at(-1);
+    if (!result) throw new Error("no tool result");
+    return result;
+  };
+
+  /** Stop the MCP server and wait until the daemon side has seen it go. */
+  const stopServer = async () => {
+    await server?.close();
+    server = undefined;
+    await logs.next((line) => line.includes("closed"));
   };
 
   it("offers every MCP tool, with the server's description", async () => {
-    const satan = await connectSatanTools(server.socketPath);
-    client = satan.client;
+    satan = await connectSatanTools(socketPath, logs.push);
     expect(satan.extension.tools?.map((t) => [t.name, t.description])).toEqual([
       ["notes_read", "Read a note"],
       ["fails", "SATAN tool: fails"],
@@ -64,19 +79,39 @@ describe("connectSatanTools", () => {
   });
 
   it("forwards a model's call to the MCP server and returns its content", async () => {
-    const [result] = await run("notes_read", { id: "42" });
+    await connect();
+    const result = await callTool("notes_read", { id: "42" });
     expect(textOf(result)).toBe("note 42");
     expect(result.isError).toBe(false);
   });
 
   it("surfaces an MCP tool error as an error result", async () => {
-    const [result] = await run("fails", {});
+    await connect();
+    const result = await callTool("fails", {});
     expect(result.isError).toBe(true);
     expect(textOf(result)).toBe("boom");
   });
 
   it("rejects arguments that violate the tool's input schema before calling it", async () => {
-    const [result] = await run("notes_read", {});
+    await connect();
+    const result = await callTool("notes_read", {});
     expect(result.isError).toBe(true);
+  });
+
+  it("reconnects on the next call after the MCP server restarts", async () => {
+    await connect();
+    await stopServer();
+    server = await fakeMcpServer(socketPath, tools);
+    const result = await callTool("notes_read", { id: "7" });
+    expect(result.isError).toBe(false);
+    expect(textOf(result)).toBe("note 7");
+  });
+
+  it("fails a call while the MCP server is down, then recovers once it is back", async () => {
+    await connect();
+    await stopServer();
+    expect((await callTool("notes_read", { id: "1" })).isError).toBe(true);
+    server = await fakeMcpServer(socketPath, tools);
+    expect(textOf(await callTool("notes_read", { id: "2" }))).toBe("note 2");
   });
 });
