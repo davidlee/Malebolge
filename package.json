@@ -1,5 +1,5 @@
 {
-  "name": "pandaemonium",
+  "name": "malebolge",
   "version": "0.0.0",
   "private": true,
   "description": "Durable host for interactive SATAN, on pi-durable",
@@ -8,8 +8,8 @@
     "node": ">=24"
   },
   "bin": {
-    "pandaemonium": "./src/daemon-main.ts",
-    "pandaemonium-attach": "./src/attach-main.ts"
+    "malebolge": "./src/daemon-main.ts",
+    "malebolge-attach": "./src/attach-main.ts"
   },
   "scripts": {
     "test": "vitest run",

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// pandaemonium-attach: a line client of the running daemon.
+// malebolge-attach: a line client of the running daemon.
 
 import { attach } from "./attach.ts";
 import { daemonSocket } from "./config.ts";

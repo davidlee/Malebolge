@@ -1,4 +1,4 @@
-# pandaemonium
+# Malebolge
 
 A durable home for interactive SATAN: a daemon that owns one
 [pi-durable](https://github.com/earendil-works/pi/tree/main/packages/durable)
@@ -8,9 +8,9 @@ over a unix socket.
 Spike: satan `CHR-012`, feeding satan `RFC-018` ("Pi Durable as the harness").
 
 ```
-pandaemonium (daemon, owns the session)                     clients
- ├─ Harness on SQLite  ~/.local/state/satan/durable/         pandaemonium-attach (terminal)
- ├─ persona section    ~/satan-corpus scaffold + interactive  M-x pandaemonium-attach (comint)
+malebolge (daemon, owns the session)                     clients
+ ├─ Harness on SQLite  ~/.local/state/satan/durable/         malebolge-attach (terminal)
+ ├─ persona section    ~/satan-corpus scaffold + interactive  M-x malebolge-attach (comint)
  ├─ CodingTools        read · write · edit · bash
  ├─ satan extension    pi-mcp client ──unix socket──▶ emacs satan-mcp
  └─ $XDG_RUNTIME_DIR/satan/durable.sock ◀──NDJSON──── clients
@@ -20,7 +20,7 @@ pandaemonium (daemon, owns the session)                     clients
 
 ```sh
 cd ~/notes && just hello-durable     # starts satan-mcp, then the daemon under `op run`
-just attach-durable                  # in another terminal; or M-x pandaemonium-attach
+just attach-durable                  # in another terminal; or M-x malebolge-attach
 ```
 
 In a client: type to talk, `/abort` stops the run, `/compact [instructions]`
@@ -34,8 +34,8 @@ resumes any run it was in the middle of.
 
 | Variable | Default |
 |---|---|
-| `PANDAEMONIUM_MODEL` | `deepseek/deepseek-flash` (`provider/model`) |
-| `PANDAEMONIUM_SOCKET` | `$XDG_RUNTIME_DIR/satan/durable.sock` |
+| `MALEBOLGE_MODEL` | `deepseek/deepseek-flash` (`provider/model`) |
+| `MALEBOLGE_SOCKET` | `$XDG_RUNTIME_DIR/satan/durable.sock` |
 | `SATAN_MCP_SOCKET` | `$XDG_RUNTIME_DIR/satan/mcp/mcp.sock` |
 | `SATAN_CORPUS_ROOT` | `~/satan-corpus` |
 | `XDG_STATE_HOME` | `~/.local/state` (session at `satan/durable/session.sqlite`) |

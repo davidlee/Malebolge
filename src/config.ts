@@ -38,7 +38,7 @@ function required(env: Env, name: string): string {
 
 /** The daemon socket clients attach to; needs no more environment than a client has. */
 export const daemonSocket = (env: Env): string =>
-  env.PANDAEMONIUM_SOCKET ?? join(required(env, "XDG_RUNTIME_DIR"), "satan", "durable.sock");
+  env.MALEBOLGE_SOCKET ?? join(required(env, "XDG_RUNTIME_DIR"), "satan", "durable.sock");
 
 export function resolveConfig(env: Env, cwd: string): Config {
   const home = required(env, "HOME");
@@ -49,7 +49,7 @@ export function resolveConfig(env: Env, cwd: string): Config {
     storagePath: join(stateRoot, "durable", "session.sqlite"),
     mcpSocket: env.SATAN_MCP_SOCKET ?? join(runtime, "mcp", "mcp.sock"),
     daemonSocket: daemonSocket(env),
-    model: parseModel(env.PANDAEMONIUM_MODEL ?? DEFAULT_MODEL),
+    model: parseModel(env.MALEBOLGE_MODEL ?? DEFAULT_MODEL),
     modelsStorePath: join(home, ".pi", "agent", "models-store.json"),
     cwd,
   };

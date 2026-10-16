@@ -19,7 +19,7 @@ export type Fixture = { socketPath: string; close: () => Promise<void> };
 
 /** A fresh directory for sockets; removed by the returned `cleanup`. */
 export async function tempDir(): Promise<{ dir: string; cleanup: () => Promise<void> }> {
-  const dir = await mkdtemp(join(tmpdir(), "pandaemonium-"));
+  const dir = await mkdtemp(join(tmpdir(), "malebolge-"));
   return { dir, cleanup: () => rm(dir, { recursive: true, force: true }) };
 }
 

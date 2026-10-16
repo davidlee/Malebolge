@@ -23,8 +23,8 @@ describe("resolveConfig", () => {
         XDG_STATE_HOME: "/state",
         SATAN_CORPUS_ROOT: "/corpus",
         SATAN_MCP_SOCKET: "/mcp.sock",
-        PANDAEMONIUM_SOCKET: "/d.sock",
-        PANDAEMONIUM_MODEL: "openai/gpt-6-sol",
+        MALEBOLGE_SOCKET: "/d.sock",
+        MALEBOLGE_MODEL: "openai/gpt-6-sol",
       },
       "/cwd",
     );
@@ -38,7 +38,7 @@ describe("resolveConfig", () => {
   });
 
   it("rejects a model without a provider prefix", () => {
-    expect(() => resolveConfig({ ...base, PANDAEMONIUM_MODEL: "bare" }, "/cwd")).toThrow(
+    expect(() => resolveConfig({ ...base, MALEBOLGE_MODEL: "bare" }, "/cwd")).toThrow(
       /provider\/model/,
     );
   });

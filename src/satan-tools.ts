@@ -34,7 +34,7 @@ const toDurableTool = (client: McpClient, tool: Tool) =>
 export async function connectSatanTools(
   socketPath: string,
 ): Promise<{ client: McpClient; extension: Extension }> {
-  const client = new McpClient({ name: "pandaemonium", version: "0.0.0" });
+  const client = new McpClient({ name: "malebolge", version: "0.0.0" });
   await client.connect(new UnixSocketTransport(socketPath));
   const tools = (await client.listTools()).map((tool) => toDurableTool(client, tool));
   return { client, extension: defineExtension({ name: SATAN_EXTENSION, tools }) };

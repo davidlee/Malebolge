@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// pandaemonium: own SATAN's durable interactive session and serve it on a socket.
+// malebolge: own SATAN's durable interactive session and serve it on a socket.
 
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
@@ -13,7 +13,7 @@ import { personaExtension, personaFiles } from "./persona.ts";
 import { connectSatanTools } from "./satan-tools.ts";
 import { openSession } from "./session.ts";
 
-const log = (text: string) => process.stderr.write(`pandaemonium: ${text}\n`);
+const log = (text: string) => process.stderr.write(`malebolge: ${text}\n`);
 
 const config = resolveConfig(process.env, process.cwd());
 const models = createDaemonModels(readModelsStore(config.modelsStorePath));
