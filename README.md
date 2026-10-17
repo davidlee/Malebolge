@@ -1,6 +1,6 @@
 # Malebolge
 
-A durable home for interactive SATAN: a daemon that owns one
+A durable home for interactive [SATAN](https://github.com/davidlee/SATAN): a daemon that owns one
 [pi-durable](https://github.com/earendil-works/pi/tree/main/packages/durable)
 session, with SATAN's MCP tools and persona, served to any number of clients
 over a unix socket.
