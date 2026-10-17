@@ -1,95 +1,110 @@
 # Malebolge
 
-A durable home for interactive [SATAN](https://github.com/davidlee/SATAN): a daemon that owns one
-[pi-durable](https://github.com/earendil-works/pi/tree/main/packages/durable)
-session, with SATAN's MCP tools and persona, served to any number of clients
-over a unix socket.
-
 ![bridges](./assets/wall.jpg)
 
-Spike: satan `CHR-012`, feeding satan `RFC-018` ("Pi Durable as the harness").
+A place for a conversation with [SATAN](https://github.com/davidlee/SATAN) to
+live, so it outlasts the terminal or Emacs buffer you started it in.
+
+## What it's for
+
+SATAN is a personal agent: it knows my notes and recent activity, and talks
+through Emacs. Talking to it interactively used to tie the conversation to one
+window. Close the window, restart Emacs, or crash, and the conversation was
+gone.
+
+Malebolge is a small background process (a daemon) that holds one ongoing
+conversation with SATAN. You attach to it from a terminal or Emacs, talk, and
+detach. The conversation carries on without you, and whoever attaches next
+sees it so far.
+
+## Why
+
+- **It doesn't forget.** The conversation is saved to disk as it happens.
+  Restart the daemon and it picks up where it was, even halfway through an
+  answer.
+- **Attach from anywhere.** Several terminals and Emacs buffers can be
+  attached at once, all in the same conversation.
+- **SATAN wears many faces.** Whatever the harness, it still has the same motives, persona, and tools.
+  Here, edits to the persona apply from the next message, with no restart.
+- **It's fenced in.** The daemon runs in a jail, enforcing policy about what it can read and edit.
+
+If you're not me, this is mostly of interest as a small example of
+keeping an LLM session alive behind a socket, using
+[pi-durable](https://github.com/earendil-works/pi/tree/main/packages/durable).
+
+## The picture
 
 ```
-malebolge (daemon, owns the session)                     clients
- ├─ Harness on SQLite  ~/.local/state/satan/durable/         malebolge-attach (terminal)
- ├─ persona section    ~/satan-corpus scaffold + interactive  M-x malebolge-attach (comint)
- ├─ CodingTools        read · write · edit · bash
- ├─ satan extension    pi-mcp client ──unix socket──▶ emacs satan-mcp
- └─ $XDG_RUNTIME_DIR/satan/durable.sock ◀──NDJSON──── clients
+  you                          malebolge (daemon)
+ ─────                        ─────────────────────────────────
+  terminal ──┐                 one conversation, saved to disk
+             ├── attach ────▶  SATAN's persona   (~/satan-corpus)
+  Emacs ─────┘   detach        coding tools      read/write/edit/bash
+                               SATAN's tools ──────────▶ satan-mcp (in Emacs)
+                               model ──────────────────▶ LLM provider
 ```
 
-## Run
+Clients only display and send; the daemon does all the work and holds all the
+state. Detaching a client changes nothing else.
+
+## How to use it
+
+You need Node 24 or later and a working SATAN setup (Emacs with `satan-mcp`,
+and a corpus).
+
+**Start the daemon** (it starts satan-mcp in Emacs first):
 
 ```sh
-cd ~/notes && just hello-durable     # starts satan-mcp, then the jailed daemon
-just attach-durable                  # in another terminal; or M-x malebolge-attach
+cd ~/notes && just hello-durable
 ```
 
-The daemon runs in `jailed-malebolge` (`~/notes/flake.nix`), with jpi's
-posture. The jail sees this repo read-only, `~/satan-corpus` read-only, the
-session store, and `$XDG_RUNTIME_DIR/satan/`; its launcher runs `op run` and
-passes only the provider keys listed there (`apiKeys`). Running the daemon
-directly (`op run -- node src/daemon-main.ts`) still works, unjailed.
+**Attach**, from another terminal or from Emacs:
 
-In a client: type to talk, `/abort` stops the run, `/compact [instructions]`
-compacts, `/quit` detaches. Detaching leaves the conversation running; the
-next client gets the transcript so far.
+```sh
+cd ~/notes && just attach-durable
+```
 
-Stop the daemon with Ctrl-C. Restarting it reopens the same conversation and
-resumes any run it was in the middle of.
+```
+M-x malebolge-attach      ; load emacs/malebolge.el first
+```
 
-## Configuration (environment)
+**In a client:**
 
-| Variable | Default |
+| Type | Effect |
 |---|---|
-| `MALEBOLGE_MODEL` | `deepseek/deepseek-flash` (`provider/model`) |
-| `MALEBOLGE_SOCKET` | `$XDG_RUNTIME_DIR/satan/durable.sock` |
-| `SATAN_MCP_SOCKET` | `$XDG_RUNTIME_DIR/satan/mcp/mcp.sock` |
-| `SATAN_CORPUS_ROOT` | `~/satan-corpus` |
-| `XDG_STATE_HOME` | `~/.local/state` (session at `satan/durable/session.sqlite`) |
+| any text | talk to SATAN |
+| `/abort` | stop the answer in progress |
+| `/compact [instructions]` | summarise older history to free up the model's context |
+| `/quit` | detach; the conversation keeps going |
 
-The agent's coding tools work in the daemon's cwd. Provider keys come from the
-environment (`DEEPSEEK_API_KEY`, …); `op run` resolves `op://` references.
+**Stop the daemon** with Ctrl-C. Starting it again reopens the same
+conversation.
 
-## Protocol
+To run the daemon outside the jail: `op run -- node src/daemon-main.ts`
+(`op` is the 1Password CLI; it supplies the API keys).
 
-One JSON message per line on the daemon socket.
+### Configuration
 
-- client → daemon: `{"type":"input","content":…,"requestId"?:…}`,
-  `{"type":"abort"}`, `{"type":"compact","instructions"?:…}`
-- daemon → client: pi-durable `watchEvents` agent events, first a `snapshot`;
-  `{"type":"error","message":…}` for a line it could not act on.
+Set through environment variables:
+
+| Variable | Purpose | Default |
+|---|---|---|
+| `MALEBOLGE_MODEL` | model, as `provider/model` | `deepseek/deepseek-flash` |
+| `MALEBOLGE_SOCKET` | where clients attach | `$XDG_RUNTIME_DIR/satan/durable.sock` |
+| `SATAN_MCP_SOCKET` | where SATAN's tools are | `$XDG_RUNTIME_DIR/satan/mcp/mcp.sock` |
+| `SATAN_CORPUS_ROOT` | SATAN's persona files | `~/satan-corpus` |
+| `XDG_STATE_HOME` | saved conversation lives at `satan/durable/session.sqlite` under this | `~/.local/state` |
+
+Provider API keys also come from the environment (`DEEPSEEK_API_KEY`, …), or (soon) LiteLLM gateway. The
+coding tools work in the daemon's current directory.
 
 ## Develop
 
 ```sh
 npm install
-just check        # biome lint+format check, tsc, vitest
+just check        # lint, format check, typecheck, tests
 ```
 
-Node ≥ 24 runs the TypeScript directly (type stripping); nothing is built.
-
-## Design notes
-
-- **Not a pi coding-agent extension host.** pi-durable is a library with its
-  own extension model (`defineExtension`/`defineTool`); it does not load
-  `ExtensionAPI` extensions such as `~/notes/.pi/extensions/satan.ts`.
-  `src/satan-tools.ts` is that extension's durable counterpart, built on
-  pi-mcp with a unix-socket transport (`src/unix-socket-transport.ts`).
-- **SATAN tools are not replay-safe.** A crash mid-call gives the model an
-  `interrupted` error result instead of rerunning a side-effecting tool.
-- **satan-mcp may restart under the daemon** (Emacs restarts it). The next
-  SATAN tool call reconnects; a call made while it is down fails and is not
-  retried. The tool list is the one satan-mcp offered at daemon start.
-- **Persona is live.** The section re-reads the corpus files on each request;
-  the harness resends only changed sections, so prompt caching survives.
-- **Model catalog.** pi-ai 1.3.0's built-in catalog lags the coding agent's
-  remote one; `src/models.ts` adds the models found in
-  `~/.pi/agent/models-store.json`.
-- **One process owns the storage.** Clients never touch it; they attach.
-- **An answer's text is spread across events.** `message_start` carries the
-  first partial; `message_update` carries deltas *or* whole `block`/`message`
-  replacements; the final entry at `message_end` may hold a tail no update
-  delivered. A client must track the answer's text, not just append deltas
-  (`src/render.ts`). The faux provider at `tokensPerSecond: 40` reproduces
-  this shape in tests.
+Node runs the TypeScript directly; there is no build step. How it works
+inside — the wire protocol, the jail, design decisions — is in
+[docs/internals.md](docs/internals.md).
