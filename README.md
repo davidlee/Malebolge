@@ -5,6 +5,8 @@ A durable home for interactive SATAN: a daemon that owns one
 session, with SATAN's MCP tools and persona, served to any number of clients
 over a unix socket.
 
+![bridges](./assets/wall.jpg)
+
 Spike: satan `CHR-012`, feeding satan `RFC-018` ("Pi Durable as the harness").
 
 ```
