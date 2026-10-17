@@ -19,9 +19,15 @@ malebolge (daemon, owns the session)                     clients
 ## Run
 
 ```sh
-cd ~/notes && just hello-durable     # starts satan-mcp, then the daemon under `op run`
+cd ~/notes && just hello-durable     # starts satan-mcp, then the jailed daemon
 just attach-durable                  # in another terminal; or M-x malebolge-attach
 ```
+
+The daemon runs in `jailed-malebolge` (`~/notes/flake.nix`), with jpi's
+posture. The jail sees this repo read-only, `~/satan-corpus` read-only, the
+session store, and `$XDG_RUNTIME_DIR/satan/`; its launcher runs `op run` and
+passes only the provider keys listed there (`apiKeys`). Running the daemon
+directly (`op run -- node src/daemon-main.ts`) still works, unjailed.
 
 In a client: type to talk, `/abort` stops the run, `/compact [instructions]`
 compacts, `/quit` detaches. Detaching leaves the conversation running; the
