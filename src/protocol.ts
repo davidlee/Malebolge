@@ -4,7 +4,8 @@
 //   daemon → client   AgentEvent (pi-durable `watchEvents`, the first a `snapshot`)
 //                     | ErrorMessage, for a line the daemon could not act on
 
-import { isRecord, type JsonRecord } from "./json.ts";
+import { optionalString, parseObject, withOptional } from "./fields.ts";
+import type { JsonRecord } from "./json.ts";
 
 export type ClientMessage =
   | { type: "input"; content: string; requestId?: string }
@@ -14,31 +15,6 @@ export type ClientMessage =
 export interface ErrorMessage {
   type: "error";
   message: string;
-}
-
-function optionalString(fields: JsonRecord, key: string): string | undefined {
-  const value = fields[key];
-  if (value === undefined || typeof value === "string") {
-    return value;
-  }
-  throw new Error(`${key} must be a string`);
-}
-
-function withOptional<T extends JsonRecord>(base: T, key: string, value: string | undefined): T {
-  return value === undefined ? base : { ...base, [key]: value };
-}
-
-function parseObject(line: string): JsonRecord {
-  let value: unknown;
-  try {
-    value = JSON.parse(line);
-  } catch {
-    throw new Error("line is not JSON");
-  }
-  if (!isRecord(value)) {
-    throw new Error("message must be an object");
-  }
-  return value;
 }
 
 function inputMessage(message: JsonRecord): ClientMessage {
