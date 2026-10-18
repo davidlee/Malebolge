@@ -5,13 +5,25 @@
 // `beforeTool` runs outside pi's storage transactions (pi-durable's tool task
 // calls it before its intent commit), so the audit write may use the shared
 // database handle (EVD-008).
+//
+// It is also the room-down pause's trigger (design §5.4, DEC-055). Both hooks
+// read the job's durable `pause_requested`, never a result's text, outside
+// any pi transaction. `afterTool` (after execution, before the result is
+// committed) replaces the result; `afterTools` (the round's results
+// committed, before the next model request is handed over) signals the run,
+// which aborts the conversation. Signalled from `afterTool`, the run's abort
+// would land before the replaced result commits and discard it (PHASE-09
+// STOP-1); a request racing the abort is the model gate's to refuse.
 
 import { posix } from "node:path";
 import {
   defineExtension,
+  type EntryId,
   type Extension,
+  GenerationTask,
   type HookApi,
   hook,
+  type ToolExecutionResult,
   type ToolHookCall,
   ToolTask,
 } from "@earendil-works/pi-durable";
@@ -23,12 +35,14 @@ import type { Job, JobStore } from "./store.ts";
 export interface GuardedJob extends Pick<Job, "id" | "allowedPaths"> {
   /** The repo's clone in the room: the conversation's cwd. */
   root: string;
+  /** Told that a tool round ended with the job's pause marked: wakes the run, which aborts. */
+  paused: () => void;
 }
 
 export interface GuardDeps {
   /** The job whose conversation's id text is `conversationId`; undefined for any other. */
   currentJob: (conversationId: string) => GuardedJob | undefined | Promise<GuardedJob | undefined>;
-  jobs: Pick<JobStore, "appendEvent">;
+  jobs: Pick<JobStore, "appendEvent" | "get">;
   now: () => number;
 }
 
@@ -65,6 +79,14 @@ interface Refusal {
 
 const refuse = (block: string): Refusal => ({ block });
 
+/** What the model sees of a call made as the room went down: fixed text, nothing of the failure. */
+export const PAUSED_RESULT_TEXT = "environment unavailable; paused";
+
+const PAUSED_RESULT: ToolExecutionResult = {
+  isError: true,
+  output: [{ type: "text", text: PAUSED_RESULT_TEXT }],
+};
+
 /** The guard as an extension; select it with the job's tools. */
 export function jobGuard(deps: GuardDeps): Extension {
   async function beforeTool(call: ToolHookCall, api: HookApi): Promise<Refusal | undefined> {
@@ -92,5 +114,31 @@ export function jobGuard(deps: GuardDeps): Extension {
     );
   }
 
-  return defineExtension({ name: "job-guard", hooks: [hook(ToolTask, { beforeTool })] });
+  /** The conversation's job, if its pause is marked: read from its row, never from a result. */
+  async function pausedJob(api: HookApi): Promise<GuardedJob | undefined> {
+    const job = await deps.currentJob(conversationText(api.conversationId));
+    const marked = job !== undefined && (await deps.jobs.get(job.id))?.pauseRequested === true;
+    return marked ? job : undefined;
+  }
+
+  async function afterTool(
+    _call: ToolHookCall,
+    _result: ToolExecutionResult,
+    api: HookApi,
+  ): Promise<ToolExecutionResult | undefined> {
+    return (await pausedJob(api)) === undefined ? undefined : PAUSED_RESULT;
+  }
+
+  async function afterTools(
+    _assistant: EntryId,
+    _results: readonly EntryId[],
+    api: HookApi,
+  ): Promise<void> {
+    (await pausedJob(api))?.paused();
+  }
+
+  return defineExtension({
+    name: "job-guard",
+    hooks: [hook(ToolTask, { beforeTool, afterTool }), hook(GenerationTask, { afterTools })],
+  });
 }

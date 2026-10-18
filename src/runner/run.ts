@@ -10,7 +10,11 @@
 // and the job is collected with the latch's reason (DEC-057). So does the
 // deadline, armed with the soft timer once `running` commits and stopped, with
 // the run's one warning closed, as soon as the run settles: nothing fires into
-// collection.
+// collection. A lost room pauses the run (DEC-055): the job's connection marks
+// `pause_requested` durably, the guard replaces the call's result and, once
+// the tool round is committed, signals the segment's pause (never the latch);
+// the conversation is aborted here and the job goes to `waiting_room`. A
+// cancel, then a ceiling, wins over a pending pause.
 //
 // EVD-008: every harness call here and every store call are made outside one
 // another's transactions; nothing is called from inside a `decide`.
@@ -34,7 +38,9 @@ import { type CollectDeps, collectJob } from "./collect.ts";
 import type { RepoConfig } from "./config.ts";
 import { type Conversations, ensureConversation, jobConversation } from "./conversations.ts";
 import { armCeilingTimers, type CeilingTimers, type Timer } from "./deadline.ts";
-import { type ConnectionObserver, jobEnv } from "./env.ts";
+import { jobEnv } from "./env.ts";
+import { pausingObserver } from "./pause.ts";
+import type { Meter } from "./model-gate.ts";
 import { configEntry, type ResolvedPolicy, resolvePolicy } from "./policy.ts";
 import { PrepareFailed, preparingFailure, readyRoom, roomShell } from "./prepare.ts";
 import { composePrompt } from "./prompt.ts";
@@ -62,12 +68,6 @@ export interface RunDeps extends CollectDeps {
   /** Told of what goes wrong that the run outlives (a warning not given). */
   log: (text: string) => void;
 }
-
-/**
- * The running job's connection observer. PHASE-07: a lost connection while
- * running is only a tool error the model sees; PHASE-09 makes it a pause.
- */
-const RUNNING_OBSERVER: ConnectionObserver = { lost: () => Promise.resolve() };
 
 /** How a settled run ended, absent a stop the runner asked for. */
 export const endReasonOf = (record: Pick<SubmissionRecord, "status">): EndReason =>
@@ -151,12 +151,19 @@ async function startPreparing(
   return { job: await deps.jobs.transition(job.id, "preparing", deps.now()), resolved };
 }
 
+/** One running segment: its submission, warning, timers and pause signal (AS-5). */
 interface Admitted {
   job: Job;
   conversation: Conversation;
   submission: Submission;
   warning: RunWarning;
   timers: CeilingTimers;
+  /**
+   * Aborted when a call ends with the job's pause marked (the guard's
+   * `afterTool`). Only wakes the run: the durable mark decides. Never the
+   * ceiling latch: a pause is not an exhaustion.
+   */
+  pause: AbortController;
 }
 
 /** What stops an admitted run: a cancel, or a ceiling (the gate's refusal, the deadline). */
@@ -191,6 +198,30 @@ function runStops(deps: RunDeps, jobId: string, control: RunControl): Stops {
   };
 }
 
+/**
+ * The gate's side of the seated job: a refusal trips the run's latch; a
+ * warning due goes to the segment's warning; the segment's pause signal,
+ * fired, is a pending pause.
+ */
+function meterOf(
+  deps: RunDeps,
+  conversation: Conversation,
+  policy: ResolvedPolicy,
+  latch: CeilingLatch,
+  { warning, pause }: Pick<Admitted, "warning" | "pause">,
+): Meter {
+  return {
+    conversation: conversation.id,
+    ceilings: policy.ceilings,
+    softThreshold: deps.config.maxima.softThreshold,
+    refused: latch.trip,
+    warnDue: (): void => {
+      warning.due("usage");
+    },
+    pausePending: (): boolean => pause.signal.aborted,
+  };
+}
+
 /** Steps 3-7: the room readied, the tenant seated, the prompt admitted, `running`. */
 async function admit(
   deps: RunDeps,
@@ -199,7 +230,7 @@ async function admit(
   connection: Connection,
   stops: Stops,
 ): Promise<Admitted> {
-  const { control, latch } = stops;
+  const { control } = stops;
   const conversationId = job.conversationId;
   const conversation =
     conversationId === undefined ? undefined : await jobConversation(deps.harness, conversationId);
@@ -211,6 +242,7 @@ async function admit(
   }
   const shell = roomShell(connection, job.id, repo.guestPath);
   await readyRoom(deps, job, repo, shell, control.signal);
+  const pause = new AbortController();
   const warning = runWarning({
     conversation,
     jobs: deps.jobs,
@@ -226,16 +258,16 @@ async function admit(
     conversationId,
     allowedPaths: job.allowedPaths,
     root: repo.guestPath,
-    env: jobEnv({ jobId: job.id, cwd: repo.guestPath, connection, observer: RUNNING_OBSERVER }),
-    meter: {
-      conversation: conversation.id,
-      ceilings: policy.ceilings,
-      softThreshold: deps.config.maxima.softThreshold,
-      refused: latch.trip,
-      warnDue: () => {
-        warning.due("usage");
-      },
+    paused: () => {
+      pause.abort();
     },
+    env: jobEnv({
+      jobId: job.id,
+      cwd: repo.guestPath,
+      connection,
+      observer: pausingObserver(deps, job.id),
+    }),
+    meter: meterOf(deps, conversation, policy, stops.latch, { warning, pause }),
   });
   await conversation.configure(
     {
@@ -269,16 +301,17 @@ async function admit(
       warning.due("wall_clock");
     },
   });
-  return { job: running, conversation, submission, warning, timers };
+  return { job: running, conversation, submission, warning, timers, pause };
 }
 
 // --- running to collecting --------------------------------------------------------
 
-/** The admitted prompt's settlement; a cancel or a ceiling aborts the conversation first. */
+/** The admitted prompt's settlement; a cancel, a ceiling or a pause aborts the conversation first. */
 async function settleSubmission(
   admitted: Admitted,
-  { signal: stop }: Stops,
+  stops: Stops,
 ): Promise<SettledSubmissionRecord> {
+  const stop = AbortSignal.any([stops.signal, admitted.pause.signal]);
   try {
     return await admitted.submission.wait(withAbortSignal(stop, context));
   } catch (error) {
@@ -341,6 +374,20 @@ function ceilingEnding(ending: Ending, latch: CeilingLatch): Ending {
     : { payload: { ...ending.payload, ceiling }, endReason: ceiling };
 }
 
+/**
+ * Where the settled segment goes: a cancel, then a ceiling, to `collecting`
+ * (`toCollecting`); else, if the job's pause is marked (the durable record,
+ * whatever woke the run), to `waiting_room`, the submission's settlement
+ * recorded but never an end reason; else to `collecting`.
+ */
+async function afterSegment(deps: RunDeps, job: Job, ending: Ending, stops: Stops): Promise<Job> {
+  const stopped = stops.control.cancelReason !== undefined || stops.latch.reason() !== undefined;
+  if (!stopped && (await deps.jobs.get(job.id))?.pauseRequested === true) {
+    return deps.jobs.transition(job.id, "waiting_room", deps.now(), ending.payload);
+  }
+  return toCollecting(deps, job, ending, stops);
+}
+
 /** `collecting`, with the end reason the ending gives; a cancel wins over a ceiling. */
 async function toCollecting(
   deps: RunDeps,
@@ -371,7 +418,7 @@ export async function runJob(deps: RunDeps, queued: Job, control: RunControl): P
   }
   const connection = deps.connect(resolved.repo);
   const stops = runStops(deps, job.id, control);
-  let collecting: Job;
+  let settled: Job;
   try {
     let admitted: Admitted;
     try {
@@ -379,15 +426,11 @@ export async function runJob(deps: RunDeps, queued: Job, control: RunControl): P
     } catch (error) {
       return await endUnrun(deps, preparing.job, control, error);
     }
-    collecting = await toCollecting(
-      deps,
-      admitted.job,
-      await settleRun(deps, admitted, stops),
-      stops,
-    );
+    settled = await afterSegment(deps, admitted.job, await settleRun(deps, admitted, stops), stops);
   } finally {
     deps.tenancy.leave(job.id);
     connection.close();
   }
-  return collectJob(deps, collecting.id, deps.now());
+  // Paused: the job holds the seat in waiting_room (the waiting episode is PHASE-09 batch B).
+  return settled.state === "waiting_room" ? settled : collectJob(deps, settled.id, deps.now());
 }

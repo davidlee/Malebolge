@@ -2,7 +2,10 @@
 // `Models` view in front of every provider request entry point the job can
 // reach. Before each request the gate refuses if a ceiling is exhausted or
 // usage is unreadable; otherwise it counts the request durably and caps its
-// output from the remaining budget.
+// output from the remaining budget. It also refuses while the seated job's
+// room-down pause is pending (PHASE-09 STOP-1): the run aborts the
+// conversation once a call ends with the pause marked, and a request racing
+// that abort must not reach the provider. That refusal is not a ceiling.
 //
 // The view is an explicit object literal, not a Proxy: tsc fails when pi-ai
 // grows a member, forcing a review. Each request member admits, then calls
@@ -59,8 +62,11 @@ export const ENTRY_POINTS = [
 
 export type EntryPoint = (typeof ENTRY_POINTS)[number];
 
-/** Why the gate refused: a job ceiling, or no job seated to charge (fail closed). */
-export type Refusal = Exhaustion | "no_job";
+/**
+ * Why the gate refused: a job ceiling, no job seated to charge (fail
+ * closed), or the job's pause pending.
+ */
+export type Refusal = Exhaustion | "no_job" | "paused";
 
 /**
  * The refusal as the model run sees it (`errorMessage`). Fixed text, never
@@ -71,6 +77,8 @@ export const REFUSALS: Readonly<Record<Refusal, string>> = {
   ceiling_exceeded: "model gate refused the request: job ceiling exhausted (out of budget)",
   usage_unavailable: "model gate refused the request: job usage unreadable (out of budget)",
   no_job: "model gate refused the request: no job to charge (out of budget)",
+  // Not a budget: matches neither of pi-ai's patterns, so not retryable either.
+  paused: "model gate refused the request: job paused while its room is down",
 };
 
 /** A gate refusal. Match it by type and `reason`, never by message. */
@@ -249,6 +257,8 @@ export interface Meter {
   refused: (reason: Exhaustion) => void;
   /** Told after an admission that leaves the warning due (batch B delivers it). */
   warnDue: () => void;
+  /** Whether the run's pause signal has fired: the job's pause is pending. */
+  pausePending: () => boolean;
 }
 
 /** The job a request is charged to: the one seated (DEC-056; pi passes the gate no conversation). */
@@ -300,6 +310,7 @@ interface Request {
 
 type Verdict =
   | { kind: "admit"; budget: Budget }
+  | { kind: "decline" }
   | {
       kind: "refuse";
       reason: Exhaustion;
@@ -307,11 +318,15 @@ type Verdict =
     };
 
 /**
- * Refuse when a ceiling is exhausted or usage unreadable, or when a capped
- * request could get no output: a provider may read `maxTokens: 0` as "no
- * limit" (AS-4). Else admit, with the budget before this request.
+ * Decline while the job's pause is marked (nothing recorded). Refuse when a
+ * ceiling is exhausted or usage unreadable, or when a capped request could
+ * get no output: a provider may read `maxTokens: 0` as "no limit" (AS-4).
+ * Else admit, with the budget before this request.
  */
 function judge(request: Request, job: Job): Verdict {
+  if (job.pauseRequested) {
+    return { kind: "decline" };
+  }
   const { meter, spend } = request;
   const budget: Budget = setDefined<Budget>(
     {
@@ -343,10 +358,11 @@ const counted = (budget: Budget): Budget =>
 
 /**
  * The gate. Binding order per request: the seated job (none: refuse
- * `no_job`, nothing else); its usage, read from pi outside any host
- * transaction; the judgement and its count or `ceiling` event in one host
- * transaction; then refuse (signal the run, throw) or admit (warn if due,
- * return the cap).
+ * `no_job`, nothing else); its pause signal (fired: refuse `paused`, nothing
+ * else); its usage, read from pi outside any host transaction; the judgement
+ * and its count or `ceiling` event in one host transaction (a marked pause
+ * declines, writing nothing); then refuse `paused` (declined: no signal),
+ * refuse (signal the run, throw) or admit (warn if due, return the cap).
  */
 export function createModelGate(deps: GateDeps): Gate {
   return {
@@ -356,12 +372,18 @@ export function createModelGate(deps: GateDeps): Gate {
         throw new GateRefused("no_job");
       }
       const { meter } = job;
+      if (meter.pausePending()) {
+        throw new GateRefused("paused");
+      }
       const spend = await deps.usageOf(meter.conversation).catch(() => undefined);
       const now = deps.now();
       const request: Request = { entryPoint, meter, spend, limits: modelLimits(model), now };
       const { verdict } = await deps.jobs.admitModelRequest(job.id, now, (row) =>
         judge(request, row),
       );
+      if (verdict.kind === "decline") {
+        throw new GateRefused("paused");
+      }
       if (verdict.kind === "refuse") {
         meter.refused(verdict.reason);
         throw new GateRefused(verdict.reason);

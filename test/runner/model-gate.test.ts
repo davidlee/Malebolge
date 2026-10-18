@@ -83,7 +83,12 @@ const asProviderError = (errorMessage: string): AssistantMessage => ({
   timestamp: 0,
 });
 
-const REFUSAL_REASONS: readonly Refusal[] = ["ceiling_exceeded", "usage_unavailable", "no_job"];
+const REFUSAL_REASONS: readonly Refusal[] = [
+  "ceiling_exceeded",
+  "usage_unavailable",
+  "no_job",
+  "paused",
+];
 
 describe("refusal text (EX-6)", () => {
   it.each(REFUSAL_REASONS)("%s is not pi-ai-retryable", (reason) => {
@@ -275,6 +280,8 @@ const CEILINGS: Ceilings = {
 interface GatedOptions extends FauxHarnessOptions {
   ceilings?: Partial<Ceilings>;
   usageOf?: GateDeps["usageOf"];
+  /** The run's pause signal, as the meter reads it; default: never fired. */
+  pausePending?: () => boolean;
 }
 
 interface GatedWorld extends TestHarness {
@@ -332,6 +339,7 @@ async function openGated(path: string, options: GatedOptions = {}): Promise<Gate
         refusals.push(reason);
       },
       warnDue: (): void => undefined,
+      pausePending: options.pausePending ?? ((): boolean => false),
     },
   };
   return {
@@ -405,6 +413,28 @@ describe("the gate on a harness (VT-1)", () => {
     expect(await w.modelRequests()).toBe(1);
     expect(await w.ceilingEvents()).toEqual([]);
   });
+
+  it.each([
+    ["marked durably", false],
+    ["signalled to the run", true],
+  ])(
+    "the job's pause %s: refused paused — no provider request, no count, no ceiling event, no latch",
+    async (_how, signalled) => {
+      const w = await start({ pausePending: () => signalled });
+      if (!signalled) {
+        await w.jobs.markPause(w.job.id, T0 + 5, { op: "exec" });
+      }
+      w.faux.setResponses([answer("never")]);
+
+      await ask(w.root, "hi");
+
+      expect(w.faux.state.callCount).toBe(0);
+      expect(await w.modelRequests()).toBe(0);
+      expect(await w.ceilingEvents()).toEqual([]);
+      expect(w.refusals).toEqual([]);
+      expect((await lastAnswer(w.root)).errorMessage).toBe(REFUSALS.paused);
+    },
+  );
 
   it("streamSimple: model_requests exhausted — no provider request, one ceiling event", async () => {
     const w = await start({ ceilings: { model_requests: 1 } });

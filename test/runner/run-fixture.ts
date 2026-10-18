@@ -12,6 +12,7 @@ import {
   fauxToolCall,
 } from "@earendil-works/pi-ai/providers/faux";
 import type { Harness, JsonObject } from "@earendil-works/pi-durable";
+import type { Connection } from "@earendil-works/pi-env";
 import { onTestFinished } from "vitest";
 import { retryPendingCollection } from "../../src/runner/collect.ts";
 import type { Ceilings, RunnerConfig } from "../../src/runner/config.ts";
@@ -102,6 +103,8 @@ export interface RunWorldOptions {
   ceilings?: Partial<Ceilings>;
   /** How the model gate reads usage; default: the harness's `pi.usage`. */
   usageOf?: GateDeps["usageOf"];
+  /** The job's daemon connection, given the local one; e.g. one that loses chosen calls. */
+  connection?: (local: Connection) => Connection;
 }
 
 export interface RunWorld extends RoomWorld {
@@ -171,7 +174,10 @@ export async function runWorld(options: RunWorldOptions = {}): Promise<RunWorld>
     harness: options.harness?.(harness) ?? harness,
     conversations: harnessConversations(harness),
     tenancy,
-    connect: localConnection,
+    connect: () => {
+      const local = localConnection();
+      return options.connection?.(local) ?? local;
+    },
     extensions,
     readPrompt: () => Promise.resolve("You are the patch agent."),
     now,
@@ -234,6 +240,16 @@ export async function runWorld(options: RunWorldOptions = {}): Promise<RunWorld>
 export async function settled(world: RunWorld, id: string): Promise<Job> {
   await within(SETTLE_MS, "scheduler", world.scheduler.idle());
   return world.job(id);
+}
+
+/** Resolves once `holds` does, polled; fails after `SETTLE_MS`. */
+export async function until(what: string, holds: () => boolean | Promise<boolean>): Promise<void> {
+  const poll = async (): Promise<void> => {
+    while (!(await holds())) {
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+  };
+  await within(SETTLE_MS, what, poll());
 }
 
 /** Each event as `kind` or `transition:<to>`. */

@@ -13,12 +13,13 @@ import { NodeExecutionEnv } from "@earendil-works/pi-durable/env/node";
 import { afterEach, describe, expect, it } from "vitest";
 import { context } from "../../src/context.ts";
 import { conversationText } from "../../src/runner/durable-ids.ts";
-import { type GuardedJob, jobGuard, repoPath } from "../../src/runner/guard.ts";
+import { type GuardedJob, jobGuard, PAUSED_RESULT_TEXT, repoPath } from "../../src/runner/guard.ts";
 import type { JobEvent } from "../../src/runner/rows.ts";
 import { openRunnerStore, type RunnerStore } from "../../src/runner/store.ts";
 import { JobTools } from "../../src/runner/tools.ts";
 import { tempDir } from "../fixtures.ts";
 import { callThenAnswer, openFauxHarness, textOf, toolResults } from "../harness-fixture.ts";
+import { LOST_TEXT } from "./env-fixture.ts";
 import { closeHarness, within } from "./runner-fixture.ts";
 import { NEW_JOB, sequentialIds, T0 } from "./store-fixture.ts";
 
@@ -54,7 +55,11 @@ interface GuardWorld {
   dir: string;
   jobId: string;
   run: (tool: string, args: JsonObject) => Promise<string>;
+  /** The last tool result's error flag. */
+  lastIsError: () => Promise<boolean | undefined>;
   events: () => Promise<JobEvent[]>;
+  /** Times the guard signalled the job's pause. */
+  pauses: () => number;
 }
 
 describe("the guard hook", () => {
@@ -77,13 +82,23 @@ describe("the guard hook", () => {
       newId: sequentialIds(),
     });
     const { job } = await store.jobs.submit(NEW_JOB, T0);
+    await store.jobs.transition(job.id, "preparing", T0 + 1);
+    await store.jobs.transition(job.id, "running", T0 + 2);
     let rootText = "";
+    let pauses = 0;
     const guard = jobGuard({
       jobs: store.jobs,
       now: () => T0 + 1,
       currentJob: (conversationId): GuardedJob | undefined =>
         owns && conversationId === rootText
-          ? { id: job.id, allowedPaths: job.allowedPaths, root: dir }
+          ? {
+              id: job.id,
+              allowedPaths: job.allowedPaths,
+              root: dir,
+              paused: (): void => {
+                pauses += 1;
+              },
+            }
           : undefined,
     });
     const { harness, root, faux } = await openFauxHarness(store.storage, {
@@ -108,7 +123,9 @@ describe("the guard hook", () => {
       dir,
       jobId: job.id,
       run,
+      lastIsError: async () => (await toolResults(harness)).at(-1)?.isError,
       events: () => store.jobs.events(job.id),
+      pauses: () => pauses,
     };
   }
 
@@ -192,6 +209,44 @@ describe("the guard hook", () => {
 
     expect(text).toContain("Tool call blocked");
     const asError = fauxAssistantMessage([], { stopReason: "error", errorMessage: text });
+    expect(isRetryableAssistantError(asError)).toBe(false);
+  });
+
+  it("afterTool: replaces the result of a call made while the job's pause is marked, and signals the pause", async () => {
+    const world = await guardWorld();
+    await world.store.jobs.markPause(world.jobId, T0 + 3, { op: "exec" });
+
+    const text = await world.run("bash", { command: "echo secret-output" });
+
+    expect(text).toBe(PAUSED_RESULT_TEXT);
+    expect(await world.lastIsError()).toBe(true);
+    expect(world.pauses()).toBe(1);
+  });
+
+  it("afterTool: reads the row, never the result: the lost text without a mark passes untouched", async () => {
+    const world = await guardWorld();
+
+    const text = await world.run("bash", { command: `echo '${LOST_TEXT}'; exit 1` });
+
+    expect(text).toContain(LOST_TEXT);
+    expect(world.pauses()).toBe(0);
+  });
+
+  it("afterTool: does nothing in a conversation no job owns", async () => {
+    const world = await guardWorld(false);
+    await world.store.jobs.markPause(world.jobId, T0 + 3, { op: "exec" });
+
+    const text = await world.run("bash", { command: "echo y" });
+
+    expect(text).toContain("y");
+    expect(world.pauses()).toBe(0);
+  });
+
+  it("afterTool: says so in words pi-ai does not classify as retryable", () => {
+    const asError = fauxAssistantMessage([], {
+      stopReason: "error",
+      errorMessage: PAUSED_RESULT_TEXT,
+    });
     expect(isRetryableAssistantError(asError)).toBe(false);
   });
 });

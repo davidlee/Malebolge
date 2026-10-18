@@ -39,7 +39,12 @@ export function roomTenancy(): Tenancy {
     const seated = of(conversationId);
     return seated === undefined
       ? undefined
-      : { id: seated.id, allowedPaths: seated.allowedPaths, root: seated.root };
+      : {
+          id: seated.id,
+          allowedPaths: seated.allowedPaths,
+          root: seated.root,
+          paused: seated.paused,
+        };
   }
   function enter(next: Tenant): void {
     tenant = next;

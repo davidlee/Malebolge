@@ -49,6 +49,7 @@ import {
   runWorld,
   SETTLE_MS,
   settled,
+  until,
 } from "./run-fixture.ts";
 import { closeHarness, within } from "./runner-fixture.ts";
 import { NEW_JOB, openTestStore, T0 } from "./store-fixture.ts";
@@ -58,16 +59,6 @@ const HOUR_S = 3600;
 /** One request: write and commit in one bash call, so a later ceiling leaves work to collect. */
 const writeAndCommit = (): AssistantMessage =>
   call("bash", { command: `mkdir -p src && echo 'export {};' > src/a.ts && ${COMMIT}` });
-
-/** Resolves once `holds` does, polled; fails after `SETTLE_MS`. */
-async function until(what: string, holds: () => boolean | Promise<boolean>): Promise<void> {
-  const poll = async (): Promise<void> => {
-    while (!(await holds())) {
-      await new Promise((resolve) => setTimeout(resolve, 5));
-    }
-  };
-  await within(SETTLE_MS, what, poll());
-}
 
 /** Resolves once job `id` has its warning receipt. */
 const warned = (world: RunWorld, id: string): Promise<void> =>

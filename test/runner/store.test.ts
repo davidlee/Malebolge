@@ -564,6 +564,17 @@ describe("admitModelRequest: the gate's durable count (DEC-057)", () => {
     expect(ceilings).toMatchObject([{ at: T0 + 1, payload: { reason: "ceiling_exceeded" } }]);
   });
 
+  it("a decline writes nothing: no count, no event", async () => {
+    const { jobs } = await openTestStore();
+    const { job } = await jobs.submit(NEW_JOB, T0);
+
+    const declined = await jobs.admitModelRequest(job.id, T0 + 1, () => ({ kind: "decline" }));
+
+    expect(declined.job.modelRequests).toBe(0);
+    expect(await jobs.get(job.id)).toEqual(job);
+    expect((await jobs.events(job.id)).map((event) => event.kind)).toEqual(["submitted"]);
+  });
+
   it("recordCeiling shares the one ceiling event per job: the first source wins", async () => {
     const { jobs } = await openTestStore();
     const { job } = await jobs.submit(NEW_JOB, T0);

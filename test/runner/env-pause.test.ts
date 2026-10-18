@@ -8,13 +8,15 @@ import { defineExtension, hook, ToolTask } from "@earendil-works/pi-durable";
 import type { ExecutionEnv } from "@earendil-works/pi-durable/env";
 import type { SqliteDatabase } from "@earendil-works/pi-durable/storage/sqlite";
 import { CodingTools } from "@earendil-works/pi-durable/tools";
-import { Connection, isConnectionLost, RemoteError, type RemoteInfo } from "@earendil-works/pi-env";
+import { type Connection, isConnectionLost, RemoteError } from "@earendil-works/pi-env";
 import { afterEach, describe, expect, it } from "vitest";
 import { context } from "../../src/context.ts";
 import { type ConnectionObserver, jobEnv, type LostFailure } from "../../src/runner/env.ts";
 import { tempDir } from "../fixtures.ts";
 import { callThenAnswer, openFauxHarness, textOf, toolResults } from "../harness-fixture.ts";
 import {
+  FailingConnection,
+  LOST_TEXT,
   localConnection,
   lostConnection,
   markPause,
@@ -24,36 +26,10 @@ import {
 import { closeHarness, openSharedStore, within } from "./runner-fixture.ts";
 
 const JOB = "job-1";
-const LOST_TEXT = "pi-env connection lost";
 
 /** A connection whose every request fails with `error`; it never starts a daemon. */
-class FailingConnection extends Connection {
-  readonly #error: Error;
-  constructor(error: Error) {
-    super({ command: [] });
-    this.#error = error;
-  }
-  override info(): Promise<RemoteInfo> {
-    const home = "/tmp";
-    return Promise.resolve({
-      protocol: 1,
-      version: "0",
-      os: "linux",
-      arch: "x86_64",
-      home,
-      tmpdir: home,
-      separator: "/",
-      cwd: home,
-      driveCwds: {},
-      pid: 0,
-    });
-  }
-  override request(): Promise<never> {
-    return Promise.reject(this.#error);
-  }
-}
-
-/** A real local pi-env daemon (the binary pi-env ships for this machine). */
+const failingRequests = (error: Error): FailingConnection =>
+  new FailingConnection(({ json }) => (json === undefined ? undefined : error));
 
 interface Observed {
   marks: LostFailure[];
@@ -158,7 +134,7 @@ describe("room-down seam, offline", () => {
   ])("%s with the same message is not recognised", async (_name, error) => {
     expect(isConnectionLost(error)).toBe(false);
 
-    const run = await runBashThrough(new FailingConnection(error), false);
+    const run = await runBashThrough(failingRequests(error), false);
 
     expect(run.marks).toEqual([]);
     expect(run.markedAtAfterTool).toEqual([false]);

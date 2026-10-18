@@ -27,6 +27,7 @@ const tenantOf = (jobId: string, conversation: ConversationId): Tenant => ({
   conversationId: conversationText(conversation),
   allowedPaths: ["src/"],
   root: "/work/repos/satan",
+  paused: () => undefined,
   env: new NodeExecutionEnv({ cwd: "/tmp" }),
   meter: {
     conversation,
@@ -34,6 +35,7 @@ const tenantOf = (jobId: string, conversation: ConversationId): Tenant => ({
     softThreshold: 0.8,
     refused: () => undefined,
     warnDue: () => undefined,
+    pausePending: () => false,
   },
 });
 
@@ -51,6 +53,7 @@ describe("roomTenancy", () => {
       id: "pj-1",
       allowedPaths: ["src/"],
       root: "/work/repos/satan",
+      paused: tenant.paused,
     });
     expect(tenancy.guarded(conversationText(other))).toBeUndefined();
   });
