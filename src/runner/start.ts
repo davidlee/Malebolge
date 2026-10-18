@@ -7,6 +7,8 @@
 // One store feeds control and scheduler, so `watch` sees every transition
 // (observers are per JobStore instance), and pi shares its database handle
 // (EVD-008: run.ts never nests a call to one inside the other's transaction).
+// The harness sees the model catalog only through the model gate (DEC-057),
+// which charges the seated job.
 
 import { constants } from "node:fs";
 import { access, mkdir, readFile, stat } from "node:fs/promises";
@@ -27,6 +29,7 @@ import { roomDaemon } from "./env.ts";
 import { messageOf, StartRefused } from "./errors.ts";
 import { gitQuarantineReader, gitRepoReader } from "./git.ts";
 import { jobGuard } from "./guard.ts";
+import { createModelGate, gatedModels, harnessUsage } from "./model-gate.ts";
 import { channelFromConfig, type GitChannel, roomConnection } from "./room.ts";
 import { type RunDeps, runJob } from "./run.ts";
 import { createScheduler } from "./scheduler.ts";
@@ -103,7 +106,7 @@ export interface StartOptions {
   log: (text: string) => void;
   /**
    * The model catalog; defaults to pi-ai's plus the coding agent's cache under
-   * HOME. PHASE-08 wraps it in the model gate here.
+   * HOME. The harness sees it only through the model gate.
    */
   models?: Models;
   /** How to reach the room; defaults to what the config names (room.ts). */
@@ -131,11 +134,15 @@ export async function startRunner(env: Env, options: StartOptions): Promise<Runn
   const tenancy = roomTenancy();
   const extensions = [JobTools, jobGuard({ currentJob: tenancy.guarded, jobs, now })];
   const models = options.models ?? createDaemonModels(readModelsStore(modelsStorePath(paths.home)));
+  // Built before the harness it sits in: usage is unreadable until it opens (I10).
+  const usage = harnessUsage();
+  const gate = createModelGate({ seated: tenancy.seated, jobs, now, usageOf: usage.usageOf });
   const harness = await Harness.open(
     store.storage,
-    { models, registry: registryOf(extensions), env: tenancy.env },
+    { models: gatedModels(models, gate), registry: registryOf(extensions), env: tenancy.env },
     context,
   );
+  usage.bind(harness);
   const conversations = harnessConversations(harness);
   const collect: CollectDeps = {
     jobs,

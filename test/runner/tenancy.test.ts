@@ -28,6 +28,13 @@ const tenantOf = (jobId: string, conversation: ConversationId): Tenant => ({
   allowedPaths: ["src/"],
   root: "/work/repos/satan",
   env: new NodeExecutionEnv({ cwd: "/tmp" }),
+  meter: {
+    conversation,
+    ceilings: { model_requests: 1, cost_usd: 1, tokens: 1, active_wall_clock_s: 1 },
+    softThreshold: 0.8,
+    refused: () => undefined,
+    warnDue: () => undefined,
+  },
 });
 
 describe("roomTenancy", () => {
@@ -59,5 +66,18 @@ describe("roomTenancy", () => {
 
     expect(tenancy.env({ conversationId: mine })).toBeUndefined();
     expect(tenancy.guarded(conversationText(mine))).toBeUndefined();
+  });
+
+  it("seats one tenant for the model gate, whatever the conversation", async () => {
+    const [mine] = await twoConversations();
+    const tenancy = roomTenancy();
+    expect(tenancy.seated()).toBeUndefined();
+    const tenant = tenantOf("pj-1", mine);
+
+    tenancy.enter(tenant);
+    expect(tenancy.seated()).toBe(tenant);
+    tenancy.leave("pj-1");
+
+    expect(tenancy.seated()).toBeUndefined();
   });
 });

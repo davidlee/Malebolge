@@ -5,7 +5,9 @@
 // (I16); then, the run settled, `collecting` with its end reason, and
 // collection. The seated job's cancel is checked between steps: before the
 // prompt is admitted it ends the job `cancelled`, after it the conversation is
-// aborted and the job still collected.
+// aborted and the job still collected. A ceiling (the model gate's refusal)
+// trips the run's latch: the conversation is aborted here, never in the gate,
+// and the job is collected with the latch's reason (DEC-057).
 //
 // EVD-008: every harness call here and every store call are made outside one
 // another's transactions; nothing is called from inside a `decide`.
@@ -24,6 +26,7 @@ import { parseModel } from "../config.ts";
 import { context } from "../context.ts";
 import type { JsonRecord } from "../json.ts";
 import type { Sleep } from "./backoff.ts";
+import { type CeilingLatch, ceilingLatch } from "./ceiling-latch.ts";
 import { type CollectDeps, collectJob } from "./collect.ts";
 import type { RepoConfig } from "./config.ts";
 import { type Conversations, ensureConversation, jobConversation } from "./conversations.ts";
@@ -145,13 +148,19 @@ interface Admitted {
   submission: Submission;
 }
 
+/** What stops an admitted run: a cancel, or a ceiling. */
+interface Stops {
+  control: RunControl;
+  latch: CeilingLatch;
+}
+
 /** Steps 3-7: the room readied, the tenant seated, the prompt admitted, `running`. */
 async function admit(
   deps: RunDeps,
   job: Job,
   { policy, repo }: Resolved,
   connection: Connection,
-  control: RunControl,
+  { control, latch }: Stops,
 ): Promise<Admitted> {
   const conversationId = job.conversationId;
   const conversation =
@@ -170,6 +179,13 @@ async function admit(
     allowedPaths: job.allowedPaths,
     root: repo.guestPath,
     env: jobEnv({ jobId: job.id, cwd: repo.guestPath, connection, observer: RUNNING_OBSERVER }),
+    meter: {
+      conversation: conversation.id,
+      ceilings: policy.ceilings,
+      softThreshold: deps.config.maxima.softThreshold,
+      refused: latch.trip,
+      warnDue: () => undefined,
+    },
   });
   await conversation.configure(
     {
@@ -197,15 +213,16 @@ async function admit(
 
 // --- running to collecting --------------------------------------------------------
 
-/** The admitted prompt's settlement; a cancel aborts the conversation first. */
+/** The admitted prompt's settlement; a cancel or a ceiling aborts the conversation first. */
 async function settleSubmission(
   admitted: Admitted,
-  control: RunControl,
+  { control, latch }: Stops,
 ): Promise<SettledSubmissionRecord> {
+  const stop = AbortSignal.any([control.signal, latch.signal]);
   try {
-    return await admitted.submission.wait(withAbortSignal(control.signal, context));
+    return await admitted.submission.wait(withAbortSignal(stop, context));
   } catch (error) {
-    if (!control.signal.aborted) {
+    if (!stop.aborted) {
       throw error;
     }
   }
@@ -217,20 +234,28 @@ async function settleSubmission(
  * How the admitted run ended. Never throws (I12): a settlement that fails
  * other than by a cancel still ends the run, `end_reason = error`.
  */
-async function settle(admitted: Admitted, control: RunControl): Promise<Ending> {
+async function settle(admitted: Admitted, stops: Stops): Promise<Ending> {
   try {
-    return settledEnding(await settleSubmission(admitted, control));
+    return settledEnding(await settleSubmission(admitted, stops));
   } catch (error) {
     return { payload: { reason: "settle_failed", message: messageOf(error) }, endReason: "error" };
   }
 }
 
-/** `collecting`, with the end reason the ending (or a cancel) gives. */
+/** `ending`, unless a ceiling tripped: then its reason, recorded as `ceiling`. */
+function ceilingEnding(ending: Ending, latch: CeilingLatch): Ending {
+  const ceiling = latch.reason();
+  return ceiling === undefined
+    ? ending
+    : { payload: { ...ending.payload, ceiling }, endReason: ceiling };
+}
+
+/** `collecting`, with the end reason the ending gives; a cancel wins over a ceiling. */
 async function toCollecting(
   deps: RunDeps,
   job: Job,
   ending: Ending,
-  control: RunControl,
+  { control, latch }: Stops,
 ): Promise<Job> {
   const reason = control.cancelReason;
   if (reason !== undefined) {
@@ -238,9 +263,8 @@ async function toCollecting(
     control.cancelled(cancelled);
     return cancelled;
   }
-  return deps.jobs.transition(job.id, "collecting", deps.now(), ending.payload, {
-    endReason: ending.endReason,
-  });
+  const { payload, endReason } = ceilingEnding(ending, latch);
+  return deps.jobs.transition(job.id, "collecting", deps.now(), payload, { endReason });
 }
 
 /** Runs the seated `queued` job to a resting state. */
@@ -255,15 +279,16 @@ export async function runJob(deps: RunDeps, queued: Job, control: RunControl): P
     return endUnrun(deps, preparing.job, control, preparing.error);
   }
   const connection = deps.connect(resolved.repo);
+  const stops: Stops = { control, latch: ceilingLatch() };
   let collecting: Job;
   try {
     let admitted: Admitted;
     try {
-      admitted = await admit(deps, preparing.job, resolved, connection, control);
+      admitted = await admit(deps, preparing.job, resolved, connection, stops);
     } catch (error) {
       return await endUnrun(deps, preparing.job, control, error);
     }
-    collecting = await toCollecting(deps, admitted.job, await settle(admitted, control), control);
+    collecting = await toCollecting(deps, admitted.job, await settle(admitted, stops), stops);
   } finally {
     deps.tenancy.leave(job.id);
     connection.close();

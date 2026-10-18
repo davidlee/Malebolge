@@ -17,11 +17,17 @@ import type { Conversation, Harness, JsonObject, Submission } from "@earendil-wo
 import { describe, expect, it, onTestFinished } from "vitest";
 import { context } from "../../src/context.ts";
 import { retryPendingCollection } from "../../src/runner/collect.ts";
-import type { RunnerConfig } from "../../src/runner/config.ts";
+import type { Ceilings, RunnerConfig } from "../../src/runner/config.ts";
 import { harnessConversations, jobConversation } from "../../src/runner/conversations.ts";
 import { conversationIdOf } from "../../src/runner/durable-ids.ts";
 import { gitQuarantineReader } from "../../src/runner/git.ts";
 import { jobGuard } from "../../src/runner/guard.ts";
+import {
+  createModelGate,
+  type GateDeps,
+  gatedModels,
+  harnessUsage,
+} from "../../src/runner/model-gate.ts";
 import type { GitChannel } from "../../src/runner/room.ts";
 import { type RunDeps, runJob } from "../../src/runner/run.ts";
 import { createScheduler, RunControl, type Scheduler } from "../../src/runner/scheduler.ts";
@@ -112,6 +118,10 @@ interface RunWorldOptions {
   channel?: (channel: GitChannel) => GitChannel;
   /** The harness `runJob` sees. */
   harness?: (harness: Harness) => RunDeps["harness"];
+  /** Submit ceilings of each job `submit` queues, over `NEW_JOB`'s. */
+  ceilings?: Partial<Ceilings>;
+  /** How the model gate reads usage; default: the harness's `pi.usage`. */
+  usageOf?: GateDeps["usageOf"];
 }
 
 interface RunWorld extends RoomWorld {
@@ -148,7 +158,20 @@ async function runWorld(options: RunWorldOptions = {}): Promise<RunWorld> {
     jobGuard({ currentJob: tenancy.guarded, jobs, now }),
     blocking.extension,
   ];
-  const { harness, faux } = await openFauxHarness(store.storage, { extensions, env: tenancy.env });
+  // The model gate as start.ts wires it: built before the harness it sits in.
+  const usage = harnessUsage();
+  const gate = createModelGate({
+    seated: tenancy.seated,
+    jobs,
+    now,
+    usageOf: options.usageOf ?? usage.usageOf,
+  });
+  const { harness, faux } = await openFauxHarness(store.storage, {
+    extensions,
+    env: tenancy.env,
+    models: (models) => gatedModels(models, gate),
+  });
+  usage.bind(harness);
   onTestFinished(() => closeHarness(harness));
   const example = exampleConfig();
   const config: RunnerConfig = {
@@ -187,7 +210,11 @@ async function runWorld(options: RunWorldOptions = {}): Promise<RunWorld> {
   let submissions = 0;
   async function submit(): Promise<Job> {
     const { job: queued } = await jobs.submit(
-      { ...NEW_JOB, submissionId: `sub-${String(++submissions)}` },
+      {
+        ...NEW_JOB,
+        submissionId: `sub-${String(++submissions)}`,
+        ceilings: { ...NEW_JOB.ceilings, ...options.ceilings },
+      },
       now(),
     );
     scheduler.wake();
@@ -509,5 +536,61 @@ describe("runJob: cancel (EX-2, EX-5)", () => {
       submissionReason: "aborted",
     });
     expect(w.verbs()).toContain("collect");
+  });
+});
+
+describe("runJob: a gate refusal ends the run (EX-1, EX-4 gate path)", () => {
+  /** One request: write and commit in one bash call; the next request is the one refused. */
+  const writeAndCommit = (): AssistantMessage =>
+    call("bash", { command: `mkdir -p src && echo 'export {};' > src/a.ts && ${COMMIT}` });
+
+  it("model_requests spent: collecting ceiling_exceeded, collected, needs_review partial", async () => {
+    const w = await runWorld({ ceilings: { model_requests: 1 } });
+    w.faux.setResponses([writeAndCommit(), answer("never")]);
+
+    const queued = await w.submit();
+    const job = await settled(w, queued.id);
+
+    expect(job).toMatchObject({
+      state: "needs_review",
+      endReason: "ceiling_exceeded",
+      class: "partial",
+      modelRequests: 1,
+    });
+    expect(w.faux.state.callCount).toBe(1);
+    const events = await w.events(job.id);
+    expect(kinds(events).filter((kind) => kind === "ceiling")).toEqual(["ceiling"]);
+    expect(eventOf(events, "ceiling")?.payload).toMatchObject({
+      reason: "ceiling_exceeded",
+      source: "gate",
+    });
+    expect(eventOf(events, "transition:collecting")?.payload).toMatchObject({
+      ceiling: "ceiling_exceeded",
+    });
+    expect(w.verbs()).toContain("collect");
+  });
+
+  it("usage unreadable: collecting usage_unavailable, needs_review partial", async () => {
+    let reads = 0;
+    const w = await runWorld({
+      usageOf: () =>
+        ++reads === 1
+          ? Promise.resolve({ tokens: 0, costUsd: 0 })
+          : Promise.reject(new Error("usage gone")),
+    });
+    w.faux.setResponses([writeAndCommit(), answer("never")]);
+
+    const queued = await w.submit();
+    const job = await settled(w, queued.id);
+
+    expect(job).toMatchObject({
+      state: "needs_review",
+      endReason: "usage_unavailable",
+      class: "partial",
+    });
+    expect(w.faux.state.callCount).toBe(1);
+    expect(eventOf(await w.events(job.id), "ceiling")?.payload).toMatchObject({
+      reason: "usage_unavailable",
+    });
   });
 });

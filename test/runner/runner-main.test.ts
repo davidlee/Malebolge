@@ -213,6 +213,10 @@ describe("startRunner runs jobs (B2.2)", () => {
 
     expect(frame["job"]).toMatchObject({ endReason: "completed", class: "no_changes" });
     expect(faux.state.callCount).toBe(1);
+    // The model gate sits in front of the catalog and counted the request.
+    expect(await client.call("result", { jobId })).toMatchObject({
+      usage: { modelRequests: 1 },
+    });
   });
 
   it("with enabled = false leaves a queued job untouched: no conversation, no model call", async () => {

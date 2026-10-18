@@ -10,6 +10,7 @@ import {
   migrate,
   openRunnerStore,
   PI_PREFIX,
+  type RequestVerdict,
 } from "../../src/runner/store.ts";
 import { JOB_STATES } from "../../src/runner/vocab.ts";
 import { openFauxHarness } from "../harness-fixture.ts";
@@ -527,5 +528,46 @@ describe("observe: committed writes, after commit", () => {
     expect(job.state).toBe("queued");
     expect(await jobs.get("pj-1")).toEqual(job);
     expect(seen).toHaveLength(1);
+  });
+});
+
+describe("admitModelRequest: the gate's durable count (DEC-057)", () => {
+  const refuse: RequestVerdict = { kind: "refuse", ceiling: { reason: "ceiling_exceeded" } };
+
+  it("an admission counts one model request, with no event", async () => {
+    const { jobs } = await openTestStore();
+    const { job } = await jobs.submit(NEW_JOB, T0);
+    const seen: number[] = [];
+
+    const first = await jobs.admitModelRequest(job.id, T0 + 1, (row) => {
+      seen.push(row.modelRequests);
+      return { kind: "admit" };
+    });
+    await jobs.admitModelRequest(job.id, T0 + 2, () => ({ kind: "admit" }));
+
+    expect(first.job.modelRequests).toBe(1);
+    expect(seen).toEqual([0]);
+    expect((await jobs.get(job.id))?.modelRequests).toBe(2);
+    expect((await jobs.events(job.id)).map((event) => event.kind)).toEqual(["submitted"]);
+  });
+
+  it("a refusal counts nothing and appends one ceiling event per job, however often", async () => {
+    const { jobs } = await openTestStore();
+    const { job } = await jobs.submit(NEW_JOB, T0);
+
+    const refused = await jobs.admitModelRequest(job.id, T0 + 1, () => refuse);
+    await jobs.admitModelRequest(job.id, T0 + 2, () => refuse);
+
+    expect(refused.verdict).toBe(refuse);
+    expect((await jobs.get(job.id))?.modelRequests).toBe(0);
+    const ceilings = (await jobs.events(job.id)).filter((event) => event.kind === "ceiling");
+    expect(ceilings).toMatchObject([{ at: T0 + 1, payload: { reason: "ceiling_exceeded" } }]);
+  });
+
+  it("refuses an unknown id with unknown_job", async () => {
+    const { jobs } = await openTestStore();
+    expect(
+      await rejectionCode(jobs.admitModelRequest("pj-404", T0, () => ({ kind: "admit" }))),
+    ).toBe("unknown_job");
   });
 });

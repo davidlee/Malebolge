@@ -1,14 +1,16 @@
 // The job in the room (one at a time, DEC-056): what the harness's env
-// factory and the guard see of it. The scheduler seats a job before its
-// first turn and unseats it when its run settles; the harness and the guard,
-// built before any job runs, only look it up by conversation id.
+// factory, the guard and the model gate see of it. The scheduler seats a job
+// before its first turn and unseats it when its run settles; the harness and
+// the guard, built before any job runs, look it up by conversation id; the
+// gate, which pi tells no conversation, charges whoever is seated.
 
 import type { EnvTarget } from "@earendil-works/pi-durable";
 import type { ExecutionEnv } from "@earendil-works/pi-durable/env";
 import { conversationText } from "./durable-ids.ts";
 import type { GuardedJob } from "./guard.ts";
+import type { GateJob } from "./model-gate.ts";
 
-export interface Tenant extends GuardedJob {
+export interface Tenant extends GuardedJob, GateJob {
   /** The job's conversation, as row text. */
   conversationId: string;
   env: ExecutionEnv;
@@ -19,6 +21,8 @@ export interface Tenancy {
   env: (target: Pick<EnvTarget, "conversationId">) => ExecutionEnv | undefined;
   /** For the guard's `currentJob`. */
   guarded: (conversationId: string) => GuardedJob | undefined;
+  /** For the model gate's `seated`: the tenant, if any. */
+  seated: () => Tenant | undefined;
   enter: (tenant: Tenant) => void;
   /** Unseats job `jobId`; a no-op when another job is seated. */
   leave: (jobId: string) => void;
@@ -45,5 +49,5 @@ export function roomTenancy(): Tenancy {
       tenant = undefined;
     }
   }
-  return { env, guarded, enter, leave };
+  return { env, guarded, seated: () => tenant, enter, leave };
 }

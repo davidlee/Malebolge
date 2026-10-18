@@ -196,6 +196,9 @@ export interface Submitted {
 
 export type JobFilter = Pick<ListRequest, "states" | "limit">;
 
+/** What the model gate makes of a request: count it, or refuse it with the `ceiling` event's payload. */
+export type RequestVerdict = { kind: "admit" } | { kind: "refuse"; ceiling: JsonRecord };
+
 /** Told of each committed job write: the job as written and its event's kind. */
 export type JobListener = (job: Job, kind: EventKind) => void;
 
@@ -349,6 +352,39 @@ export class JobStore {
       return update === undefined
         ? undefined
         : { update, event: { kind: "pause", payload: failure } };
+    });
+  }
+
+  /**
+   * The model gate's durable count, in one transaction: reads job `id`, and as
+   * `judge` decides either counts one model request (no event: a count is not
+   * an enacted change, AS-6) or appends the job's one `ceiling` event, unless
+   * it already has one. The judge decides; the store only enacts.
+   */
+  admitModelRequest<V extends RequestVerdict>(
+    id: string,
+    now: number,
+    judge: (job: Job) => V,
+  ): Promise<{ job: Job; verdict: V }> {
+    return this.#db.transaction(async (tx) => {
+      const job = await requireJob(tx, id);
+      const verdict = judge(job);
+      if (verdict.kind === "admit") {
+        await tx.run("UPDATE jobs SET model_requests = model_requests + 1 WHERE id = ?", id);
+        return { job: { ...job, modelRequests: job.modelRequests + 1 }, verdict };
+      }
+      const logged = await tx.get(
+        "SELECT 1 FROM job_events WHERE job_id = ? AND kind = 'ceiling' LIMIT 1",
+        id,
+      );
+      if (logged === undefined) {
+        await insert(
+          tx,
+          "job_events",
+          encodeEvent({ jobId: id, at: now, kind: "ceiling", payload: verdict.ceiling }),
+        );
+      }
+      return { job, verdict };
     });
   }
 
