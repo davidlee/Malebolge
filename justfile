@@ -33,3 +33,14 @@ attach:
 # Results land in spike-results/room-stop-*.json.
 spike-room-stop slot="f" identity=(env_var("HOME") + "/.ssh/id"):
   MALEBOLGE_LIVE_SLOT={{slot}} SPIKE_IDENTITY={{identity}} node test/runner/room-stop-spike.ts
+
+# SL-023 PHASE-12 live smoke (EX-6, EX-10a): one job on goad-walk through the
+# deployed runner to needs_review; never promoted or rejected. `--slow` for the
+# room-stop reconnect. Needs SATAN_RUNNER_LIVE=1.
+smoke-runner *args:
+  node test/runner/live-smoke.ts {{args}}
+
+# SL-023 PHASE-12 EX-10c: a scratch runner with a tampered known_hosts fails
+# host_key. Stop the deployed runner first. Needs SATAN_RUNNER_LIVE=1.
+smoke-runner-host-key:
+  node test/runner/live-host-key.ts
