@@ -35,6 +35,7 @@ import type { RunControl } from "./scheduler.ts";
 import type { Job } from "./store.ts";
 import type { Tenancy } from "./tenancy.ts";
 import type { EndReason } from "./vocab.ts";
+import { messageOf } from "./errors.ts";
 
 export interface RunDeps extends CollectDeps {
   harness: Pick<Harness, "conversation" | "commit">;
@@ -80,9 +81,6 @@ function settledEnding(record: SettledSubmissionRecord): Ending {
     endReason: endReasonOf(record),
   };
 }
-
-const messageOf = (error: unknown): string =>
-  error instanceof Error ? error.message : String(error);
 
 // --- ending before anything ran ---------------------------------------------------
 

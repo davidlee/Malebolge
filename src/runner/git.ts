@@ -2,7 +2,7 @@
 // exec path; the real-repo surface built on it, `RepoReader`, only reads (I3),
 // and so does `QuarantineReader`, over the repo collected work lands in.
 
-import { RunnerError } from "./errors.ts";
+import { messageOf, RunnerError } from "./errors.ts";
 import { runProgram } from "./exec.ts";
 
 export interface GitOutput {
@@ -28,7 +28,7 @@ export async function runGit(
   try {
     output = await runProgram("git", args, { cwd, env: GIT_ENV });
   } catch (error) {
-    throw new Error(`${where}: ${error instanceof Error ? error.message : String(error)}`, {
+    throw new Error(`${where}: ${messageOf(error)}`, {
       cause: error,
     });
   }

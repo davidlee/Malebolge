@@ -25,6 +25,10 @@ export class RunnerError extends Error {
   }
 }
 
+/** What a caught value says: an Error's message, else its text. */
+export const messageOf = (error: unknown): string =>
+  error instanceof Error ? error.message : String(error);
+
 export const isRunnerError = (value: unknown): value is RunnerError => value instanceof RunnerError;
 
 /** The runner will not start: its config, files or socket are not as they must be (I13). */

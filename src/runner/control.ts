@@ -14,7 +14,7 @@ import { encodeLine, lineSplitter } from "../ndjson.ts";
 import { connectUnix, serveUnix, type UnixServer } from "../unix-socket.ts";
 import type { RunnerConfig } from "./config.ts";
 import { type Conversations, ensureConversation } from "./conversations.ts";
-import { isRunnerError, RunnerError, StartRefused } from "./errors.ts";
+import { isRunnerError, messageOf, RunnerError, StartRefused } from "./errors.ts";
 import { checkBaseRef, type RepoReader } from "./git.ts";
 import { transition } from "./jobs.ts";
 import { configEntry } from "./policy.ts";
@@ -295,9 +295,7 @@ function serveConnection(deps: ControlDeps, socket: Socket): void {
     "data",
     lineSplitter((line) => {
       answerLine(line, connection).catch((error: unknown) => {
-        deps.log(
-          `control: dropping connection: ${error instanceof Error ? error.message : String(error)}`,
-        );
+        deps.log(`control: dropping connection: ${messageOf(error)}`);
         socket.destroy();
       });
     }),

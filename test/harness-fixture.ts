@@ -106,10 +106,13 @@ export const callThenAnswer = (
   fauxAssistantMessage([fauxText(answer)]),
 ];
 
-/** The tool result messages of a conversation, oldest first. */
-export async function toolResults(harness: Harness): Promise<ToolResultMessage[]> {
-  const root = await harness.root(context);
-  const page = await root.entries({}, 50, undefined, context);
+/** The tool result messages of `conversation` (default: the harness's root), oldest first. */
+export async function toolResults(
+  harness: Harness,
+  conversation?: Conversation,
+): Promise<ToolResultMessage[]> {
+  const of = conversation ?? (await harness.root(context));
+  const page = await of.entries({}, 50, undefined, context);
   return [...page.items]
     .reverse()
     .filter((entry) => ToolResultEntry.is(entry))

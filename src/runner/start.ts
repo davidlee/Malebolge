@@ -1,23 +1,38 @@
-// Starting the runner: environment to paths, config, prompt file, store,
-// harness, control socket. Fails closed (I13): anything missing or invalid is
-// a StartRefused, before the socket serves. The harness is opened passive: no
-// `resume()`, so nothing is scheduled (I14) until the scheduler exists.
+// Starting the runner: environment to paths, config, prompt file, the way
+// into the room, store, harness, scheduler, control socket. Fails closed (I13):
+// anything missing or invalid is a StartRefused, before the socket serves.
+// The harness is opened passive (no `resume()`): only the scheduler asks it
+// for progress, and with `enabled = false` it asks nothing (I14).
+//
+// One store feeds control and scheduler, so `watch` sees every transition
+// (observers are per JobStore instance), and pi shares its database handle
+// (EVD-008: run.ts never nests a call to one inside the other's transaction).
 
 import { constants } from "node:fs";
 import { access, mkdir, readFile, stat } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import type { Models } from "@earendil-works/pi-ai/models";
 import { Harness } from "@earendil-works/pi-durable";
+import type { Connection } from "@earendil-works/pi-env";
 import { modelsStorePath } from "../config.ts";
 import { context } from "../context.ts";
 import { createDaemonModels, readModelsStore } from "../models.ts";
 import { registryOf } from "../session.ts";
-import { parseRunnerConfig, type RunnerConfig } from "./config.ts";
+import { abortableSleep } from "./backoff.ts";
+import { type CollectDeps, retryPendingCollection } from "./collect.ts";
+import { parseRunnerConfig, type RepoConfig, type RunnerConfig } from "./config.ts";
 import { type ControlDeps, serveControl } from "./control.ts";
 import { harnessConversations } from "./conversations.ts";
-import { StartRefused } from "./errors.ts";
-import { gitRepoReader } from "./git.ts";
+import { roomDaemon } from "./env.ts";
+import { messageOf, StartRefused } from "./errors.ts";
+import { gitQuarantineReader, gitRepoReader } from "./git.ts";
+import { jobGuard } from "./guard.ts";
+import { channelFromConfig, type GitChannel, roomConnection } from "./room.ts";
+import { type RunDeps, runJob } from "./run.ts";
+import { createScheduler } from "./scheduler.ts";
 import { openRunnerStore } from "./store.ts";
+import { roomTenancy } from "./tenancy.ts";
+import { JobTools } from "./tools.ts";
 
 type Env = Readonly<Record<string, string | undefined>>;
 
@@ -51,9 +66,6 @@ export function runnerPaths(env: Env): RunnerPaths {
   };
 }
 
-const messageOf = (error: unknown): string =>
-  error instanceof Error ? error.message : String(error);
-
 async function loadConfig(path: string, home: string): Promise<RunnerConfig> {
   try {
     return parseRunnerConfig(await readFile(path, "utf8"), home);
@@ -74,15 +86,36 @@ async function checkPromptFile(path: string): Promise<void> {
   }
 }
 
+/** How the runner reaches the room: its git channel, and a daemon connection per job. */
+export interface RoomAccess {
+  channel: GitChannel;
+  connect: (repo: RepoConfig) => Connection;
+}
+
+/** The configured way in: its git channel and an ssh daemon into the guest (I13). */
+function roomAccessFromConfig(config: RunnerConfig): RoomAccess {
+  const channel = channelFromConfig(config);
+  const connection = roomConnection(config);
+  return { channel, connect: () => roomDaemon(connection) };
+}
+
 export interface StartOptions {
   log: (text: string) => void;
-  /** The model catalog; defaults to pi-ai's plus the coding agent's cache under HOME. */
+  /**
+   * The model catalog; defaults to pi-ai's plus the coding agent's cache under
+   * HOME. PHASE-08 wraps it in the model gate here.
+   */
   models?: Models;
+  /** How to reach the room; defaults to what the config names (room.ts). */
+  room?: RoomAccess;
 }
 
 export interface Runner {
   paths: RunnerPaths;
-  /** Stops serving, then closes the harness, its storage and the database. */
+  /**
+   * Stops serving, then the scheduler (no new pick; a backoff pause ends),
+   * then closes the harness, its storage and the database.
+   */
   close: () => Promise<void>;
 }
 
@@ -90,27 +123,69 @@ export async function startRunner(env: Env, options: StartOptions): Promise<Runn
   const paths = runnerPaths(env);
   const config = await loadConfig(paths.config, paths.home);
   await checkPromptFile(config.promptFile);
+  const room = options.room ?? roomAccessFromConfig(config);
   await mkdir(dirname(paths.store), { recursive: true });
   const store = await openRunnerStore(paths.store);
+  const { jobs } = store;
+  const now = Date.now;
+  const tenancy = roomTenancy();
+  const extensions = [JobTools, jobGuard({ currentJob: tenancy.guarded, jobs, now })];
   const models = options.models ?? createDaemonModels(readModelsStore(modelsStorePath(paths.home)));
-  const harness = await Harness.open(store.storage, { models, registry: registryOf([]) }, context);
+  const harness = await Harness.open(
+    store.storage,
+    { models, registry: registryOf(extensions), env: tenancy.env },
+    context,
+  );
+  const conversations = harnessConversations(harness);
+  const collect: CollectDeps = {
+    jobs,
+    channel: room.channel,
+    quarantine: gitQuarantineReader,
+    config,
+  };
+  const runDeps: RunDeps = {
+    ...collect,
+    harness,
+    conversations,
+    tenancy,
+    connect: room.connect,
+    extensions,
+    readPrompt: () => readFile(config.promptFile, "utf8"),
+    now,
+    sleep: abortableSleep,
+  };
+  const stop = new AbortController();
+  const scheduler = createScheduler({
+    jobs,
+    enabled: config.enabled,
+    run: (job, control) => runJob(runDeps, job, control),
+    retryPending: (job) => retryPendingCollection(collect, job.id, now()),
+    sleep: abortableSleep,
+    stop: stop.signal,
+    log: options.log,
+    now,
+  });
   const deps: ControlDeps = {
     config,
-    jobs: store.jobs,
-    conversations: harnessConversations(harness),
+    jobs,
+    conversations,
     repos: gitRepoReader,
-    wake: () => undefined, // The scheduler (PHASE-07) wakes on submit.
-    now: Date.now,
+    wake: scheduler.wake,
+    cancel: scheduler.cancel,
+    now,
     log: options.log,
   };
   const server = await serveControl(deps, paths.socket).catch(async (error: unknown) => {
     await harness.close(context);
     throw error;
   });
+  // Jobs queued before this process started (PHASE-10 recovers in-flight ones first).
+  scheduler.wake();
   return {
     paths,
     close: async (): Promise<void> => {
       await server.close();
+      stop.abort();
       await harness.close(context);
     },
   };

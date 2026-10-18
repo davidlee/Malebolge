@@ -20,6 +20,7 @@ import {
   isJobState,
   type JobClass,
 } from "./vocab.ts";
+import { messageOf } from "./errors.ts";
 
 /** A validated submission, its base ref resolved: what `submit` stores. */
 export type NewJob = Omit<SubmitRequest, "op" | "requestId" | "baseRef"> & { baseRef: string };
@@ -239,15 +240,12 @@ export const columnOf = (field: string): string =>
 const label = (value: unknown): string =>
   typeof value === "string" || typeof value === "number" ? JSON.stringify(value) : "?";
 
-const errorMessage = (error: unknown): string =>
-  error instanceof Error ? error.message : String(error);
-
 /** Column `column` of `row` through `codec`; a refusal names the row. */
 function decodeColumn<T>(where: string, row: JsonRecord, column: string, codec: Codec<T>): T {
   try {
     return codec.decode(row[column]);
   } catch (error) {
-    throw new Error(`corrupt ${where}: ${column} ${errorMessage(error)}`, { cause: error });
+    throw new Error(`corrupt ${where}: ${column} ${messageOf(error)}`, { cause: error });
   }
 }
 

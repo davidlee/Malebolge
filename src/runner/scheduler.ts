@@ -17,7 +17,7 @@
 
 import { roomRetryDelay, type Sleep } from "./backoff.ts";
 import type { CancelJob } from "./control.ts";
-import { RunnerError } from "./errors.ts";
+import { messageOf, RunnerError } from "./errors.ts";
 import type { Job, JobStore } from "./store.ts";
 import type { JobState } from "./vocab.ts";
 
@@ -120,9 +120,6 @@ interface Seat {
   jobId: string;
   control: RunControl;
 }
-
-const messageOf = (error: unknown): string =>
-  error instanceof Error ? error.message : String(error);
 
 /** Runs each task after every earlier one has settled, whatever its outcome. */
 function turns(): <T>(task: () => Promise<T>) => Promise<T> {

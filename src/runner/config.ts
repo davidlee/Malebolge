@@ -17,6 +17,7 @@ import {
   setDefined,
 } from "../fields.ts";
 import { isRecord, type JsonRecord } from "../json.ts";
+import { messageOf } from "./errors.ts";
 
 export const CEILING_KEYS = [
   "model_requests",
@@ -119,7 +120,7 @@ function within<T>(where: string, read: () => T): T {
   try {
     return read();
   } catch (error) {
-    throw new Error(`${where}: ${error instanceof Error ? error.message : String(error)}`, {
+    throw new Error(`${where}: ${messageOf(error)}`, {
       cause: error,
     });
   }
@@ -253,12 +254,9 @@ function parseToml(text: string): JsonRecord {
   try {
     doc = parse(text);
   } catch (error) {
-    throw new Error(
-      `config is not valid TOML: ${error instanceof Error ? error.message : String(error)}`,
-      {
-        cause: error,
-      },
-    );
+    throw new Error(`config is not valid TOML: ${messageOf(error)}`, {
+      cause: error,
+    });
   }
   if (!isRecord(doc)) {
     throw new Error("config must be a table");

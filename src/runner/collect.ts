@@ -12,7 +12,7 @@ import { setDefined } from "../fields.ts";
 import type { JsonRecord } from "../json.ts";
 import { type Classification, type ClassifyInput, classify } from "./classify.ts";
 import type { RunnerConfig } from "./config.ts";
-import { isRunnerError, RunnerError } from "./errors.ts";
+import { isRunnerError, messageOf, RunnerError } from "./errors.ts";
 import type { QuarantineFacts, QuarantineReader } from "./git.ts";
 import { pendingCollectionExpired, recordReviewed } from "./jobs.ts";
 import { ChannelUnavailable, type Collected, type GitChannel } from "./room.ts";
@@ -27,9 +27,6 @@ export interface CollectDeps {
   quarantine: QuarantineReader;
   config: RunnerConfig;
 }
-
-const messageOf = (error: unknown): string =>
-  error instanceof Error ? error.message : String(error);
 
 /** Job `id`, which must be in `state`. */
 async function jobIn(jobs: JobStore, id: string, state: JobState): Promise<Job> {

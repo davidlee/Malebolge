@@ -1,14 +1,27 @@
 import { mkdir, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it, onTestFinished } from "vitest";
+import { fauxAssistantMessage, fauxText } from "@earendil-works/pi-ai/providers/faux";
+import { context } from "../../src/context.ts";
+import { isRecord } from "../../src/json.ts";
 import { StartRefused } from "../../src/runner/errors.ts";
-import { type Runner, startRunner } from "../../src/runner/start.ts";
+import {
+  type RoomAccess,
+  type Runner,
+  type StartOptions,
+  startRunner,
+} from "../../src/runner/start.ts";
+import { openRunnerStore } from "../../src/runner/store.ts";
 import { connectUnix } from "../../src/unix-socket.ts";
 import { tempDir } from "../fixtures.ts";
 import { fauxModels } from "../harness-fixture.ts";
 import { variant } from "./config-fixture.ts";
 import { controlClient, errorCode } from "./control-fixture.ts";
+import { localConnection } from "./env-fixture.ts";
 import { tempRepo } from "./git-fixture.ts";
+import { roomWorld } from "./room-fixture.ts";
+import { within } from "./runner-fixture.ts";
+import { NEW_JOB, T0 } from "./store-fixture.ts";
 
 type Env = Record<string, string | undefined>;
 
@@ -47,8 +60,12 @@ async function host(): Promise<Host> {
   return { env, dir, promptFile, configFile, writeConfig };
 }
 
-async function start(env: Env): Promise<Runner> {
-  const runner = await startRunner(env, { models: fauxModels().models, log: () => undefined });
+async function start(env: Env, options: Partial<StartOptions> = {}): Promise<Runner> {
+  const runner = await startRunner(env, {
+    models: fauxModels().models,
+    log: () => undefined,
+    ...options,
+  });
   onTestFinished(() => runner.close());
   return runner;
 }
@@ -101,6 +118,12 @@ describe("startRunner refuses to start (I13)", () => {
     expect(await refusal({ ...env, XDG_RUNTIME_DIR: undefined })).toContain("XDG_RUNTIME_DIR");
   });
 
+  it("refuses a [door] the execution environment cannot use, naming the missing key", async () => {
+    const { env, writeConfig } = await host();
+    await writeConfig((toml) => toml.replace('host = "10.99.0.2"\n', ""));
+    expect(await refusal(env)).toContain("host");
+  });
+
   it("refuses a second runner on the same socket", async () => {
     const { env } = await host();
     await start(env);
@@ -139,5 +162,75 @@ describe("startRunner serves", () => {
     });
     expect(errorCode(response)).toBe("runner_disabled");
     expect(await client.call("list")).toMatchObject({ ok: true, jobs: [] });
+  });
+});
+
+describe("startRunner runs jobs (B2.2)", () => {
+  /**
+   * A host whose repo is a room world's, its runner store holding one queued
+   * job before start, and the way into the room faked: the slot's channel and a
+   * local pi-env daemon in the guest clone.
+   */
+  async function queuedHost(enabled: boolean): Promise<{
+    env: Env;
+    jobId: string;
+    room: RoomAccess;
+  }> {
+    const { env, dir, writeConfig } = await host();
+    const world = roomWorld({ guestAtClone: true });
+    await writeConfig((toml) =>
+      toml
+        .replace(/^path = ".*"$/m, `path = "${world.real.path}"`)
+        .replace('guest_path = "/work/repos/satan"', `guest_path = "${world.room.path}"`)
+        .replace('model = "gateway/test-model"', 'model = "faux/faux-1"')
+        .replace("enabled = true", `enabled = ${String(enabled)}`),
+    );
+    const stateDir = join(dir, "state", "satan", "runner");
+    await mkdir(stateDir, { recursive: true });
+    const store = await openRunnerStore(join(stateDir, "runner.sqlite"));
+    const { job } = await store.jobs.submit(NEW_JOB, T0);
+    await store.storage.close(context);
+    return { env, jobId: job.id, room: { channel: world.channel, connect: localConnection } };
+  }
+
+  it("with enabled = true drains a job queued before it started, through the model", async () => {
+    const { env, jobId, room } = await queuedHost(true);
+    const { faux, models } = fauxModels();
+    faux.setResponses([fauxAssistantMessage([fauxText("nothing to do")])]);
+
+    const runner = await start(env, { models, room });
+    const client = await controlClient(runner.paths.socket);
+    onTestFinished(client.close);
+    await client.call("watch");
+    const frame = await within(
+      20_000,
+      "the queued job",
+      client.next((message) => {
+        const job = message["job"];
+        return isRecord(job) && job["jobId"] === jobId && job["state"] === "failed";
+      }),
+    );
+
+    expect(frame["job"]).toMatchObject({ endReason: "completed", class: "no_changes" });
+    expect(faux.state.callCount).toBe(1);
+  });
+
+  it("with enabled = false leaves a queued job untouched: no conversation, no model call", async () => {
+    const { env, jobId, room } = await queuedHost(false);
+    const { faux, models } = fauxModels();
+
+    const runner = await start(env, { models, room });
+    const client = await controlClient(runner.paths.socket);
+    onTestFinished(client.close);
+
+    expect(await client.call("status", { jobId })).toMatchObject({
+      ok: true,
+      job: { jobId, state: "queued" },
+    });
+    await runner.close();
+    const store = await openRunnerStore(runner.paths.store);
+    onTestFinished(() => store.storage.close(context));
+    expect((await store.jobs.get(jobId))?.conversationId).toBeUndefined();
+    expect(faux.state.callCount).toBe(0);
   });
 });

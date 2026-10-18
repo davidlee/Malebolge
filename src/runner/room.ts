@@ -8,7 +8,7 @@
 
 import { setDefined } from "../fields.ts";
 import type { RepoConfig, RunnerConfig } from "./config.ts";
-import { RunnerError, StartRefused } from "./errors.ts";
+import { messageOf, RunnerError, StartRefused } from "./errors.ts";
 import { type ProgramOutput, runProgram } from "./exec.ts";
 import { gitRepoReader, type RepoReader, resolveCommit } from "./git.ts";
 
@@ -101,9 +101,6 @@ export interface SlotDoor {
   quarantine: string;
   profile?: string;
 }
-
-const messageOf = (error: unknown): string =>
-  error instanceof Error ? error.message : String(error);
 
 /** A git channel over an oubliette slot. Reads the real repo only through `reader` (I3). */
 export function slotChannel(

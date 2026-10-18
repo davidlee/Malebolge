@@ -11,7 +11,7 @@ import type { JsonRecord } from "../json.ts";
 import { roomRetryDelay, type Sleep } from "./backoff.ts";
 import type { RepoConfig, RunnerConfig } from "./config.ts";
 import { jobEnv } from "./env.ts";
-import { isRunnerError } from "./errors.ts";
+import { isRunnerError, messageOf } from "./errors.ts";
 import { ChannelFailed, ChannelUnavailable, type GitChannel, jobBranch } from "./room.ts";
 import type { Job, JobStore } from "./store.ts";
 import type { EndReason } from "./vocab.ts";
@@ -28,9 +28,6 @@ export class PrepareFailed extends Error {
     this.endReason = endReason;
   }
 }
-
-const messageOf = (error: unknown): string =>
-  error instanceof Error ? error.message : String(error);
 
 /** What a failed preparing step records: why, and the end reason. */
 export function preparingFailure(error: unknown): { failure: JsonRecord; endReason: EndReason } {

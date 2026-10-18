@@ -16,7 +16,7 @@ import {
 import type { JsonRecord } from "../json.ts";
 import { CEILING_KEYS, type Ceilings, readCeilings, type RunnerConfig } from "./config.ts";
 import { normaliseAllowedEntry } from "./classify.ts";
-import { type ErrorCode, isRunnerError, RunnerError } from "./errors.ts";
+import { type ErrorCode, isRunnerError, messageOf, RunnerError } from "./errors.ts";
 import { checkCeilingsWithinMaxima, configEntry } from "./policy.ts";
 import { isJobState, type JobState } from "./vocab.ts";
 
@@ -223,13 +223,9 @@ export function parseRequest(line: string): Request {
     if (isRunnerError(error)) {
       throw error;
     }
-    throw new RunnerError(
-      "invalid_request",
-      error instanceof Error ? error.message : String(error),
-      {
-        cause: error,
-      },
-    );
+    throw new RunnerError("invalid_request", messageOf(error), {
+      cause: error,
+    });
   }
 }
 
