@@ -38,7 +38,7 @@ const isPositiveNumber = (value: unknown): value is number =>
   typeof value === "number" && Number.isFinite(value) && value > 0;
 const isPositiveInt = (value: unknown): value is number =>
   isPositiveNumber(value) && Number.isInteger(value);
-const isStringArray = (value: unknown): value is string[] =>
+export const isStringArray = (value: unknown): value is string[] =>
   Array.isArray(value) && value.every(isString);
 
 export const optionalString = (fields: JsonRecord, key: string): string | undefined =>
