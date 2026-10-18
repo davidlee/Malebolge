@@ -564,6 +564,19 @@ describe("admitModelRequest: the gate's durable count (DEC-057)", () => {
     expect(ceilings).toMatchObject([{ at: T0 + 1, payload: { reason: "ceiling_exceeded" } }]);
   });
 
+  it("recordCeiling shares the one ceiling event per job: the first source wins", async () => {
+    const { jobs } = await openTestStore();
+    const { job } = await jobs.submit(NEW_JOB, T0);
+
+    await jobs.recordCeiling(job.id, T0 + 1, { reason: "ceiling_exceeded", source: "deadline" });
+    await jobs.admitModelRequest(job.id, T0 + 2, () => refuse);
+    await jobs.recordCeiling(job.id, T0 + 3, { reason: "ceiling_exceeded", source: "deadline" });
+
+    const ceilings = (await jobs.events(job.id)).filter((event) => event.kind === "ceiling");
+    expect(ceilings).toMatchObject([{ at: T0 + 1, payload: { source: "deadline" } }]);
+    expect(await rejectionCode(jobs.recordCeiling("pj-404", T0, {}))).toBe("unknown_job");
+  });
+
   it("refuses an unknown id with unknown_job", async () => {
     const { jobs } = await openTestStore();
     expect(

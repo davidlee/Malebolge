@@ -7,7 +7,10 @@
 // prompt is admitted it ends the job `cancelled`, after it the conversation is
 // aborted and the job still collected. A ceiling (the model gate's refusal)
 // trips the run's latch: the conversation is aborted here, never in the gate,
-// and the job is collected with the latch's reason (DEC-057).
+// and the job is collected with the latch's reason (DEC-057). So does the
+// deadline, armed with the soft timer once `running` commits and stopped, with
+// the run's one warning closed, as soon as the run settles: nothing fires into
+// collection.
 //
 // EVD-008: every harness call here and every store call are made outside one
 // another's transactions; nothing is called from inside a `decide`.
@@ -30,6 +33,7 @@ import { type CeilingLatch, ceilingLatch } from "./ceiling-latch.ts";
 import { type CollectDeps, collectJob } from "./collect.ts";
 import type { RepoConfig } from "./config.ts";
 import { type Conversations, ensureConversation, jobConversation } from "./conversations.ts";
+import { armCeilingTimers, type CeilingTimers, type Timer } from "./deadline.ts";
 import { type ConnectionObserver, jobEnv } from "./env.ts";
 import { configEntry, type ResolvedPolicy, resolvePolicy } from "./policy.ts";
 import { PrepareFailed, preparingFailure, readyRoom, roomShell } from "./prepare.ts";
@@ -39,6 +43,7 @@ import type { Job } from "./store.ts";
 import type { Tenancy } from "./tenancy.ts";
 import type { EndReason } from "./vocab.ts";
 import { messageOf } from "./errors.ts";
+import { type RunWarning, runWarning } from "./warning.ts";
 
 export interface RunDeps extends CollectDeps {
   harness: Pick<Harness, "conversation" | "commit">;
@@ -52,6 +57,10 @@ export interface RunDeps extends CollectDeps {
   readPrompt: () => Promise<string>;
   now: () => number;
   sleep: Sleep;
+  /** Arms the deadline and the soft timer. */
+  timer: Timer;
+  /** Told of what goes wrong that the run outlives (a warning not given). */
+  log: (text: string) => void;
 }
 
 /**
@@ -146,12 +155,40 @@ interface Admitted {
   job: Job;
   conversation: Conversation;
   submission: Submission;
+  warning: RunWarning;
+  timers: CeilingTimers;
 }
 
-/** What stops an admitted run: a cancel, or a ceiling. */
+/** What stops an admitted run: a cancel, or a ceiling (the gate's refusal, the deadline). */
 interface Stops {
   control: RunControl;
   latch: CeilingLatch;
+  /** Aborted by either stop. */
+  signal: AbortSignal;
+  /** Trips the latch at once, then records the deadline's `ceiling` event. */
+  expire: () => void;
+  /** Settles once the deadline's `ceiling` event, if any, is written. */
+  expired: () => Promise<void>;
+}
+
+/** The run's stops; the deadline's `ceiling` event (once per job, B3) is written as it trips. */
+function runStops(deps: RunDeps, jobId: string, control: RunControl): Stops {
+  const latch = ceilingLatch();
+  let recording = Promise.resolve();
+  return {
+    control,
+    latch,
+    signal: AbortSignal.any([control.signal, latch.signal]),
+    expire: (): void => {
+      latch.trip("ceiling_exceeded");
+      recording = deps.jobs
+        .recordCeiling(jobId, deps.now(), { reason: "ceiling_exceeded", source: "deadline" })
+        .catch((error: unknown) => {
+          deps.log(`job ${jobId}: deadline not recorded: ${messageOf(error)}`);
+        });
+    },
+    expired: () => recording,
+  };
 }
 
 /** Steps 3-7: the room readied, the tenant seated, the prompt admitted, `running`. */
@@ -160,8 +197,9 @@ async function admit(
   job: Job,
   { policy, repo }: Resolved,
   connection: Connection,
-  { control, latch }: Stops,
+  stops: Stops,
 ): Promise<Admitted> {
+  const { control, latch } = stops;
   const conversationId = job.conversationId;
   const conversation =
     conversationId === undefined ? undefined : await jobConversation(deps.harness, conversationId);
@@ -173,6 +211,16 @@ async function admit(
   }
   const shell = roomShell(connection, job.id, repo.guestPath);
   await readyRoom(deps, job, repo, shell, control.signal);
+  const warning = runWarning({
+    conversation,
+    jobs: deps.jobs,
+    jobId: job.id,
+    now: deps.now,
+    stop: stops.signal,
+    failed: (message) => {
+      deps.log(`job ${job.id}: warning not given: ${message}`);
+    },
+  });
   deps.tenancy.enter({
     id: job.id,
     conversationId,
@@ -184,7 +232,9 @@ async function admit(
       ceilings: policy.ceilings,
       softThreshold: deps.config.maxima.softThreshold,
       refused: latch.trip,
-      warnDue: () => undefined,
+      warnDue: () => {
+        warning.due("usage");
+      },
     },
   });
   await conversation.configure(
@@ -208,7 +258,18 @@ async function admit(
     submissionId: String(submission.id),
     requestId: job.id,
   });
-  return { job: running, conversation, submission };
+  const timers = armCeilingTimers({
+    job: running,
+    ceilings: policy.ceilings,
+    softThreshold: deps.config.maxima.softThreshold,
+    now: deps.now(),
+    timer: deps.timer,
+    expire: stops.expire,
+    warn: () => {
+      warning.due("wall_clock");
+    },
+  });
+  return { job: running, conversation, submission, warning, timers };
 }
 
 // --- running to collecting --------------------------------------------------------
@@ -216,9 +277,8 @@ async function admit(
 /** The admitted prompt's settlement; a cancel or a ceiling aborts the conversation first. */
 async function settleSubmission(
   admitted: Admitted,
-  { control, latch }: Stops,
+  { signal: stop }: Stops,
 ): Promise<SettledSubmissionRecord> {
-  const stop = AbortSignal.any([control.signal, latch.signal]);
   try {
     return await admitted.submission.wait(withAbortSignal(stop, context));
   } catch (error) {
@@ -239,6 +299,37 @@ async function settle(admitted: Admitted, stops: Stops): Promise<Ending> {
     return settledEnding(await settleSubmission(admitted, stops));
   } catch (error) {
     return { payload: { reason: "settle_failed", message: messageOf(error) }, endReason: "error" };
+  }
+}
+
+/**
+ * A warning that started a run of its own (submitted as the run settled, to
+ * an idle conversation) is aborted: the job's run is over.
+ */
+async function endStrayWarning(admitted: Admitted, warning: Submission | undefined): Promise<void> {
+  if (warning === undefined) {
+    return;
+  }
+  const { status } = await warning.status(context);
+  if (status === "queued" || status === "placed") {
+    await admitted.conversation.abort(context);
+    await warning.wait(context);
+  }
+}
+
+/**
+ * The run settled; then its timers stopped, its warning closed and the
+ * deadline's event written, so nothing fires into collection.
+ */
+async function settleRun(deps: RunDeps, admitted: Admitted, stops: Stops): Promise<Ending> {
+  try {
+    return await settle(admitted, stops);
+  } finally {
+    admitted.timers.stop();
+    await endStrayWarning(admitted, await admitted.warning.close()).catch((error: unknown) => {
+      deps.log(`job ${admitted.job.id}: warning not ended: ${messageOf(error)}`);
+    });
+    await stops.expired();
   }
 }
 
@@ -279,7 +370,7 @@ export async function runJob(deps: RunDeps, queued: Job, control: RunControl): P
     return endUnrun(deps, preparing.job, control, preparing.error);
   }
   const connection = deps.connect(resolved.repo);
-  const stops: Stops = { control, latch: ceilingLatch() };
+  const stops = runStops(deps, job.id, control);
   let collecting: Job;
   try {
     let admitted: Admitted;
@@ -288,7 +379,12 @@ export async function runJob(deps: RunDeps, queued: Job, control: RunControl): P
     } catch (error) {
       return await endUnrun(deps, preparing.job, control, error);
     }
-    collecting = await toCollecting(deps, admitted.job, await settle(admitted, stops), stops);
+    collecting = await toCollecting(
+      deps,
+      admitted.job,
+      await settleRun(deps, admitted, stops),
+      stops,
+    );
   } finally {
     deps.tenancy.leave(job.id);
     connection.close();

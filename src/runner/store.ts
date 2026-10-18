@@ -153,6 +153,22 @@ async function selectJob(
   return row === undefined ? undefined : decodeJob(row);
 }
 
+/** Appends job `id`'s `ceiling` event unless it already has one. */
+async function appendCeilingOnce(
+  tx: SqliteExecutor,
+  id: string,
+  now: number,
+  payload: JsonRecord,
+): Promise<void> {
+  const logged = await tx.get(
+    "SELECT 1 FROM job_events WHERE job_id = ? AND kind = 'ceiling' LIMIT 1",
+    id,
+  );
+  if (logged === undefined) {
+    await insert(tx, "job_events", encodeEvent({ jobId: id, at: now, kind: "ceiling", payload }));
+  }
+}
+
 async function requireJob(tx: SqliteExecutor, id: string): Promise<Job> {
   const job = await selectJob(tx, "id", id);
   if (job === undefined) {
@@ -373,18 +389,19 @@ export class JobStore {
         await tx.run("UPDATE jobs SET model_requests = model_requests + 1 WHERE id = ?", id);
         return { job: { ...job, modelRequests: job.modelRequests + 1 }, verdict };
       }
-      const logged = await tx.get(
-        "SELECT 1 FROM job_events WHERE job_id = ? AND kind = 'ceiling' LIMIT 1",
-        id,
-      );
-      if (logged === undefined) {
-        await insert(
-          tx,
-          "job_events",
-          encodeEvent({ jobId: id, at: now, kind: "ceiling", payload: verdict.ceiling }),
-        );
-      }
+      await appendCeilingOnce(tx, id, now, verdict.ceiling);
       return { job, verdict };
+    });
+  }
+
+  /**
+   * The job's one `ceiling` event, unless it has one: whichever stop is
+   * recorded first (the gate's refusal, the deadline) is the one kept.
+   */
+  recordCeiling(id: string, now: number, payload: JsonRecord): Promise<void> {
+    return this.#db.transaction(async (tx) => {
+      await requireJob(tx, id);
+      await appendCeilingOnce(tx, id, now, payload);
     });
   }
 

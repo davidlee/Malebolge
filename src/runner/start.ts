@@ -25,6 +25,7 @@ import { type CollectDeps, retryPendingCollection } from "./collect.ts";
 import { parseRunnerConfig, type RepoConfig, type RunnerConfig } from "./config.ts";
 import { type ControlDeps, serveControl } from "./control.ts";
 import { harnessConversations } from "./conversations.ts";
+import { systemTimer } from "./deadline.ts";
 import { roomDaemon } from "./env.ts";
 import { messageOf, StartRefused } from "./errors.ts";
 import { gitQuarantineReader, gitRepoReader } from "./git.ts";
@@ -160,6 +161,8 @@ export async function startRunner(env: Env, options: StartOptions): Promise<Runn
     readPrompt: () => readFile(config.promptFile, "utf8"),
     now,
     sleep: abortableSleep,
+    timer: systemTimer,
+    log: options.log,
   };
   const stop = new AbortController();
   const scheduler = createScheduler({

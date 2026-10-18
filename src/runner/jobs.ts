@@ -6,6 +6,7 @@
 import { closeSegment } from "./ceilings.ts";
 import { RunnerError } from "./errors.ts";
 import { type EndReason, isJobState, type JobState } from "./vocab.ts";
+import { warningRequestId } from "./warning.ts";
 
 export {
   END_REASONS,
@@ -270,7 +271,7 @@ const RECOVERY_TABLE: readonly RecoveryRow[] = [
       job.warningReceipt === undefined,
     plan: (job) => ({
       phaseA: [],
-      phaseB: [{ kind: "resubmit_warning", requestId: `warn-${job.jobId}` }],
+      phaseB: [{ kind: "resubmit_warning", requestId: warningRequestId(job.jobId) }],
     }),
   },
   {

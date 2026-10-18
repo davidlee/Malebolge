@@ -1,60 +1,32 @@
-// A job's run end to end (VT-1; EX-2, EX-5): pi-durable driven by the faux
-// provider, the runner store and pi sharing one SQLite handle (EVD-008), the
-// job's tools and guard running through a local pi-env daemon in the room's
-// clone, and the fake slot's channel refreshing and collecting that clone.
-// The scheduler seats each job; `runJob` is what it runs.
+// A job's run end to end (VT-1; EX-2, EX-5) over the run path of
+// run-fixture.ts. The scheduler seats each job; `runJob` is what it runs.
 
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import type { AssistantMessage, ToolResultMessage } from "@earendil-works/pi-ai";
-import {
-  type FauxProviderHandle,
-  fauxAssistantMessage,
-  fauxText,
-  fauxToolCall,
-} from "@earendil-works/pi-ai/providers/faux";
-import type { Conversation, Harness, JsonObject, Submission } from "@earendil-works/pi-durable";
-import { describe, expect, it, onTestFinished } from "vitest";
+import type { AssistantMessage } from "@earendil-works/pi-ai";
+import { fauxAssistantMessage } from "@earendil-works/pi-ai/providers/faux";
+import type { Conversation, Harness, Submission } from "@earendil-works/pi-durable";
+import { describe, expect, it } from "vitest";
 import { context } from "../../src/context.ts";
-import { retryPendingCollection } from "../../src/runner/collect.ts";
-import type { Ceilings, RunnerConfig } from "../../src/runner/config.ts";
-import { harnessConversations, jobConversation } from "../../src/runner/conversations.ts";
 import { conversationIdOf } from "../../src/runner/durable-ids.ts";
-import { gitQuarantineReader } from "../../src/runner/git.ts";
-import { jobGuard } from "../../src/runner/guard.ts";
-import {
-  createModelGate,
-  type GateDeps,
-  gatedModels,
-  harnessUsage,
-} from "../../src/runner/model-gate.ts";
 import type { GitChannel } from "../../src/runner/room.ts";
 import { type RunDeps, runJob } from "../../src/runner/run.ts";
-import { createScheduler, RunControl, type Scheduler } from "../../src/runner/scheduler.ts";
-import { openRunnerStore, type Job, type JobEvent, type JobStore } from "../../src/runner/store.ts";
-import { roomTenancy } from "../../src/runner/tenancy.ts";
-import { JobTools } from "../../src/runner/tools.ts";
-import { openFauxHarness, textOf, toolResults } from "../harness-fixture.ts";
-import { exampleConfig } from "./config-fixture.ts";
-import { localConnection } from "./env-fixture.ts";
-import { type RoomWorld, roomWorld } from "./room-fixture.ts";
-import { blockingTool, type BlockingTool, closeHarness, within } from "./runner-fixture.ts";
-import { NEW_JOB, sequentialIds, T0 } from "./store-fixture.ts";
-
-const SETTLE_MS = 20_000;
-
-/** Commits whatever the agent changed, in the clone, with git's config isolated. */
-const COMMIT =
-  "export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1; git add -A && " +
-  "git -c user.name=Agent -c user.email=agent@example.invalid -c commit.gpgsign=false " +
-  "commit --quiet --no-verify -m change";
-
-let calls = 0;
-const call = (tool: string, args: JsonObject): AssistantMessage =>
-  fauxAssistantMessage([fauxToolCall(tool, args, { id: `call-${String(++calls)}` })], {
-    stopReason: "toolUse",
-  });
-const answer = (text = "done"): AssistantMessage => fauxAssistantMessage([fauxText(text)]);
+import { RunControl } from "../../src/runner/scheduler.ts";
+import type { Job } from "../../src/runner/store.ts";
+import { textOf } from "../harness-fixture.ts";
+import {
+  answer,
+  call,
+  COMMIT,
+  eventOf,
+  jobToolResults,
+  kinds,
+  runWorld,
+  SETTLE_MS,
+  settled,
+} from "./run-fixture.ts";
+import { within } from "./runner-fixture.ts";
+import { NEW_JOB, T0 } from "./store-fixture.ts";
 
 /** A channel whose `refresh` waits at a gate the test opens. */
 interface GatedChannel {
@@ -111,157 +83,6 @@ function failingSettle(conversation: Conversation): Conversation {
     },
   });
 }
-
-interface RunWorldOptions {
-  /** The room's `max_room_wait`, seconds. */
-  maxRoomWaitS?: number;
-  channel?: (channel: GitChannel) => GitChannel;
-  /** The harness `runJob` sees. */
-  harness?: (harness: Harness) => RunDeps["harness"];
-  /** Submit ceilings of each job `submit` queues, over `NEW_JOB`'s. */
-  ceilings?: Partial<Ceilings>;
-  /** How the model gate reads usage; default: the harness's `pi.usage`. */
-  usageOf?: GateDeps["usageOf"];
-}
-
-interface RunWorld extends RoomWorld {
-  jobs: JobStore;
-  harness: Harness;
-  deps: RunDeps;
-  scheduler: Scheduler;
-  blocking: BlockingTool;
-  /** The model: scripted turns, and `state.callCount` its provider requests. */
-  faux: FauxProviderHandle;
-  /** Queues a job (as submit does) and wakes the scheduler. */
-  submit: () => Promise<Job>;
-  job: (id: string) => Promise<Job>;
-  events: (id: string) => Promise<JobEvent[]>;
-  /** The slot verbs the channel ran, e.g. `collect`. */
-  verbs: () => string[];
-}
-
-/**
- * The run path over `roomWorld({ guestAtClone: true })`: a local daemon runs
- * the job's tools in the room's clone, which the fake slot refreshes and
- * collects.
- */
-async function runWorld(options: RunWorldOptions = {}): Promise<RunWorld> {
-  const world = roomWorld({ guestAtClone: true });
-  const store = await openRunnerStore(":memory:", { newId: sequentialIds() });
-  const { jobs } = store;
-  let clock = T0;
-  const now = (): number => ++clock;
-  const tenancy = roomTenancy();
-  const blocking = blockingTool("wait");
-  const extensions = [
-    JobTools,
-    jobGuard({ currentJob: tenancy.guarded, jobs, now }),
-    blocking.extension,
-  ];
-  // The model gate as start.ts wires it: built before the harness it sits in.
-  const usage = harnessUsage();
-  const gate = createModelGate({
-    seated: tenancy.seated,
-    jobs,
-    now,
-    usageOf: options.usageOf ?? usage.usageOf,
-  });
-  const { harness, faux } = await openFauxHarness(store.storage, {
-    extensions,
-    env: tenancy.env,
-    models: (models) => gatedModels(models, gate),
-  });
-  usage.bind(harness);
-  onTestFinished(() => closeHarness(harness));
-  const example = exampleConfig();
-  const config: RunnerConfig = {
-    ...example,
-    defaults: { ...example.defaults, model: "faux/faux-1" },
-    maxima: { ...example.maxima, maxRoomWaitS: options.maxRoomWaitS ?? 60 },
-    repos: new Map([[NEW_JOB.repo, world.repo]]),
-  };
-  const deps: RunDeps = {
-    jobs,
-    channel: options.channel?.(world.channel) ?? world.channel,
-    quarantine: gitQuarantineReader,
-    config,
-    harness: options.harness?.(harness) ?? harness,
-    conversations: harnessConversations(harness),
-    tenancy,
-    connect: localConnection,
-    extensions,
-    readPrompt: () => Promise.resolve("You are the patch agent."),
-    now,
-    sleep: (ms) => {
-      clock += ms;
-      return Promise.resolve();
-    },
-  };
-  const scheduler = createScheduler({
-    jobs,
-    enabled: true,
-    run: (job, control) => runJob(deps, job, control),
-    retryPending: (job) => retryPendingCollection(deps, job.id, now()),
-    sleep: deps.sleep,
-    stop: new AbortController().signal,
-    log: () => undefined,
-    now,
-  });
-  let submissions = 0;
-  async function submit(): Promise<Job> {
-    const { job: queued } = await jobs.submit(
-      {
-        ...NEW_JOB,
-        submissionId: `sub-${String(++submissions)}`,
-        ceilings: { ...NEW_JOB.ceilings, ...options.ceilings },
-      },
-      now(),
-    );
-    scheduler.wake();
-    return queued;
-  }
-  const job = async (id: string): Promise<Job> => {
-    const found = await jobs.get(id);
-    if (found === undefined) {
-      throw new Error(`no job ${id}`);
-    }
-    return found;
-  };
-  return {
-    ...world,
-    jobs,
-    harness,
-    deps,
-    scheduler,
-    blocking,
-    faux,
-    submit,
-    job,
-    events: (id) => jobs.events(id),
-    verbs: () => world.slot.calls.map((args) => args[1] ?? ""),
-  };
-}
-
-/** Waits for the scheduler to rest; the job as the run left it. */
-async function settled(world: RunWorld, id: string): Promise<Job> {
-  await within(SETTLE_MS, "scheduler", world.scheduler.idle());
-  return world.job(id);
-}
-
-/** Each event as `kind` or `transition:<to>`. */
-const kinds = (events: readonly JobEvent[]): string[] =>
-  events.map((event) =>
-    event.kind === "transition" ? `transition:${String(event.payload["to"])}` : event.kind,
-  );
-
-/** The tool results of `job`'s conversation, oldest first. */
-async function jobToolResults(world: RunWorld, job: Job): Promise<ToolResultMessage[]> {
-  const conversation = await jobConversation(world.harness, job.conversationId ?? "");
-  return conversation === undefined ? [] : toolResults(world.harness, conversation);
-}
-
-const eventOf = (events: readonly JobEvent[], kind: string): JobEvent | undefined =>
-  events.find((event) => kinds([event])[0] === kind);
 
 describe("runJob: submit to review (VT-1)", () => {
   it("a run that writes inside the allowlist and commits ends needs_review", async () => {
