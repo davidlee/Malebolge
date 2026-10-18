@@ -20,7 +20,7 @@ export const conversationText = (id: ConversationId): string => String(id);
  * store transaction (EVD-008: the database handle is shared).
  */
 export function conversationIdOf(
-  session: Session,
+  session: Pick<Session, "commit">,
   text: string,
 ): Promise<ConversationId | undefined> {
   return session.commit(async (tx) => {

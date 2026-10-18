@@ -3,7 +3,14 @@
 // lost connection. PHASE-09 builds the real mark in the runner store.
 
 import type { SqliteDatabase } from "@earendil-works/pi-durable/storage/sqlite";
+import { Connection, localDaemon } from "@earendil-works/pi-env";
 import type { LostFailure } from "../../src/runner/env.ts";
+
+/** A real local pi-env daemon (the binary pi-env ships for this machine). */
+export const localConnection = (): Connection => new Connection({ command: [localDaemon()] });
+
+/** A daemon that exits before it is ready: pi-env's own lost failure, deterministically. */
+export const lostConnection = (): Connection => new Connection({ command: ["sh", "-c", "exit 3"] });
 
 export const PAUSE_SCHEMA = `
 CREATE TABLE IF NOT EXISTS runner_jobs (

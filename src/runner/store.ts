@@ -170,6 +170,7 @@ export type JobUpdate = Partial<JobPatch> &
       Job,
       | "conversationId"
       | "announcedAt"
+      | "policy"
       | "baseOid"
       | "reviewedOid"
       | "quarantineRef"

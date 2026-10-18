@@ -450,6 +450,24 @@ describe("conversation and announcement writes", () => {
   });
 });
 
+describe("policy writes", () => {
+  it("records the resolved policy on the row with its policy event", async () => {
+    const { db, jobs } = await openTestStore();
+    await jobs.submit(NEW_JOB, T0);
+    const policy = { model: "gateway/m", ceilings: { tokens: 10 }, promptFragments: [] };
+
+    const job = await jobs.change("pj-1", T0 + 1, () => ({
+      update: { policy },
+      event: { kind: "policy", payload: policy },
+    }));
+
+    expect(job.policy).toEqual(policy);
+    expect(await jobs.get("pj-1")).toEqual(job);
+    expect(JSON.parse(String((await rawRow(db, "pj-1"))?.["policy"]))).toEqual(policy);
+    expect((await jobs.events("pj-1")).at(-1)).toMatchObject({ kind: "policy", payload: policy });
+  });
+});
+
 describe("observe: committed writes, after commit", () => {
   type Seen = [jobId: string, state: string, kind: string];
 

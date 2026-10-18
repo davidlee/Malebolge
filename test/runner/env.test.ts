@@ -4,7 +4,7 @@
 // route to the room is checked by its arguments only (no real ssh in tests).
 
 import { registerEnvConformance } from "@earendil-works/pi-durable/testing";
-import { Connection, localDaemon, sshArguments } from "@earendil-works/pi-env";
+import { Connection, sshArguments } from "@earendil-works/pi-env";
 import { afterEach, describe, expect, it } from "vitest";
 import { context } from "../../src/context.ts";
 import {
@@ -16,9 +16,7 @@ import {
 } from "../../src/runner/env.ts";
 import type { RoomConnection } from "../../src/runner/room.ts";
 import { tempDir } from "../fixtures.ts";
-
-/** A real local pi-env daemon (the binary pi-env ships for this machine). */
-const localConnection = (): Connection => new Connection({ command: [localDaemon()] });
+import { localConnection } from "./env-fixture.ts";
 
 const ignoreLost: ConnectionObserver = { lost: () => Promise.resolve() };
 

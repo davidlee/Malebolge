@@ -9,13 +9,11 @@
 import { chmod, mkdir, stat } from "node:fs/promises";
 import type { Socket } from "node:net";
 import { dirname } from "node:path";
-import type { Harness } from "@earendil-works/pi-durable";
-import { context } from "../context.ts";
 import type { JsonRecord } from "../json.ts";
 import { encodeLine, lineSplitter } from "../ndjson.ts";
 import { connectUnix, serveUnix, type UnixServer } from "../unix-socket.ts";
 import type { RunnerConfig } from "./config.ts";
-import { conversationText } from "./durable-ids.ts";
+import { type Conversations, ensureConversation } from "./conversations.ts";
 import { isRunnerError, RunnerError, StartRefused } from "./errors.ts";
 import { checkBaseRef, type RepoReader } from "./git.ts";
 import { transition } from "./jobs.ts";
@@ -33,14 +31,6 @@ import type { Decide, Job, JobStore, NewJob } from "./store.ts";
 import { isReplayed, jobChangedFrame, REPLAY_STATES, resultBody, summary } from "./views.ts";
 import type { JobState } from "./vocab.ts";
 
-/**
- * Creates a job's pi-durable conversation; its id as `jobs.conversation_id`
- * text (pi's ids are branded numbers, the column is TEXT).
- */
-export interface Conversations {
-  create: () => Promise<string>;
-}
-
 /** Ends job `jobId` for `reason`. */
 export type CancelJob = (jobId: string, reason: string, now: number) => Promise<Job>;
 
@@ -55,16 +45,6 @@ export interface ControlDeps {
   cancel?: CancelJob;
   now: () => number;
   log: (text: string) => void;
-}
-
-/** Ownerless conversations on `harness`. Creating one schedules nothing (I14). */
-export function harnessConversations(harness: Harness): Conversations {
-  return {
-    create: async () =>
-      conversationText(
-        (await harness.createConversation({ ownership: { kind: "ownerless" } }, context)).id,
-      ),
-  };
 }
 
 // --- operations ------------------------------------------------------------------
@@ -140,11 +120,7 @@ async function submit(request: SubmitRequest, deps: ControlDeps): Promise<JsonRe
   }
   const { job, created } = await deps.jobs.submit(await admit(request, deps), deps.now());
   if (created) {
-    const conversationId = await deps.conversations.create();
-    await deps.jobs.change(job.id, deps.now(), () => ({
-      update: { conversationId },
-      event: { kind: "conversation", payload: { conversationId } },
-    }));
+    await ensureConversation(deps.jobs, deps.conversations, job, deps.now());
     deps.wake();
   }
   return submitted(job);

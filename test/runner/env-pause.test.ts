@@ -8,19 +8,19 @@ import { defineExtension, hook, ToolTask } from "@earendil-works/pi-durable";
 import type { ExecutionEnv } from "@earendil-works/pi-durable/env";
 import type { SqliteDatabase } from "@earendil-works/pi-durable/storage/sqlite";
 import { CodingTools } from "@earendil-works/pi-durable/tools";
-import {
-  Connection,
-  isConnectionLost,
-  localDaemon,
-  RemoteError,
-  type RemoteInfo,
-} from "@earendil-works/pi-env";
+import { Connection, isConnectionLost, RemoteError, type RemoteInfo } from "@earendil-works/pi-env";
 import { afterEach, describe, expect, it } from "vitest";
 import { context } from "../../src/context.ts";
 import { type ConnectionObserver, jobEnv, type LostFailure } from "../../src/runner/env.ts";
 import { tempDir } from "../fixtures.ts";
 import { callThenAnswer, openFauxHarness, textOf, toolResults } from "../harness-fixture.ts";
-import { markPause, PAUSE_SCHEMA, pauseRequested } from "./env-fixture.ts";
+import {
+  localConnection,
+  lostConnection,
+  markPause,
+  PAUSE_SCHEMA,
+  pauseRequested,
+} from "./env-fixture.ts";
 import { closeHarness, openSharedStore, within } from "./runner-fixture.ts";
 
 const JOB = "job-1";
@@ -54,7 +54,6 @@ class FailingConnection extends Connection {
 }
 
 /** A real local pi-env daemon (the binary pi-env ships for this machine). */
-const localConnection = (): Connection => new Connection({ command: [localDaemon()] });
 
 interface Observed {
   marks: LostFailure[];
@@ -171,8 +170,7 @@ describe("room-down seam, offline", () => {
     cleanup = tmp.cleanup;
     const { db, storage } = await openSharedStore(tmp.dir, PAUSE_SCHEMA);
     close = (): Promise<void> => storage.close(context);
-    // A daemon that exits before it is ready: pi-env's own lost failure, deterministically.
-    const inner = new Connection({ command: ["sh", "-c", "exit 3"] });
+    const inner = lostConnection();
     const { env, marks } = observe(inner, db, false);
 
     const exec = await env(tmp.dir).exec("true", undefined, context);

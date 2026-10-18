@@ -66,6 +66,8 @@ export interface FakeSlot {
 interface Rooms {
   room: TestRepo;
   quarantine: BareRepo;
+  /** The repo's `guest_path`: where the room's ssh finds the clone. */
+  guestPath: string;
 }
 
 function provision(
@@ -111,7 +113,7 @@ function ssh(rooms: Rooms, command: readonly string[]): ProgramOutput {
   if (program === "true" && command.length === 1) {
     return ok();
   }
-  if (program === "git" && flag === "-C" && path === GUEST_PATH) {
+  if (program === "git" && flag === "-C" && path === rooms.guestPath) {
     return gitStep(rooms.room.path, rest);
   }
   return { code: 127, stdout: "", stderr: `fake guest cannot run ${command.join(" ")}` };
@@ -157,18 +159,27 @@ export interface RoomWorld extends Rooms {
   guestJob: (jobId: string, ...files: string[]) => string;
 }
 
+export interface RoomWorldOptions {
+  /**
+   * `guest_path` is the clone's own path, for an execution environment that
+   * runs there; default the guest's path, `GUEST_PATH`.
+   */
+  guestAtClone?: boolean;
+}
+
 /** A real repo on `main`, its room (guest clone on `work`), an empty quarantine. */
-export function roomWorld(): RoomWorld {
+export function roomWorld(options: RoomWorldOptions = {}): RoomWorld {
   const real = tempRepo();
   const room = tempClone(real.path);
   room.git("switch", "--quiet", "-c", "work");
   room.git("config", "receive.denyCurrentBranch", "updateInstead");
   const quarantine = tempBareRepo();
-  const rooms = { room, quarantine };
+  const guestPath = options.guestAtClone === true ? room.path : GUEST_PATH;
+  const rooms = { room, quarantine, guestPath };
   const slot = fakeSlot(rooms);
   const repo: RepoConfig = {
     path: real.path,
-    guestPath: GUEST_PATH,
+    guestPath,
     defaultBranch: "main",
     ceilings: {},
   };
