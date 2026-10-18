@@ -90,6 +90,13 @@ export const RESUME_TEXT =
 export const resumeRequestId = (jobId: string, pauseCount: number): string =>
   `resume-${jobId}-${String(pauseCount)}`;
 
+/**
+ * The `requestId` of the running segment's submission: the initial prompt's
+ * (the job id) before any pause, else waiting episode `pause_count`'s resume.
+ */
+export const segmentRequestId = (job: Pick<Job, "id" | "pauseCount">): string =>
+  job.pauseCount === 0 ? job.id : resumeRequestId(job.id, job.pauseCount);
+
 export interface ResumeDeps extends WarningDeps {
   conversation: Pick<Conversation, "submit">;
 }

@@ -168,7 +168,50 @@ export const pendingCollectionExpired = (
   maxPendingMs: number,
 ): boolean => now - job.stateEnteredAt >= maxPendingMs;
 
-// --- restart recovery (DEC-054) ----------------------------------------------
+// --- parking (DEC-065) -----------------------------------------------------------
+
+/**
+ * The patch parking `job` at `now` on a disabled startup; `undefined` when it
+ * is terminal or already parked (a later disabled restart leaves it).
+ */
+export function park(
+  job: { state: JobState; parkedAt?: number },
+  now: number,
+): { parkedAt: number } | undefined {
+  return TERMINAL.includes(job.state) || job.parkedAt !== undefined ? undefined : { parkedAt: now };
+}
+
+/** What un-parking a job writes, and the parked span it shifted out. */
+export interface Rebase {
+  update: { stateEnteredAt: number; runningSince?: number; parkedAt: null };
+  parkedAt: number;
+  shiftedMs: number;
+}
+
+/**
+ * The patch un-parking `job` at `now` (the first enabled startup, before any
+ * bound is judged): each bound's start moves forward by the time it spent
+ * parked, so a disabled runner times nothing out. A start inside the parked
+ * span (a state entered while parked, e.g. by a cancel) was wholly parked: it
+ * moves to `now`. `undefined` when the job is not parked: applied once.
+ */
+export function rebase(
+  job: { stateEnteredAt: number; runningSince?: number; parkedAt?: number },
+  now: number,
+): Rebase | undefined {
+  const { parkedAt } = job;
+  if (parkedAt === undefined) {
+    return undefined;
+  }
+  const shifted = (since: number): number => since + Math.max(0, now - Math.max(parkedAt, since));
+  const update: Rebase["update"] = { stateEnteredAt: shifted(job.stateEnteredAt), parkedAt: null };
+  if (job.runningSince !== undefined) {
+    update.runningSince = shifted(job.runningSince);
+  }
+  return { update, parkedAt, shiftedMs: Math.max(0, now - parkedAt) };
+}
+
+// --- restart recovery (DEC-054, DEC-065) -------------------------------------
 
 /** What recovery reads of a job: its row plus read-only harness views. */
 export interface RecoverySnapshot {
@@ -180,12 +223,14 @@ export interface RecoverySnapshot {
   pauseCount: number;
   /** The conversation's read-only view shows its run settled. */
   conversationSettled: boolean;
+  /** pi holds a submission with `requestId` = job id: the initial prompt was admitted (EX-8). */
+  initialSubmission: boolean;
   warningThresholdPassed: boolean;
   /** The warning's `job_events` receipt; `placed` read from its submission record. */
   warningReceipt?: { placed: boolean };
 }
 
-/** Phase A: host only; never asks the harness for progress. */
+/** Phase A: host only; never asks the harness for progress (I15). */
 export type HostAction =
   | { kind: "redo_refresh" }
   | { kind: "ensure_job_branch" }
@@ -199,14 +244,44 @@ export type HostAction =
 export type HarnessAction =
   | { kind: "create_conversation" }
   | { kind: "submit_initial_prompt"; requestId: string }
+  | { kind: "record_running" }
   | { kind: "abort_then_waiting_room" }
   | { kind: "resubmit_warning"; requestId: string }
   | { kind: "submit_resume"; requestId: string; withWarning: boolean };
+
+/**
+ * Phase A actions that touch the room (a channel verb, an env command), or arm
+ * the deadline, whose firing aborts the conversation: enabled runners only
+ * (EX-6, I14). Disabled, the job stays as it is and nothing times out.
+ */
+export const ENABLED_ONLY: ReadonlySet<HostAction["kind"]> = new Set([
+  "redo_refresh",
+  "ensure_job_branch",
+  "rearm_deadline",
+  "resume_probing",
+  "redo_collect",
+  "resume_collection_retry",
+]);
+
+/**
+ * Phase A actions startup runs for every row before the control socket serves
+ * (R1): the job tables only. The rest of phase A runs inside the job's
+ * rejoined run, before its phase-B act: long room work never blocks startup.
+ */
+export const STARTUP_ACTIONS: ReadonlySet<HostAction["kind"]> = new Set(["to_collecting"]);
 
 export interface RecoveryPlan {
   phaseA: HostAction[];
   phaseB: HarnessAction[];
 }
+
+/** `plan`'s phase A by where it runs (R1): at startup, or in the job's rejoined run. */
+export const splitPhaseA = (
+  plan: Pick<RecoveryPlan, "phaseA">,
+): { atStartup: HostAction[]; inRejoin: HostAction[] } => ({
+  atStartup: plan.phaseA.filter((action) => STARTUP_ACTIONS.has(action.kind)),
+  inRejoin: plan.phaseA.filter((action) => !STARTUP_ACTIONS.has(action.kind)),
+});
 
 interface RecoveryRow {
   /** Rows of one concern are alternatives: the first match wins. */
@@ -236,13 +311,21 @@ const RECOVERY_TABLE: readonly RecoveryRow[] = [
     matches: (job) => job.state === "preparing" && job.baseOid === undefined,
     plan: () => host({ kind: "redo_refresh" }),
   },
+  // EX-8: the base is set; whether the prompt was admitted splits the row.
   {
     concern: "state",
-    matches: isState("preparing"),
+    matches: (job) => job.state === "preparing" && !job.initialSubmission,
     plan: (job) => ({
+      // PHASE-15 adds the `preparing` checks here, before the branch ensure.
       phaseA: [{ kind: "ensure_job_branch" }],
       phaseB: [{ kind: "submit_initial_prompt", requestId: job.jobId }],
     }),
+  },
+  // Admitted: no checks, no branch judgement; `resume()` continues the run.
+  {
+    concern: "state",
+    matches: isState("preparing"),
+    plan: () => ({ phaseA: [], phaseB: [{ kind: "record_running" }] }),
   },
   // A recorded pause precedes a settled conversation: a crash after the abort
   // and before the waiting_room tx leaves exactly both, and the job must wait
@@ -294,9 +377,9 @@ const RECOVERY_TABLE: readonly RecoveryRow[] = [
 ];
 
 /**
- * What restart does for `job`. With the runner disabled, phase B is empty
- * (I14): nothing asks the harness for progress, and a recorded pause stays
- * recorded.
+ * What restart does for `job`. With the runner disabled (I14), phase A keeps
+ * only what needs neither the room nor a timer, and phase B is empty: nothing
+ * asks the harness for progress, and a recorded pause stays recorded.
  */
 export function recoveryPlan(job: RecoverySnapshot, enabled: boolean): RecoveryPlan {
   const plans = (["state", "warning"] as const).map(
@@ -304,8 +387,9 @@ export function recoveryPlan(job: RecoverySnapshot, enabled: boolean): RecoveryP
       RECOVERY_TABLE.find((row) => row.concern === concern && row.matches(job))?.plan(job) ??
       NOTHING,
   );
+  const phaseA = plans.flatMap((plan) => plan.phaseA);
   return {
-    phaseA: plans.flatMap((plan) => plan.phaseA),
+    phaseA: enabled ? phaseA : phaseA.filter((action) => !ENABLED_ONLY.has(action.kind)),
     phaseB: enabled ? plans.flatMap((plan) => plan.phaseB) : [],
   };
 }

@@ -5,12 +5,15 @@
 // ceiling above its maximum is refused, never clamped.
 
 import type { ThinkingLevel } from "@earendil-works/pi-ai";
-import { setDefined } from "../fields.ts";
+import { optionalString, optionalStringArray, requireString, setDefined } from "../fields.ts";
+import type { JsonRecord } from "../json.ts";
 import {
   CEILING_KEYS,
   type Ceilings,
   ceilingsFrom,
+  isThinkingLevel,
   type PolicyLayer,
+  readCeilings,
   type RunnerConfig,
 } from "./config.ts";
 import { RunnerError } from "./errors.ts";
@@ -94,4 +97,33 @@ export function resolvePolicy(config: RunnerConfig, job: PolicyJob): ResolvedPol
   const submit = job.ceilings ?? {};
   checkCeilingsWithinMaxima(submit, maxima);
   return { ...configured, ceilings: { ...clamp(configured.ceilings, maxima), ...submit } };
+}
+
+/**
+ * The policy recorded at `preparing` (`jobs.policy`, as `resolvePolicy`
+ * wrote it): a restarted run keeps it, whatever the config now says (AS-2).
+ * Throws on a record `resolvePolicy` could not have written.
+ */
+export function recordedPolicy(record: JsonRecord): ResolvedPolicy {
+  const raw = record["ceilings"];
+  const found = readCeilings(typeof raw === "object" && raw !== null ? { ...raw } : {});
+  const ceilings = ceilingsFrom((key) => {
+    const value = found[key];
+    if (value === undefined) {
+      throw new Error(`recorded policy lacks ceiling ${key}`);
+    }
+    return value;
+  });
+  const thinkingLevel = optionalString(record, "thinkingLevel");
+  if (thinkingLevel !== undefined && !isThinkingLevel(thinkingLevel)) {
+    throw new Error(`recorded policy has thinkingLevel ${JSON.stringify(thinkingLevel)}`);
+  }
+  return setDefined<ResolvedPolicy>(
+    {
+      model: requireString(record, "model"),
+      ceilings,
+      promptFragments: optionalStringArray(record, "promptFragments") ?? [],
+    },
+    { thinkingLevel },
+  );
 }

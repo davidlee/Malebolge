@@ -33,6 +33,7 @@ import {
   UsageDoc,
   type UsageState,
 } from "@earendil-works/pi-durable";
+import { type ModelRef, parseModel } from "../config.ts";
 import { context } from "../context.ts";
 import { setDefined } from "../fields.ts";
 import {
@@ -298,6 +299,23 @@ export function modelLimits(model: AnyModel): ModelLimits {
     outputCostPerToken: Math.max(...rates) / 1e6,
   };
 }
+
+/**
+ * `modelLimits` of a policy's model (`provider/model`) in `models`;
+ * `undefined` when the catalog lacks it or the reference is malformed.
+ */
+export const catalogLimits =
+  (models: Pick<Models, "getModel">) =>
+  (ref: string): ModelLimits | undefined => {
+    let parsed: ModelRef;
+    try {
+      parsed = parseModel(ref);
+    } catch {
+      return undefined;
+    }
+    const model = models.getModel(parsed.provider, parsed.modelId);
+    return model === undefined ? undefined : modelLimits(model);
+  };
 
 /** One request as the judge sees it, less the job row. */
 interface Request {

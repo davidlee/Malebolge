@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
+import type { JsonRecord } from "../../src/json.ts";
 import { type Ceilings, parseRunnerConfig } from "../../src/runner/config.ts";
 import {
   checkCeilingsWithinMaxima,
   pickTagRule,
   type PolicyJob,
+  recordedPolicy,
   resolvePolicy,
 } from "../../src/runner/policy.ts";
 import { composePrompt, type PromptJob } from "../../src/runner/prompt.ts";
@@ -272,5 +274,21 @@ describe("prompt: context and source", () => {
     [{ ref: "x" }, '{"ref":"x"}'],
   ])("source line for %j is %s", (source, line) => {
     expect(compose({ source })).toContain(`    Source: ${line}\n`);
+  });
+});
+
+describe("recordedPolicy: the policy a restarted run keeps (AS-2)", () => {
+  const recorded = (): JsonRecord => ({ ...resolvePolicy(exampleConfig(), JOB) });
+
+  it("reads back what resolvePolicy recorded", () => {
+    expect(recordedPolicy(recorded())).toEqual(resolvePolicy(exampleConfig(), JOB));
+    const thinking = { ...recorded(), thinkingLevel: "high" };
+    expect(recordedPolicy(thinking).thinkingLevel).toBe("high");
+  });
+
+  it("refuses a record resolvePolicy could not have written", () => {
+    expect(() => recordedPolicy({ ...recorded(), ceilings: undefined })).toThrow(/lacks ceiling/);
+    expect(() => recordedPolicy({ ...recorded(), thinkingLevel: "loud" })).toThrow(/thinkingLevel/);
+    expect(() => recordedPolicy({ ...recorded(), model: "" })).toThrow(/model/);
   });
 });

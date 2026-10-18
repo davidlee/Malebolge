@@ -38,6 +38,7 @@ import type { Exhaustion } from "../../src/runner/ceilings.ts";
 import type { Ceilings } from "../../src/runner/config.ts";
 import {
   type Admission,
+  catalogLimits,
   createModelGate,
   type EntryPoint,
   type Gate,
@@ -52,7 +53,12 @@ import {
 } from "../../src/runner/model-gate.ts";
 import { type Job, type JobStore, openRunnerStore } from "../../src/runner/store.ts";
 import { tempDir } from "../fixtures.ts";
-import { type FauxHarnessOptions, openFauxHarness, type TestHarness } from "../harness-fixture.ts";
+import {
+  type FauxHarnessOptions,
+  fauxModels,
+  openFauxHarness,
+  type TestHarness,
+} from "../harness-fixture.ts";
 import {
   CHAT_MODEL,
   CLASSIFIER_MODEL,
@@ -695,5 +701,15 @@ describe("the gate's usage read (I10, AS-2)", () => {
     onTestFinished(() => closeHarness(harness));
 
     await expect(harnessUsage().usageOf(root.id)).rejects.toThrow("harness not open");
+  });
+});
+
+describe("catalogLimits: a recorded policy's model limits", () => {
+  it("reads the catalog's model; undefined for an unknown or malformed reference", () => {
+    const { models } = fauxModels();
+    const limitsOf = catalogLimits(models);
+    expect(limitsOf("faux/faux-1")?.maxOutputTokens).toBeGreaterThan(0);
+    expect(limitsOf("faux/nope")).toBeUndefined();
+    expect(limitsOf("no-slash")).toBeUndefined();
   });
 });

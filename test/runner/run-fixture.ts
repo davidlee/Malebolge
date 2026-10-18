@@ -4,13 +4,17 @@
 // pi-env daemon in the room's clone, the fake slot's channel refreshing and
 // collecting that clone, and the real scheduler seating each job.
 
-import type { AssistantMessage, Message, ToolResultMessage } from "@earendil-works/pi-ai";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import {
   type FauxProviderHandle,
   fauxAssistantMessage,
   fauxText,
   fauxToolCall,
 } from "@earendil-works/pi-ai/providers/faux";
+import type { AssistantMessage, Message, ToolResultMessage } from "@earendil-works/pi-ai";
+import type { Models } from "@earendil-works/pi-ai/models";
 import type { Harness, JsonObject } from "@earendil-works/pi-durable";
 import type { Connection } from "@earendil-works/pi-env";
 import { onTestFinished } from "vitest";
@@ -19,22 +23,33 @@ import type { Ceilings, RunnerConfig } from "../../src/runner/config.ts";
 import { harnessConversations, jobConversation } from "../../src/runner/conversations.ts";
 import { gitQuarantineReader } from "../../src/runner/git.ts";
 import { jobGuard } from "../../src/runner/guard.ts";
+import type { JsonRecord } from "../../src/json.ts";
 import {
+  catalogLimits,
   createModelGate,
   type GateDeps,
   gatedModels,
   harnessUsage,
 } from "../../src/runner/model-gate.ts";
+import { type RecoverDeps, recoverHost } from "../../src/runner/recover.ts";
 import type { GitChannel } from "../../src/runner/room.ts";
 import type { Timer } from "../../src/runner/deadline.ts";
 import { type RunDeps, runJob } from "../../src/runner/run.ts";
 import { createScheduler, type Scheduler } from "../../src/runner/scheduler.ts";
-import { openRunnerStore, type Job, type JobEvent, type JobStore } from "../../src/runner/store.ts";
+import {
+  type Decide,
+  type Job,
+  type JobEvent,
+  JobStore,
+  openRunnerStore,
+  type RunnerStore,
+} from "../../src/runner/store.ts";
+import type { EventKind } from "../../src/runner/vocab.ts";
 import { roomTenancy } from "../../src/runner/tenancy.ts";
 import { JobTools } from "../../src/runner/tools.ts";
 import { openFauxHarness, toolResults } from "../harness-fixture.ts";
 import { exampleConfig } from "./config-fixture.ts";
-import { localConnection } from "./env-fixture.ts";
+import { FailingConnection, localConnection, lostError } from "./env-fixture.ts";
 import { type RoomWorld, roomWorld } from "./room-fixture.ts";
 import { blockingTool, type BlockingTool, closeHarness, within } from "./runner-fixture.ts";
 import { NEW_JOB, sequentialIds, T0 } from "./store-fixture.ts";
@@ -57,6 +72,22 @@ export const answer = (text = "done"): AssistantMessage => fauxAssistantMessage(
 /** One request: write and commit in one bash call, so the run leaves work to collect. */
 export const writeAndCommit = (): AssistantMessage =>
   call("bash", { command: `mkdir -p src && echo 'export {};' > src/a.ts && ${COMMIT}` });
+
+/** In a bash command, the marker that makes the room's daemon connection lost. */
+export const ROOM_DOWN = "ROOM-DOWN";
+
+/** The local daemon, except an exec carrying `ROOM_DOWN` fails as `failure` (default: lost). */
+export const roomGoesDown =
+  (failure: () => Error = lostError) =>
+  (local: Connection): Connection =>
+    new FailingConnection(
+      ({ op, json }) =>
+        op === "exec" && JSON.stringify(json).includes(ROOM_DOWN) ? failure() : undefined,
+      local,
+    );
+
+/** A bash call the room loses mid-command: the job pauses. */
+export const lostBash = (): AssistantMessage => call("bash", { command: `echo ${ROOM_DOWN}` });
 
 /** A user message's text, whatever its content shape. */
 export const userText = (message: Message): string | undefined => {
@@ -123,12 +154,81 @@ export interface RunWorldOptions {
   usageOf?: GateDeps["usageOf"];
   /** The job's daemon connection, given the local one; e.g. one that loses chosen calls. */
   connection?: (local: Connection) => Connection;
+  /** A store file that outlives the process, for `restart`; default `:memory:`. */
+  path?: string;
+  /**
+   * The write (`eventLabel`, or `prompt`: the prompt read just before submit)
+   * at which the process dies: it and every later write throw `Crash`.
+   */
+  crashAt?: string;
+}
+
+/** The process died at a write boundary (`crashAt`). */
+export class Crash extends Error {}
+
+/** An event as `kind`, or `transition:<to>`: what `kinds` lists and `crashAt` names. */
+export const eventLabel = ({ kind, payload }: Pick<JobEvent, "kind" | "payload">): string =>
+  kind === "transition" ? `transition:${String(payload["to"])}` : kind;
+
+/**
+ * A job store whose process dies at write `at`: that write and every later
+ * one throw `Crash`, rolled back as a crash would leave them. `undefined`
+ * never crashes.
+ */
+class CrashingJobStore extends JobStore {
+  readonly #at: string | undefined;
+  /** Aborted when the process dies: its scheduler stops. */
+  readonly #dead = new AbortController();
+
+  constructor(db: RunnerStore["db"], at: string | undefined) {
+    super(db, sequentialIds());
+    this.#at = at;
+  }
+
+  get dead(): AbortSignal {
+    return this.#dead.signal;
+  }
+
+  /** The process dies now: every later write throws, the scheduler stops. */
+  crash(): void {
+    this.#dead.abort();
+  }
+
+  /** Throws once the process is dead, or when `label` is the write it dies at. */
+  check(label: string): void {
+    if (this.#dead.signal.aborted || label === this.#at) {
+      this.crash();
+      throw new Crash(`crashed at ${label}`);
+    }
+  }
+
+  override change(id: string, now: number, decide: Decide): Promise<Job> {
+    return super.change(id, now, (job) => {
+      const change = decide(job);
+      if (change !== undefined) {
+        this.check(eventLabel(change.event));
+      }
+      return change;
+    });
+  }
+
+  override appendEvent(
+    id: string,
+    now: number,
+    kind: EventKind,
+    payload: JsonRecord,
+  ): Promise<void> {
+    this.check(kind);
+    return super.appendEvent(id, now, kind, payload);
+  }
 }
 
 export interface RunWorld extends RoomWorld {
   jobs: JobStore;
   harness: Harness;
   deps: RunDeps;
+  /** Phase A's view of this process (recover.ts). */
+  recoverDeps: RecoverDeps;
   scheduler: Scheduler;
   blocking: BlockingTool;
   /** The model: scripted turns, and `state.callCount` its provider requests. */
@@ -143,19 +243,37 @@ export interface RunWorld extends RoomWorld {
   verbs: () => string[];
   /** Every backoff pause asked of `sleep` (it returns at once, advancing the clock), in order. */
   slept: number[];
+  /** Moves the clock on by `ms`. */
+  advance: (ms: number) => void;
+  /** The process dies now: every later write throws `Crash`, the scheduler stops. */
+  crash: () => void;
+  /** Closes this process's harness, its storage and database; once. */
+  close: () => Promise<void>;
+  /** What every process of the world shares: the room, the clock, the store file. */
+  shared: Shared;
 }
 
-/**
- * The run path over `roomWorld({ guestAtClone: true })`: a local daemon runs
- * the job's tools in the room's clone, which the fake slot refreshes and
- * collects.
- */
-export async function runWorld(options: RunWorldOptions = {}): Promise<RunWorld> {
-  const world = roomWorld({ guestAtClone: true });
-  const store = await openRunnerStore(":memory:", { newId: sequentialIds() });
-  const { jobs } = store;
-  let clock = T0;
-  const now = (): number => ++clock;
+/** What outlives a process: the room, the clock, the store file, the options. */
+interface Shared {
+  world: RoomWorld;
+  path: string;
+  options: RunWorldOptions;
+  clock: { now: number };
+}
+
+interface ProcessOptions {
+  enabled: boolean;
+  /** Restarts open passive (`start.ts`); the first process schedules at once. */
+  resume: boolean;
+  crashAt?: string;
+}
+
+/** One runner process over `shared`: store, faux harness, deps, scheduler. */
+async function openProcess(shared: Shared, process: ProcessOptions): Promise<RunWorld> {
+  const { world, options, clock } = shared;
+  const store = await openRunnerStore(shared.path, { newId: sequentialIds() });
+  const jobs = new CrashingJobStore(store.db, process.crashAt);
+  const now = (): number => ++clock.now;
   const tenancy = roomTenancy();
   const timers = manualTimer();
   const slept: number[] = [];
@@ -173,19 +291,29 @@ export async function runWorld(options: RunWorldOptions = {}): Promise<RunWorld>
     now,
     usageOf: options.usageOf ?? usage.usageOf,
   });
+  let catalog: Models | undefined;
   const { harness, faux } = await openFauxHarness(store.storage, {
     extensions,
     env: tenancy.env,
-    models: (models) => gatedModels(models, gate),
+    models: (models) => {
+      catalog = models;
+      return gatedModels(models, gate);
+    },
+    resume: process.resume,
   });
   usage.bind(harness);
-  onTestFinished(() => closeHarness(harness));
+  let closed: Promise<void> | undefined;
+  const close = (): Promise<void> => (closed ??= closeHarness(harness));
+  onTestFinished(close);
   const example = exampleConfig();
   const config: RunnerConfig = {
     ...example,
     defaults: { ...example.defaults, model: "faux/faux-1" },
     maxima: { ...example.maxima, maxRoomWaitS: options.maxRoomWaitS ?? 60 },
     repos: new Map([[NEW_JOB.repo, world.repo]]),
+  };
+  const log = (text: string): void => {
+    throw new Error(`unexpected runner log: ${text}`);
   };
   const deps: RunDeps = {
     jobs,
@@ -200,34 +328,42 @@ export async function runWorld(options: RunWorldOptions = {}): Promise<RunWorld>
       return options.connection?.(local) ?? local;
     },
     extensions,
-    readPrompt: () => Promise.resolve("You are the patch agent."),
+    readPrompt: () => {
+      jobs.check("prompt");
+      return Promise.resolve("You are the patch agent.");
+    },
     now,
     timer: timers.timer,
-    log: (text) => {
-      throw new Error(`unexpected runner log: ${text}`);
-    },
+    log,
     sleep: (ms) => {
       slept.push(ms);
-      clock += ms;
+      clock.now += ms;
       return Promise.resolve();
     },
   };
+  const recoverDeps: RecoverDeps = {
+    jobs,
+    harness,
+    config,
+    limitsOf: (model) => (catalog === undefined ? undefined : catalogLimits(catalog)(model)),
+    now,
+    log,
+  };
   const scheduler = createScheduler({
     jobs,
-    enabled: true,
+    enabled: process.enabled,
     run: (job, control) => runJob(deps, job, control),
     retryPending: (job) => retryPendingCollection(deps, job.id, now()),
     sleep: deps.sleep,
-    stop: new AbortController().signal,
+    stop: jobs.dead,
     log: () => undefined,
     now,
   });
-  let submissions = 0;
   async function submit(): Promise<Job> {
     const { job: queued } = await jobs.submit(
       {
         ...NEW_JOB,
-        submissionId: `sub-${String(++submissions)}`,
+        submissionId: `sub-${String((await jobs.list()).length + 1)}`,
         ceilings: { ...NEW_JOB.ceilings, ...options.ceilings },
       },
       now(),
@@ -247,6 +383,7 @@ export async function runWorld(options: RunWorldOptions = {}): Promise<RunWorld>
     jobs,
     harness,
     deps,
+    recoverDeps,
     scheduler,
     blocking,
     faux,
@@ -256,7 +393,58 @@ export async function runWorld(options: RunWorldOptions = {}): Promise<RunWorld>
     events: (id) => jobs.events(id),
     verbs: () => world.slot.calls.map((args) => args[1] ?? ""),
     slept,
+    advance: (ms): void => {
+      clock.now += ms;
+    },
+    crash: (): void => {
+      jobs.crash();
+    },
+    close,
+    shared,
   };
+}
+
+/**
+ * The run path over `roomWorld({ guestAtClone: true })`: a local daemon runs
+ * the job's tools in the room's clone, which the fake slot refreshes and
+ * collects.
+ */
+export async function runWorld(options: RunWorldOptions = {}): Promise<RunWorld> {
+  const shared: Shared = {
+    world: roomWorld({ guestAtClone: true }),
+    path: options.path ?? ":memory:",
+    options,
+    clock: { now: T0 },
+  };
+  return openProcess(shared, {
+    enabled: true,
+    resume: true,
+    ...(options.crashAt === undefined ? {} : { crashAt: options.crashAt }),
+  });
+}
+
+/** A store file in a fresh directory, removed after the test. */
+export async function storeFile(): Promise<string> {
+  const dir = await mkdtemp(join(tmpdir(), "malebolge-recovery-"));
+  onTestFinished(() => rm(dir, { recursive: true, force: true }));
+  return join(dir, "runner.sqlite");
+}
+
+/**
+ * The runner restarted as `start.ts` does it: `world`'s process closed
+ * without awaiting its run (a crash, or `close`), then a new one opened
+ * passive on the same store file, room and clock; phase A (`recoverHost`),
+ * then the scheduler woken.
+ */
+export async function restart(
+  world: RunWorld,
+  { enabled }: { enabled: boolean },
+): Promise<RunWorld> {
+  await world.close();
+  const next = await openProcess(world.shared, { enabled, resume: false });
+  await recoverHost(next.recoverDeps, enabled);
+  next.scheduler.wake();
+  return next;
 }
 
 /** Waits for the scheduler to rest; the job as the run left it. */
@@ -276,10 +464,7 @@ export async function until(what: string, holds: () => boolean | Promise<boolean
 }
 
 /** Each event as `kind` or `transition:<to>`. */
-export const kinds = (events: readonly JobEvent[]): string[] =>
-  events.map((event) =>
-    event.kind === "transition" ? `transition:${String(event.payload["to"])}` : event.kind,
-  );
+export const kinds = (events: readonly JobEvent[]): string[] => events.map(eventLabel);
 
 /** The tool results of `job`'s conversation, oldest first. */
 export async function jobToolResults(world: RunWorld, job: Job): Promise<ToolResultMessage[]> {

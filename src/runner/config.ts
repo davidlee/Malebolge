@@ -104,7 +104,7 @@ const THINKING_LEVELS: readonly ThinkingLevel[] = [
   "max",
 ];
 
-const isThinkingLevel = (value: string): value is ThinkingLevel =>
+export const isThinkingLevel = (value: string): value is ThinkingLevel =>
   THINKING_LEVELS.some((level) => level === value);
 
 /** `~` and `~/x` against `home`. */

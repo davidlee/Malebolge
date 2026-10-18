@@ -46,6 +46,8 @@ export interface Job extends JobRecord, NewJob {
   finishedAt?: number;
   /** A failed/cancelled notice acked by Emacs. */
   announcedAt?: number;
+  /** Set on a disabled startup, cleared (bounds re-based) on the next enabled one (DEC-065). */
+  parkedAt?: number;
 }
 
 /** A `job_events` row: append-only audit (DEC-057). */
@@ -192,7 +194,7 @@ const optional = <T>(codec: Codec<T>): Codec<T | undefined> => ({
 
 type JobField = keyof Job;
 
-/** Each field's codec, in `jobs` column order (BINDING: the v1 DDL's order). */
+/** Each field's codec, in `jobs` column order (BINDING: the v1 DDL's order, then each migration's columns). */
 const JOB_CODECS: { [K in JobField]: Codec<Job[K]> } = {
   id: text,
   submissionId: text,
@@ -225,6 +227,7 @@ const JOB_CODECS: { [K in JobField]: Codec<Job[K]> } = {
   startedAt: optional(time),
   finishedAt: optional(time),
   announcedAt: optional(time),
+  parkedAt: optional(time),
 };
 
 const isJobField = (key: string): key is JobField => key in JOB_CODECS;
@@ -297,6 +300,7 @@ export function decodeJob(row: JsonRecord): Job {
       startedAt: field("startedAt"),
       finishedAt: field("finishedAt"),
       announcedAt: field("announcedAt"),
+      parkedAt: field("parkedAt"),
     },
   );
 }

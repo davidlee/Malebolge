@@ -4,12 +4,17 @@ import {
   JOB_STATES,
   type JobRecord,
   type JobState,
+  ENABLED_ONLY,
   markPauseRequested,
+  park,
   parseJobState,
+  rebase,
   pendingCollectionExpired,
   type RecoverySnapshot,
   recordReviewed,
   recoveryPlan,
+  splitPhaseA,
+  STARTUP_ACTIONS,
   TERMINAL,
   transition,
   TRANSITIONS,
@@ -135,6 +140,37 @@ describe("pause_requested mark (DEC-055)", () => {
   });
 });
 
+describe("parking (DEC-065)", () => {
+  it("parks a non-terminal job not yet parked, queued and needs_review included", () => {
+    for (const state of ["queued", "running", "needs_review"] as const) {
+      expect(park({ state }, NOW)).toEqual({ parkedAt: NOW });
+    }
+  });
+
+  it("leaves a terminal or already parked job", () => {
+    expect(park({ state: "failed" }, NOW)).toBeUndefined();
+    expect(park({ state: "running", parkedAt: NOW - 5 }, NOW)).toBeUndefined();
+  });
+
+  it("re-bases nothing on an unparked job", () => {
+    expect(rebase({ stateEnteredAt: NOW }, NOW + 10)).toBeUndefined();
+  });
+
+  it("shifts state_entered_at and running_since by the parked time", () => {
+    const parked = { stateEnteredAt: 1000, runningSince: 1200, parkedAt: 2000 };
+    expect(rebase(parked, 7000)).toEqual({
+      update: { stateEnteredAt: 6000, runningSince: 6200, parkedAt: null },
+      parkedAt: 2000,
+      shiftedMs: 5000,
+    });
+  });
+
+  it("charges nothing for a state entered while parked: its bound starts now", () => {
+    const parked = { stateEnteredAt: 3000, parkedAt: 2000 };
+    expect(rebase(parked, 7000)?.update).toEqual({ stateEnteredAt: 7000, parkedAt: null });
+  });
+});
+
 describe("cancel", () => {
   it.each([
     ["queued", "cancelled"],
@@ -165,6 +201,7 @@ const UNCREATED: RecoverySnapshot = {
   pauseRequested: false,
   pauseCount: 0,
   conversationSettled: false,
+  initialSubmission: false,
   warningThresholdPassed: false,
 };
 
@@ -175,44 +212,65 @@ const snapshot = (state: JobState, extra: Partial<RecoverySnapshot> = {}): Recov
   ...extra,
 });
 
-/** One row per §5.4 restart-recovery table row (DEC-054). */
-const RECOVERY_ROWS: readonly (readonly [string, RecoverySnapshot, unknown, unknown])[] = [
-  ["queued, conversation_id null", UNCREATED, [], [{ kind: "create_conversation" }]],
-  ["queued", snapshot("queued"), [], []],
-  ["preparing, no base_oid", snapshot("preparing"), [{ kind: "redo_refresh" }], []],
+type Row = readonly [
+  name: string,
+  snapshot: RecoverySnapshot,
+  phaseA: unknown,
+  phaseB: unknown,
+  /** Phase A when disabled: room-touching and timer-arming actions dropped (EX-6). */
+  disabledPhaseA: unknown,
+];
+
+/** One row per §5.4 restart-recovery table row (DEC-054, DEC-065), in table order. */
+const RECOVERY_ROWS: readonly Row[] = [
+  ["1 queued, conversation_id null", UNCREATED, [], [{ kind: "create_conversation" }], []],
+  ["2 queued", snapshot("queued"), [], [], []],
+  ["3 preparing, no base_oid", snapshot("preparing"), [{ kind: "redo_refresh" }], [], []],
   [
-    "preparing, base_oid set",
+    "4 preparing, base_oid set, no initial submission record",
     snapshot("preparing", { baseOid: "abc" }),
     [{ kind: "ensure_job_branch" }],
     [{ kind: "submit_initial_prompt", requestId: "pj-1" }],
+    [],
   ],
   [
-    "running, pause_requested = 1",
+    "5 preparing, base_oid set, initial submission record exists",
+    snapshot("preparing", { baseOid: "abc", initialSubmission: true }),
+    [],
+    [{ kind: "record_running" }],
+    [],
+  ],
+  [
+    "6 running, pause_requested = 1",
     snapshot("running", { pauseRequested: true }),
     [],
     [{ kind: "abort_then_waiting_room" }],
+    [],
   ],
   [
-    "running, conversation settled, pause recorded (crash after abort): pause wins",
+    "6 running, conversation settled, pause recorded (crash after abort): pause wins",
     snapshot("running", { conversationSettled: true, pauseRequested: true }),
     [],
     [{ kind: "abort_then_waiting_room" }],
+    [],
   ],
   [
-    "running, conversation settled",
+    "7 running, conversation settled",
     snapshot("running", { conversationSettled: true }),
     [{ kind: "to_collecting" }],
     [],
+    [{ kind: "to_collecting" }],
   ],
-  ["running", snapshot("running"), [{ kind: "rearm_deadline" }], []],
+  ["8 running", snapshot("running"), [{ kind: "rearm_deadline" }], [], []],
   [
-    "running, warning threshold passed, no warning receipt",
+    "9 running, warning threshold passed, no warning receipt",
     snapshot("running", { warningThresholdPassed: true }),
     [{ kind: "rearm_deadline" }],
     [{ kind: "resubmit_warning", requestId: "warn-pj-1" }],
+    [],
   ],
   [
-    "waiting_room, warning threshold passed, no placed warning",
+    "10 waiting_room, warning threshold passed, no placed warning",
     snapshot("waiting_room", {
       pauseCount: 2,
       warningThresholdPassed: true,
@@ -220,16 +278,24 @@ const RECOVERY_ROWS: readonly (readonly [string, RecoverySnapshot, unknown, unkn
     }),
     [{ kind: "resume_probing" }],
     [{ kind: "submit_resume", requestId: "resume-pj-1-2", withWarning: true }],
+    [],
   ],
   [
-    "waiting_room",
+    "11 waiting_room",
     snapshot("waiting_room", { pauseCount: 1 }),
     [{ kind: "resume_probing" }],
     [{ kind: "submit_resume", requestId: "resume-pj-1-1", withWarning: false }],
+    [],
   ],
-  ["collecting", snapshot("collecting"), [{ kind: "redo_collect" }], []],
-  ["pending_collection", snapshot("pending_collection"), [{ kind: "resume_collection_retry" }], []],
-  ["needs_review", snapshot("needs_review"), [], []],
+  ["12 collecting", snapshot("collecting"), [{ kind: "redo_collect" }], [], []],
+  [
+    "13 pending_collection",
+    snapshot("pending_collection"),
+    [{ kind: "resume_collection_retry" }],
+    [],
+    [],
+  ],
+  ["14 needs_review", snapshot("needs_review"), [], [], []],
 ];
 
 describe("reviewed_oid is immutable (I7)", () => {
@@ -261,7 +327,7 @@ describe("pending_collection bound", () => {
 });
 
 describe("recovery table", () => {
-  it.each(RECOVERY_ROWS)("recovery row: %s", (_row, state, phaseA, phaseB) => {
+  it.each(RECOVERY_ROWS)("recovery row %s", (_row, state, phaseA, phaseB) => {
     expect(recoveryPlan(state, true)).toEqual({ phaseA, phaseB });
   });
 
@@ -270,15 +336,36 @@ describe("recovery table", () => {
   });
 
   it.each(RECOVERY_ROWS)(
-    "disabled runner: %s keeps phase A, empty phase B (I14)",
-    (_row, state, phaseA) => {
-      expect(recoveryPlan(state, false)).toEqual({ phaseA, phaseB: [] });
+    "disabled runner, row %s: no room work, no timer, empty phase B (EX-6, I14)",
+    (_row, state, _phaseA, _phaseB, disabledPhaseA) => {
+      expect(recoveryPlan(state, false)).toEqual({ phaseA: disabledPhaseA, phaseB: [] });
     },
   );
 
   it("disabled runner with a recorded pause: no harness act, the mark is kept", () => {
     const plan = recoveryPlan(snapshot("running", { pauseRequested: true }), false);
     expect(plan).toEqual({ phaseA: [], phaseB: [] });
+  });
+
+  it("an initial submission record means no branch judgement, enabled or not (EX-8)", () => {
+    const recorded = snapshot("preparing", { baseOid: "abc", initialSubmission: true });
+    for (const enabled of [true, false]) {
+      expect(recoveryPlan(recorded, enabled).phaseA).not.toContainEqual({
+        kind: "ensure_job_branch",
+      });
+    }
+  });
+
+  it("startup's phase A never touches the room or arms a timer (R1)", () => {
+    expect([...STARTUP_ACTIONS].filter((kind) => ENABLED_ONLY.has(kind))).toEqual([]);
+  });
+
+  it("phase A splits into startup's part and the rejoined run's (R1)", () => {
+    const phaseA = [{ kind: "to_collecting" }, { kind: "rearm_deadline" }] as const;
+    expect(splitPhaseA({ phaseA: [...phaseA] })).toEqual({
+      atStartup: [{ kind: "to_collecting" }],
+      inRejoin: [{ kind: "rearm_deadline" }],
+    });
   });
 
   it("a crashed running job is re-armed and resumed, not failed (divergence from the Go reconcile)", () => {

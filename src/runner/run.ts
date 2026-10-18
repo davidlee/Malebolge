@@ -56,7 +56,7 @@ import { configEntry, type ResolvedPolicy, resolvePolicy } from "./policy.ts";
 import { PrepareFailed, preparingFailure, readyRoom, roomShell } from "./prepare.ts";
 import { composePrompt } from "./prompt.ts";
 import type { RunControl } from "./scheduler.ts";
-import type { Job } from "./store.ts";
+import type { Job, JobStore } from "./store.ts";
 import type { Tenancy } from "./tenancy.ts";
 import type { EndReason } from "./vocab.ts";
 import { messageOf } from "./errors.ts";
@@ -85,7 +85,7 @@ export const endReasonOf = (record: Pick<SubmissionRecord, "status">): EndReason
   record.status === "done" ? "completed" : "error";
 
 /** How the admitted run ended: the `collecting` transition's payload and end reason. */
-interface Ending {
+export interface Ending {
   payload: JsonRecord;
   endReason: EndReason;
 }
@@ -94,7 +94,7 @@ interface Ending {
  * A settled submission's ending. Its `reason` is kept as `submissionReason`:
  * a payload's `reason` names why the job moved (a cancel's included).
  */
-function settledEnding(record: SettledSubmissionRecord): Ending {
+export function settledEnding(record: SettledSubmissionRecord): Ending {
   return {
     payload: {
       submission: record.status,
@@ -422,13 +422,19 @@ async function settleSegment(deps: RunDeps, segment: Admitted): Promise<SegmentE
   return { ending, warning };
 }
 
-/** `ending`, unless a ceiling tripped: then its reason, recorded as `ceiling`. */
-function ceilingEnding(ending: Ending, latch: CeilingLatch): Ending {
-  const ceiling = latch.reason();
+/** `ending`, unless a ceiling stopped the run: then its reason, recorded as `ceiling`. */
+export function ceilingEnding(ending: Ending, ceiling: EndReason | undefined): Ending {
   return ceiling === undefined
     ? ending
     : { payload: { ...ending.payload, ceiling }, endReason: ceiling };
 }
+
+/** `collecting`, with `ending`'s payload and end reason; the run's and recovery's one write. */
+export const enterCollecting = (
+  deps: { jobs: Pick<JobStore, "transition">; now: () => number },
+  id: string,
+  { payload, endReason }: Ending,
+): Promise<Job> => deps.jobs.transition(id, "collecting", deps.now(), payload, { endReason });
 
 /**
  * Where the settled segment goes: a cancel, then a ceiling, to `collecting`
@@ -468,8 +474,7 @@ async function toCollecting(
   if (reason !== undefined) {
     return recordCancel(deps, job.id, control, reason, ending.payload);
   }
-  const { payload, endReason } = ceilingEnding(ending, latch);
-  return deps.jobs.transition(job.id, "collecting", deps.now(), payload, { endReason });
+  return enterCollecting(deps, job.id, ceilingEnding(ending, latch.reason()));
 }
 
 // --- waiting for the room, and the resume (DEC-055) -----------------------------

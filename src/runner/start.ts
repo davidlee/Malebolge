@@ -1,8 +1,13 @@
 // Starting the runner: environment to paths, config, prompt file, the way
 // into the room, store, harness, scheduler, control socket. Fails closed (I13):
 // anything missing or invalid is a StartRefused, before the socket serves.
-// The harness is opened passive (no `resume()`): only the scheduler asks it
-// for progress, and with `enabled = false` it asks nothing (I14).
+// The harness is opened passive (no `resume()`): nothing runs until something
+// asks it for progress, and with `enabled = false` nothing does (I14).
+// Restart recovery (DEC-054) is two-phase. Phase A (recover.ts) runs here,
+// after the harness opens and before the socket serves or the scheduler
+// wakes: host work and read-only views only (I15), so no task is scheduled
+// before it completes. Phase B, the in-flight job's harness act then
+// `resume()`, is its rejoined run's, enabled runners only.
 //
 // One store feeds control and scheduler, so `watch` sees every transition
 // (observers are per JobStore instance), and pi shares its database handle
@@ -30,7 +35,8 @@ import { roomDaemon } from "./env.ts";
 import { messageOf, StartRefused } from "./errors.ts";
 import { gitQuarantineReader, gitRepoReader } from "./git.ts";
 import { jobGuard } from "./guard.ts";
-import { createModelGate, gatedModels, harnessUsage } from "./model-gate.ts";
+import { catalogLimits, createModelGate, gatedModels, harnessUsage } from "./model-gate.ts";
+import { recoverHost } from "./recover.ts";
 import { channelFromConfig, type GitChannel, roomConnection } from "./room.ts";
 import { type RunDeps, runJob } from "./run.ts";
 import { createScheduler } from "./scheduler.ts";
@@ -123,6 +129,16 @@ export interface Runner {
   close: () => Promise<void>;
 }
 
+/** `step`'s result; if it fails, the harness is closed first: startup fails closed. */
+async function closingOnFailure<T>(harness: Pick<Harness, "close">, step: Promise<T>): Promise<T> {
+  try {
+    return await step;
+  } catch (error) {
+    await harness.close(context);
+    throw error;
+  }
+}
+
 export async function startRunner(env: Env, options: StartOptions): Promise<Runner> {
   const paths = runnerPaths(env);
   const config = await loadConfig(paths.config, paths.home);
@@ -144,6 +160,11 @@ export async function startRunner(env: Env, options: StartOptions): Promise<Runn
     context,
   );
   usage.bind(harness);
+  const recoverDeps = { jobs, harness, config, limitsOf: catalogLimits(models), now };
+  await closingOnFailure(
+    harness,
+    recoverHost({ ...recoverDeps, log: options.log }, config.enabled),
+  );
   const conversations = harnessConversations(harness);
   const collect: CollectDeps = {
     jobs,
@@ -185,11 +206,8 @@ export async function startRunner(env: Env, options: StartOptions): Promise<Runn
     now,
     log: options.log,
   };
-  const server = await serveControl(deps, paths.socket).catch(async (error: unknown) => {
-    await harness.close(context);
-    throw error;
-  });
-  // Jobs queued before this process started (PHASE-10 recovers in-flight ones first).
+  const server = await closingOnFailure(harness, serveControl(deps, paths.socket));
+  // Jobs queued before this process started; phase A has settled the rest.
   scheduler.wake();
   return {
     paths,

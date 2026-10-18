@@ -3,7 +3,7 @@
 // runner writes the id's decimal text and recovers the branded value from
 // pi's own records, never by assertion (PHASE-07 §0).
 
-import type { ConversationId, Cursor, Session } from "@earendil-works/pi-durable";
+import type { ConversationId, Cursor, Session, SubmissionRecord } from "@earendil-works/pi-durable";
 import { context } from "../context.ts";
 
 /** Conversations read per scan page. */
@@ -35,4 +35,18 @@ export function conversationIdOf(
     } while (cursor !== undefined);
     return undefined;
   }, context);
+}
+
+/**
+ * The record of the submission admitted to `conversation` with `requestId`;
+ * `undefined` when none was. Its `id` is the branded `SubmissionId`, so a
+ * receipt's text id is never parsed. Read-only, never enables scheduling; the
+ * same transaction rule as `conversationIdOf` (EVD-008).
+ */
+export function submissionRecordOf(
+  session: Pick<Session, "commit">,
+  conversation: ConversationId,
+  requestId: string,
+): Promise<SubmissionRecord | undefined> {
+  return session.commit((tx) => tx.submissionByRequest(conversation, requestId), context);
 }

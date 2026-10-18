@@ -12,7 +12,7 @@ import {
   MemoryStorage,
   type Submission,
 } from "@earendil-works/pi-durable";
-import { type Connection, RemoteError } from "@earendil-works/pi-env";
+import { RemoteError } from "@earendil-works/pi-env";
 import { describe, expect, it, onTestFinished } from "vitest";
 import { context } from "../../src/context.ts";
 import type { JsonRecord } from "../../src/json.ts";
@@ -40,6 +40,9 @@ import {
   eventOf,
   jobToolResults,
   kinds,
+  lostBash,
+  ROOM_DOWN,
+  roomGoesDown,
   type RunWorld,
   runWorld,
   SETTLE_MS,
@@ -133,19 +136,6 @@ describe("the pausing observer: a lost Connection marks the job (VT-2, EX-5)", (
 
 // --- the run: lost mid-bash → waiting_room (VT-1 pause half, EX-1, EX-4) ----------
 
-/** In a bash command, the marker that makes the room's daemon connection lost. */
-const ROOM_DOWN = "ROOM-DOWN";
-
-/** The local daemon, except an exec carrying `ROOM_DOWN` fails as `failure` (default: lost). */
-const roomGoesDown =
-  (failure: () => Error = lostError) =>
-  (local: Connection): Connection =>
-    new FailingConnection(
-      ({ op, json }) =>
-        op === "exec" && JSON.stringify(json).includes(ROOM_DOWN) ? failure() : undefined,
-      local,
-    );
-
 /**
  * The run's harness, its conversations' `abort` held until the run's first
  * submission settles on its own: the widest race between the pause trigger
@@ -197,8 +187,6 @@ const probed =
     ...channel,
     reachable: async () => probe.answer(),
   });
-
-const lostBash = (): ReturnType<typeof call> => call("bash", { command: `echo ${ROOM_DOWN}` });
 
 /** What the run had done when the room was first probed: the provider's calls, the waiting row. */
 interface AtProbe {

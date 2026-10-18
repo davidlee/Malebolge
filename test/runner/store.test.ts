@@ -12,7 +12,7 @@ import {
   PI_PREFIX,
   type RequestVerdict,
 } from "../../src/runner/store.ts";
-import { JOB_STATES } from "../../src/runner/vocab.ts";
+import { JOB_STATES, type JobState } from "../../src/runner/vocab.ts";
 import { openFauxHarness } from "../harness-fixture.ts";
 import { closeHarness } from "./runner-fixture.ts";
 import { NEW_JOB, openTestStore, sequentialIds, T0 } from "./store-fixture.ts";
@@ -51,6 +51,7 @@ const JOBS_COLUMNS = [
   "started_at",
   "finished_at",
   "announced_at",
+  "parked_at",
 ];
 
 const HOST_OBJECTS = [
@@ -152,6 +153,98 @@ describe("migrate", () => {
     await expect(migrate(db, failing)).rejects.toThrow(/nowhere/);
     expect(await schemaVersions(db)).toEqual([MIGRATIONS.length]);
     expect(namesOf(await schemaObjects(db))).toEqual(HOST_OBJECTS);
+  });
+});
+
+describe("migration v2: parked_at (DEC-065)", () => {
+  it("migrates a v1 file to v2, keeping its jobs, parked_at null", async () => {
+    const db = await openBareDb();
+    await migrate(db, MIGRATIONS.slice(0, 1));
+    await db.run(
+      `INSERT INTO jobs (id, submission_id, state, mode, directive, repo, base_ref,
+         allowed_paths, state_entered_at, created_at, updated_at)
+       VALUES ('pj-1', 'sub-1', 'queued', 'fix', 'd', 'satan', 'main', '[]', ?, ?, ?)`,
+      ...Array.from({ length: 3 }, () => new Date(T0).toISOString()),
+    );
+    await migrate(db);
+    expect(await schemaVersions(db)).toEqual([2]);
+    expect(await rawRow(db, "pj-1")).toMatchObject({ id: "pj-1", parked_at: null });
+  });
+
+  it("a v2 schema refuses v1's migration list", async () => {
+    const db = await openBareDb();
+    await migrate(db);
+    await expect(migrate(db, MIGRATIONS.slice(0, 1))).rejects.toThrow(/newer/);
+  });
+});
+
+/** Job pj-1 queued at T0, moved through `states` at T0 + 10, + 20, … */
+async function jobIn(jobs: JobStore, ...states: JobState[]): Promise<void> {
+  await jobs.submit(NEW_JOB, T0);
+  for (const [index, state] of states.entries()) {
+    await jobs.transition("pj-1", state, T0 + 10 * (index + 1));
+  }
+}
+
+const kindsOf = async (jobs: JobStore, id: string): Promise<string[]> =>
+  (await jobs.events(id)).map((event) => event.kind);
+
+describe("parking (DEC-065)", () => {
+  it("parks every non-terminal job once, with one parked event; terminal jobs are left", async () => {
+    const { jobs } = await openTestStore();
+    await jobIn(jobs, "preparing", "running");
+    await jobs.submit({ ...NEW_JOB, submissionId: "sub-2" }, T0 + 1);
+    await jobs.cancel("pj-2", T0 + 2);
+    await jobs.parkAll(T0 + 100);
+    await jobs.parkAll(T0 + 200);
+    expect((await jobs.get("pj-1"))?.parkedAt).toBe(T0 + 100);
+    expect((await jobs.get("pj-2"))?.parkedAt).toBeUndefined();
+    expect((await kindsOf(jobs, "pj-1")).filter((kind) => kind === "parked")).toHaveLength(1);
+    expect(await kindsOf(jobs, "pj-2")).not.toContain("parked");
+  });
+
+  it("parks queued and needs_review jobs too", async () => {
+    const { jobs } = await openTestStore();
+    await jobs.submit(NEW_JOB, T0);
+    await jobs.parkAll(T0 + 5);
+    expect((await jobs.get("pj-1"))?.parkedAt).toBe(T0 + 5);
+  });
+
+  it("unparking shifts the bounds by the parked time, clears parked_at, once", async () => {
+    const { jobs } = await openTestStore();
+    await jobIn(jobs, "preparing", "running");
+    await jobs.parkAll(T0 + 100);
+    await jobs.unparkAll(T0 + 5100);
+    const again = await jobs.unparkAll(T0 + 9000);
+    expect(again).toEqual([]);
+    const job = await jobs.get("pj-1");
+    expect(job).toMatchObject({ stateEnteredAt: T0 + 20 + 5000, runningSince: T0 + 20 + 5000 });
+    expect(job?.parkedAt).toBeUndefined();
+    const unparked = (await jobs.events("pj-1")).filter((event) => event.kind === "unparked");
+    expect(unparked.map((event) => event.payload)).toEqual([
+      { parkedAt: new Date(T0 + 100).toISOString(), shiftedMs: 5000 },
+    ]);
+  });
+
+  it("a state entered while parked counts as wholly parked: its bound starts at unpark", async () => {
+    const { jobs } = await openTestStore();
+    await jobIn(jobs, "preparing", "running", "waiting_room");
+    await jobs.parkAll(T0 + 100);
+    await jobs.cancel("pj-1", T0 + 300);
+    await jobs.unparkAll(T0 + 1000);
+    expect(await jobs.get("pj-1")).toMatchObject({
+      state: "pending_collection",
+      stateEnteredAt: T0 + 1000,
+    });
+  });
+
+  it("parks and unparks in one transaction: an event failure writes no row", async () => {
+    const { db, jobs } = await openTestStore();
+    await jobIn(jobs, "preparing");
+    await jobs.submit({ ...NEW_JOB, submissionId: "sub-2" }, T0 + 1);
+    await refuseEvents(db);
+    await expect(jobs.parkAll(T0 + 100)).rejects.toThrow(/boom/);
+    expect((await jobs.list()).map((job) => job.parkedAt)).toEqual([undefined, undefined]);
   });
 });
 

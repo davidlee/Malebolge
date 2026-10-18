@@ -14,7 +14,7 @@ import { setDefined } from "../fields.ts";
 import type { JsonRecord } from "../json.ts";
 import { RunnerError } from "./errors.ts";
 import { type JobIdFactory, systemJobIds } from "./ids.ts";
-import { cancel, type JobPatch, markPauseRequested, transition } from "./jobs.ts";
+import { cancel, type JobPatch, markPauseRequested, park, rebase, transition } from "./jobs.ts";
 import type { ListRequest } from "./protocol.ts";
 import {
   columnOf,
@@ -23,6 +23,7 @@ import {
   decodeSchemaVersion,
   encodeEvent,
   encodeJob,
+  isoTime,
   type Job,
   type JobEvent,
   type NewEvent,
@@ -90,11 +91,14 @@ CREATE TRIGGER job_events_no_delete BEFORE DELETE ON job_events
   BEGIN SELECT RAISE(ABORT, 'job_events is append-only'); END;
 `;
 
+/** v2 (DEC-065): when a disabled startup parked the job; the next enabled one re-bases its bounds. */
+const V2 = "ALTER TABLE jobs ADD COLUMN parked_at TEXT;";
+
 /**
  * `MIGRATIONS[i]` takes the job schema from version i to i + 1. BINDING: a
  * shipped migration is never edited or reordered; new ones append.
  */
-export const MIGRATIONS: readonly string[] = [V1];
+export const MIGRATIONS: readonly string[] = [V1, V2];
 
 /**
  * Brings `db`'s job schema to `migrations.length`: every pending migration
@@ -169,6 +173,19 @@ async function appendCeilingOnce(
   }
 }
 
+/** Writes `change` to `job`'s row with its event; the job as written. */
+async function writeChange(
+  tx: SqliteExecutor,
+  job: Job,
+  change: Change,
+  now: number,
+): Promise<Job> {
+  const next = applyUpdate(job, change.update, now);
+  await updateJob(tx, next, [...Object.keys(change.update), "updatedAt"]);
+  await insert(tx, "job_events", encodeEvent({ jobId: job.id, at: now, ...change.event }));
+  return next;
+}
+
 async function requireJob(tx: SqliteExecutor, id: string): Promise<Job> {
   const job = await selectJob(tx, "id", id);
   if (job === undefined) {
@@ -180,8 +197,7 @@ async function requireJob(tx: SqliteExecutor, id: string): Promise<Job> {
 // --- the job store ---------------------------------------------------------------
 
 /** The fields one change writes: absent fields are unchanged, `null` clears. */
-export type JobUpdate = Partial<JobPatch> &
-  Partial<
+export type JobUpdate = Partial<JobPatch> & { parkedAt?: number | null } & Partial<
     Pick<
       Job,
       | "conversationId"
@@ -224,15 +240,20 @@ export type RequestVerdict =
 /** Told of each committed job write: the job as written and its event's kind. */
 export type JobListener = (job: Job, kind: EventKind) => void;
 
-/** `job` with `update` applied at `now`. */
+/** `job` with `update` applied at `now`; a `null` field is cleared. */
 function applyUpdate(job: Job, update: JobUpdate, now: number): Job {
-  const { runningSince, ...rest } = update;
-  const next: Job = { ...job, ...rest, updatedAt: now };
+  const { runningSince, parkedAt, ...rest } = update;
+  const next: Job = setDefined<Job>(
+    { ...job, ...rest, updatedAt: now },
+    { runningSince: runningSince ?? undefined, parkedAt: parkedAt ?? undefined },
+  );
   if (runningSince === null) {
     delete next.runningSince;
-    return next;
   }
-  return setDefined(next, { runningSince });
+  if (parkedAt === null) {
+    delete next.parkedAt;
+  }
+  return next;
 }
 
 /**
@@ -312,19 +333,66 @@ export class JobStore {
       async (tx): Promise<{ job: Job; kind?: EventKind }> => {
         const job = await requireJob(tx, id);
         const change = decide(job);
-        if (change === undefined) {
-          return { job };
-        }
-        const next = applyUpdate(job, change.update, now);
-        await updateJob(tx, next, [...Object.keys(change.update), "updatedAt"]);
-        await insert(tx, "job_events", encodeEvent({ jobId: id, at: now, ...change.event }));
-        return { job: next, kind: change.event.kind };
+        return change === undefined
+          ? { job }
+          : { job: await writeChange(tx, job, change, now), kind: change.event.kind };
       },
     );
     if (kind !== undefined) {
       this.#notify(job, kind);
     }
     return job;
+  }
+
+  /** `decide` over every job, its changes in one transaction; the jobs written. */
+  async #changeAll(now: number, decide: Decide): Promise<Job[]> {
+    const written = await this.#db.transaction(async (tx) => {
+      const rows = await tx.all<JsonRecord>("SELECT * FROM jobs ORDER BY created_at, id");
+      const changed: { job: Job; kind: EventKind }[] = [];
+      for (const job of rows.map(decodeJob)) {
+        const change = decide(job);
+        if (change !== undefined) {
+          changed.push({ job: await writeChange(tx, job, change, now), kind: change.event.kind });
+        }
+      }
+      return changed;
+    });
+    for (const { job, kind } of written) {
+      this.#notify(job, kind);
+    }
+    return written.map(({ job }) => job);
+  }
+
+  /**
+   * A disabled startup (DEC-065): every non-terminal job not yet parked is
+   * parked at `now`, each with a `parked` event, in one transaction.
+   */
+  parkAll(now: number): Promise<Job[]> {
+    return this.#changeAll(now, (job) => {
+      const update = park(job, now);
+      return update === undefined ? undefined : { update, event: { kind: "parked", payload: {} } };
+    });
+  }
+
+  /**
+   * An enabled startup, before any bound is judged (DEC-065): every parked job
+   * has its bounds re-based past the parked time and `parked_at` cleared,
+   * each with an `unparked` event, in one transaction. A second call finds
+   * nothing parked: a crash either side re-bases once.
+   */
+  unparkAll(now: number): Promise<Job[]> {
+    return this.#changeAll(now, (job) => {
+      const rebased = rebase(job, now);
+      return rebased === undefined
+        ? undefined
+        : {
+            update: rebased.update,
+            event: {
+              kind: "unparked",
+              payload: { parkedAt: isoTime(rebased.parkedAt), shiftedMs: rebased.shiftedMs },
+            },
+          };
+    });
   }
 
   /**
