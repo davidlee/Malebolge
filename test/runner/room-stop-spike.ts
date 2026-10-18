@@ -19,13 +19,8 @@ import {
   scanHostKey,
 } from "@earendil-works/pi-env";
 import { isRecord } from "../../src/json.ts";
-import {
-  type LostFailure,
-  markPause,
-  ObservedConnection,
-  PAUSE_SCHEMA,
-  pauseRequested,
-} from "./env-fixture.ts";
+import { JobConnection, type LostFailure } from "../../src/runner/env.ts";
+import { markPause, PAUSE_SCHEMA, pauseRequested } from "./env-fixture.ts";
 import { openSharedStore, within } from "./runner-fixture.ts";
 
 /** The non-empty value of environment variable `name`, or undefined. */
@@ -108,7 +103,7 @@ async function main(slot: string): Promise<void> {
   const job = `room-stop-${String(started)}`;
   const seam: { failure: LostFailure; at: number; markSettledMs: number }[] = [];
   const otherFailures: { op: string; at: number; error: unknown }[] = [];
-  const connection = new ObservedConnection(inner, {
+  const connection = new JobConnection(inner, {
     lost: async (failure): Promise<void> => {
       const at = since();
       await within(5000, "pause mark", markPause(store.db, job, failure));

@@ -38,6 +38,8 @@ prompt = "Repo note."
 [door]
 slot = "f"
 quarantine = "~/state/collect/f.git"
+host = "10.99.0.2"
+user = "agent"
 ssh_config = "~/.ssh/config"
 identity = "~/.ssh/id"
 known_hosts = "~/.ssh/known_hosts"

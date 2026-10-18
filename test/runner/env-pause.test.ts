@@ -1,6 +1,6 @@
 // PHASE-01 spike (DEC-055, RV-025 F-2/F-17), offline half: pi-env's
 // lost-connection failure on a real local daemon killed mid-exec, recognised by
-// type at the Connection seam, marked durably on the shared SQLite adapter
+// type at the runner's JobConnection, marked durably on the shared SQLite adapter
 // outside any pi transaction, and visible to `afterTool`; the same text without
 // the type is not recognised. The live half (a VM stop) is room-stop.live.test.ts.
 
@@ -13,20 +13,14 @@ import {
   isConnectionLost,
   localDaemon,
   RemoteError,
-  RemoteExecutionEnv,
   type RemoteInfo,
 } from "@earendil-works/pi-env";
 import { afterEach, describe, expect, it } from "vitest";
 import { context } from "../../src/context.ts";
+import { type ConnectionObserver, jobEnv, type LostFailure } from "../../src/runner/env.ts";
 import { tempDir } from "../fixtures.ts";
 import { callThenAnswer, openFauxHarness, textOf, toolResults } from "../harness-fixture.ts";
-import {
-  type LostFailure,
-  markPause,
-  ObservedConnection,
-  PAUSE_SCHEMA,
-  pauseRequested,
-} from "./env-fixture.ts";
+import { markPause, PAUSE_SCHEMA, pauseRequested } from "./env-fixture.ts";
 import { closeHarness, openSharedStore, within } from "./runner-fixture.ts";
 
 const JOB = "job-1";
@@ -63,15 +57,14 @@ class FailingConnection extends Connection {
 const localConnection = (): Connection => new Connection({ command: [localDaemon()] });
 
 interface Observed {
-  connection: ObservedConnection;
   marks: LostFailure[];
   env: (cwd: string) => ExecutionEnv;
 }
 
-/** `inner` behind the Connection seam, marking pauses on `db`. */
+/** A job environment over `inner`, its connection marking pauses on `db`. */
 function observe(inner: Connection, db: SqliteDatabase, killOnExec: boolean): Observed {
   const marks: LostFailure[] = [];
-  const connection = new ObservedConnection(inner, {
+  const observer: ConnectionObserver = {
     lost: async (failure): Promise<void> => {
       marks.push(failure);
       await within(2000, "pause mark", markPause(db, JOB, failure));
@@ -81,11 +74,10 @@ function observe(inner: Connection, db: SqliteDatabase, killOnExec: boolean): Ob
         void inner.info().then((info) => process.kill(info.pid, "SIGTERM"));
       }
     },
-  });
+  };
   return {
-    connection,
     marks,
-    env: (cwd) => new RemoteExecutionEnv({ connection, id: "pi-env:spike", cwd }),
+    env: (cwd) => jobEnv({ jobId: JOB, cwd, connection: inner, observer }),
   };
 }
 

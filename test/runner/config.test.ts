@@ -29,6 +29,8 @@ describe("parseRunnerConfig", () => {
     expect(config.door).toEqual({
       slot: "f",
       quarantine: "/home/test/state/collect/f.git",
+      host: "10.99.0.2",
+      user: "agent",
       sshConfig: "/home/test/.ssh/config",
       identity: "/home/test/.ssh/id",
       knownHosts: "/home/test/.ssh/known_hosts",

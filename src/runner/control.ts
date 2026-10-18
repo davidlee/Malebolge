@@ -15,6 +15,7 @@ import type { JsonRecord } from "../json.ts";
 import { encodeLine, lineSplitter } from "../ndjson.ts";
 import { connectUnix, serveUnix, type UnixServer } from "../unix-socket.ts";
 import type { RunnerConfig } from "./config.ts";
+import { conversationText } from "./durable-ids.ts";
 import { isRunnerError, RunnerError, StartRefused } from "./errors.ts";
 import { checkBaseRef, type RepoReader } from "./git.ts";
 import { transition } from "./jobs.ts";
@@ -60,7 +61,9 @@ export interface ControlDeps {
 export function harnessConversations(harness: Harness): Conversations {
   return {
     create: async () =>
-      String((await harness.createConversation({ ownership: { kind: "ownerless" } }, context)).id),
+      conversationText(
+        (await harness.createConversation({ ownership: { kind: "ownerless" } }, context)).id,
+      ),
   };
 }
 

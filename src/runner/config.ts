@@ -73,6 +73,10 @@ export interface DoorConfig {
   quarantine?: string;
   /** Passed to `provision` when the slot needs it. */
   profile?: string;
+  /** The guest's address, as ssh reaches it through `sshConfig`. */
+  host?: string;
+  /** The guest's ssh user. */
+  user?: string;
   sshConfig?: string;
   identity?: string;
   knownHosts?: string;
@@ -203,7 +207,7 @@ function readRepo(fields: JsonRecord, where: string, home: string): RepoConfig {
 function readDoor(fields: JsonRecord, home: string): DoorConfig {
   onlyKeys(
     fields,
-    ["slot", "quarantine", "profile", "ssh_config", "identity", "known_hosts"],
+    ["slot", "quarantine", "profile", "host", "user", "ssh_config", "identity", "known_hosts"],
     "door",
   );
   const text = (key: string): string | undefined =>
@@ -218,6 +222,8 @@ function readDoor(fields: JsonRecord, home: string): DoorConfig {
       slot: text("slot"),
       quarantine: path("quarantine"),
       profile: text("profile"),
+      host: text("host"),
+      user: text("user"),
       sshConfig: path("ssh_config"),
       identity: path("identity"),
       knownHosts: path("known_hosts"),

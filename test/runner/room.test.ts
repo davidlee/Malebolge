@@ -199,16 +199,38 @@ describe("the channel from config", () => {
 });
 
 describe("the room connection for the execution environment", () => {
-  it("is the door's ssh facts", () => {
+  it("is the door's ssh facts, host keys stored under an alias for the slot", () => {
     expect(roomConnection(exampleConfig())).toEqual({
+      host: "10.99.0.2",
+      user: "agent",
+      hostKeyAlias: "pi-env-f",
+      knownHosts: "/home/test/.ssh/known_hosts",
       sshConfig: "/home/test/.ssh/config",
       identity: "/home/test/.ssh/id",
-      knownHosts: "/home/test/.ssh/known_hosts",
     });
   });
 
-  it("refuses to start without a door table", () => {
-    expect(() => roomConnection(parseRunnerConfig(withoutDoor(), HOME))).toThrow(StartRefused);
+  it("leaves the optional ssh config and identity out when the door has none", () => {
+    const text = variant('ssh_config = "~/.ssh/config"\nidentity = "~/.ssh/id"\n', "");
+    const connection = roomConnection(parseRunnerConfig(text, HOME));
+    expect(connection).not.toHaveProperty("sshConfig");
+    expect(connection).not.toHaveProperty("identity");
+  });
+
+  it.each([
+    ["no door table", withoutDoor, /\[door\]/],
+    ["no slot", (): string => variant('slot = "f"\n', ""), /slot/],
+    ["no host", (): string => variant('host = "10.99.0.2"\n', ""), /host/],
+    ["no user", (): string => variant('user = "agent"\n', ""), /user/],
+    [
+      "no known_hosts",
+      (): string => variant('known_hosts = "~/.ssh/known_hosts"\n', ""),
+      /known_hosts/,
+    ],
+  ])("refuses to start with %s (I13)", (_label, text, reason) => {
+    const config = parseRunnerConfig(text(), HOME);
+    expect(() => roomConnection(config)).toThrow(StartRefused);
+    expect(() => roomConnection(config)).toThrow(reason);
   });
 });
 
@@ -217,7 +239,7 @@ function withoutDoor(): string {
   const text = variant("[door]", "");
   return text
     .split("\n")
-    .filter((line) => !/^(slot|quarantine|ssh_config|identity|known_hosts) =/.test(line))
+    .filter((line) => !/^(slot|quarantine|host|user|ssh_config|identity|known_hosts) =/.test(line))
     .join("\n");
 }
 

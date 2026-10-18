@@ -182,6 +182,12 @@ function doorOf(config: RunnerConfig): NonNullable<RunnerConfig["door"]> {
   return config.door;
 }
 
+/** A refusal naming the door keys, by their TOML names, that `keys` lacks. */
+function lacking(keys: Readonly<Record<string, string | undefined>>): StartRefused {
+  const unset = Object.keys(keys).filter((key) => keys[key] === undefined);
+  return new StartRefused(`[door] lacks ${unset.join(", ")}`);
+}
+
 /** The configured channel; refuses to start without the door keys it needs (I13). */
 export function channelFromConfig(
   config: RunnerConfig,
@@ -190,20 +196,32 @@ export function channelFromConfig(
 ): GitChannel {
   const { slot, quarantine, profile } = doorOf(config);
   if (slot === undefined || quarantine === undefined) {
-    throw new StartRefused("[door] needs slot and quarantine");
+    throw lacking({ slot, quarantine });
   }
   return slotChannel(setDefined<SlotDoor>({ slot, quarantine }, { profile }), cli, reader);
 }
 
 /** How the execution environment reaches the room's shell. */
 export interface RoomConnection {
+  /** The guest's address. */
+  host: string;
+  user: string;
+  /** The fixed name the room's host keys are stored under in `knownHosts`. */
+  hostKeyAlias: string;
+  knownHosts: string;
+  /** An ssh config file (e.g. the relay's ProxyCommand) instead of `~/.ssh/config`. */
   sshConfig?: string;
   identity?: string;
-  knownHosts?: string;
 }
 
-/** The execution environment's connection facts; refuses to start without a door (I13). */
+/** The execution environment's connection facts; refuses to start without them (I13). */
 export function roomConnection(config: RunnerConfig): RoomConnection {
-  const { sshConfig, identity, knownHosts } = doorOf(config);
-  return setDefined<RoomConnection>({}, { sshConfig, identity, knownHosts });
+  const { slot, host, user, knownHosts, sshConfig, identity } = doorOf(config);
+  if (slot === undefined || host === undefined || user === undefined || knownHosts === undefined) {
+    throw lacking({ slot, host, user, known_hosts: knownHosts });
+  }
+  return setDefined<RoomConnection>(
+    { host, user, hostKeyAlias: `pi-env-${slot}`, knownHosts },
+    { sshConfig, identity },
+  );
 }
