@@ -33,6 +33,8 @@ import { execFileSync } from "node:child_process";
 import { join } from "node:path";
 import type { SqliteDatabase } from "@earendil-works/pi-durable/storage/sqlite";
 import { type CollectDeps } from "../../src/runner/collect.ts";
+import { readyRoom, type ReadyDeps } from "../../src/runner/prepare.ts";
+import { roomShell } from "../../src/runner/shell.ts";
 import type { RepoConfig, RunnerConfig } from "../../src/runner/config.ts";
 import { gitQuarantineReader } from "../../src/runner/git.ts";
 import { type Job, type JobEvent, JobStore } from "../../src/runner/store.ts";
@@ -44,6 +46,7 @@ import {
   roomChannel,
   slotChannel,
 } from "../../src/runner/room.ts";
+import { localConnection } from "./env-fixture.ts";
 import {
   type BareRepo,
   gitIn,
@@ -377,17 +380,18 @@ export interface RoomKindWorld extends Rooms {
  * A real repo on `main`; its room's clone fresh (`git init`, an unborn branch,
  * no commits, as SL-006 sec-6 gives it); a quarantine path collect will make.
  */
-export function roomKindWorld(): RoomKindWorld {
+export function roomKindWorld(options: RoomWorldOptions = {}): RoomKindWorld {
   const real = tempRepo();
   const room = tempUnbornRepo("work");
   const quarantinePath = join(tempDir("mb-collect-"), ROOM, "satan.git");
   const quarantine: BareRepo = { path: quarantinePath, git: gitIn(quarantinePath) };
-  const rooms = { room, quarantine, guestPath: ROOM_GUEST_PATH };
+  const guestPath = options.guestAtClone === true ? room.path : ROOM_GUEST_PATH;
+  const rooms = { room, quarantine, guestPath };
   const capsule = fakeRoom({ ...rooms, repo: "satan", source: real.path });
   const repo: RepoConfig = {
     name: "satan",
     path: real.path,
-    guestPath: ROOM_GUEST_PATH,
+    guestPath,
     defaultBranch: "main",
     quarantine: quarantinePath,
     transferTimeoutS: 600,
@@ -462,6 +466,7 @@ async function collectWorldOver<W extends ChannelWorld>(
     channel: world.channel,
     quarantine: gitQuarantineReader,
     config,
+    connect: () => localConnection(),
   };
   const job = async (): Promise<Job> => {
     const found = await jobs.get(jobId);
@@ -482,8 +487,55 @@ export const collectWorld = (
   jobsOn: JobsOn = ownJobs,
 ): Promise<CollectWorld> => collectWorldOver(roomWorld(), exampleConfig(), endReason, jobsOn);
 
-/** `collectWorldOver` a room door's `roomKindWorld`. */
+/**
+ * `collectWorldOver` a room door's `roomKindWorld`, its `guest_path` the
+ * clone's own: the clean after collect runs there through a local daemon.
+ */
 export const roomKindCollectWorld = (
   endReason: EndReason = "completed",
 ): Promise<CollectWorld<RoomKindWorld>> =>
-  collectWorldOver(roomKindWorld(), roomConfig(), endReason, ownJobs);
+  collectWorldOver(roomKindWorld({ guestAtClone: true }), roomConfig(), endReason, ownJobs);
+
+/** A job `preparing` over a room-kind world, and `readyRoom` for it through a local daemon. */
+export interface Readying {
+  jobs: JobStore;
+  job: Job;
+  /** Each pause, in ms; the clock moves by it. */
+  slept: number[];
+  /** `readyRoom` for the job over `repo` (default the world's), its shell in `repo.guestPath`. */
+  ready: (repo?: RepoConfig) => Promise<string>;
+}
+
+export async function readying(
+  world: RoomKindWorld,
+  options: { maxRoomWaitS?: number; onSleep?: () => void } = {},
+): Promise<Readying> {
+  const { jobs } = await openTestStore();
+  const { job: queued } = await jobs.submit(NEW_JOB, T0);
+  const job = await jobs.transition(queued.id, "preparing", T0);
+  const example = roomConfig();
+  let clock = T0;
+  const slept: number[] = [];
+  const deps: ReadyDeps = {
+    jobs,
+    channel: world.channel,
+    config: { ...example, maxima: { ...example.maxima, maxRoomWaitS: options.maxRoomWaitS ?? 60 } },
+    now: () => clock,
+    sleep: (ms) => {
+      slept.push(ms);
+      clock += ms;
+      options.onSleep?.();
+      return Promise.resolve();
+    },
+  };
+  const ready = async (repo = world.repo): Promise<string> => {
+    const connection = localConnection();
+    try {
+      const shell = roomShell(connection, job.id, repo.guestPath);
+      return await readyRoom(deps, job, repo, shell, new AbortController().signal);
+    } finally {
+      connection.close();
+    }
+  };
+  return { jobs, job, slept, ready };
+}

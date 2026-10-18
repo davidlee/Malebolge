@@ -4,15 +4,18 @@
 // is retried with backoff, bounded by `max_room_wait` from when the job
 // entered `preparing`; nothing here touches the conversation.
 
-import { withAbortSignal } from "@earendil-works/chord/context";
-import type { Connection } from "@earendil-works/pi-env";
-import { context } from "../context.ts";
 import type { JsonRecord } from "../json.ts";
 import { pausedForRetry, roomWaitDeadline, type Sleep } from "./backoff.ts";
 import type { RepoConfig, RunnerConfig } from "./config.ts";
-import { type HostKeyFailure, jobEnv } from "./env.ts";
 import { isRunnerError, messageOf } from "./errors.ts";
-import { ChannelFailed, ChannelUnavailable, type GitChannel, jobBranch } from "./room.ts";
+import {
+  ChannelFailed,
+  ChannelUnavailable,
+  type GitChannel,
+  jobBranch,
+  type RoomShell,
+  succeeded,
+} from "./room.ts";
 import type { Job, JobStore } from "./store.ts";
 import type { EndReason } from "./vocab.ts";
 
@@ -48,82 +51,6 @@ function failureReason(error: unknown): string {
     return error.reason;
   }
   return "prepare_failed";
-}
-
-// --- the room's shell ------------------------------------------------------------
-
-export interface ShellOutput {
-  code: number;
-  stdout: string;
-  stderr: string;
-}
-
-/** Runs an argument vector in the room's clone; ChannelUnavailable when the room is down. */
-export type RoomShell = (argv: readonly string[], signal: AbortSignal) => Promise<ShellOutput>;
-
-/**
- * A shell in the room's clone `cwd` over the job's daemon `connection`. The
- * environment turns a lost connection into an exec failure; its connection
- * reports the loss by type first, which is what makes it ChannelUnavailable.
- * A loss whose start failed trust is ChannelFailed `host_key` instead: never
- * retried. Counting only: nothing here marks a pause (EX-8).
- */
-export function roomShell(connection: Connection, jobId: string, cwd: string): RoomShell {
-  let losses = 0;
-  const untrusted: HostKeyFailure[] = [];
-  const env = jobEnv({
-    jobId,
-    cwd,
-    connection,
-    observer: {
-      lost: () => {
-        losses++;
-        return Promise.resolve();
-      },
-      untrusted: (_failure, trust) => {
-        untrusted.push(trust);
-      },
-    },
-  });
-  return async (argv, signal) => {
-    const before = losses;
-    const trustedBefore = untrusted.length;
-    const output = { stdout: "", stderr: "" };
-    const result = await env.exec(
-      argv,
-      {
-        onOutput: (text, _context, info) => {
-          output[info.stream] += text;
-        },
-      },
-      withAbortSignal(signal, context),
-    );
-    if (result.ok) {
-      return { code: result.value.exitCode, ...output };
-    }
-    const message = `${argv.join(" ")}: ${result.error.message}`;
-    const trust = untrusted.at(trustedBefore);
-    if (trust !== undefined) {
-      throw new ChannelFailed(message, { cause: trust, reason: "host_key" });
-    }
-    throw losses > before
-      ? new ChannelUnavailable(message, { cause: result.error })
-      : new ChannelFailed(message, { cause: result.error });
-  };
-}
-
-async function succeeded(
-  shell: RoomShell,
-  argv: readonly string[],
-  signal: AbortSignal,
-): Promise<string> {
-  const output = await shell(argv, signal);
-  if (output.code !== 0) {
-    throw new ChannelFailed(
-      `${argv.join(" ")} exited ${String(output.code)}: ${output.stderr.trim()}`,
-    );
-  }
-  return output.stdout;
 }
 
 /**
@@ -178,7 +105,8 @@ async function recordBase(deps: ReadyDeps, job: Job, repo: RepoConfig): Promise<
 
 /**
  * The room ready for preparing `job`: its base refreshed (once; a recorded
- * `base_oid` is kept) and the job branch at it. Returns the base oid. A room
+ * `base_oid` is kept), its clone checked (never cleaned: a defect is
+ * PrepareFailed with it, design §5.2) and the job branch at the base. Returns the base oid. A room
  * that is down is retried until `max_room_wait` from `state_entered_at`, then
  * PrepareFailed `room_unavailable`. Stops early, rethrowing, once `signal`
  * aborts.
@@ -196,6 +124,10 @@ export async function readyRoom(
     signal.throwIfAborted();
     try {
       baseOid ??= await recordBase(deps, job, repo);
+      const defect = await deps.channel.checkClone(shell, repo, signal);
+      if (defect !== undefined) {
+        throw new PrepareFailed(defect);
+      }
       await ensureJobBranch(shell, job.id, baseOid, signal);
       return baseOid;
     } catch (error) {

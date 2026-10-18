@@ -176,6 +176,7 @@ export async function startRunner(env: Env, options: StartOptions): Promise<Runn
     channel: room.channel,
     quarantine: gitQuarantineReader,
     config,
+    connect: room.connect,
   };
   const stop = new AbortController();
   const runDeps: RejoinDeps = {
@@ -183,7 +184,6 @@ export async function startRunner(env: Env, options: StartOptions): Promise<Runn
     harness,
     conversations,
     tenancy,
-    connect: room.connect,
     extensions,
     readPrompt: () => readFile(config.promptFile, "utf8"),
     now,

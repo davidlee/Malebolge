@@ -4,6 +4,8 @@
 // verb, no env command, nothing timed out, the harness never asked for
 // progress. Parking (EX-7): parked once, re-based once.
 
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import type { AssistantMessage } from "@earendil-works/pi-ai";
 import {
   type FauxResponseStep,
@@ -24,7 +26,12 @@ import { RESUME_TEXT } from "../../src/runner/pause.ts";
 import { recordedPolicy } from "../../src/runner/policy.ts";
 import type { RunDeps } from "../../src/runner/run.ts";
 import { readSnapshot, recoverHost } from "../../src/runner/recover.ts";
-import { ChannelUnavailable, type GitChannel } from "../../src/runner/room.ts";
+import {
+  ChannelUnavailable,
+  checkRoomClone,
+  cleanRoomClone,
+  type GitChannel,
+} from "../../src/runner/room.ts";
 import type { Job, JobEvent } from "../../src/runner/store.ts";
 import { WARNING_TEXT } from "../../src/runner/warning.ts";
 import { textOf } from "../harness-fixture.ts";
@@ -66,7 +73,11 @@ interface Room {
   untrusted?: (() => Error) | undefined;
 }
 
-/** The fake slot and the local daemon, watched; `down` makes probes fail and collection unavailable. */
+/**
+ * The fake slot and the local daemon, watched; `down` makes probes fail and
+ * collection unavailable. Its clone hygiene is the room's, run for real in
+ * the slot's clone, so every row exercises the checks and the clean.
+ */
 const watched = (room: Room): Pick<RunWorldOptions, "channel" | "connection"> => ({
   channel: (channel): GitChannel => ({
     refresh: async (repo, baseRef): ReturnType<GitChannel["refresh"]> => {
@@ -86,6 +97,14 @@ const watched = (room: Room): Pick<RunWorldOptions, "channel" | "connection"> =>
       room.calls.push("probe");
       await room.before?.("probe");
       return !room.down && (await channel.reachable());
+    },
+    checkClone: (shell, repo, signal): ReturnType<GitChannel["checkClone"]> => {
+      room.calls.push("check");
+      return checkRoomClone(shell, repo, signal);
+    },
+    cleanClone: (shell, signal): Promise<void> => {
+      room.calls.push("clean");
+      return cleanRoomClone(shell, signal);
     },
   }),
   connection: (local): Connection => {
@@ -458,6 +477,34 @@ describe("enabled restart: the in-flight job rejoined, phase B then resume() (VT
     expect(r.faux.state.callCount).toBe(0);
   });
 
+  it("row 4 (EX-6): residue in the clone since: checked again, failed dirty_clone, nothing asked of the harness", async () => {
+    const c = await crashedAt("prompt", []);
+    writeFileSync(join(c.w.room.path, "residue.txt"), "left behind\n");
+
+    const { r, job } = await rejoined(c);
+
+    expect(job).toMatchObject({
+      state: "failed",
+      failure: { reason: "dirty_clone", paths: ["residue.txt"] },
+    });
+    expect(c.room.calls).toContain("check");
+    expect(c.room.calls).not.toContain("switch");
+    expect(r.faux.state.callCount).toBe(0);
+  });
+
+  it("row 5 (VT-7): the agent's files in the clone after admission: no checks, no dirty_clone, records running", async () => {
+    const c = await started(undefined, [], { harness: stoppedAfterSubmit("pj-") });
+    await c.w.scheduler.idle();
+    mkdirSync(join(c.w.room.path, "src"), { recursive: true });
+    writeFileSync(join(c.w.room.path, "src", "agent-work.ts"), "export {};\n");
+
+    const { r, job } = await rejoined(c);
+
+    expect(job.state).toBe("needs_review");
+    expect(c.room.calls).not.toContain("check");
+    expect(runningPayloads(await r.events(c.id))).toHaveLength(1);
+  });
+
   it("row 5 (VT-4): admitted, running never written: recorded running, no branch judgement, continued", async () => {
     const c = await started(undefined, [], { harness: stoppedAfterSubmit("pj-") });
     await c.w.scheduler.idle();
@@ -738,6 +785,21 @@ describe("enabled restart: waiting, collection, and close as the fault (VT-1, EX
     expect(job).toMatchObject({ state: "needs_review", class: "complete" });
     expect(c.room.calls.filter((verb) => verb === "collect")).toHaveLength(1);
     expect(kinds(await r.events(c.id)).filter((kind) => kind === "collected")).toHaveLength(1);
+  });
+
+  it("row 12 (VT-8): crashed between collect and clean: collected again, then cleaned in the rejoin (R1)", async () => {
+    const c = await crashedAt("collected", WORK());
+    const residue = join(c.w.room.path, "residue.txt");
+    writeFileSync(residue, "uncollectable\n");
+
+    const { job } = await rejoined(c, []);
+
+    expect(job.state).toBe("needs_review");
+    expect(c.room.calls.filter((verb) => verb === "collect" || verb === "clean")).toEqual([
+      "collect",
+      "clean",
+    ]);
+    expect(existsSync(residue)).toBe(false);
   });
 
   it("shape (e): a leftover pause on a collecting row is inert: collected, never waiting", async () => {

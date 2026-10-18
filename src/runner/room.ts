@@ -36,7 +36,39 @@ export interface GitChannel {
   collect: (repo: RepoConfig, jobId: string) => Promise<Collected>;
   /** Cheap reachability probe; never throws. */
   reachable: () => Promise<boolean>;
+  /**
+   * Why the clone cannot take a new job (`preparing`, before its branch), or
+   * `undefined`. Never changes the clone (design §5.2).
+   */
+  checkClone: (
+    shell: RoomShell,
+    repo: RepoConfig,
+    signal: AbortSignal,
+  ) => Promise<CloneDefect | undefined>;
+  /** Discards a collected job's residue from the clone; idempotent (design §5.2). */
+  cleanClone: (shell: RoomShell, signal: AbortSignal) => Promise<void>;
 }
+
+/** A clone refused for a new job: `failed(error)` with this as its failure. */
+export type CloneDefect =
+  | { reason: "guest_path_invalid"; guestPath: string }
+  | { reason: "dirty_clone"; paths: string[] };
+
+export interface ShellOutput {
+  code: number;
+  stdout: string;
+  stderr: string;
+}
+
+/**
+ * Runs an argument vector in the room's clone (or `cwd`); ChannelUnavailable
+ * when the room is down.
+ */
+export type RoomShell = (
+  argv: readonly string[],
+  signal: AbortSignal,
+  cwd?: string,
+) => Promise<ShellOutput>;
 
 interface ChannelErrorOptions<Reason> extends ErrorOptions {
   reason?: Reason;
@@ -74,6 +106,21 @@ export class ChannelFailed extends Error {
 
 /** The branch a job's commits are made on in the room. */
 export const jobBranch = (jobId: string): string => `job/${jobId}`;
+
+/** `argv`'s stdout; ChannelFailed when it exits non-zero. */
+export async function succeeded(
+  shell: RoomShell,
+  argv: readonly string[],
+  signal: AbortSignal,
+): Promise<string> {
+  const output = await shell(argv, signal);
+  if (output.code !== 0) {
+    throw new ChannelFailed(
+      `${argv.join(" ")} exited ${String(output.code)}: ${output.stderr.trim()}`,
+    );
+  }
+  return output.stdout;
+}
 
 /** `capsule args`. Rejects only when it cannot run, or (`TimedOut`) outlives `timeoutMs`. */
 export type CapsuleCli = (
@@ -197,7 +244,14 @@ export function slotChannel(
     return landed(quarantine, collectedJobRef(slot, jobId), jobId);
   }
 
-  return { refresh, collect, reachable };
+  // The slot's clone is returned to `work` by refresh: nothing to check or clean.
+  return {
+    refresh,
+    collect,
+    reachable,
+    checkClone: () => Promise.resolve(undefined),
+    cleanClone: () => Promise.resolve(),
+  };
 }
 
 // --- the room adapter (oubliette SL-006 design sec-6, provisional) -------------------
@@ -321,7 +375,38 @@ export function roomChannel(
     return landed(quarantine, collectedJobRef(room, jobId), jobId);
   }
 
-  return { refresh, collect, reachable };
+  return { refresh, collect, reachable, checkClone: checkRoomClone, cleanClone: cleanRoomClone };
+}
+
+/**
+ * The room's preparing checks (design §5.2): `<guest_path>/.git` is a
+ * directory, and `git status --porcelain` is empty (untracked counted, ignored
+ * not). Run from `/`, so an absent `guest_path` is a defect, not a failed exec.
+ */
+export async function checkRoomClone(
+  shell: RoomShell,
+  repo: RepoConfig,
+  signal: AbortSignal,
+): Promise<CloneDefect | undefined> {
+  const { guestPath } = repo;
+  if ((await shell(["test", "-d", `${guestPath}/.git`], signal, "/")).code !== 0) {
+    return { reason: "guest_path_invalid", guestPath };
+  }
+  const status = ["git", "status", "--porcelain", "--untracked-files=normal"];
+  const paths = (await succeeded(shell, status, signal))
+    .split("\n")
+    .filter((line) => line !== "")
+    .map((line) => line.slice(3));
+  return paths.length === 0 ? undefined : { reason: "dirty_clone", paths };
+}
+
+/**
+ * The room's clean after a collect (design §5.2): tracked changes reset, and
+ * untracked files and nested repos removed; ignored files (caches) kept.
+ */
+export async function cleanRoomClone(shell: RoomShell, signal: AbortSignal): Promise<void> {
+  await succeeded(shell, ["git", "reset", "--quiet", "--hard"], signal);
+  await succeeded(shell, ["git", "clean", "-ffd", "--quiet"], signal);
 }
 
 // --- from config -------------------------------------------------------------------

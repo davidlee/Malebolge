@@ -4,6 +4,8 @@
 // room that is down retried with backoff up to `max_room_wait`. One
 // `describe` per function; PHASE-15 appends room checks here.
 
+import { mkdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { type Connection, HostKeyChangedError, HostKeyUnknownError } from "@earendil-works/pi-env";
 import { afterEach, describe, expect, it } from "vitest";
 import { roomRetryDelay } from "../../src/runner/backoff.ts";
@@ -16,16 +18,27 @@ import {
   preparingFailure,
   readyRoom,
   type ReadyDeps,
-  type RoomShell,
-  roomShell,
-  type ShellOutput,
 } from "../../src/runner/prepare.ts";
-import { ChannelFailed, ChannelUnavailable, type GitChannel } from "../../src/runner/room.ts";
+import {
+  ChannelFailed,
+  ChannelUnavailable,
+  type CloneDefect,
+  type GitChannel,
+  type RoomShell,
+  type ShellOutput,
+} from "../../src/runner/room.ts";
+import { roomShell } from "../../src/runner/shell.ts";
 import type { Job, JobStore } from "../../src/runner/store.ts";
 import { tempDir } from "../fixtures.ts";
 import { exampleConfig, roomConfig } from "./config-fixture.ts";
 import { doorFacts, fakeHelpers, localConnection, lostConnection } from "./env-fixture.ts";
-import { type RoomWorld, roomWorld } from "./room-fixture.ts";
+import {
+  readying,
+  type RoomKindWorld,
+  type RoomWorld,
+  roomKindWorld,
+  roomWorld,
+} from "./room-fixture.ts";
 import { NEW_JOB, openTestStore, T0 } from "./store-fixture.ts";
 
 const JOB_ID = "pj-1";
@@ -187,6 +200,8 @@ describe("readyRoom", () => {
     job: Job;
     /** Refresh calls so far. */
     refreshes: () => number;
+    /** Clone checks so far. */
+    checks: () => number;
     slept: number[];
     shellCalls: string[][];
     shell: RoomShell;
@@ -201,6 +216,8 @@ describe("readyRoom", () => {
     maxRoomWaitS?: number;
     /** Called on each pause, after the clock moves. */
     onSleep?: () => void;
+    /** What every clone check finds; default none. */
+    defect?: CloneDefect;
   }
 
   async function readyWorld(options: ReadyOptions = {}): Promise<ReadyWorld> {
@@ -215,6 +232,7 @@ describe("readyRoom", () => {
     );
     const refreshSteps = options.refresh ?? [(): string => BASE];
     let refreshes = 0;
+    let checks = 0;
     const channel: GitChannel = {
       refresh: () => {
         const next = refreshSteps[Math.min(refreshes++, refreshSteps.length - 1)];
@@ -222,6 +240,11 @@ describe("readyRoom", () => {
       },
       collect: () => Promise.reject(new Error("not in preparing")),
       reachable: () => Promise.resolve(true),
+      checkClone: () => {
+        checks++;
+        return Promise.resolve(options.defect);
+      },
+      cleanClone: () => Promise.reject(new Error("preparing never cleans")),
     };
     const answers = options.shell ?? [
       (): ShellOutput => ({ code: 1, stdout: "", stderr: "" }),
@@ -252,7 +275,16 @@ describe("readyRoom", () => {
         return Promise.resolve();
       },
     };
-    return { deps, jobs, job, refreshes: () => refreshes, slept, shellCalls, shell };
+    return {
+      deps,
+      jobs,
+      job,
+      refreshes: () => refreshes,
+      checks: () => checks,
+      slept,
+      shellCalls,
+      shell,
+    };
   }
 
   /** The channel and shell are faked: the repo is only passed through. */
@@ -347,6 +379,34 @@ describe("readyRoom", () => {
     expect(failure).toMatchObject({ reason: "room_unavailable", channel: "channel_timeout" });
   });
 
+  it("checks the clone after the base and before the branch, on every attempt", async () => {
+    const w = await readyWorld({
+      shell: [
+        (): ShellOutput => {
+          throw new ChannelUnavailable("room down");
+        },
+        (): ShellOutput => ({ code: 1, stdout: "", stderr: "" }),
+        (): ShellOutput => ({ code: 0, stdout: "", stderr: "" }),
+      ],
+    });
+
+    await ready(w);
+
+    expect(w.checks()).toBe(2);
+    expect(w.refreshes()).toBe(1);
+  });
+
+  it("a clone defect fails preparing with it, before any branch work", async () => {
+    const defect: CloneDefect = { reason: "dirty_clone", paths: ["x"] };
+    const w = await readyWorld({ defect });
+
+    const error = await rejection(ready(w));
+
+    expect(preparingFailure(error)).toEqual({ failure: defect, endReason: "error" });
+    expect(w.shellCalls).toEqual([]);
+    expect(w.slept).toEqual([]);
+  });
+
   it("does not retry ChannelFailed", async () => {
     const failed = new ChannelFailed("refused");
     const w = await readyWorld({
@@ -374,6 +434,82 @@ describe("readyRoom", () => {
 
     expect(w.refreshes()).toBe(1);
     expect(w.slept).toHaveLength(1);
+  });
+});
+
+describe("readyRoom over a room's clone: checked, never cleaned (VT-7, EX-6)", () => {
+  function world(): RoomKindWorld {
+    return roomKindWorld({ guestAtClone: true });
+  }
+
+  /** The clone as `git status` sees it, and whether `job/<id>` exists. */
+  const tree = (w: RoomKindWorld, jobId: string): { status: string; branch: boolean } => {
+    let branch = true;
+    try {
+      w.room.git("rev-parse", "--verify", "--quiet", `refs/heads/job/${jobId}`);
+    } catch {
+      branch = false;
+    }
+    return { status: w.room.git("status", "--porcelain", "--ignored"), branch };
+  };
+
+  it("a fresh unborn clone takes git switch -c job/<id> <oid> at the oid push delivered", async () => {
+    const w = world();
+    const r = await readying(w);
+
+    const base = await r.ready();
+
+    expect(base).toBe(w.real.git("rev-parse", "main"));
+    expect(w.room.git("symbolic-ref", "--short", "HEAD")).toBe(`job/${r.job.id}`);
+    expect(w.room.git("rev-parse", "HEAD")).toBe(base);
+  });
+
+  it.each([
+    ["has no .git", async (): Promise<string> => scratch()],
+    ["is absent", async (): Promise<string> => `${await scratch()}/absent`],
+  ])("a guest_path that %s: failed(error), guest_path_invalid", async (_case, path) => {
+    const w = world();
+    const r = await readying(w);
+    const guestPath = await path();
+
+    const { failure, endReason } = preparingFailure(
+      await rejection(r.ready({ ...w.repo, guestPath })),
+    );
+
+    expect(failure).toEqual({ reason: "guest_path_invalid", guestPath });
+    expect(endReason).toBe("error");
+  });
+
+  it("an untracked file is dirty_clone, its paths audited, the tree left as found", async () => {
+    const w = world();
+    const r = await readying(w);
+    writeFileSync(join(w.room.path, "notes.txt"), "residue\n");
+    mkdirSync(join(w.room.path, "nested"));
+    writeFileSync(join(w.room.path, "nested", "a.txt"), "residue\n");
+    const before = tree(w, r.job.id);
+
+    const error = await rejection(r.ready());
+
+    expect(error).toBeInstanceOf(PrepareFailed);
+    expect(preparingFailure(error)).toEqual({
+      failure: { reason: "dirty_clone", paths: ["nested/", "notes.txt"] },
+      endReason: "error",
+    });
+    expect(tree(w, r.job.id)).toEqual(before);
+    expect(before.branch).toBe(false);
+  });
+
+  it("an ignored file is not dirty: the job branch is made", async () => {
+    const w = world();
+    const r = await readying(w);
+    writeFileSync(join(w.room.path, ".git", "info", "exclude"), "cache/\n");
+    mkdirSync(join(w.room.path, "cache"));
+    writeFileSync(join(w.room.path, "cache", "built.o"), "cached\n");
+
+    await r.ready();
+
+    expect(w.room.git("symbolic-ref", "--short", "HEAD")).toBe(`job/${r.job.id}`);
+    expect(w.room.git("status", "--porcelain", "--ignored")).toBe("!! cache/");
   });
 });
 

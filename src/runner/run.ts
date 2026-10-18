@@ -61,8 +61,9 @@ import {
 } from "./pause.ts";
 import type { Meter } from "./model-gate.ts";
 import { configEntry, type ResolvedPolicy, resolvePolicy } from "./policy.ts";
-import { PrepareFailed, preparingFailure, readyRoom, roomShell } from "./prepare.ts";
+import { PrepareFailed, preparingFailure, readyRoom } from "./prepare.ts";
 import { composePrompt } from "./prompt.ts";
+import { roomShell } from "./shell.ts";
 import type { RunControl } from "./scheduler.ts";
 import type { Job } from "./store.ts";
 import type { Tenancy } from "./tenancy.ts";
@@ -73,8 +74,6 @@ export interface RunDeps extends CollectDeps {
   harness: Pick<Harness, "conversation" | "commit">;
   conversations: Conversations;
   tenancy: Tenancy;
-  /** A daemon connection into `repo`'s room: one per job, closed when its run settles. */
-  connect: (repo: RepoConfig) => Connection;
   /** What a job's conversation selects: its tools and the guard (installed at open). */
   extensions: readonly Extension[];
   /** The corpus prompt text, read per job. */

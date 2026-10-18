@@ -13,6 +13,7 @@ import {
   type CapsuleCli,
   roomChannel,
   roomConnection,
+  type RoomShell,
   slotChannel,
 } from "../../src/runner/room.ts";
 import { runProgram } from "../../src/runner/exec.ts";
@@ -32,6 +33,7 @@ import {
   ROOM_USER,
   type RoomKindWorld,
   roomKindCollectWorld,
+  readying,
   roomKindWorld,
   roomWorld,
   SLOT,
@@ -372,6 +374,46 @@ describe("room verbs past their bound (transfer_timeout_s, probe_timeout_s)", ()
   });
 });
 
+describe("a preparing room verb past transfer_timeout_s, within max_room_wait (VT-2)", () => {
+  it("is retried with backoff: the base recorded once the push answers", async () => {
+    const world = roomKindWorld({ guestAtClone: true });
+    world.capsule.hang = true;
+    const r = await readying(world, {
+      onSleep: () => {
+        world.capsule.hang = false;
+      },
+    });
+
+    const base = await r.ready();
+
+    expect(r.slept).toEqual([1000]);
+    expect(base).toBe(world.real.git("rev-parse", "main"));
+    expect(world.room.git("rev-parse", `job/${r.job.id}`)).toBe(base);
+  });
+
+  it("past max_room_wait: failed room_unavailable, audited channel_timeout", async () => {
+    const world = roomKindWorld({ guestAtClone: true });
+    world.capsule.hang = true;
+    const r = await readying(world, { maxRoomWaitS: 2.5 });
+
+    await expect(r.ready()).rejects.toMatchObject({
+      failure: { reason: "room_unavailable", channel: "channel_timeout" },
+    });
+    expect(r.slept).toEqual([1000, 1500]);
+  });
+});
+
+describe("clone hygiene over a slot: nothing to check or clean (A1)", () => {
+  it("never touches the shell", async () => {
+    const world = roomWorld();
+    const shell: RoomShell = () => Promise.reject(new Error("refresh owns the slot's clone"));
+    const signal = new AbortController().signal;
+
+    await expect(world.channel.checkClone(shell, world.repo, signal)).resolves.toBeUndefined();
+    await expect(world.channel.cleanClone(shell, signal)).resolves.toBeUndefined();
+  });
+});
+
 describe("reachable over a room", () => {
   it("is capsule <room> ssh <user> true exiting 0", async () => {
     const world = roomKindWorld();
@@ -481,11 +523,17 @@ describe("the room connection for the execution environment", () => {
 /** The example config with its door table removed: it is the last table. */
 const withoutDoor = (): string => EXAMPLE_TOML.slice(0, EXAMPLE_TOML.indexOf("[door]"));
 
-// --- EX-3: nothing outside room.ts and config knows the door (ASM-005) -------------
+// --- EX-10: the door and its kind stay behind the port (ASM-005, DEC-065) ----------
 
 const SRC = join(import.meta.dirname, "../../src");
+/** Naming the door: oubliette's command, its slots, the door table. */
 const DOOR_WORDS = /\bcapsule|\bslot|\bdoor/i;
-const DOOR_OWNERS = new Set(["runner/room.ts", "runner/config.ts"]);
+/**
+ * Telling the kinds apart: a kind as a literal, or a key only one kind has
+ * (`session_path`, the room timeouts, either kind's door type).
+ */
+const KIND_WORDS =
+  /["'](?:slot|room)["']|\bsession_?path|\b(?:probe|transfer)_?timeout_?s\b|\b(?:slot|room)Door(?:Config)?\b/i;
 
 function sourceFiles(dir: string, prefix = ""): string[] {
   return readdirSync(dir, { withFileTypes: true }).flatMap((entry) =>
@@ -495,12 +543,22 @@ function sourceFiles(dir: string, prefix = ""): string[] {
   );
 }
 
-describe("door knowledge (EX-3)", () => {
-  it("lives only in room.ts and config.ts", () => {
-    const knowing = sourceFiles(SRC).filter((file) =>
-      DOOR_WORDS.test(readFileSync(join(SRC, file), "utf8")),
+const knowing = (words: RegExp): string[] =>
+  sourceFiles(SRC)
+    .filter((file) => words.test(readFileSync(join(SRC, file), "utf8")))
+    .sort();
+
+describe("door knowledge (EX-10)", () => {
+  it("the door is named only in room.ts, config.ts and env.ts's connection factory", () => {
+    const owners = ["runner/config.ts", "runner/env.ts", "runner/room.ts"];
+    expect(knowing(DOOR_WORDS).filter((file) => !owners.includes(file))).toEqual([]);
+    expect(knowing(DOOR_WORDS)).toEqual(
+      expect.arrayContaining(["runner/config.ts", "runner/room.ts"]),
     );
-    expect(knowing.sort()).toEqual([...DOOR_OWNERS].sort());
+  });
+
+  it("which kind is known only in room.ts and config.ts", () => {
+    expect(knowing(KIND_WORDS)).toEqual(["runner/config.ts", "runner/room.ts"]);
   });
 });
 

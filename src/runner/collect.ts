@@ -7,16 +7,20 @@
 // Two writes, one event each: `collected` records `reviewed_oid` (I7), then a
 // transition records the class. A crash between them leaves `collecting` with
 // `reviewed_oid` set; the redo collects again, and only the same oid passes.
+// Between them the channel cleans the clone; its failure is audited
+// `clean_failed` and nothing else.
 
+import type { Connection } from "@earendil-works/pi-env";
 import { setDefined } from "../fields.ts";
 import type { JsonRecord } from "../json.ts";
 import { type Classification, type ClassifyInput, classify } from "./classify.ts";
-import type { RunnerConfig } from "./config.ts";
+import type { RepoConfig, RunnerConfig } from "./config.ts";
 import { isRunnerError, messageOf, RunnerError } from "./errors.ts";
 import type { QuarantineFacts, QuarantineReader } from "./git.ts";
 import { pendingCollectionExpired, recordReviewed } from "./jobs.ts";
 import { ChannelFailed, ChannelUnavailable, type Collected, type GitChannel } from "./room.ts";
 import { isoTime } from "./rows.ts";
+import { roomShell } from "./shell.ts";
 import type { Job, JobStore, JobUpdate } from "./store.ts";
 import type { EndReason, JobState } from "./vocab.ts";
 
@@ -26,6 +30,11 @@ export interface CollectDeps {
   channel: GitChannel;
   quarantine: QuarantineReader;
   config: RunnerConfig;
+  /**
+   * A daemon connection into `repo`'s room: one per job's run, and one for
+   * the clean after a collect. Connects at its first use, closed by its taker.
+   */
+  connect: (repo: RepoConfig) => Connection;
 }
 
 /** Job `id`, which must be in `state`. */
@@ -143,10 +152,40 @@ async function recordCollected(
   }
 }
 
+/**
+ * The clone cleaned of job `id`'s residue (design §5.2, §5.4 step 2), through
+ * a connection of its own (counted, never a pause: EX-8). A failure is
+ * audited `clean_failed` and changes nothing else: the next `preparing`
+ * refuses the residue, or a restart in `collecting` cleans again.
+ */
+async function cleanAfterCollect(
+  deps: CollectDeps,
+  id: string,
+  repo: RepoConfig,
+  now: number,
+): Promise<void> {
+  const connection = deps.connect(repo);
+  try {
+    await deps.channel.cleanClone(
+      roomShell(connection, id, repo.guestPath),
+      new AbortController().signal,
+    );
+  } catch (error) {
+    const reason =
+      error instanceof ChannelFailed || error instanceof ChannelUnavailable
+        ? error.reason
+        : "clean_failed";
+    await deps.jobs.appendEvent(id, now, "clean_failed", { reason, message: messageOf(error) });
+  } finally {
+    connection.close();
+  }
+}
+
 /** Steps 2-5 of design §5.4, once the job branch is in quarantine. */
 async function checkAndClassify(
   deps: CollectDeps,
   job: Job & { baseOid: string; endReason: EndReason },
+  repo: RepoConfig,
   now: number,
   collected: Collected,
 ): Promise<Job> {
@@ -158,6 +197,8 @@ async function checkAndClassify(
     collected,
     collectedPayload(collected, facts),
   );
+  // After the collect is durable, before the job leaves `collecting`.
+  await cleanAfterCollect(deps, job.id, repo, now);
   if (mismatch !== undefined) {
     return settleError(deps, job.id, now, job.endReason, {
       reason: "reviewed_oid_mismatch",
@@ -218,7 +259,7 @@ export async function collectJob(deps: CollectDeps, id: string, now: number): Pr
       message: messageOf(error),
     });
   }
-  return checkAndClassify(deps, { ...job, baseOid, endReason }, now, collected);
+  return checkAndClassify(deps, { ...job, baseOid, endReason }, repo, now, collected);
 }
 
 /**
