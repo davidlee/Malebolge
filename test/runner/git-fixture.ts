@@ -18,6 +18,11 @@ export const ISOLATED_ENV = {
   GIT_COMMITTER_NAME: "Test",
   GIT_COMMITTER_EMAIL: "test@example.invalid",
   GIT_COMMITTER_DATE: "2026-10-18T00:00:00Z",
+  // A fetch starts auto-maintenance detached, which can still be writing in a
+  // temp repo when the test removes it (ENOTEMPTY): never start it.
+  GIT_CONFIG_COUNT: "1",
+  GIT_CONFIG_KEY_0: "maintenance.auto",
+  GIT_CONFIG_VALUE_0: "false",
 };
 
 /** An empty directory, removed when the test finishes. */
@@ -87,6 +92,13 @@ export function tempRepo(): TestRepo {
   const repo = workingRepo(path);
   repo.commit("README");
   return repo;
+}
+
+/** A repo with no commits: `git init`, on an unborn `branch`. */
+export function tempUnbornRepo(branch: string): TestRepo {
+  const path = tempDir("mb-unborn-");
+  gitIn(path)("init", "--quiet", "-b", branch);
+  return workingRepo(path);
 }
 
 /** A working clone of `source`, on its default branch. */

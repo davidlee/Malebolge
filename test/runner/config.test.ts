@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { parseRunnerConfig } from "../../src/runner/config.ts";
-import { EXAMPLE_TOML as EXAMPLE, HOME, variant } from "./config-fixture.ts";
+import {
+  EXAMPLE_TOML as EXAMPLE,
+  HOME,
+  ROOM_TOML,
+  roomVariant,
+  variant,
+} from "./config-fixture.ts";
 
 describe("parseRunnerConfig", () => {
   it("parses the design example into a typed config", () => {
@@ -20,6 +26,7 @@ describe("parseRunnerConfig", () => {
     });
     expect(config.modes.get("fix")?.prompt).toBe("Fix mode: keep the change small.");
     expect(config.repos.get("satan")).toEqual({
+      name: "satan",
       path: "/home/test/dev/satan",
       guestPath: "/work/repos/satan",
       defaultBranch: "main",
@@ -27,6 +34,7 @@ describe("parseRunnerConfig", () => {
       ceilings: {},
     });
     expect(config.door).toEqual({
+      kind: "slot",
       slot: "f",
       quarantine: "/home/test/state/collect/f.git",
       host: "10.99.0.2",
@@ -34,6 +42,7 @@ describe("parseRunnerConfig", () => {
       sshConfig: "/home/test/.ssh/config",
       identity: "/home/test/.ssh/id",
       knownHosts: "/home/test/.ssh/known_hosts",
+      hostKeyAlias: "pi-env-f",
     });
   });
 
@@ -112,11 +121,143 @@ model = "m"
 
   it("reads the optional door profile", () => {
     const text = variant('slot = "f"', 'slot = "f"\nprofile = "satan"');
-    expect(parseRunnerConfig(text, HOME).door?.profile).toBe("satan");
+    expect(parseRunnerConfig(text, HOME).door).toMatchObject({ profile: "satan" });
   });
 
   it("leaves paths without a leading ~ alone", () => {
     const text = variant('path = "~/dev/satan"', 'path = "/srv/satan"');
     expect(parseRunnerConfig(text, HOME).repos.get("satan")?.path).toBe("/srv/satan");
+  });
+
+  it("keeps session_path verbatim and expands the other paths", () => {
+    const text = roomVariant(
+      'session_path = "/run/current-system/sw/bin/session"',
+      'session_path = "~/bin/session"',
+    );
+    const door = parseRunnerConfig(text, HOME).door;
+    expect(door).toMatchObject({
+      sessionPath: "~/bin/session",
+      identity: "/home/test/.ssh/runner",
+    });
+  });
+});
+
+describe("parseRunnerConfig: the door kind (DEC-065)", () => {
+  it("parses a room door and its repos' room keys", () => {
+    const config = parseRunnerConfig(ROOM_TOML, HOME);
+    expect(config.door).toEqual({
+      kind: "room",
+      room: "assistant",
+      user: "agent",
+      sshConfig: "/home/test/.ssh/room-assistant.conf",
+      identity: "/home/test/.ssh/runner",
+      knownHosts: "/var/lib/capsule/room/assistant/known_hosts",
+      hostKeyAlias: "room-assistant",
+      sessionPath: "/run/current-system/sw/bin/session",
+      probeTimeoutS: 15,
+    });
+    expect(config.repos.get("satan")).toEqual({
+      name: "satan",
+      path: "/home/test/dev/satan",
+      guestPath: "/work/satan",
+      defaultBranch: "main",
+      quarantine: "/var/lib/capsule/collect/assistant/satan.git",
+      transferTimeoutS: 600,
+      ceilings: {},
+    });
+  });
+
+  it.each([
+    ["missing", 'kind = "slot"\n', ""],
+    ["unknown", 'kind = "slot"', 'kind = "cell"'],
+    ["not a string", 'kind = "slot"', "kind = 1"],
+  ])("refuses a door whose kind is %s", (_label, from, to) => {
+    expect(() => parseRunnerConfig(variant(from, to), HOME)).toThrow(/door.*kind/);
+  });
+
+  it.each([
+    ["[door] room", 'slot = "f"', 'slot = "f"\nroom = "assistant"', /door.*room/],
+    ["[door] session_path", 'slot = "f"', 'slot = "f"\nsession_path = "/s"', /session_path/],
+    ["[door] probe_timeout_s", 'slot = "f"', 'slot = "f"\nprobe_timeout_s = 15', /probe_timeout_s/],
+    [
+      "[repo.*] quarantine",
+      'guest_path = "/work/repos/satan"',
+      'guest_path = "/w"\nquarantine = "/q"',
+      /repo\.satan.*quarantine/,
+    ],
+    [
+      "[repo.*] transfer_timeout_s",
+      'guest_path = "/work/repos/satan"',
+      'guest_path = "/w"\ntransfer_timeout_s = 600',
+      /repo\.satan.*transfer_timeout_s/,
+    ],
+  ])("refuses a room key under kind = slot: %s", (_label, from, to, reason) => {
+    expect(() => parseRunnerConfig(variant(from, to), HOME)).toThrow(reason);
+  });
+
+  it("refuses a repo's room keys when there is no door", () => {
+    const withRoomKey = variant(
+      'guest_path = "/work/repos/satan"',
+      'guest_path = "/w"\nquarantine = "/q"',
+    ).replace(/\[door\][^]*$/, "");
+    expect(() => parseRunnerConfig(withRoomKey, HOME)).toThrow(/repo\.satan.*quarantine/);
+  });
+
+  it.each([
+    ["slot", 'room = "assistant"', 'room = "assistant"\nslot = "f"', /door.*slot/],
+    ["host", 'room = "assistant"', 'room = "assistant"\nhost = "10.99.0.2"', /door.*host/],
+    ["profile", 'room = "assistant"', 'room = "assistant"\nprofile = "satan"', /door.*profile/],
+    [
+      "[door] quarantine",
+      'room = "assistant"',
+      'room = "assistant"\nquarantine = "/q"',
+      /door.*quarantine/,
+    ],
+  ])("refuses a slot key under kind = room: %s", (_label, from, to, reason) => {
+    expect(() => parseRunnerConfig(roomVariant(from, to), HOME)).toThrow(reason);
+  });
+
+  it.each([
+    ["slot", 'slot = "f"\n'],
+    ["quarantine", 'quarantine = "~/state/collect/f.git"\n'],
+    ["host", 'host = "10.99.0.2"\n'],
+    ["user", 'user = "agent"\n'],
+    ["known_hosts", 'known_hosts = "~/.ssh/known_hosts"\n'],
+    ["host_key_alias", 'host_key_alias = "pi-env-f"\n'],
+  ])("refuses a slot door without %s: nothing is derived (I13)", (key, line) => {
+    expect(() => parseRunnerConfig(variant(line, ""), HOME)).toThrow(new RegExp(`door.*${key}`));
+  });
+
+  it.each([
+    ["room", 'room = "assistant"\n'],
+    ["user", 'user = "agent"\n'],
+    ["ssh_config", 'ssh_config = "~/.ssh/room-assistant.conf"\n'],
+    ["identity", 'identity = "~/.ssh/runner"\n'],
+    ["known_hosts", 'known_hosts = "/var/lib/capsule/room/assistant/known_hosts"\n'],
+    ["host_key_alias", 'host_key_alias = "room-assistant"\n'],
+    ["session_path", 'session_path = "/run/current-system/sw/bin/session"\n'],
+    ["probe_timeout_s", "probe_timeout_s = 15\n"],
+  ])("refuses a room door without %s: nothing is derived (I13)", (key, line) => {
+    expect(() => parseRunnerConfig(roomVariant(line, ""), HOME)).toThrow(
+      new RegExp(`door.*${key}`),
+    );
+  });
+
+  it.each([
+    ["quarantine", 'quarantine = "/var/lib/capsule/collect/assistant/satan.git"\n'],
+    ["transfer_timeout_s", "transfer_timeout_s = 600\n"],
+  ])("refuses a room repo without %s", (key, line) => {
+    expect(() => parseRunnerConfig(roomVariant(line, ""), HOME)).toThrow(
+      new RegExp(`repo\\.satan.*${key}`),
+    );
+  });
+
+  it.each([
+    ["probe_timeout_s of 0", "probe_timeout_s = 15", "probe_timeout_s = 0"],
+    ["a fractional probe_timeout_s", "probe_timeout_s = 15", "probe_timeout_s = 1.5"],
+    ["a negative transfer_timeout_s", "transfer_timeout_s = 600", "transfer_timeout_s = -1"],
+    ["a string transfer_timeout_s", "transfer_timeout_s = 600", 'transfer_timeout_s = "600"'],
+  ])("refuses %s", (_label, from, to) => {
+    expect(() => parseRunnerConfig(roomVariant(from, to), HOME)).toThrow(/timeout_s/);
   });
 });

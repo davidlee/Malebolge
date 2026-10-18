@@ -45,7 +45,7 @@ function failureReason(error: unknown): string {
     return error.code;
   }
   if (error instanceof ChannelFailed) {
-    return "channel_failed";
+    return error.reason;
   }
   return "prepare_failed";
 }
@@ -193,7 +193,7 @@ export async function readyRoom(
       }
       if (!(await pausedForRetry(deps, attempt, deadline, signal))) {
         throw new PrepareFailed(
-          { reason: "room_unavailable", message: error.message },
+          { reason: "room_unavailable", channel: error.reason, message: error.message },
           "room_unavailable",
         );
       }

@@ -15,7 +15,7 @@ import type { RunnerConfig } from "./config.ts";
 import { isRunnerError, messageOf, RunnerError } from "./errors.ts";
 import type { QuarantineFacts, QuarantineReader } from "./git.ts";
 import { pendingCollectionExpired, recordReviewed } from "./jobs.ts";
-import { ChannelUnavailable, type Collected, type GitChannel } from "./room.ts";
+import { ChannelFailed, ChannelUnavailable, type Collected, type GitChannel } from "./room.ts";
 import { isoTime } from "./rows.ts";
 import type { Job, JobStore, JobUpdate } from "./store.ts";
 import type { EndReason, JobState } from "./vocab.ts";
@@ -208,12 +208,13 @@ export async function collectJob(deps: CollectDeps, id: string, now: number): Pr
   } catch (error) {
     if (error instanceof ChannelUnavailable) {
       return deps.jobs.transition(id, "pending_collection", now, {
-        reason: "channel_unavailable",
+        reason: error.reason,
         message: error.message,
       });
     }
     return settleError(deps, id, now, endReason, {
       reason: "collection_failed",
+      ...(error instanceof ChannelFailed ? { channel: error.reason } : {}),
       message: messageOf(error),
     });
   }

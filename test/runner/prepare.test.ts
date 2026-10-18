@@ -224,7 +224,13 @@ describe("readyRoom", () => {
   }
 
   /** The channel and shell are faked: the repo is only passed through. */
-  const REPO: RepoConfig = { path: "/r", guestPath: "/g", defaultBranch: "main", ceilings: {} };
+  const REPO: RepoConfig = {
+    name: "r",
+    path: "/r",
+    guestPath: "/g",
+    defaultBranch: "main",
+    ceilings: {},
+  };
 
   const ready = (w: ReadyWorld, signal = never()): Promise<string> =>
     readyRoom(w.deps, w.job, REPO, w.shell, signal);
@@ -293,8 +299,20 @@ describe("readyRoom", () => {
     expect(w.slept).toEqual([1000, 1500]);
     expect(error).toBeInstanceOf(PrepareFailed);
     const { failure, endReason } = preparingFailure(error);
-    expect(failure).toMatchObject({ reason: "room_unavailable" });
+    expect(failure).toMatchObject({ reason: "room_unavailable", channel: "channel_unavailable" });
     expect(endReason).toBe("room_unavailable");
+  });
+
+  it("retries a verb past its bound within max_room_wait, then fails audited channel_timeout", async () => {
+    const timedOut = (): never => {
+      throw new ChannelUnavailable("capsule push: timed out", { reason: "channel_timeout" });
+    };
+    const w = await readyWorld({ refresh: [timedOut], maxRoomWaitS: 2.5 });
+
+    const { failure } = preparingFailure(await rejection(ready(w)));
+
+    expect(w.slept).toEqual([1000, 1500]);
+    expect(failure).toMatchObject({ reason: "room_unavailable", channel: "channel_timeout" });
   });
 
   it("does not retry ChannelFailed", async () => {
@@ -345,6 +363,12 @@ describe("preparingFailure", () => {
       "ChannelFailed is channel_failed",
       new ChannelFailed("exited 1"),
       { reason: "channel_failed", message: "exited 1" },
+      "error",
+    ],
+    [
+      "a ChannelFailed refusal is channel_refusal, audited apart (a runner bug)",
+      new ChannelFailed("exited 2", { reason: "channel_refusal" }),
+      { reason: "channel_refusal", message: "exited 2" },
       "error",
     ],
     [

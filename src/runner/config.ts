@@ -61,27 +61,67 @@ export interface DefaultsLayer extends PolicyLayer {
 }
 
 export interface RepoConfig extends PolicyLayer {
+  /** The `[repo.*]` key: under a room door, the oubliette target's name. */
+  name: string;
   path: string;
   guestPath: string;
   defaultBranch: string;
+  /** Room kind: the room's quarantine for this repo; never derived (I13). */
+  quarantine?: string;
+  /** Room kind: the bound on this repo's push and collect. */
+  transferTimeoutS?: number;
 }
 
-/** The door into the room: the slot recipe until oubliette SL-005 (ASM-005). */
-export interface DoorConfig {
-  /** The oubliette slot standing in for the room. */
-  slot?: string;
-  /** The slot's quarantine, `$state/collect/<slot>.git`; never derived (I13). */
-  quarantine?: string;
+/** What every door kind needs of the room's ssh. */
+interface DoorSsh {
+  /** The room's ssh user. */
+  user: string;
+  knownHosts: string;
+  /** The name the room's host keys are stored under in `knownHosts`; never derived (I13). */
+  hostKeyAlias: string;
+}
+
+/** An oubliette slot standing in for the room: the live rung until SL-006 ships. */
+export interface SlotDoorConfig extends DoorSsh {
+  kind: "slot";
+  slot: string;
+  /** The slot's quarantine, `$state/collect/<slot>.git`. */
+  quarantine: string;
+  /** The guest's address, as ssh reaches it through `sshConfig`. */
+  host: string;
   /** Passed to `provision` when the slot needs it. */
   profile?: string;
-  /** The guest's address, as ssh reaches it through `sshConfig`. */
-  host?: string;
-  /** The guest's ssh user. */
-  user?: string;
   sshConfig?: string;
   identity?: string;
-  knownHosts?: string;
 }
+
+/** An oubliette room (SL-006 design sec-6). */
+export interface RoomDoorConfig extends DoorSsh {
+  kind: "room";
+  /** The room's name: `capsule` argv, and the placeholder ssh host. */
+  room: string;
+  /** The relay's ProxyCommand. */
+  sshConfig: string;
+  identity: string;
+  /** The guest's `session` program, verbatim; no built-in fallback. */
+  sessionPath: string;
+  /** The bound on the reachability probe. */
+  probeTimeoutS: number;
+}
+
+/** The door into the room, by kind (DEC-065). */
+export type DoorConfig = SlotDoorConfig | RoomDoorConfig;
+
+/** Each kind's `[door]` keys beyond the shared ones: the table is closed per kind. */
+const DOOR_KEYS = {
+  slot: ["slot", "quarantine", "host", "profile", "ssh_config", "identity"],
+  room: ["room", "ssh_config", "identity", "session_path", "probe_timeout_s"],
+} as const;
+
+const SHARED_DOOR_KEYS = ["kind", "user", "known_hosts", "host_key_alias"];
+
+/** The `[repo.*]` keys taken, and required, only under a room door. */
+const ROOM_REPO_KEYS = ["quarantine", "transfer_timeout_s"];
 
 export interface RunnerConfig {
   enabled: boolean;
@@ -195,48 +235,91 @@ function readDefaults(fields: JsonRecord): DefaultsLayer {
   return { ...layer, model };
 }
 
-function readRepo(fields: JsonRecord, where: string, home: string): RepoConfig {
-  const layer = readLayer(fields, where, ["path", "guest_path", "default_branch", "prompt"]);
-  return within(where, () => ({
-    ...layer,
-    path: expandHome(requireString(fields, "path"), home),
-    guestPath: requireString(fields, "guest_path"),
-    defaultBranch: requireString(fields, "default_branch"),
-  }));
+/** A `[repo.*]` table; the room's keys are taken, and required, only under a room door. */
+function readRepo(
+  fields: JsonRecord,
+  name: string,
+  home: string,
+  kind: DoorConfig["kind"] | undefined,
+): RepoConfig {
+  const where = `repo.${name}`;
+  const room = kind === "room";
+  const layer = readLayer(fields, where, [
+    "path",
+    "guest_path",
+    "default_branch",
+    "prompt",
+    ...(room ? ROOM_REPO_KEYS : []),
+  ]);
+  return within(where, () =>
+    setDefined<RepoConfig>(
+      {
+        ...layer,
+        name,
+        path: expandHome(requireString(fields, "path"), home),
+        guestPath: requireString(fields, "guest_path"),
+        defaultBranch: requireString(fields, "default_branch"),
+      },
+      room
+        ? {
+            quarantine: expandHome(requireString(fields, "quarantine"), home),
+            transferTimeoutS: required(fields, "transfer_timeout_s", optionalPositiveInt),
+          }
+        : {},
+    ),
+  );
+}
+
+function readDoorKind(fields: JsonRecord): DoorConfig["kind"] {
+  const kind = within("door", () => requireString(fields, "kind"));
+  if (kind !== "slot" && kind !== "room") {
+    throw new Error('door: kind must be "slot" or "room"');
+  }
+  return kind;
 }
 
 function readDoor(fields: JsonRecord, home: string): DoorConfig {
-  onlyKeys(
-    fields,
-    ["slot", "quarantine", "profile", "host", "user", "ssh_config", "identity", "known_hosts"],
-    "door",
-  );
-  const text = (key: string): string | undefined =>
-    within("door", () => optionalString(fields, key));
-  const path = (key: string): string | undefined => {
-    const value = text(key);
-    return value === undefined ? undefined : expandHome(value, home);
-  };
-  return setDefined<DoorConfig>(
-    {},
-    {
-      slot: text("slot"),
-      quarantine: path("quarantine"),
-      profile: text("profile"),
-      host: text("host"),
+  const kind = readDoorKind(fields);
+  onlyKeys(fields, [...SHARED_DOOR_KEYS, ...DOOR_KEYS[kind]], `door (kind = ${kind})`);
+  return within("door", () => {
+    const text = (key: string): string => requireString(fields, key);
+    const path = (key: string): string => expandHome(text(key), home);
+    const optionalPath = (key: string): string | undefined => {
+      const value = optionalString(fields, key);
+      return value === undefined ? undefined : expandHome(value, home);
+    };
+    const ssh: DoorSsh = {
       user: text("user"),
-      sshConfig: path("ssh_config"),
-      identity: path("identity"),
       knownHosts: path("known_hosts"),
-    },
-  );
+      hostKeyAlias: text("host_key_alias"),
+    };
+    if (kind === "room") {
+      return {
+        kind,
+        room: text("room"),
+        ...ssh,
+        sshConfig: path("ssh_config"),
+        identity: path("identity"),
+        sessionPath: text("session_path"),
+        probeTimeoutS: required(fields, "probe_timeout_s", optionalPositiveInt),
+      };
+    }
+    return setDefined<SlotDoorConfig>(
+      { kind, slot: text("slot"), quarantine: path("quarantine"), host: text("host"), ...ssh },
+      {
+        profile: optionalString(fields, "profile"),
+        sshConfig: optionalPath("ssh_config"),
+        identity: optionalPath("identity"),
+      },
+    );
+  });
 }
 
-/** Each sub-table of `parent[key]`, read by `read` under the name `key.<name>`. */
+/** Each sub-table of `parent[key]`, read by `read` given its name. */
 function readNamed<T>(
   parent: JsonRecord,
   key: string,
-  read: (fields: JsonRecord, where: string) => T,
+  read: (fields: JsonRecord, name: string) => T,
 ): Map<string, T> {
   const tables = within(key, () => optionalRecord(parent, key)) ?? {};
   return new Map(
@@ -244,7 +327,7 @@ function readNamed<T>(
       if (!isRecord(fields)) {
         throw new Error(`${key}.${name} must be a table`);
       }
-      return [name, read(fields, `${key}.${name}`)];
+      return [name, read(fields, name)];
     }),
   );
 }
@@ -274,7 +357,8 @@ export function parseRunnerConfig(text: string, home: string): RunnerConfig {
   );
   const table = (key: string): JsonRecord =>
     within("config", () => required(doc, key, optionalRecord));
-  const door = within("config", () => optionalRecord(doc, "door"));
+  const doorTable = within("config", () => optionalRecord(doc, "door"));
+  const door = doorTable === undefined ? undefined : readDoor(doorTable, home);
   return {
     ...within("config", () => ({
       enabled: required(doc, "enabled", optionalBoolean),
@@ -282,9 +366,9 @@ export function parseRunnerConfig(text: string, home: string): RunnerConfig {
     })),
     maxima: readMaxima(table("maxima")),
     defaults: readDefaults(table("defaults")),
-    modes: readNamed(doc, "mode", (fields, where) => readLayer(fields, where, ["prompt"])),
-    tags: readNamed(doc, "tag", (fields, where) => readLayer(fields, where, [])),
-    repos: readNamed(doc, "repo", (fields, where) => readRepo(fields, where, home)),
-    ...(door === undefined ? {} : { door: readDoor(door, home) }),
+    modes: readNamed(doc, "mode", (fields, name) => readLayer(fields, `mode.${name}`, ["prompt"])),
+    tags: readNamed(doc, "tag", (fields, name) => readLayer(fields, `tag.${name}`, [])),
+    repos: readNamed(doc, "repo", (fields, name) => readRepo(fields, name, home, door?.kind)),
+    ...(door === undefined ? {} : { door }),
   };
 }
