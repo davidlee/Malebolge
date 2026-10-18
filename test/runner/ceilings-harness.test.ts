@@ -9,7 +9,6 @@ import { join } from "node:path";
 import { existsSync } from "node:fs";
 import type {
   AssistantMessage,
-  Message,
   SimpleStreamOptions,
   Context as TranscriptContext,
 } from "@earendil-works/pi-ai";
@@ -39,7 +38,6 @@ import { openFauxHarness } from "../harness-fixture.ts";
 import {
   answer,
   call,
-  COMMIT,
   eventOf,
   jobToolResults,
   kinds,
@@ -50,35 +48,18 @@ import {
   SETTLE_MS,
   settled,
   until,
+  userText,
+  warned,
+  warningEvents,
+  writeAndCommit,
 } from "./run-fixture.ts";
 import { closeHarness, within } from "./runner-fixture.ts";
 import { NEW_JOB, openTestStore, T0 } from "./store-fixture.ts";
 
 const HOUR_S = 3600;
 
-/** One request: write and commit in one bash call, so a later ceiling leaves work to collect. */
-const writeAndCommit = (): AssistantMessage =>
-  call("bash", { command: `mkdir -p src && echo 'export {};' > src/a.ts && ${COMMIT}` });
-
-/** Resolves once job `id` has its warning receipt. */
-const warned = (world: RunWorld, id: string): Promise<void> =>
-  until("warning receipt", async () => warningEvents(await world.events(id)).length > 0);
-
 const ceilingEvents = (events: readonly JobEvent[]): JobEvent[] =>
   events.filter((event) => event.kind === "ceiling");
-
-const warningEvents = (events: readonly JobEvent[]): JobEvent[] =>
-  events.filter((event) => event.kind === "warning");
-
-/** A user message's text, whatever its content shape. */
-const userText = (message: Message): string | undefined => {
-  if (message.role !== "user") {
-    return undefined;
-  }
-  return typeof message.content === "string"
-    ? message.content
-    : message.content.map((block) => (block.type === "text" ? block.text : "")).join("");
-};
 
 /** A model call in flight: resolves when it starts, and when its request is aborted. */
 interface BlockedCall {
@@ -474,7 +455,7 @@ describe("the run's warning: once, and never into a finished run (EX-3)", () => 
     ]);
   });
 
-  it("closed or stopped before it is given, it is withheld; a failure is told, not thrown", async () => {
+  it("closed or stopped before it is given, it is withheld but was due; a failure is told, not thrown", async () => {
     const { jobs } = await openTestStore();
     const { job } = await jobs.submit(NEW_JOB, T0);
     const { conversation, drafts } = await recordingConversation();
@@ -505,6 +486,9 @@ describe("the run's warning: once, and never into a finished run (EX-3)", () => 
 
     expect(drafts).toHaveLength(1);
     expect(failures).toEqual([expect.stringContaining("pj-404")]);
+    // Withheld, the threshold still passed (AS-2): a resume message owes it.
+    expect([closed, stopped].map((warning) => warning.wasDue())).toEqual([true, true]);
+    expect(runWarning(deps).wasDue()).toBe(false);
   });
 });
 

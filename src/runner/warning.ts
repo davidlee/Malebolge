@@ -21,7 +21,10 @@ export const WARNING_TEXT =
 export const warningRequestId = (jobId: string): string => `warn-${jobId}`;
 
 /** What made the warning due: a gate admission, or the wall-clock soft timer. */
-export type WarningTrigger = "usage" | "wall_clock";
+export type DueTrigger = "usage" | "wall_clock";
+
+/** What a receipt names as the warning's occasion: its due trigger, or a resume message carrying it. */
+export type WarningTrigger = DueTrigger | "resume";
 
 export interface WarningDeps {
   conversation: Pick<Conversation, "submit">;
@@ -30,23 +33,37 @@ export interface WarningDeps {
   now: () => number;
 }
 
-/** Submits the warning steer, then writes its receipt. */
-export async function submitWarning(
-  deps: WarningDeps,
+/**
+ * The warning's receipt: a `warning` event naming the admitted submission that
+ * carries it (the steer, or a resume message), written after admission.
+ */
+export async function recordWarning(
+  deps: Omit<WarningDeps, "conversation">,
+  requestId: string,
+  submission: Pick<Submission, "id">,
   trigger: WarningTrigger,
-): Promise<Submission> {
-  const requestId = warningRequestId(deps.jobId);
-  const submission = await deps.conversation.submit(
-    { type: "input", content: WARNING_TEXT, whenBusy: "steer", requestId },
-    context,
-  );
+): Promise<void> {
   await deps.jobs.appendEvent(deps.jobId, deps.now(), "warning", {
     requestId,
     submissionId: String(submission.id),
     trigger,
   });
+}
+
+/** Submits the warning steer, then writes its receipt. */
+export async function submitWarning(deps: WarningDeps, trigger: DueTrigger): Promise<Submission> {
+  const requestId = warningRequestId(deps.jobId);
+  const submission = await deps.conversation.submit(
+    { type: "input", content: WARNING_TEXT, whenBusy: "steer", requestId },
+    context,
+  );
+  await recordWarning(deps, requestId, submission, trigger);
   return submission;
 }
+
+/** Whether `submission` reached the transcript: its record carries an entry. Read-only. */
+export const placed = async (submission: Pick<Submission, "status">): Promise<boolean> =>
+  (await submission.status(context)).entry !== undefined;
 
 /** Whether the warning reached the transcript: its record carries an entry. Read-only. */
 export async function warningPlaced(
@@ -54,13 +71,23 @@ export async function warningPlaced(
   submissionId: SubmissionId,
 ): Promise<boolean> {
   const submission = await harness.submission(submissionId, context);
-  return (await submission?.status(context))?.entry !== undefined;
+  return submission !== undefined && (await placed(submission));
 }
+
+/**
+ * Whether a resume message owes the warning (DEC-057): its threshold passed
+ * and no placed warning is on record (no receipt, or one whose submission has
+ * no entry). The one predicate for the run and for restart recovery.
+ */
+export const warningOwed = (thresholdPassed: boolean, receipt?: { placed: boolean }): boolean =>
+  thresholdPassed && receipt?.placed !== true;
 
 /** A run's one warning. */
 export interface RunWarning {
   /** The warning is due: given once per run, and never if already on record. */
-  due: (trigger: WarningTrigger) => void;
+  due: (trigger: DueTrigger) => void;
+  /** Whether it was ever made due, given or not: the threshold passed (AS-2). */
+  wasDue: () => boolean;
   /**
    * No warning is given from now on. Resolves, once one in progress is
    * admitted and receipted, to its submission; `undefined` when none was given.
@@ -84,7 +111,8 @@ export interface RunWarningDeps extends WarningDeps {
 export function runWarning(deps: RunWarningDeps): RunWarning {
   let given: Promise<Submission | undefined> | undefined;
   let closed = false;
-  async function give(trigger: WarningTrigger): Promise<Submission | undefined> {
+  let madeDue = false;
+  async function give(trigger: DueTrigger): Promise<Submission | undefined> {
     const events = await deps.jobs.events(deps.jobId);
     // Checked after the last wait before submitting: a close or a stop in
     // between withholds the warning.
@@ -95,6 +123,7 @@ export function runWarning(deps: RunWarningDeps): RunWarning {
   }
   return {
     due: (trigger): void => {
+      madeDue = true;
       if (closed || given !== undefined) {
         return;
       }
@@ -106,6 +135,7 @@ export function runWarning(deps: RunWarningDeps): RunWarning {
           return undefined;
         });
     },
+    wasDue: () => madeDue,
     close: (): Promise<Submission | undefined> => {
       closed = true;
       return given ?? Promise.resolve(undefined);

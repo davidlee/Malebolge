@@ -8,7 +8,7 @@ import { withAbortSignal } from "@earendil-works/chord/context";
 import type { Connection } from "@earendil-works/pi-env";
 import { context } from "../context.ts";
 import type { JsonRecord } from "../json.ts";
-import { roomRetryDelay, type Sleep } from "./backoff.ts";
+import { pausedForRetry, roomWaitDeadline, type Sleep } from "./backoff.ts";
 import type { RepoConfig, RunnerConfig } from "./config.ts";
 import { jobEnv } from "./env.ts";
 import { isRunnerError, messageOf } from "./errors.ts";
@@ -179,7 +179,7 @@ export async function readyRoom(
   shell: RoomShell,
   signal: AbortSignal,
 ): Promise<string> {
-  const deadline = job.stateEnteredAt + deps.config.maxima.maxRoomWaitS * 1000;
+  const deadline = roomWaitDeadline(job.stateEnteredAt, deps.config.maxima.maxRoomWaitS);
   let baseOid = job.baseOid;
   for (let attempt = 0; ; attempt++) {
     signal.throwIfAborted();
@@ -191,14 +191,12 @@ export async function readyRoom(
       if (!(error instanceof ChannelUnavailable)) {
         throw error;
       }
-      const left = deadline - deps.now();
-      if (left <= 0) {
+      if (!(await pausedForRetry(deps, attempt, deadline, signal))) {
         throw new PrepareFailed(
           { reason: "room_unavailable", message: error.message },
           "room_unavailable",
         );
       }
-      await deps.sleep(Math.min(roomRetryDelay(attempt), left), signal);
     }
   }
 }

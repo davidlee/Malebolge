@@ -3,7 +3,6 @@
 
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import type { AssistantMessage } from "@earendil-works/pi-ai";
 import { fauxAssistantMessage } from "@earendil-works/pi-ai/providers/faux";
 import type { Conversation, Harness, Submission } from "@earendil-works/pi-durable";
 import { describe, expect, it } from "vitest";
@@ -24,6 +23,7 @@ import {
   runWorld,
   SETTLE_MS,
   settled,
+  writeAndCommit,
 } from "./run-fixture.ts";
 import { within } from "./runner-fixture.ts";
 import { NEW_JOB, T0 } from "./store-fixture.ts";
@@ -361,10 +361,6 @@ describe("runJob: cancel (EX-2, EX-5)", () => {
 });
 
 describe("runJob: a gate refusal ends the run (EX-1, EX-4 gate path)", () => {
-  /** One request: write and commit in one bash call; the next request is the one refused. */
-  const writeAndCommit = (): AssistantMessage =>
-    call("bash", { command: `mkdir -p src && echo 'export {};' > src/a.ts && ${COMMIT}` });
-
   it("model_requests spent: collecting ceiling_exceeded, collected, needs_review partial", async () => {
     const w = await runWorld({ ceilings: { model_requests: 1 } });
     w.faux.setResponses([writeAndCommit(), answer("never")]);

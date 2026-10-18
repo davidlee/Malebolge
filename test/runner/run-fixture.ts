@@ -4,7 +4,7 @@
 // pi-env daemon in the room's clone, the fake slot's channel refreshing and
 // collecting that clone, and the real scheduler seating each job.
 
-import type { AssistantMessage, ToolResultMessage } from "@earendil-works/pi-ai";
+import type { AssistantMessage, Message, ToolResultMessage } from "@earendil-works/pi-ai";
 import {
   type FauxProviderHandle,
   fauxAssistantMessage,
@@ -53,6 +53,24 @@ export const call = (tool: string, args: JsonObject): AssistantMessage =>
     stopReason: "toolUse",
   });
 export const answer = (text = "done"): AssistantMessage => fauxAssistantMessage([fauxText(text)]);
+
+/** One request: write and commit in one bash call, so the run leaves work to collect. */
+export const writeAndCommit = (): AssistantMessage =>
+  call("bash", { command: `mkdir -p src && echo 'export {};' > src/a.ts && ${COMMIT}` });
+
+/** A user message's text, whatever its content shape. */
+export const userText = (message: Message): string | undefined => {
+  if (message.role !== "user") {
+    return undefined;
+  }
+  return typeof message.content === "string"
+    ? message.content
+    : message.content.map((block) => (block.type === "text" ? block.text : "")).join("");
+};
+
+/** The user texts of a model request, oldest first. */
+export const userTexts = (messages: readonly Message[]): string[] =>
+  messages.flatMap((message) => userText(message) ?? []);
 
 /** One `setTimeout` a `ManualTimer` holds. */
 export interface ArmedTimer {
@@ -123,6 +141,8 @@ export interface RunWorld extends RoomWorld {
   events: (id: string) => Promise<JobEvent[]>;
   /** The slot verbs the channel ran, e.g. `collect`. */
   verbs: () => string[];
+  /** Every backoff pause asked of `sleep` (it returns at once, advancing the clock), in order. */
+  slept: number[];
 }
 
 /**
@@ -138,6 +158,7 @@ export async function runWorld(options: RunWorldOptions = {}): Promise<RunWorld>
   const now = (): number => ++clock;
   const tenancy = roomTenancy();
   const timers = manualTimer();
+  const slept: number[] = [];
   const blocking = blockingTool("wait");
   const extensions = [
     JobTools,
@@ -186,6 +207,7 @@ export async function runWorld(options: RunWorldOptions = {}): Promise<RunWorld>
       throw new Error(`unexpected runner log: ${text}`);
     },
     sleep: (ms) => {
+      slept.push(ms);
       clock += ms;
       return Promise.resolve();
     },
@@ -233,6 +255,7 @@ export async function runWorld(options: RunWorldOptions = {}): Promise<RunWorld>
     job,
     events: (id) => jobs.events(id),
     verbs: () => world.slot.calls.map((args) => args[1] ?? ""),
+    slept,
   };
 }
 
@@ -266,3 +289,10 @@ export async function jobToolResults(world: RunWorld, job: Job): Promise<ToolRes
 
 export const eventOf = (events: readonly JobEvent[], kind: string): JobEvent | undefined =>
   events.find((event) => kinds([event])[0] === kind);
+
+export const warningEvents = (events: readonly JobEvent[]): JobEvent[] =>
+  events.filter((event) => event.kind === "warning");
+
+/** Resolves once job `id` has a warning receipt. */
+export const warned = (world: RunWorld, id: string): Promise<void> =>
+  until("warning receipt", async () => warningEvents(await world.events(id)).length > 0);

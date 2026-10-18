@@ -5,8 +5,9 @@
 
 import { closeSegment } from "./ceilings.ts";
 import { RunnerError } from "./errors.ts";
+import { resumeRequestId } from "./pause.ts";
 import { type EndReason, isJobState, type JobState } from "./vocab.ts";
-import { warningRequestId } from "./warning.ts";
+import { warningOwed, warningRequestId } from "./warning.ts";
 
 export {
   END_REASONS,
@@ -223,10 +224,6 @@ const isState =
   (job) =>
     job.state === state;
 
-/** A warning is owed in the resume message unless one was placed (DEC-057). */
-const warningUnplaced = (job: RecoverySnapshot): boolean =>
-  job.warningThresholdPassed && job.warningReceipt?.placed !== true;
-
 /** The §5.4 restart-recovery table, in row order. */
 const RECOVERY_TABLE: readonly RecoveryRow[] = [
   {
@@ -282,8 +279,8 @@ const RECOVERY_TABLE: readonly RecoveryRow[] = [
       phaseB: [
         {
           kind: "submit_resume",
-          requestId: `resume-${job.jobId}-${String(job.pauseCount)}`,
-          withWarning: warningUnplaced(job),
+          requestId: resumeRequestId(job.jobId, job.pauseCount),
+          withWarning: warningOwed(job.warningThresholdPassed, job.warningReceipt),
         },
       ],
     }),
