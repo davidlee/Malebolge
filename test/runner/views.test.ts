@@ -59,6 +59,11 @@ describe("summary", () => {
       announcedAt: iso(T0 + 9),
     });
   });
+
+  it("adds the row's failure record once set", () => {
+    const failure = { reason: "path_violation", offending: ["etc/passwd"] };
+    expect(summary({ ...QUEUED, state: "failed", failure })).toMatchObject({ failure });
+  });
 });
 
 describe("resultBody", () => {
@@ -81,6 +86,13 @@ describe("resultBody", () => {
     expect(
       resultBody(REVIEWED, { quarantine: "/q.git", quarantineRef: "x", commits, diffstat }),
     ).toMatchObject({ quarantine: "/q.git", commits, diffstat });
+  });
+
+  it("adds the real repo's path when the caller knows it", () => {
+    expect(resultBody(REVIEWED, {}, "/home/u/dev/satan")).toMatchObject({
+      repoPath: "/home/u/dev/satan",
+    });
+    expect(resultBody(REVIEWED)).not.toHaveProperty("repoPath");
   });
 
   it("answers an uncollected job with only what it holds", () => {

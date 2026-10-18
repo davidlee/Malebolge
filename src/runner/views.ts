@@ -10,7 +10,7 @@ import type { JobState } from "./vocab.ts";
 const optionalTime = (ms: number | undefined): string | undefined =>
   ms === undefined ? undefined : isoTime(ms);
 
-/** A job's identity, state and times; outcome fields once set. */
+/** A job's identity, state and times; outcome fields (and why it failed) once set. */
 export function summary(job: Job): JsonRecord {
   return setDefined<JsonRecord>(
     {
@@ -28,17 +28,19 @@ export function summary(job: Job): JsonRecord {
       class: job.class,
       reviewedOid: job.reviewedOid,
       announcedAt: optionalTime(job.announcedAt),
+      failure: job.failure,
     },
   );
 }
 
 /**
  * The `result` body: what the row holds now, and what the job's latest
- * `collected` event recorded (quarantine path, commits, diffstat). Fields not
- * yet known (before collection) are absent; later phases add fields, never
- * rename them.
+ * `collected` event recorded (quarantine path, commits, diffstat), and the
+ * real repo's configured path (where a promotion writes its branch) when the
+ * caller knows it. Fields not yet known (before collection) are absent; later
+ * phases add fields, never rename them.
  */
-export function resultBody(job: Job, collected: JsonRecord = {}): JsonRecord {
+export function resultBody(job: Job, collected: JsonRecord = {}, repoPath?: string): JsonRecord {
   return setDefined<JsonRecord>(
     { jobId: job.id, state: job.state, usage: { modelRequests: job.modelRequests } },
     {
@@ -50,6 +52,7 @@ export function resultBody(job: Job, collected: JsonRecord = {}): JsonRecord {
       quarantine: optionalString(collected, "quarantine"),
       commits: Array.isArray(collected["commits"]) ? collected["commits"] : undefined,
       diffstat: optionalRecord(collected, "diffstat"),
+      repoPath,
     },
   );
 }

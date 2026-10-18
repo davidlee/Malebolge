@@ -238,11 +238,18 @@ async function watch(request: OpRequest<"watch">, connection: Connection): Promi
   held = undefined;
 }
 
-/** The row, and what the latest `collected` event recorded. */
+/**
+ * The row, what the latest `collected` event recorded, and the repo's
+ * configured path (absent once the repo leaves the config: a read never refuses).
+ */
 async function result(request: OpRequest<"result">, deps: ControlDeps): Promise<JsonRecord> {
   const job = await known(deps.jobs, request.jobId);
   const events = await deps.jobs.events(job.id);
-  return resultBody(job, events.findLast((event) => event.kind === "collected")?.payload);
+  return resultBody(
+    job,
+    events.findLast((event) => event.kind === "collected")?.payload,
+    deps.config.repos.get(job.repo)?.path,
+  );
 }
 
 const OPERATIONS: { [K in Op]: Operation<K> } = {

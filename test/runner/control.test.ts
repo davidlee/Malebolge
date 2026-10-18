@@ -327,6 +327,7 @@ describe("cancel, status, list, result", () => {
       state: "needs_review",
       reviewedOid: repo.git("rev-parse", "HEAD"),
       usage: { modelRequests: 0 },
+      repoPath: repo.path,
     });
   });
   it("adds the latest collected event's quarantine, commits and diffstat to result", async () => {
@@ -457,6 +458,16 @@ describe("watch and ack", () => {
     expect(replayed).toHaveLength(2);
     expect(replayed.join()).toContain(review.id);
     expect(replayed.join()).toContain(failed.id);
+  });
+
+  it("carries a failed job's failure record on its frame", async () => {
+    const { client, store } = await runner();
+    const failure = { reason: "collection_failed", message: "no route" };
+    const job = await seed(store, ["preparing"]);
+    await store.jobs.transition(job.id, "failed", T0, failure, { failure });
+    ok(await client.call("watch"));
+    await client.next(frameOf("failed"));
+    expect(client.frames().at(-1)?.["job"]).toMatchObject({ failure });
   });
 
   it("streams job_changed on every transition until the client goes", async () => {
