@@ -14,16 +14,11 @@ import {
   setDefined,
 } from "../fields.ts";
 import type { JsonRecord } from "../json.ts";
-import {
-  CEILING_KEYS,
-  type Ceilings,
-  readCeilings,
-  type RepoConfig,
-  type RunnerConfig,
-} from "./config.ts";
+import { CEILING_KEYS, type Ceilings, readCeilings, type RunnerConfig } from "./config.ts";
 import { normaliseAllowedEntry } from "./classify.ts";
 import { type ErrorCode, isRunnerError, RunnerError } from "./errors.ts";
-import { JOB_STATES, type JobState } from "./vocab.ts";
+import { checkCeilingsWithinMaxima, configEntry } from "./policy.ts";
+import { isJobState, type JobState } from "./vocab.ts";
 
 export interface SubmitRequest {
   op: "submit";
@@ -136,9 +131,6 @@ function readSubmit(fields: JsonRecord, requestId: string): SubmitRequest {
     { baseRef: baseRef === undefined ? undefined : checkBaseRefShape(baseRef) },
   );
 }
-
-const isJobState = (value: string): value is JobState =>
-  JOB_STATES.some((state) => state === value);
 
 function readStates(fields: JsonRecord): JobState[] | undefined {
   const states = optionalStringArray(fields, "states");
@@ -277,22 +269,15 @@ export const encodeError = (
 
 type SubmitCheck = (request: SubmitRequest, config: RunnerConfig) => void;
 
-function knownRepo(request: SubmitRequest, config: RunnerConfig): RepoConfig {
-  const repo = config.repos.get(request.repo);
-  if (repo === undefined) {
-    throw new RunnerError("invalid_request", `unknown repo ${JSON.stringify(request.repo)}`);
-  }
-  return repo;
-}
-
 function knownMode(request: SubmitRequest, config: RunnerConfig): void {
-  if (!config.modes.has(request.mode)) {
-    throw new RunnerError("invalid_request", `unknown mode ${JSON.stringify(request.mode)}`);
-  }
+  configEntry(config.modes, "mode", request.mode);
 }
 
-/** Further checks that need the config (e.g. ceilings against maxima) join here. */
-const SUBMIT_CHECKS: readonly SubmitCheck[] = [knownMode];
+function ceilingsWithinMaxima(request: SubmitRequest, config: RunnerConfig): void {
+  checkCeilingsWithinMaxima(request.ceilings, config.maxima.ceilings);
+}
+
+const SUBMIT_CHECKS: readonly SubmitCheck[] = [knownMode, ceilingsWithinMaxima];
 
 /**
  * `request` checked against `config`, with an omitted `baseRef` resolved to
@@ -302,7 +287,7 @@ export function checkSubmit(
   request: SubmitRequest,
   config: RunnerConfig,
 ): SubmitRequest & { baseRef: string } {
-  const repo = knownRepo(request, config);
+  const repo = configEntry(config.repos, "repo", request.repo);
   for (const check of SUBMIT_CHECKS) {
     check(request, config);
   }

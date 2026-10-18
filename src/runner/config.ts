@@ -30,6 +30,14 @@ export type CeilingKey = (typeof CEILING_KEYS)[number];
 /** Per-job ceilings. Keys keep their wire names: they are shared with submit. */
 export type Ceilings = Record<CeilingKey, number>;
 
+/** A full ceiling set, each key's value from `value`. */
+export const ceilingsFrom = (value: (key: CeilingKey) => number): Ceilings => ({
+  model_requests: value("model_requests"),
+  cost_usd: value("cost_usd"),
+  tokens: value("tokens"),
+  active_wall_clock_s: value("active_wall_clock_s"),
+});
+
 export interface Maxima {
   ceilings: Ceilings;
   /** Fraction of a ceiling at which the agent is warned, in (0, 1). */

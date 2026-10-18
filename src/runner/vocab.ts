@@ -17,6 +17,9 @@ export const JOB_STATES = [
 
 export type JobState = (typeof JOB_STATES)[number];
 
+export const isJobState = (value: string): value is JobState =>
+  JOB_STATES.some((state) => state === value);
+
 export const END_REASONS = [
   "completed",
   "ceiling_exceeded",
