@@ -15,7 +15,8 @@
 //
 // And a room behind a fake `capsule` for the room door, following oubliette
 // SL-006 design sec-4 ("Order of a run"), sec-5 (verbs) and sec-6 (the
-// interface satan SL-023 builds against) at oubliette commit 73ec574 —
+// interface satan SL-023 builds against) at oubliette commit 73ec574, collect's
+// stdout as pinned at ad2dd7d —
 // provisional until SL-006 locks; re-check at that lock (CHR-016):
 //   - `<room> push <repo> <branch>`: resolve `<branch>^{commit}` in the
 //     target's host checkout (refused, exit 2, if absent), push it to the
@@ -23,9 +24,8 @@
 //     the oid alone.
 //   - `<room> collect <repo> <branch>`: make the quarantine bare if absent,
 //     fetch `+refs/heads/<branch>:refs/capsule/<room>/heads/<branch>` with
-//     `transfer.fsckObjects`, `--no-tags`; stdout is "the ref and its oid"
-//     (SL-006 does not pin the format; the adapter does not read it).
-//   - `<room> ssh <user> true`: the probe.
+//     `transfer.fsckObjects`, `--no-tags`; stdout is one line `<oid>\t<ref>`
+//     (`ls-remote` order), which the adapter checks against the quarantine.
 //   - exit 2: usage or a refused branch, decided before the room is asked;
 //     75: the room is down (pre-flight); 1: anything after the banner.
 
@@ -238,9 +238,8 @@ export function roomWorld(options: RoomWorldOptions = {}): RoomWorld {
 // --- the room door (SL-006 sec-6) ---------------------------------------------------
 
 export const ROOM = "assistant";
-export const ROOM_USER = "agent";
 /** The room adapter's door facts in a room world. */
-export const ROOM_DOOR = { room: ROOM, user: ROOM_USER, probeTimeoutS: 15 } as const;
+export const ROOM_DOOR = { room: ROOM } as const;
 /** The target's `guestPath`, `/work/<target>` (SL-006 sec-6). */
 export const ROOM_GUEST_PATH = "/work/satan";
 
@@ -252,7 +251,15 @@ export interface FakeRoom extends FakeCapsule {
   hang: boolean;
   /** The bound each call was given, in order. */
   timeouts: (number | undefined)[];
+  /** A successful collect prints this instead of `<oid>\t<ref>` (SL-006 sec-6). */
+  collectStdout?: (oid: string, ref: string) => string;
 }
+
+/** The fake's knobs a verb reads. */
+type RoomKnobs = Pick<FakeRoom, "up" | "collectStdout">;
+
+/** Collect's one stdout line, `<oid>\t<ref>` in `ls-remote` order (SL-006 sec-6 at ad2dd7d). */
+const lsRemoteLine = (oid: string, ref: string): string => `${oid}\t${ref}\n`;
 
 interface RoomTarget extends Rooms {
   /** The target's name, `[repo.*]`'s key. */
@@ -280,7 +287,12 @@ function roomPush(target: RoomTarget, branch: string): ProgramOutput {
   return pushed.code === 0 ? ok(`${oid}\n`) : pushed;
 }
 
-function roomCollect(target: RoomTarget, room: string, branch: string): ProgramOutput {
+function roomCollect(
+  target: RoomTarget,
+  room: string,
+  branch: string,
+  print: (oid: string, ref: string) => string = lsRemoteLine,
+): ProgramOutput {
   if (branchRefused(target.source, branch)) {
     return exited(2, `capsule-room-git: refused branch ${branch}`);
   }
@@ -303,18 +315,7 @@ function roomCollect(target: RoomTarget, room: string, branch: string): ProgramO
     return fetched;
   }
   const oid = gitStep(quarantine, ["rev-parse", ref]).stdout.trim();
-  return ok(`${ref} ${oid}\n`);
-}
-
-/** `<room> ssh <user> true`: the probe; a room that is down fails in ssh itself (255). */
-function roomSsh(rest: readonly string[], up: boolean): ProgramOutput {
-  const [user, ...command] = rest;
-  if (!up) {
-    return exited(255, "ssh: connection closed by the relay");
-  }
-  return user === ROOM_USER && command.join(" ") === "true"
-    ? ok()
-    : exited(127, `fake guest cannot run ${command.join(" ")} as ${String(user)}`);
+  return ok(print(oid, ref));
 }
 
 /** `<room> push|collect <repo> <branch>`: usage is refused (2) before the pre-flight (75). */
@@ -322,7 +323,7 @@ function roomTransfer(
   target: RoomTarget,
   name: string | undefined,
   rest: readonly string[],
-  up: boolean,
+  { up, collectStdout }: RoomKnobs,
 ): ProgramOutput {
   const [repo, branch, ...extra] = rest;
   if ((name !== "push" && name !== "collect") || repo !== target.repo || extra.length > 0) {
@@ -334,15 +335,17 @@ function roomTransfer(
   if (!up) {
     return exited(75, "capsule-room-git: no SSH-2.0 banner through the room's socket");
   }
-  return name === "push" ? roomPush(target, branch) : roomCollect(target, ROOM, branch);
+  return name === "push"
+    ? roomPush(target, branch)
+    : roomCollect(target, ROOM, branch, collectStdout);
 }
 
-function roomVerb(target: RoomTarget, args: readonly string[], up: boolean): ProgramOutput {
+function roomVerb(target: RoomTarget, args: readonly string[], knobs: RoomKnobs): ProgramOutput {
   const [room, name, ...rest] = args;
   if (room !== ROOM) {
     return exited(2, `capsule: no room ${String(room)}`);
   }
-  return name === "ssh" ? roomSsh(rest, up) : roomTransfer(target, name, rest, up);
+  return roomTransfer(target, name, rest, knobs);
 }
 
 export function fakeRoom(target: RoomTarget): FakeRoom {
@@ -359,7 +362,7 @@ export function fakeRoom(target: RoomTarget): FakeRoom {
       }
       return Promise.resolve(
         fake.exit === undefined
-          ? roomVerb(target, args, fake.up)
+          ? roomVerb(target, args, fake)
           : exited(fake.exit, `forced exit ${String(fake.exit)}`),
       );
     },

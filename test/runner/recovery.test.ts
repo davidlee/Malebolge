@@ -27,6 +27,7 @@ import { recordedPolicy } from "../../src/runner/policy.ts";
 import type { RunDeps } from "../../src/runner/run.ts";
 import { readSnapshot, recoverHost } from "../../src/runner/recover.ts";
 import {
+  ChannelFailed,
   ChannelUnavailable,
   checkRoomClone,
   cleanRoomClone,
@@ -93,10 +94,10 @@ const watched = (room: Room): Pick<RunWorldOptions, "channel" | "connection"> =>
       }
       return channel.collect(repo, jobId);
     },
-    reachable: async (): Promise<boolean> => {
+    reachable: async (repo, jobId): Promise<boolean> => {
       room.calls.push("probe");
       await room.before?.("probe");
-      return !room.down && (await channel.reachable());
+      return !room.down && (await channel.reachable(repo, jobId));
     },
     checkClone: (shell, repo, signal): ReturnType<GitChannel["checkClone"]> => {
       room.calls.push("check");
@@ -733,6 +734,25 @@ describe("enabled restart: waiting, collection, and close as the fault (VT-1, EX
       `${RESUME_TEXT}\n\n${WARNING_TEXT}`,
     ]);
     expect(job.state).toBe("needs_review");
+  });
+
+  it("row 11, the rejoined probe ChannelFailed: collecting with end_reason error, no resume (DEC-060)", async () => {
+    const c = await leftWaiting();
+    c.room.before = (verb): void => {
+      if (verb === "probe") {
+        throw new ChannelFailed("capsule collect exited 1: host key changed");
+      }
+    };
+
+    const { r, job } = await rejoined(c);
+
+    expect(job).toMatchObject({ state: "failed", endReason: "error", class: "no_changes" });
+    const events = await r.events(c.id);
+    expect(eventOf(events, "transition:collecting")?.payload).toMatchObject({
+      from: "waiting_room",
+      reason: "channel_failed",
+    });
+    expect(runningPayloads(events)).toHaveLength(1);
   });
 
   it("row 11 waited out from state_entered_at: pending_collection room_unavailable, no resume (R2)", async () => {

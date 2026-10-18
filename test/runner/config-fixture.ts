@@ -72,7 +72,6 @@ identity = "~/.ssh/runner"
 known_hosts = "/var/lib/capsule/room/assistant/known_hosts"
 host_key_alias = "room-assistant"
 session_path = "/run/current-system/sw/bin/session"
-probe_timeout_s = 15
 `;
 
 /** `toml` with `from` replaced by `to`; fails loudly if `from` is absent. */

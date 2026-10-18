@@ -22,7 +22,7 @@ export const TRANSITIONS: Readonly<Record<JobState, readonly JobState[]>> = {
   queued: ["preparing", "cancelled"],
   preparing: ["running", "failed", "cancelled"],
   running: ["waiting_room", "collecting"],
-  waiting_room: ["running", "pending_collection"],
+  waiting_room: ["running", "pending_collection", "collecting"],
   collecting: ["pending_collection", "needs_review", "failed", "cancelled"],
   pending_collection: ["collecting", "failed"],
   needs_review: ["promoted", "rejected"],

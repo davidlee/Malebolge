@@ -42,6 +42,7 @@ const LEGAL: readonly (readonly [JobState, JobState])[] = [
   ["running", "collecting"],
   ["waiting_room", "running"],
   ["waiting_room", "pending_collection"],
+  ["waiting_room", "collecting"],
   ["collecting", "pending_collection"],
   ["collecting", "needs_review"],
   ["collecting", "failed"],
@@ -118,6 +119,11 @@ describe("state machine: field effects", () => {
   it("resuming from waiting_room opens a new segment without restamping started_at", () => {
     const patch = transition(job("waiting_room", { activeMs: 900 }), "running", NOW);
     expect(patch).toEqual({ state: "running", stateEnteredAt: NOW, runningSince: NOW });
+  });
+
+  it("a probe ChannelFailed in waiting_room collects without charging: the segment closed at the pause", () => {
+    const patch = transition(job("waiting_room", { activeMs: 900 }), "collecting", NOW);
+    expect(patch).toEqual({ state: "collecting", stateEnteredAt: NOW });
   });
 
   it("entering a terminal state sets finished_at", () => {

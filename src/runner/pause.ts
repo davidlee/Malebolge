@@ -7,9 +7,9 @@
 import type { Conversation, Submission } from "@earendil-works/pi-durable";
 import { context } from "../context.ts";
 import { pausedForRetry, roomWaitDeadline, type Sleep } from "./backoff.ts";
-import type { RunnerConfig } from "./config.ts";
+import type { RepoConfig, RunnerConfig } from "./config.ts";
 import type { ConnectionObserver } from "./env.ts";
-import type { GitChannel } from "./room.ts";
+import type { ChannelFailed, GitChannel } from "./room.ts";
 import type { Job, JobStore } from "./store.ts";
 import { recordWarning, WARNING_TEXT, type WarningDeps } from "./warning.ts";
 
@@ -51,13 +51,15 @@ export interface AwaitRoomDeps {
 }
 
 /**
- * Probes the room with backoff until it is reachable; `timed_out` once
- * `max_room_wait` from `state_entered_at` has passed (so a restart does not
- * reset the bound); `cancelled` once `signal` aborts.
+ * Probes the room for `job` (in `repo`) with backoff until it is reachable;
+ * `timed_out` once `max_room_wait` from `state_entered_at` has passed (so a
+ * restart does not reset the bound); `cancelled` once `signal` aborts. A probe
+ * `ChannelFailed` is rethrown: a trust failure is never downtime (DEC-060).
  */
 export async function awaitRoom(
   deps: AwaitRoomDeps,
-  job: Pick<Job, "stateEnteredAt">,
+  repo: RepoConfig,
+  job: Pick<Job, "id" | "stateEnteredAt">,
   signal: AbortSignal,
 ): Promise<RoomWait> {
   const deadline = roomWaitDeadline(job.stateEnteredAt, deps.config.maxima.maxRoomWaitS);
@@ -65,7 +67,7 @@ export async function awaitRoom(
     if (signal.aborted) {
       return "cancelled";
     }
-    if (await deps.channel.reachable()) {
+    if (await deps.channel.reachable(repo, job.id)) {
       return "reachable";
     }
     if (!(await pausedForRetry(deps, attempt, deadline, signal))) {
@@ -85,6 +87,20 @@ export const roomWaitedOut = (
     deps.now(),
     { reason: "room_unavailable" },
     { endReason: "room_unavailable" },
+  );
+
+/** A probe `ChannelFailed` ends the wait: `collecting`, `end_reason = error` (DEC-060). */
+export const roomProbeFailed = (
+  deps: { jobs: Pick<JobStore, "transition">; now: () => number },
+  id: string,
+  error: ChannelFailed,
+): Promise<Job> =>
+  deps.jobs.transition(
+    id,
+    "collecting",
+    deps.now(),
+    { reason: error.reason, message: error.message },
+    { endReason: "error" },
   );
 
 // --- the resume -----------------------------------------------------------------

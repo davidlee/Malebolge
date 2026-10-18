@@ -2,10 +2,11 @@
 // repo, the room and the quarantine. The port is door-free; `[door] kind`
 // picks one of two adapters (DEC-065), both driving oubliette's `capsule`
 // command line: the slot adapter (the live rung) and the room adapter, built
-// against oubliette SL-006 design sec-6 at 73ec574 and provisional until
-// SL-006 locks (re-checked then, CHR-016). This file and config.ts are the
-// only ones that know the door (held by a structural test): everything else
-// sees `GitChannel`, `channelFromConfig` and `roomConnection`.
+// against oubliette SL-006 design sec-6 at 73ec574 (collect's stdout as pinned
+// at ad2dd7d) and provisional until SL-006 locks (re-checked then, CHR-016).
+// This file and config.ts are the only ones that know the door (held by a
+// structural test): everything else sees `GitChannel`, `channelFromConfig`
+// and `roomConnection`.
 
 import { setDefined } from "../fields.ts";
 import type {
@@ -34,8 +35,12 @@ export interface GitChannel {
   refresh: (repo: RepoConfig, baseRef: string) => Promise<Oid>;
   /** Fetch `job/<id>` from the room into quarantine; return where it landed. */
   collect: (repo: RepoConfig, jobId: string) => Promise<Collected>;
-  /** Cheap reachability probe; never throws. */
-  reachable: () => Promise<boolean>;
+  /**
+   * Reachability probe for pause/resume and `pending_collection` (design §5.2).
+   * Slot: a cheap `ssh true`, never throws. Room: this job's collect; false for
+   * unavailable, throws `ChannelFailed`.
+   */
+  reachable: (repo: RepoConfig, jobId: string) => Promise<boolean>;
   /**
    * Why the clone cannot take a new job (`preparing`, before its branch), or
    * `undefined`. Never changes the clone (design §5.2).
@@ -200,7 +205,7 @@ export function slotChannel(
 ): GitChannel {
   const { slot, quarantine } = door;
 
-  async function reachable(): Promise<boolean> {
+  async function probe(): Promise<boolean> {
     try {
       return (await cli(probeArgs(slot))).code === 0;
     } catch {
@@ -224,7 +229,7 @@ export function slotChannel(
       return;
     }
     const message = `${what} exited ${String(output.code)}: ${output.stderr.trim()}`;
-    throw (await reachable()) ? new ChannelFailed(message) : new ChannelUnavailable(message);
+    throw (await probe()) ? new ChannelFailed(message) : new ChannelUnavailable(message);
   }
 
   async function refresh(repo: RepoConfig, baseRef: string): Promise<Oid> {
@@ -248,7 +253,7 @@ export function slotChannel(
   return {
     refresh,
     collect,
-    reachable,
+    reachable: probe,
     checkClone: () => Promise.resolve(undefined),
     cleanClone: () => Promise.resolve(),
   };
@@ -272,8 +277,6 @@ export const roomCollectArgs = (room: string, repo: string, jobId: string): stri
   jobBranch(jobId),
 ];
 
-export const roomProbeArgs = (room: string, user: string): string[] => [room, "ssh", user, "true"];
-
 /** The room's verbs exit 75 when the room is down (pre-flight), 2 on a refusal (SL-006 sec-4). */
 const ROOM_DOWN = 75;
 const REFUSED = 2;
@@ -295,7 +298,10 @@ export function roomVerbError(
 
 const OID = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
 
-export type RoomDoor = Pick<RoomDoorConfig, "room" | "user" | "probeTimeoutS">;
+/** Collect's one stdout line, `<oid>\t<ref>` in `ls-remote` order (SL-006 sec-6 at ad2dd7d). */
+const lsRemoteLine = ({ oid, ref }: Pick<Collected, "oid" | "ref">): string => `${oid}\t${ref}`;
+
+export type RoomDoor = Pick<RoomDoorConfig, "room">;
 
 /** The room keys of `repo`; config refuses a room repo without them (I13). */
 function roomRepo(repo: RepoConfig): { quarantine: string; transferTimeoutMs: number } {
@@ -313,15 +319,6 @@ export function roomChannel(
   reader: RepoReader = gitRepoReader,
 ): GitChannel {
   const { room } = door;
-
-  async function reachable(): Promise<boolean> {
-    try {
-      const probe = roomProbeArgs(room, door.user);
-      return (await cli(probe, { timeoutMs: door.probeTimeoutS * 1000 })).code === 0;
-    } catch {
-      return false;
-    }
-  }
 
   /** Runs one verb within `timeoutMs`; its stdout, or the typed failure. */
   async function verb(args: readonly string[], timeoutMs: number): Promise<string> {
@@ -369,10 +366,29 @@ export function roomChannel(
 
   async function collect(repo: RepoConfig, jobId: string): Promise<Collected> {
     const { quarantine, transferTimeoutMs } = roomRepo(repo);
-    // Collect's stdout ("the ref and its oid") has no pinned format in SL-006,
-    // and sec-6 fixes the ref; so the ref is read from the quarantine, never stdout.
-    await verb(roomCollectArgs(room, repo.name, jobId), transferTimeoutMs);
-    return landed(quarantine, collectedJobRef(room, jobId), jobId);
+    const stdout = await verb(roomCollectArgs(room, repo.name, jobId), transferTimeoutMs);
+    const collected = await landed(quarantine, collectedJobRef(room, jobId), jobId);
+    // The quarantine is what the checks read; stdout must say the same.
+    const expected = lsRemoteLine(collected);
+    if (stdout.replace(/\n$/, "") !== expected) {
+      throw new ChannelFailed(
+        `capsule collect printed ${JSON.stringify(stdout)}, not the quarantine's ${JSON.stringify(expected)}`,
+      );
+    }
+    return collected;
+  }
+
+  /** The probe is this job's collect (DEC-060): its bound, exit mapping and cross-check. */
+  async function reachable(repo: RepoConfig, jobId: string): Promise<boolean> {
+    try {
+      await collect(repo, jobId);
+      return true;
+    } catch (error) {
+      if (error instanceof ChannelUnavailable) {
+        return false;
+      }
+      throw error;
+    }
   }
 
   return { refresh, collect, reachable, checkClone: checkRoomClone, cleanClone: cleanRoomClone };

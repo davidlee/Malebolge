@@ -56,6 +56,8 @@ import {
   awaitRoom,
   pausingObserver,
   resumeRequestId,
+  roomProbeFailed,
+  type RoomWait,
   roomWaitedOut,
   submitResume,
 } from "./pause.ts";
@@ -63,6 +65,7 @@ import type { Meter } from "./model-gate.ts";
 import { configEntry, type ResolvedPolicy, resolvePolicy } from "./policy.ts";
 import { PrepareFailed, preparingFailure, readyRoom } from "./prepare.ts";
 import { composePrompt } from "./prompt.ts";
+import { ChannelFailed } from "./room.ts";
 import { roomShell } from "./shell.ts";
 import type { RunControl } from "./scheduler.ts";
 import type { Job } from "./store.ts";
@@ -162,6 +165,8 @@ export interface Seated {
 export interface Run {
   conversation: Conversation;
   policy: ResolvedPolicy;
+  /** The job's repo, as resolved for the run: the waiting episode probes through it. */
+  repo: RepoConfig;
   stops: Stops;
   /** Seats the job over a fresh pause signal and warning: the next segment's. */
   seat: () => Seated;
@@ -274,7 +279,7 @@ export function openRun(
     });
     return seated;
   };
-  return { conversation, policy, stops, seat };
+  return { conversation, policy, repo, stops, seat };
 }
 
 /** The segment whose `submission` was admitted and recorded `running`: its timers armed. */
@@ -490,7 +495,8 @@ export type Entered = { segment: Admitted; trail: WarningTrail } | { ended: Job 
  * the room probed; on reachable, the resume message admitted (carrying the
  * warning when `withWarning`, by default when the trail owes it), then
  * `running` and the timers re-armed from that row. Waited out, or cancelled,
- * the job goes to `pending_collection`; collection is the scheduler's retry.
+ * the job goes to `pending_collection`; collection is the scheduler's retry. A
+ * probe `ChannelFailed` ends the run: `collecting`, collected by the caller.
  */
 export async function awaitResume(
   deps: RunDeps,
@@ -500,7 +506,15 @@ export async function awaitResume(
   withWarning?: boolean,
 ): Promise<Entered> {
   const { control } = run.stops;
-  const outcome = await awaitRoom(deps, waiting, control.signal);
+  let outcome: RoomWait;
+  try {
+    outcome = await awaitRoom(deps, run.repo, waiting, control.signal);
+  } catch (error) {
+    if (error instanceof ChannelFailed) {
+      return { ended: await roomProbeFailed(deps, waiting.id, error) };
+    }
+    throw error;
+  }
   if (outcome === "timed_out") {
     return { ended: await roomWaitedOut(deps, waiting.id) };
   }

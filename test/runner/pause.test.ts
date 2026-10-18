@@ -16,7 +16,9 @@ import { HostKeyChangedError, HostKeyUnknownError, RemoteError } from "@earendil
 import { describe, expect, it, onTestFinished } from "vitest";
 import { context } from "../../src/context.ts";
 import type { JsonRecord } from "../../src/json.ts";
+import { collectJob, retryPendingCollection } from "../../src/runner/collect.ts";
 import { JobConnection } from "../../src/runner/env.ts";
+import { configEntry } from "../../src/runner/policy.ts";
 import { PAUSED_RESULT_TEXT } from "../../src/runner/guard.ts";
 import {
   type AwaitRoomDeps,
@@ -26,7 +28,7 @@ import {
   resumeRequestId,
   submitResume,
 } from "../../src/runner/pause.ts";
-import type { GitChannel } from "../../src/runner/room.ts";
+import { ChannelFailed, type GitChannel } from "../../src/runner/room.ts";
 import type { RunDeps } from "../../src/runner/run.ts";
 import type { Job, JobEvent, JobStore } from "../../src/runner/store.ts";
 import { WARNING_TEXT, warningOwed } from "../../src/runner/warning.ts";
@@ -55,6 +57,7 @@ import {
   warningEvents,
   writeAndCommit,
 } from "./run-fixture.ts";
+import { ROOM, roomKindCollectWorld } from "./room-fixture.ts";
 import { closeHarness, within } from "./runner-fixture.ts";
 import { NEW_JOB, openTestStore, T0 } from "./store-fixture.ts";
 
@@ -343,13 +346,23 @@ const waiting = async (w: RunWorld, id: string): Promise<boolean> =>
   (await w.job(id)).state === "waiting_room";
 
 describe("awaitRoom: the waiting episode's probe (EX-3)", () => {
-  const deps = (answers: boolean[], start: number): { slept: number[]; deps: AwaitRoomDeps } => {
+  const deps = (
+    answers: boolean[],
+    start: number,
+  ): { slept: number[]; probed: string[]; deps: AwaitRoomDeps } => {
     let clock = start;
     const slept: number[] = [];
+    const probed: string[] = [];
     return {
       slept,
+      probed,
       deps: {
-        channel: { reachable: (): Promise<boolean> => Promise.resolve(answers.shift() ?? false) },
+        channel: {
+          reachable: (repo, jobId): Promise<boolean> => {
+            probed.push(`${repo.name} ${jobId}`);
+            return Promise.resolve(answers.shift() ?? false);
+          },
+        },
         config: exampleConfig(),
         now: (): number => clock,
         sleep: (ms: number): Promise<void> => {
@@ -361,22 +374,21 @@ describe("awaitRoom: the waiting episode's probe (EX-3)", () => {
     };
   };
   const BOUND_MS = exampleConfig().maxima.maxRoomWaitS * 1000;
+  const REPO = configEntry(exampleConfig().repos, "repo", "satan");
+  const JOB = { id: "pj-1", stateEnteredAt: 0 };
 
-  it("probes with backoff until the room is reachable", async () => {
-    const { deps: d, slept } = deps([false, false, false, true], 0);
+  it("probes the job's room with backoff until it is reachable", async () => {
+    const { deps: d, slept, probed } = deps([false, false, false, true], 0);
 
-    expect(await awaitRoom(d, { stateEnteredAt: 0 }, new AbortController().signal)).toBe(
-      "reachable",
-    );
+    expect(await awaitRoom(d, REPO, JOB, new AbortController().signal)).toBe("reachable");
     expect(slept).toEqual([1000, 2000, 4000]);
+    expect(probed).toEqual(Array(4).fill("satan pj-1"));
   });
 
   it("is bounded by max_room_wait from state_entered_at, not from when it starts", async () => {
     const { deps: d, slept } = deps([], BOUND_MS - 500);
 
-    expect(await awaitRoom(d, { stateEnteredAt: 0 }, new AbortController().signal)).toBe(
-      "timed_out",
-    );
+    expect(await awaitRoom(d, REPO, JOB, new AbortController().signal)).toBe("timed_out");
     expect(slept).toEqual([500]);
   });
 
@@ -385,7 +397,60 @@ describe("awaitRoom: the waiting episode's probe (EX-3)", () => {
     const stop = new AbortController();
     stop.abort();
 
-    expect(await awaitRoom(d, { stateEnteredAt: 0 }, stop.signal)).toBe("cancelled");
+    expect(await awaitRoom(d, REPO, JOB, stop.signal)).toBe("cancelled");
+  });
+});
+
+describe("a probe ChannelFailed ends the job, never parked (VT-3, EX-4)", () => {
+  const trustFailure = (): ChannelFailed =>
+    new ChannelFailed(`capsule ${ROOM} collect satan job/pj-1 exited 1: host key changed`);
+
+  it("in waiting_room: end_reason = error, then collecting, then failed class error", async () => {
+    const w = await runWorld({
+      connection: roomGoesDown(),
+      channel: probed({ answer: () => Promise.reject(trustFailure()) }),
+    });
+    w.faux.setResponses([writeAndCommit(), lostBash(), answer("never")]);
+
+    const queued = await w.submit();
+    const job = await settled(w, queued.id);
+
+    expect(job).toMatchObject({ state: "failed", endReason: "error", class: "error" });
+    const events = await w.events(job.id);
+    const transitions = kinds(events).filter((kind) => kind.startsWith("transition:"));
+    expect(transitions.slice(transitions.indexOf("transition:waiting_room"))).toEqual([
+      "transition:waiting_room",
+      "transition:collecting",
+      "transition:failed",
+    ]);
+    expect(eventOf(events, "transition:collecting")?.payload).toMatchObject({
+      from: "waiting_room",
+      reason: "channel_failed",
+      message: trustFailure().message,
+    });
+    // No resume: the provider saw the two calls before the pause, nothing after.
+    expect(w.faux.state.callCount).toBe(2);
+  });
+
+  it("in pending_collection: failed class error, the channel's reason in its failure", async () => {
+    const world = await roomKindCollectWorld();
+    world.guestJob(world.jobId, "src/a.ts");
+    world.capsule.up = false;
+    expect(await collectJob(world.deps, world.jobId, T0 + 10)).toMatchObject({
+      state: "pending_collection",
+    });
+    world.capsule.up = true;
+    world.capsule.exit = 1;
+
+    expect(await retryPendingCollection(world.deps, world.jobId, T0 + 20)).toMatchObject({
+      state: "failed",
+      class: "error",
+      failure: { reason: "collection_failed", channel: "channel_failed" },
+    });
+    const transitions = (await world.events())
+      .filter((event) => event.kind === "transition")
+      .map((event) => event.payload["to"]);
+    expect(transitions.slice(-2)).toEqual(["pending_collection", "failed"]);
   });
 });
 

@@ -21,6 +21,7 @@ import { isoTime } from "../../src/runner/rows.ts";
 import { type Job, JobStore } from "../../src/runner/store.ts";
 import { resultBody } from "../../src/runner/views.ts";
 import { parseRunnerConfig } from "../../src/runner/config.ts";
+import { configEntry } from "../../src/runner/policy.ts";
 import { EXAMPLE_TOML, exampleConfig, HOME, roomConfig, variant } from "./config-fixture.ts";
 import { rejectionCode } from "./refusal-fixture.ts";
 import {
@@ -30,7 +31,6 @@ import {
   MAX_PENDING_S,
   ROOM,
   ROOM_DOOR,
-  ROOM_USER,
   type RoomKindWorld,
   roomKindCollectWorld,
   readying,
@@ -152,19 +152,20 @@ describe("collect over a slot", () => {
 describe("reachable", () => {
   it("is the probe's answer", async () => {
     const world = roomWorld();
-    expect(await world.channel.reachable()).toBe(true);
+    expect(await world.channel.reachable(world.repo, JOB)).toBe(true);
     world.slot.up = false;
-    expect(await world.channel.reachable()).toBe(false);
+    expect(await world.channel.reachable(world.repo, JOB)).toBe(false);
     expect(world.slot.calls.at(-1)).toEqual([SLOT, "ssh", "true"]);
   });
 
   it("never throws: a command line that cannot run is unreachable", async () => {
+    const world = roomWorld();
     const channel = slotChannel({ slot: SLOT, quarantine: "/nowhere" }, spawnFails);
-    expect(await channel.reachable()).toBe(false);
+    expect(await channel.reachable(world.repo, JOB)).toBe(false);
   });
 });
 
-// --- the room adapter (SL-006 design sec-6 at oubliette 73ec574; EX-2, EX-3) -------
+// --- the room adapter (SL-006 design sec-6 at oubliette 73ec574, collect's stdout ad2dd7d) ---
 
 const ROOM_JOB_REF = `refs/capsule/${ROOM}/heads/job/${JOB}`;
 
@@ -268,6 +269,26 @@ describe("collect over a room", () => {
     await expect(channel.collect(world.repo, JOB)).rejects.toThrow(ChannelFailed);
   });
 
+  // VT-2: stdout is one line `<oid>\t<ref>` (SL-006 sec-6), cross-checked against the quarantine.
+  it.each([
+    ["another oid", (_oid: string, ref: string): string => `${"0".repeat(40)}\t${ref}\n`],
+    ["another ref", (oid: string): string => `${oid}\trefs/capsule/${ROOM}/heads/job/other\n`],
+    ["the ref first", (oid: string, ref: string): string => `${ref}\t${oid}\n`],
+    ["a space for the tab", (oid: string, ref: string): string => `${oid} ${ref}\n`],
+    ["two lines", (oid: string, ref: string): string => `${oid}\t${ref}\n${oid}\t${ref}\n`],
+    ["nothing", (): string => ""],
+  ])(
+    "is ChannelFailed when stdout gives %s, not the quarantine's refs/capsule/<room>/ ref",
+    async (_label, print) => {
+      const { world } = await roomWithJob("src/a.ts");
+      world.capsule.collectStdout = print;
+      await expect(world.channel.collect(world.repo, JOB)).rejects.toMatchObject({
+        name: "ChannelFailed",
+        reason: "channel_failed",
+      });
+    },
+  );
+
   it("is ChannelFailed when the guest has no job/<id> (exit 1)", async () => {
     const world = roomKindWorld();
     await world.channel.refresh(world.repo, "main");
@@ -333,12 +354,13 @@ describe("room verbs typed by exit code alone", () => {
   });
 });
 
-describe("room verbs past their bound (transfer_timeout_s, probe_timeout_s)", () => {
-  it("bounds push and collect by the repo's transfer_timeout_s, the probe by probe_timeout_s", async () => {
+describe("room verbs past their bound: transfer_timeout_s (no probe_timeout_s: the probe is a collect)", () => {
+  it("bounds push, collect and the probe alike by the repo's transfer_timeout_s", async () => {
     const { world } = await roomWithJob("src/a.ts");
     await world.channel.collect(world.repo, JOB);
-    await world.channel.reachable();
-    expect(world.capsule.timeouts).toEqual([600_000, 600_000, 15_000]);
+    await world.channel.reachable(world.repo, JOB);
+    expect(world.capsule.timeouts).toEqual([600_000, 600_000, 600_000]);
+    expect(world.capsule.calls.at(-1)).toEqual([ROOM, "collect", "satan", `job/${JOB}`]);
   });
 
   it.each(verbs)(
@@ -355,7 +377,8 @@ describe("room verbs past their bound (transfer_timeout_s, probe_timeout_s)", ()
   it("a probe past it is unreachable", async () => {
     const world = roomKindWorld();
     world.capsule.hang = true;
-    expect(await world.channel.reachable()).toBe(false);
+    expect(await world.channel.reachable(world.repo, JOB)).toBe(false);
+    expect(world.capsule.timeouts.at(-1)).toBe(600_000);
   });
 
   /** A `capsule` that never exits, run for real: its group is killed at the bound. */
@@ -364,13 +387,13 @@ describe("room verbs past their bound (transfer_timeout_s, probe_timeout_s)", ()
 
   it("a real verb that never exits is killed at its bound and is channel_timeout", async () => {
     const world = roomKindWorld();
-    const channel = roomChannel({ ...ROOM_DOOR, probeTimeoutS: 1 }, neverExits);
+    const channel = roomChannel(ROOM_DOOR, neverExits);
     const repo = { ...world.repo, transferTimeoutS: 1 };
     await expect(channel.refresh(repo, "main")).rejects.toMatchObject({
       name: "ChannelUnavailable",
       reason: "channel_timeout",
     });
-    expect(await channel.reachable()).toBe(false);
+    expect(await channel.reachable(repo, JOB)).toBe(false);
   });
 });
 
@@ -414,21 +437,60 @@ describe("clone hygiene over a slot: nothing to check or clean (A1)", () => {
   });
 });
 
-describe("reachable over a room", () => {
-  it("is capsule <room> ssh <user> true exiting 0", async () => {
-    const world = roomKindWorld();
-    expect(await world.channel.reachable()).toBe(true);
-    world.capsule.up = false;
-    expect(await world.channel.reachable()).toBe(false);
-    expect(world.capsule.calls).toEqual([
-      [ROOM, "ssh", ROOM_USER, "true"],
-      [ROOM, "ssh", ROOM_USER, "true"],
-    ]);
+describe("reachable(repo, job) over a room is this job's collect (DEC-060, VT-1)", () => {
+  it("exit 0 is reachable: capsule <room> collect <repo> job/<id>, landed in the quarantine", async () => {
+    const { world, tip } = await roomWithJob("src/a.ts");
+    expect(await world.channel.reachable(world.repo, JOB)).toBe(true);
+    expect(world.capsule.calls.at(-1)).toEqual([ROOM, "collect", "satan", `job/${JOB}`]);
+    expect(world.quarantine.git("rev-parse", ROOM_JOB_REF)).toBe(tip);
   });
 
-  it("never throws: a command line that cannot run is unreachable", async () => {
+  it("exit 75 is unreachable", async () => {
+    const { world } = await roomWithJob("src/a.ts");
+    world.capsule.up = false;
+    expect(await world.channel.reachable(world.repo, JOB)).toBe(false);
+  });
+
+  it("past transfer_timeout_s is unreachable", async () => {
+    const { world } = await roomWithJob("src/a.ts");
+    world.capsule.hang = true;
+    expect(await world.channel.reachable(world.repo, JOB)).toBe(false);
+    expect(world.capsule.timeouts.at(-1)).toBe(600_000);
+  });
+
+  it("exit 1 (a changed host key, refused auth) throws ChannelFailed: a trust failure is never downtime", async () => {
+    const { world } = await roomWithJob("src/a.ts");
+    world.capsule.exit = 1;
+    await expect(world.channel.reachable(world.repo, JOB)).rejects.toMatchObject({
+      name: "ChannelFailed",
+      reason: "channel_failed",
+    });
+  });
+
+  it("exit 2 throws ChannelFailed marked a refusal", async () => {
+    const { world } = await roomWithJob("src/a.ts");
+    world.capsule.exit = 2;
+    await expect(world.channel.reachable(world.repo, JOB)).rejects.toMatchObject({
+      name: "ChannelFailed",
+      reason: "channel_refusal",
+    });
+  });
+
+  it("throws ChannelFailed when stdout disagrees with the quarantine", async () => {
+    const { world } = await roomWithJob("src/a.ts");
+    world.capsule.collectStdout = (): string => "";
+    await expect(world.channel.reachable(world.repo, JOB)).rejects.toMatchObject({
+      name: "ChannelFailed",
+    });
+  });
+
+  it("throws ChannelFailed when the command line cannot run, as collect does (a deploy fault)", async () => {
+    const world = roomKindWorld();
     const channel = roomChannel(ROOM_DOOR, spawnFails);
-    expect(await channel.reachable()).toBe(false);
+    await expect(channel.reachable(world.repo, JOB)).rejects.toMatchObject({
+      name: "ChannelFailed",
+      reason: "channel_failed",
+    });
   });
 });
 
@@ -439,7 +501,13 @@ describe("the channel from config", () => {
       calls.push(args);
       return Promise.resolve({ code: 0, stdout: "", stderr: "" });
     };
-    expect(await channelFromConfig(exampleConfig(), cli).reachable()).toBe(true);
+    const config = exampleConfig();
+    expect(
+      await channelFromConfig(config, cli).reachable(
+        configEntry(config.repos, "repo", "satan"),
+        JOB,
+      ),
+    ).toBe(true);
     expect(calls).toEqual([["f", "ssh", "true"]]);
   });
 
@@ -447,10 +515,16 @@ describe("the channel from config", () => {
     const calls: (readonly string[])[] = [];
     const cli: CapsuleCli = (args) => {
       calls.push(args);
-      return Promise.resolve({ code: 0, stdout: "", stderr: "" });
+      return Promise.resolve({ code: 75, stdout: "", stderr: "room down" });
     };
-    expect(await channelFromConfig(roomConfig(), cli).reachable()).toBe(true);
-    expect(calls).toEqual([["assistant", "ssh", "agent", "true"]]);
+    const config = roomConfig();
+    expect(
+      await channelFromConfig(config, cli).reachable(
+        configEntry(config.repos, "repo", "satan"),
+        JOB,
+      ),
+    ).toBe(false);
+    expect(calls).toEqual([["assistant", "collect", "satan", `job/${JOB}`]]);
   });
 
   it("refuses to start with no door table (I13)", () => {

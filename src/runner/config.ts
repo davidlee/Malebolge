@@ -105,8 +105,6 @@ export interface RoomDoorConfig extends DoorSsh {
   identity: string;
   /** The guest's `session` program, verbatim; no built-in fallback. */
   sessionPath: string;
-  /** The bound on the reachability probe. */
-  probeTimeoutS: number;
 }
 
 /** The door into the room, by kind (DEC-065). */
@@ -115,7 +113,7 @@ export type DoorConfig = SlotDoorConfig | RoomDoorConfig;
 /** Each kind's `[door]` keys beyond the shared ones: the table is closed per kind. */
 const DOOR_KEYS = {
   slot: ["slot", "quarantine", "host", "profile", "ssh_config", "identity"],
-  room: ["room", "ssh_config", "identity", "session_path", "probe_timeout_s"],
+  room: ["room", "ssh_config", "identity", "session_path"],
 } as const;
 
 const SHARED_DOOR_KEYS = ["kind", "user", "known_hosts", "host_key_alias"];
@@ -301,7 +299,6 @@ function readDoor(fields: JsonRecord, home: string): DoorConfig {
         sshConfig: path("ssh_config"),
         identity: path("identity"),
         sessionPath: text("session_path"),
-        probeTimeoutS: required(fields, "probe_timeout_s", optionalPositiveInt),
       };
     }
     return setDefined<SlotDoorConfig>(

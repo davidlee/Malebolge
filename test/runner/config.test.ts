@@ -154,7 +154,6 @@ describe("parseRunnerConfig: the door kind (DEC-065)", () => {
       knownHosts: "/var/lib/capsule/room/assistant/known_hosts",
       hostKeyAlias: "room-assistant",
       sessionPath: "/run/current-system/sw/bin/session",
-      probeTimeoutS: 15,
     });
     expect(config.repos.get("satan")).toEqual({
       name: "satan",
@@ -178,7 +177,6 @@ describe("parseRunnerConfig: the door kind (DEC-065)", () => {
   it.each([
     ["[door] room", 'slot = "f"', 'slot = "f"\nroom = "assistant"', /door.*room/],
     ["[door] session_path", 'slot = "f"', 'slot = "f"\nsession_path = "/s"', /session_path/],
-    ["[door] probe_timeout_s", 'slot = "f"', 'slot = "f"\nprobe_timeout_s = 15', /probe_timeout_s/],
     [
       "[repo.*] quarantine",
       'guest_path = "/work/repos/satan"',
@@ -193,6 +191,14 @@ describe("parseRunnerConfig: the door kind (DEC-065)", () => {
     ],
   ])("refuses a room key under kind = slot: %s", (_label, from, to, reason) => {
     expect(() => parseRunnerConfig(variant(from, to), HOME)).toThrow(reason);
+  });
+
+  // VT-6: the room's probe is the job's collect, bounded by transfer_timeout_s (design rev 63).
+  it.each([
+    ["slot", variant('slot = "f"', 'slot = "f"\nprobe_timeout_s = 15')],
+    ["room", roomVariant('room = "assistant"', 'room = "assistant"\nprobe_timeout_s = 15')],
+  ])("probe_timeout_s under kind = %s refuses start: the probe is a collect", (_kind, toml) => {
+    expect(() => parseRunnerConfig(toml, HOME)).toThrow(/door.*probe_timeout_s/);
   });
 
   it("refuses a repo's room keys when there is no door", () => {
@@ -236,7 +242,6 @@ describe("parseRunnerConfig: the door kind (DEC-065)", () => {
     ["known_hosts", 'known_hosts = "/var/lib/capsule/room/assistant/known_hosts"\n'],
     ["host_key_alias", 'host_key_alias = "room-assistant"\n'],
     ["session_path", 'session_path = "/run/current-system/sw/bin/session"\n'],
-    ["probe_timeout_s", "probe_timeout_s = 15\n"],
   ])("refuses a room door without %s: nothing is derived (I13)", (key, line) => {
     expect(() => parseRunnerConfig(roomVariant(line, ""), HOME)).toThrow(
       new RegExp(`door.*${key}`),
@@ -253,8 +258,6 @@ describe("parseRunnerConfig: the door kind (DEC-065)", () => {
   });
 
   it.each([
-    ["probe_timeout_s of 0", "probe_timeout_s = 15", "probe_timeout_s = 0"],
-    ["a fractional probe_timeout_s", "probe_timeout_s = 15", "probe_timeout_s = 1.5"],
     ["a negative transfer_timeout_s", "transfer_timeout_s = 600", "transfer_timeout_s = -1"],
     ["a string transfer_timeout_s", "transfer_timeout_s = 600", 'transfer_timeout_s = "600"'],
   ])("refuses %s", (_label, from, to) => {

@@ -90,6 +90,13 @@ const settleError = (
     failure,
   );
 
+/** Why a collect (or its probe) failed: the channel's reason when it is a channel failure. */
+const collectionFailed = (error: unknown): JsonRecord => ({
+  reason: "collection_failed",
+  ...(error instanceof ChannelFailed ? { channel: error.reason } : {}),
+  message: messageOf(error),
+});
+
 /** A row that cannot be collected at all: failed, class `error`, no classification. */
 const failOutright = (
   deps: CollectDeps,
@@ -253,11 +260,7 @@ export async function collectJob(deps: CollectDeps, id: string, now: number): Pr
         message: error.message,
       });
     }
-    return settleError(deps, id, now, endReason, {
-      reason: "collection_failed",
-      ...(error instanceof ChannelFailed ? { channel: error.reason } : {}),
-      message: messageOf(error),
-    });
+    return settleError(deps, id, now, endReason, collectionFailed(error));
   }
   return checkAndClassify(deps, { ...job, baseOid, endReason }, repo, now, collected);
 }
@@ -279,8 +282,16 @@ export async function retryPendingCollection(
       pendingSince: isoTime(job.stateEnteredAt),
     });
   }
-  if (!(await deps.channel.reachable())) {
-    return job;
+  const repo = deps.config.repos.get(job.repo);
+  try {
+    if (repo !== undefined && !(await deps.channel.reachable(repo, id))) {
+      return job;
+    }
+  } catch (error) {
+    if (error instanceof ChannelFailed) {
+      return failOutright(deps, id, now, collectionFailed(error));
+    }
+    throw error;
   }
   await deps.jobs.transition(id, "collecting", now, { reason: "reachable" });
   return collectJob(deps, id, now);
