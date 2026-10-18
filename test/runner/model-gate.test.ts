@@ -94,6 +94,7 @@ const REFUSAL_REASONS: readonly Refusal[] = [
   "usage_unavailable",
   "no_job",
   "paused",
+  "credentials",
 ];
 
 describe("refusal text (EX-6)", () => {
@@ -187,14 +188,6 @@ const ENTRY_ROWS: readonly EntryRow[] = [
     call: (m) => m.fetchDeferred(CHAT_MODEL, HANDLE),
   },
   {
-    entry: "cancelDeferred",
-    method: "cancelDeferred",
-    call: async (m): Promise<Outcome> => {
-      await m.cancelDeferred(CHAT_MODEL, HANDLE);
-      return { stopReason: "stop" };
-    },
-  },
-  {
     entry: "generateImages",
     method: "generateImages",
     call: (m) => m.generateImages(IMAGE_MODEL, { input: [] }),
@@ -222,7 +215,7 @@ describe("every runtime.models entry point is gated (VT-3, EX-5)", () => {
     expect(real.calls.map((call) => call.method)).toEqual([row.method]);
   });
 
-  it.each(ENTRY_ROWS.filter((row) => row.entry !== "cancelDeferred"))(
+  it.each(ENTRY_ROWS)(
     "$entry refused: no provider request, the refusal is an error result",
     async (row) => {
       const gate = scriptedGate("ceiling_exceeded");
@@ -239,14 +232,42 @@ describe("every runtime.models entry point is gated (VT-3, EX-5)", () => {
     },
   );
 
-  it("cancelDeferred refused: rejects GateRefused, no provider request", async () => {
+  it("cancelDeferred always passes (DEC-057): any refusal, the gate never consulted, one provider cancel", async () => {
     const gate = scriptedGate("usage_unavailable");
     const real = recordingModels();
 
-    const cancelled = gatedModels(real.models, gate).cancelDeferred(CHAT_MODEL, HANDLE);
+    await gatedModels(real.models, gate).cancelDeferred(CHAT_MODEL, HANDLE);
 
-    await expect(cancelled).rejects.toBeInstanceOf(GateRefused);
-    await expect(cancelled).rejects.toMatchObject({ reason: "usage_unavailable" });
+    expect(gate.seen).toEqual([]);
+    expect(real.calls.map((call) => call.method)).toEqual(["cancelDeferred"]);
+  });
+
+  it("getAuth, login and logout are refused credentials, never delegated (DEC-057)", async () => {
+    const real = recordingModels();
+    const spies = [
+      vi.spyOn(real.models, "getAuth"),
+      vi.spyOn(real.models, "login"),
+      vi.spyOn(real.models, "logout"),
+    ];
+    const view = gatedModels(real.models, scriptedGate({ maxTokens: 1 }));
+    const interaction = {
+      prompt: (): Promise<string> => Promise.resolve(""),
+      notify: (): void => undefined,
+    };
+
+    const refusals = [
+      view.getAuth(CHAT_MODEL),
+      view.login("rec", "oauth", interaction),
+      view.logout("rec"),
+    ];
+
+    for (const refusal of refusals) {
+      await expect(refusal).rejects.toBeInstanceOf(GateRefused);
+      await expect(refusal).rejects.toMatchObject({ reason: "credentials" });
+    }
+    for (const spy of spies) {
+      expect(spy).not.toHaveBeenCalled();
+    }
     expect(real.calls).toEqual([]);
   });
 
@@ -596,7 +617,7 @@ describe("the gate on a harness (VT-1)", () => {
     expect(await exhausted.ceilingEvents()).toMatchObject([{ entryPoint: "fetchDeferred" }]);
   });
 
-  it("cancelDeferred: refused when exhausted (DEC-057, OQ-A); the abort still completes", async () => {
+  it("cancelDeferred: passes and is not counted in model_requests even when exhausted (DEC-057); fetchDeferred stays refused", async () => {
     const w = await start({
       ceilings: { model_requests: 1 },
       settings: { stream: { deferred: true }, retry: NO_RETRY },
@@ -613,9 +634,10 @@ describe("the gate on a harness (VT-1)", () => {
     await within(SETTLE_MS, "abort", w.root.abort(context));
     await within(SETTLE_MS, "settle", submission.wait(context));
 
-    expect(w.seen).toEqual(["streamSimple", "cancelDeferred"]);
-    expect(w.faux.state.cancelledDeferred).toEqual([]);
-    expect(await w.ceilingEvents()).toMatchObject([{ entryPoint: "cancelDeferred" }]);
+    expect(w.seen).toEqual(["streamSimple"]);
+    expect(w.faux.state.cancelledDeferred).not.toEqual([]);
+    expect(await w.modelRequests()).toBe(1);
+    expect(await w.ceilingEvents()).toEqual([]);
   });
 
   it("runtime.models from a tool: complete, stream and completeSimple are gated and counted", async () => {

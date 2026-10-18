@@ -48,7 +48,7 @@ import {
 import type { Ceilings } from "./config.ts";
 import type { Job, JobStore } from "./store.ts";
 
-/** The `Models` members that send a provider request. */
+/** The `Models` members the gate admits: provider requests that count and can be refused. */
 export const ENTRY_POINTS = [
   "stream",
   "complete",
@@ -56,7 +56,6 @@ export const ENTRY_POINTS = [
   "completeSimple",
   "streamDeferred",
   "fetchDeferred",
-  "cancelDeferred",
   "generateImages",
   "classify",
 ] as const satisfies readonly (keyof Models)[];
@@ -65,9 +64,9 @@ export type EntryPoint = (typeof ENTRY_POINTS)[number];
 
 /**
  * Why the gate refused: a job ceiling, no job seated to charge (fail
- * closed), or the job's pause pending.
+ * closed), the job's pause pending, or a credentials member (never reachable).
  */
-export type Refusal = Exhaustion | "no_job" | "paused";
+export type Refusal = Exhaustion | "no_job" | "paused" | "credentials";
 
 /**
  * The refusal as the model run sees it (`errorMessage`). Fixed text, never
@@ -80,6 +79,7 @@ export const REFUSALS: Readonly<Record<Refusal, string>> = {
   no_job: "model gate refused the request: no job to charge (out of budget)",
   // Not a budget: matches neither of pi-ai's patterns, so not retryable either.
   paused: "model gate refused the request: job paused while its room is down",
+  credentials: "model gate refused the call: credentials are not reachable from a job",
 };
 
 /** A gate refusal. Match it by type and `reason`, never by message. */
@@ -152,15 +152,17 @@ const failedMessage = (model: Model<string>, error: unknown): Promise<AssistantM
     Promise.reject(error instanceof Error ? error : new Error(String(error))),
   ).result();
 
-/** Rethrows: the entry point's contract is to reject. */
-const rethrow = (error: unknown): never => {
-  throw error;
-};
+/** A credentials member of the gated view: always refused (DEC-057, 2026-10-19). */
+const refuseCredentials = (): Promise<never> => Promise.reject(new GateRefused("credentials"));
 
 /**
  * `real` behind `gate`. Providers are not handed out (`getProviders` is
  * empty, `getProvider` none): a raw provider would reach the network
- * ungated (OQ-B). Every other non-request member delegates to `real`.
+ * ungated (OQ-B). `getAuth`, `login` and `logout` are always refused: pi-ai
+ * resolves auth inside the real catalog, and a job has no use for credentials
+ * (DEC-057, 2026-10-19). `cancelDeferred` passes uncounted and never refused,
+ * so an abort always reaches the provider (DEC-057, 2026-10-19). Every other
+ * non-request member delegates to `real`.
  */
 export function gatedModels(real: Models, gate: Gate): Models {
   return {
@@ -176,9 +178,10 @@ export function gatedModels(real: Models, gate: Gate): Models {
     getAvailable: real.getAvailable.bind(real),
     getAvailableOfType: real.getAvailableOfType.bind(real),
     getAllAvailable: real.getAllAvailable.bind(real),
-    getAuth: real.getAuth.bind(real),
-    login: real.login.bind(real),
-    logout: real.logout.bind(real),
+    cancelDeferred: real.cancelDeferred.bind(real),
+    getAuth: refuseCredentials,
+    login: refuseCredentials,
+    logout: refuseCredentials,
     stream: (model, context, options) =>
       gatedStream(gate, "stream", model, (admission) =>
         real.stream<Api>(model, context, capped(options, admission)),
@@ -212,14 +215,6 @@ export function gatedModels(real: Models, gate: Gate): Models {
         model,
         () => real.fetchDeferred(model, handle, options),
         (error) => failedMessage(model, error),
-      ),
-    cancelDeferred: (model, handle, options) =>
-      gatedCall(
-        gate,
-        "cancelDeferred",
-        model,
-        () => real.cancelDeferred(model, handle, options),
-        rethrow,
       ),
     generateImages: (model, context, options) =>
       gatedCall(
