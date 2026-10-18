@@ -1,17 +1,14 @@
 // The daemon socket: every connection gets the conversation's event stream and
 // may submit to it. The Harness and its storage stay with this one process.
 
-import { rmSync } from "node:fs";
-import { createServer, type Socket } from "node:net";
+import type { Socket } from "node:net";
 import { type Conversation, type Harness, watchEvents } from "@earendil-works/pi-durable";
 import { context } from "./context.ts";
 import { encodeLine, lineSplitter } from "./ndjson.ts";
 import { type ClientMessage, type ErrorMessage, parseClientMessage } from "./protocol.ts";
-import { listenUnix } from "./unix-socket.ts";
+import { serveUnix, type UnixServer } from "./unix-socket.ts";
 
-export interface Daemon {
-  close: () => Promise<void>;
-}
+export type Daemon = UnixServer;
 
 const errorMessage = (error: unknown): ErrorMessage => ({
   type: "error",
@@ -60,34 +57,14 @@ async function attach(harness: Harness, conversation: Conversation, socket: Sock
 }
 
 /** Serve `conversation` on a unix socket at `socketPath`, replacing a stale one. */
-export async function serve(
+export function serve(
   harness: Harness,
   conversation: Conversation,
   socketPath: string,
 ): Promise<Daemon> {
-  const sockets = new Set<Socket>();
-  const server = createServer((socket) => {
-    sockets.add(socket);
-    socket.on("close", () => sockets.delete(socket));
-    socket.on("error", () => socket.destroy());
+  return serveUnix(socketPath, (socket) => {
     attach(harness, conversation, socket).catch((error: unknown) => {
       socket.end(encodeLine(errorMessage(error)));
     });
   });
-  rmSync(socketPath, { force: true });
-  await listenUnix(server, socketPath);
-  let closing: Promise<void> | undefined;
-  return {
-    close: (): Promise<void> => {
-      closing ??= new Promise<void>((resolve) => {
-        for (const socket of sockets) {
-          socket.destroy();
-        }
-        server.close(() => {
-          resolve();
-        });
-      });
-      return closing;
-    },
-  };
 }

@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import { isRunnerError } from "../../src/runner/errors.ts";
 import {
   checkSubmit,
   encodeError,
@@ -9,6 +8,7 @@ import {
   type Request,
 } from "../../src/runner/protocol.ts";
 import { exampleConfig } from "./config-fixture.ts";
+import { codeOf } from "./refusal-fixture.ts";
 
 const SUBMIT = {
   op: "submit",
@@ -58,16 +58,6 @@ const REQUIRED: [string, string[]][] = [
 ];
 
 const parse = (message: unknown): Request => parseRequest(JSON.stringify(message));
-
-/** The error code `run` throws, or "none" / "unexpected" for anything else. */
-function codeOf(run: () => unknown): string {
-  try {
-    run();
-  } catch (error) {
-    return isRunnerError(error) ? error.code : "unexpected";
-  }
-  return "none";
-}
 
 const field = (message: unknown, key: string): unknown =>
   typeof message === "object" && message !== null

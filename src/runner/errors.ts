@@ -24,3 +24,11 @@ export class RunnerError extends Error {
 }
 
 export const isRunnerError = (value: unknown): value is RunnerError => value instanceof RunnerError;
+
+/** The runner will not start: its config, files or socket are not as they must be (I13). */
+export class StartRefused extends Error {
+  constructor(message: string, options?: ErrorOptions) {
+    super(message, options);
+    this.name = "StartRefused";
+  }
+}

@@ -12,7 +12,7 @@ import {
   transition,
   TRANSITIONS,
 } from "../../src/runner/jobs.ts";
-import { isRunnerError } from "../../src/runner/errors.ts";
+import { codeOf } from "./refusal-fixture.ts";
 
 const NOW = 50_000;
 
@@ -23,16 +23,6 @@ const job = (state: JobState, extra: Partial<JobRecord> = {}): JobRecord => ({
   pauseCount: 0,
   ...extra,
 });
-
-/** The `RunnerError` code `run` throws. */
-function codeOf(run: () => unknown): string {
-  try {
-    run();
-  } catch (error) {
-    return isRunnerError(error) ? error.code : `not a RunnerError: ${String(error)}`;
-  }
-  return "did not throw";
-}
 
 /** The §5.4 state diagram, edge by edge. */
 const LEGAL: readonly (readonly [JobState, JobState])[] = [

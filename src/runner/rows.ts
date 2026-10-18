@@ -78,13 +78,16 @@ const isEpochMs = (ms: number): boolean => Number.isSafeInteger(ms) && ms >= 0 &
 const isCount = (value: unknown): value is number =>
   typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
 
+/** Epoch ms as the ISO-8601 UTC text a time column holds; the wire uses it too. */
+export function isoTime(ms: number): string {
+  if (!isEpochMs(ms)) {
+    throw new Error(`time must be integer epoch ms in years 1970-9999: ${String(ms)}`);
+  }
+  return new Date(ms).toISOString();
+}
+
 const time: Codec<number> = {
-  encode: (ms) => {
-    if (!isEpochMs(ms)) {
-      throw new Error(`time must be integer epoch ms in years 1970-9999: ${String(ms)}`);
-    }
-    return new Date(ms).toISOString();
-  },
+  encode: isoTime,
   decode: (raw) => {
     const ms = typeof raw === "string" ? Date.parse(raw) : Number.NaN;
     if (isEpochMs(ms) && new Date(ms).toISOString() === raw) {

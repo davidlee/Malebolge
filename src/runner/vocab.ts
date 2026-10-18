@@ -63,6 +63,8 @@ export const EVENT_KINDS = [
   "collected",
   "classified",
   "disposition",
+  "conversation",
+  "announced",
 ] as const;
 
 export type EventKind = (typeof EVENT_KINDS)[number];

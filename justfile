@@ -21,6 +21,10 @@ format:
 daemon:
   node src/daemon-main.ts
 
+# Run the patch-job runner (config path from $SATAN_RUNNER_CONFIG).
+runner:
+  node src/runner-main.ts
+
 # Attach a terminal client to the running daemon.
 attach:
   node src/attach-main.ts

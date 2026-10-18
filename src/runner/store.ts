@@ -164,7 +164,7 @@ async function requireJob(tx: SqliteExecutor, id: string): Promise<Job> {
 // --- the job store ---------------------------------------------------------------
 
 /** The fields one change writes: absent fields are unchanged, `null` clears. */
-export type JobUpdate = Partial<JobPatch>;
+export type JobUpdate = Partial<JobPatch> & Partial<Pick<Job, "conversationId" | "announcedAt">>;
 
 /** A row change and the event recording it. */
 export interface Change {
@@ -182,6 +182,9 @@ export interface Submitted {
 }
 
 export type JobFilter = Pick<ListRequest, "states" | "limit">;
+
+/** Told of each committed job write: the job as written and its event's kind. */
+export type JobListener = (job: Job, kind: EventKind) => void;
 
 /** `job` with `update` applied at `now`. */
 function applyUpdate(job: Job, update: JobUpdate, now: number): Job {
@@ -212,6 +215,7 @@ function transitionChange(job: Job, patch: JobPatch, payload: JsonRecord = {}): 
 export class JobStore {
   readonly #db: SqliteDatabase;
   readonly #newId: JobIdFactory;
+  readonly #listeners = new Set<JobListener>();
 
   constructor(db: SqliteDatabase, newId: JobIdFactory = systemJobIds) {
     this.#db = db;
@@ -219,8 +223,8 @@ export class JobStore {
   }
 
   /** Inserts a queued job and its `submitted` event, or returns the job already holding the submission id. */
-  submit(newJob: NewJob, now: number): Promise<Submitted> {
-    return this.#db.transaction(async (tx) => {
+  async submit(newJob: NewJob, now: number): Promise<Submitted> {
+    const submitted = await this.#db.transaction(async (tx): Promise<Submitted> => {
       const existing = await selectJob(tx, "submission_id", newJob.submissionId);
       if (existing !== undefined) {
         return { job: existing, created: false };
@@ -246,6 +250,10 @@ export class JobStore {
       );
       return { job, created: true };
     });
+    if (submitted.created) {
+      this.#notify(submitted.job, "submitted");
+    }
+    return submitted;
   }
 
   /**
@@ -253,18 +261,46 @@ export class JobStore {
    * makes of it and appends its event, in one transaction. `updated_at`
    * becomes `now`, the event's time.
    */
-  change(id: string, now: number, decide: Decide): Promise<Job> {
-    return this.#db.transaction(async (tx) => {
-      const job = await requireJob(tx, id);
-      const change = decide(job);
-      if (change === undefined) {
-        return job;
+  async change(id: string, now: number, decide: Decide): Promise<Job> {
+    const { job, kind } = await this.#db.transaction(
+      async (tx): Promise<{ job: Job; kind?: EventKind }> => {
+        const job = await requireJob(tx, id);
+        const change = decide(job);
+        if (change === undefined) {
+          return { job };
+        }
+        const next = applyUpdate(job, change.update, now);
+        await updateJob(tx, next, [...Object.keys(change.update), "updatedAt"]);
+        await insert(tx, "job_events", encodeEvent({ jobId: id, at: now, ...change.event }));
+        return { job: next, kind: change.event.kind };
+      },
+    );
+    if (kind !== undefined) {
+      this.#notify(job, kind);
+    }
+    return job;
+  }
+
+  /**
+   * Calls `listener` after each committed job write (a created job, a change
+   * that wrote), never inside the transaction. Returns the unsubscribe.
+   */
+  observe(listener: JobListener): () => void {
+    this.#listeners.add(listener);
+    return () => {
+      this.#listeners.delete(listener);
+    };
+  }
+
+  /** A listener owns its failures: one that throws is skipped, the write stands. */
+  #notify(job: Job, kind: EventKind): void {
+    for (const listener of this.#listeners) {
+      try {
+        listener(job, kind);
+      } catch {
+        // The write has committed; a listener's bug must not report it as failed.
       }
-      const next = applyUpdate(job, change.update, now);
-      await updateJob(tx, next, [...Object.keys(change.update), "updatedAt"]);
-      await insert(tx, "job_events", encodeEvent({ jobId: id, at: now, ...change.event }));
-      return next;
-    });
+    }
   }
 
   /** Moves job `id` to `to`; `payload` adds to the event. */
@@ -272,8 +308,9 @@ export class JobStore {
     return this.change(id, now, (job) => transitionChange(job, transition(job, to, now), payload));
   }
 
-  cancel(id: string, now: number): Promise<Job> {
-    return this.change(id, now, (job) => transitionChange(job, cancel(job, now)));
+  /** Cancels job `id`; `payload` (e.g. the reason) adds to the event. */
+  cancel(id: string, now: number, payload?: JsonRecord): Promise<Job> {
+    return this.change(id, now, (job) => transitionChange(job, cancel(job, now), payload));
   }
 
   /** Records a room-down pause request once; `failure` is the event payload. */

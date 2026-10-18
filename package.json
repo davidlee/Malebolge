@@ -9,7 +9,8 @@
   },
   "bin": {
     "malebolge": "./src/daemon-main.ts",
-    "malebolge-attach": "./src/attach-main.ts"
+    "malebolge-attach": "./src/attach-main.ts",
+    "satan-runner": "./src/runner-main.ts"
   },
   "scripts": {
     "test": "vitest run",

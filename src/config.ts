@@ -45,6 +45,10 @@ function required(env: Env, name: string): string {
 export const daemonSocket = (env: Env): string =>
   env["MALEBOLGE_SOCKET"] ?? join(required(env, "XDG_RUNTIME_DIR"), "satan", "durable.sock");
 
+/** The coding agent's model catalog cache under `home`. */
+export const modelsStorePath = (home: string): string =>
+  join(home, ".pi", "agent", "models-store.json");
+
 export function resolveConfig(env: Env, cwd: string): Config {
   const home = required(env, "HOME");
   const stateRoot = join(env["XDG_STATE_HOME"] ?? join(home, ".local", "state"), "satan");
@@ -55,7 +59,7 @@ export function resolveConfig(env: Env, cwd: string): Config {
     mcpSocket: env["SATAN_MCP_SOCKET"] ?? join(runtime, "mcp", "mcp.sock"),
     daemonSocket: daemonSocket(env),
     model: parseModel(env["MALEBOLGE_MODEL"] ?? DEFAULT_MODEL),
-    modelsStorePath: join(home, ".pi", "agent", "models-store.json"),
+    modelsStorePath: modelsStorePath(home),
     cwd,
   };
 }

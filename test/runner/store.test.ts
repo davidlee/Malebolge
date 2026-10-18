@@ -3,13 +3,19 @@ import { openNodeSqliteDatabase } from "@earendil-works/pi-durable/storage/sqlit
 import { describe, expect, it, onTestFinished } from "vitest";
 import { context } from "../../src/context.ts";
 import type { JsonRecord } from "../../src/json.ts";
-import { isRunnerError } from "../../src/runner/errors.ts";
 import { columnOf, JOB_FIELDS } from "../../src/runner/rows.ts";
-import { MIGRATIONS, migrate, openRunnerStore, PI_PREFIX } from "../../src/runner/store.ts";
+import {
+  type JobStore,
+  MIGRATIONS,
+  migrate,
+  openRunnerStore,
+  PI_PREFIX,
+} from "../../src/runner/store.ts";
 import { JOB_STATES } from "../../src/runner/vocab.ts";
 import { openFauxHarness } from "../harness-fixture.ts";
 import { closeHarness } from "./runner-fixture.ts";
 import { NEW_JOB, openTestStore, sequentialIds, T0 } from "./store-fixture.ts";
+import { rejectionCode } from "./refusal-fixture.ts";
 
 /** The §5.3 `jobs` columns in DDL order, `ceilings` after `source` (OQ-A). */
 const JOBS_COLUMNS = [
@@ -87,15 +93,9 @@ async function rawRow(db: SqliteDatabase, id: string): Promise<JsonRecord | unde
   return db.get<JsonRecord>("SELECT * FROM jobs WHERE id = ?", id);
 }
 
-/** The `RunnerError` code `promise` rejects with. */
-async function codeOf(promise: Promise<unknown>): Promise<string> {
-  try {
-    await promise;
-  } catch (error) {
-    return isRunnerError(error) ? error.code : `not a RunnerError: ${String(error)}`;
-  }
-  return "did not reject";
-}
+/** A database refusing every new event. */
+const refuseEvents = (db: SqliteDatabase): Promise<void> =>
+  db.exec("CREATE TRIGGER boom BEFORE INSERT ON job_events BEGIN SELECT RAISE(ABORT, 'boom'); END");
 
 describe("migrate", () => {
   it("creates job_schema, jobs, job_events, the index and both triggers at the latest version", async () => {
@@ -261,15 +261,17 @@ describe("the transition writer", () => {
     const { db, jobs } = await openTestStore();
     await jobs.submit(NEW_JOB, T0);
     const before = await rawRow(db, "pj-1");
-    expect(await codeOf(jobs.transition("pj-1", "running", T0 + 1))).toBe("invalid_transition");
+    expect(await rejectionCode(jobs.transition("pj-1", "running", T0 + 1))).toBe(
+      "invalid_transition",
+    );
     expect(await rawRow(db, "pj-1")).toEqual(before);
     expect(await jobs.events("pj-1")).toHaveLength(1);
   });
 
   it("refuses an unknown id with unknown_job", async () => {
     const { jobs } = await openTestStore();
-    expect(await codeOf(jobs.transition("pj-404", "preparing", T0))).toBe("unknown_job");
-    expect(await codeOf(jobs.appendEvent("pj-404", T0, "warning", {}))).toBe("unknown_job");
+    expect(await rejectionCode(jobs.transition("pj-404", "preparing", T0))).toBe("unknown_job");
+    expect(await rejectionCode(jobs.appendEvent("pj-404", T0, "warning", {}))).toBe("unknown_job");
   });
 
   it("records a pause once however many failures report it", async () => {
@@ -315,12 +317,6 @@ describe("the transition writer", () => {
 });
 
 describe("state and event commit in one transaction", () => {
-  /** A database refusing every new event. */
-  const refuseEvents = (db: SqliteDatabase): Promise<void> =>
-    db.exec(
-      "CREATE TRIGGER boom BEFORE INSERT ON job_events BEGIN SELECT RAISE(ABORT, 'boom'); END",
-    );
-
   it("leaves the job row byte-identical when its event cannot be written", async () => {
     const { db, jobs } = await openTestStore();
     await jobs.submit(NEW_JOB, T0);
@@ -385,5 +381,97 @@ describe("one adapter shared with pi-durable under prefix pi_", () => {
     expect(pi.every((name) => /^(?:sqlite_autoindex_)?pi_/.test(name))).toBe(true);
     expect((await storage.conversation(root.id, context))?.id).toBe(root.id);
     expect((await jobs.get("pj-1"))?.state).toBe("queued");
+  });
+});
+
+describe("conversation and announcement writes", () => {
+  it("records a conversation id and an announcement, each with its event", async () => {
+    const { db, jobs } = await openTestStore();
+    await jobs.submit(NEW_JOB, T0);
+    await jobs.change("pj-1", T0 + 1, () => ({
+      update: { conversationId: "conv-1" },
+      event: { kind: "conversation", payload: { conversationId: "conv-1" } },
+    }));
+    await jobs.cancel("pj-1", T0 + 2, { reason: "no longer needed" });
+    const acked = await jobs.change("pj-1", T0 + 3, () => ({
+      update: { announcedAt: T0 + 3 },
+      event: { kind: "announced", payload: {} },
+    }));
+    expect(acked).toMatchObject({ conversationId: "conv-1", announcedAt: T0 + 3 });
+    expect(await jobs.get("pj-1")).toEqual(acked);
+    expect(await rawRow(db, "pj-1")).toMatchObject({
+      conversation_id: "conv-1",
+      announced_at: new Date(T0 + 3).toISOString(),
+    });
+    const events = await jobs.events("pj-1");
+    expect(events.map((event) => event.kind)).toEqual([
+      "submitted",
+      "conversation",
+      "transition",
+      "announced",
+    ]);
+    expect(events[2]?.payload).toMatchObject({ reason: "no longer needed", to: "cancelled" });
+  });
+});
+
+describe("observe: committed writes, after commit", () => {
+  type Seen = [jobId: string, state: string, kind: string];
+
+  /** The store and every notification it gives, as `[id, state, kind]`. */
+  async function observed(): Promise<{ jobs: JobStore; seen: Seen[]; stop: () => void }> {
+    const { jobs } = await openTestStore();
+    const seen: Seen[] = [];
+    const stop = jobs.observe((job, kind) => {
+      seen.push([job.id, job.state, kind]);
+    });
+    return { jobs, seen, stop };
+  }
+
+  it("notifies once per created job and per change that wrote", async () => {
+    const { jobs, seen } = await observed();
+    await jobs.submit(NEW_JOB, T0);
+    await jobs.transition("pj-1", "preparing", T0 + 1);
+    await jobs.appendEvent("pj-1", T0 + 2, "warning", {});
+    expect(seen).toEqual([
+      ["pj-1", "queued", "submitted"],
+      ["pj-1", "preparing", "transition"],
+    ]);
+  });
+
+  it("is silent for an idempotent submit, a no-op change and a refused one", async () => {
+    const { jobs, seen } = await observed();
+    await jobs.submit(NEW_JOB, T0);
+    seen.length = 0;
+    await jobs.submit(NEW_JOB, T0 + 1);
+    await jobs.change("pj-1", T0 + 2, () => undefined);
+    await expect(jobs.transition("pj-1", "running", T0 + 3)).rejects.toThrow();
+    expect(seen).toEqual([]);
+  });
+
+  it("is silent for a write whose transaction rolls back", async () => {
+    const { db, jobs } = await openTestStore();
+    const seen: string[] = [];
+    jobs.observe((job) => seen.push(job.state));
+    await refuseEvents(db);
+    await expect(jobs.submit(NEW_JOB, T0)).rejects.toThrow(/boom/);
+    expect(seen).toEqual([]);
+  });
+
+  it("stops notifying once unsubscribed", async () => {
+    const { jobs, seen, stop } = await observed();
+    stop();
+    await jobs.submit(NEW_JOB, T0);
+    expect(seen).toEqual([]);
+  });
+
+  it("keeps the write and the other listeners when a listener throws", async () => {
+    const { jobs, seen } = await observed();
+    jobs.observe(() => {
+      throw new Error("listener bug");
+    });
+    const { job } = await jobs.submit(NEW_JOB, T0);
+    expect(job.state).toBe("queued");
+    expect(await jobs.get("pj-1")).toEqual(job);
+    expect(seen).toHaveLength(1);
   });
 });

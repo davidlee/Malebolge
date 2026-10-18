@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import { type Ceilings, parseRunnerConfig } from "../../src/runner/config.ts";
-import { isRunnerError } from "../../src/runner/errors.ts";
 import {
   checkCeilingsWithinMaxima,
   pickTagRule,
@@ -10,6 +9,7 @@ import {
 import { composePrompt, type PromptJob } from "../../src/runner/prompt.ts";
 import { checkSubmit, parseRequest, type SubmitRequest } from "../../src/runner/protocol.ts";
 import { exampleConfig, HOME, variant } from "./config-fixture.ts";
+import { codeOf } from "./refusal-fixture.ts";
 
 const MAXIMA: Ceilings = {
   model_requests: 200,
@@ -23,16 +23,6 @@ const JOB: PolicyJob = { mode: "fix", tags: [], repo: "satan" };
 /** The example config with extra TOML appended (new tables only). */
 const withTables = (toml: string): ReturnType<typeof exampleConfig> =>
   parseRunnerConfig(variant("[door]", `${toml}\n[door]`), HOME);
-
-/** The `RunnerError` code `run` throws. */
-function codeOf(run: () => unknown): string {
-  try {
-    run();
-  } catch (error) {
-    return isRunnerError(error) ? error.code : `not a RunnerError: ${String(error)}`;
-  }
-  return "did not throw";
-}
 
 describe("policy ladder: layers", () => {
   it("starts from built-in ceilings equal to the maxima, model from [defaults]", () => {
