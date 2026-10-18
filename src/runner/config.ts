@@ -121,6 +121,18 @@ const SHARED_DOOR_KEYS = ["kind", "user", "known_hosts", "host_key_alias"];
 /** The `[repo.*]` keys taken, and required, only under a room door. */
 const ROOM_REPO_KEYS = ["quarantine", "transfer_timeout_s"];
 
+/**
+ * Where the runner finds its model gateway (design §5.1, §5.3). Both are
+ * configured, never derived (I13): the catalog is the file `~/flakes` renders
+ * for the jails; the credential is the name of a systemd `LoadCredential=`
+ * entry holding the key issued to this runner.
+ */
+export interface GatewayConfig {
+  catalog: string;
+  /** A file name in `$CREDENTIALS_DIRECTORY`. */
+  credential: string;
+}
+
 export interface RunnerConfig {
   enabled: boolean;
   promptFile: string;
@@ -131,6 +143,7 @@ export interface RunnerConfig {
   tags: ReadonlyMap<string, PolicyLayer>;
   repos: ReadonlyMap<string, RepoConfig>;
   door?: DoorConfig;
+  gateway: GatewayConfig;
 }
 
 const THINKING_LEVELS: readonly ThinkingLevel[] = [
@@ -312,6 +325,20 @@ function readDoor(fields: JsonRecord, home: string): DoorConfig {
   });
 }
 
+/** A credential id is one file name: it cannot leave `$CREDENTIALS_DIRECTORY`. */
+const isFileName = (name: string): boolean => !name.includes("/") && name !== "." && name !== "..";
+
+function readGateway(fields: JsonRecord, home: string): GatewayConfig {
+  onlyKeys(fields, ["catalog", "credential"], "gateway");
+  return within("gateway", () => {
+    const credential = requireString(fields, "credential");
+    if (!isFileName(credential)) {
+      throw new Error("credential must be a file name, not a path");
+    }
+    return { catalog: expandHome(requireString(fields, "catalog"), home), credential };
+  });
+}
+
 /** Each sub-table of `parent[key]`, read by `read` given its name. */
 function readNamed<T>(
   parent: JsonRecord,
@@ -349,7 +376,7 @@ export function parseRunnerConfig(text: string, home: string): RunnerConfig {
   const doc = parseToml(text);
   onlyKeys(
     doc,
-    ["enabled", "prompt_file", "maxima", "defaults", "mode", "tag", "repo", "door"],
+    ["enabled", "prompt_file", "maxima", "defaults", "mode", "tag", "repo", "door", "gateway"],
     "config",
   );
   const table = (key: string): JsonRecord =>
@@ -361,6 +388,7 @@ export function parseRunnerConfig(text: string, home: string): RunnerConfig {
       enabled: required(doc, "enabled", optionalBoolean),
       promptFile: expandHome(requireString(doc, "prompt_file"), home),
     })),
+    gateway: readGateway(table("gateway"), home),
     maxima: readMaxima(table("maxima")),
     defaults: readDefaults(table("defaults")),
     modes: readNamed(doc, "mode", (fields, name) => readLayer(fields, `mode.${name}`, ["prompt"])),

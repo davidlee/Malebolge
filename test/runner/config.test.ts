@@ -55,6 +55,9 @@ describe("parseRunnerConfig", () => {
     const text = `
 prompt_file = "/p.md"
 enabled = false
+[gateway]
+catalog = "/c.json"
+credential = "k"
 [maxima]
 model_requests = 1
 cost_usd = 1
@@ -140,6 +143,39 @@ model = "m"
       identity: "/home/test/.ssh/runner",
     });
   });
+});
+
+describe("parseRunnerConfig: the [gateway] table", () => {
+  it("reads the catalog (home-expanded) and the credential id", () => {
+    expect(parseRunnerConfig(EXAMPLE, HOME).gateway).toEqual({
+      catalog: "/home/test/gateway/models.json",
+      credential: "satan-runner",
+    });
+  });
+
+  it.each([
+    ["the [gateway] table", /\[gateway\][^]*?(?=\[defaults\])/, /gateway/],
+    ["gateway.catalog", /catalog = .*\n/, /gateway.*catalog/],
+    ["gateway.credential", /credential = .*\n/, /gateway.*credential/],
+  ])("refuses a config without %s: nothing is derived (I13)", (_label, pattern, reason) => {
+    expect(() => parseRunnerConfig(EXAMPLE.replace(pattern, ""), HOME)).toThrow(reason);
+  });
+
+  it("refuses an unknown gateway key", () => {
+    const text = variant('credential = "satan-runner"', 'credential = "satan-runner"\nextra = 1');
+    expect(() => parseRunnerConfig(text, HOME)).toThrow(/gateway.*extra/);
+  });
+
+  it.each([
+    ["a path", "../escape"],
+    ["a nested path", "a/b"],
+  ])(
+    "refuses a gateway credential that is %s: it must stay inside CREDENTIALS_DIRECTORY",
+    (_l, id) => {
+      const text = variant('credential = "satan-runner"', `credential = "${id}"`);
+      expect(() => parseRunnerConfig(text, HOME)).toThrow(/gateway.*credential/);
+    },
+  );
 });
 
 describe("parseRunnerConfig: the door kind (DEC-065)", () => {

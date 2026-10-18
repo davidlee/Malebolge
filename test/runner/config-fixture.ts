@@ -18,6 +18,10 @@ soft_threshold = 0.8
 max_room_wait_s = 21600
 max_pending_collection_s = 86400
 
+[gateway]
+catalog = "~/gateway/models.json"
+credential = "satan-runner"
+
 [defaults]
 model = "gateway/test-model"
 thinking_level = "low"

@@ -22,9 +22,7 @@ import { dirname, join } from "node:path";
 import type { Models } from "@earendil-works/pi-ai/models";
 import { Harness } from "@earendil-works/pi-durable";
 import type { Connection } from "@earendil-works/pi-env";
-import { modelsStorePath } from "../config.ts";
 import { context } from "../context.ts";
-import { createDaemonModels, readModelsStore } from "../models.ts";
 import { registryOf } from "../session.ts";
 import { abortableSleep } from "./backoff.ts";
 import { type CollectDeps, retryPendingCollection } from "./collect.ts";
@@ -33,7 +31,8 @@ import { type ControlDeps, serveControl } from "./control.ts";
 import { harnessConversations } from "./conversations.ts";
 import { systemTimer } from "./deadline.ts";
 import { daemonConnection } from "./env.ts";
-import { messageOf, StartRefused } from "./errors.ts";
+import { type Env, messageOf, requiredEnv, StartRefused } from "./errors.ts";
+import { loadGatewayModels } from "./gateway.ts";
 import { gitQuarantineReader, gitRepoReader } from "./git.ts";
 import { jobGuard } from "./guard.ts";
 import { catalogLimits, createModelGate, gatedModels, harnessUsage } from "./model-gate.ts";
@@ -46,8 +45,6 @@ import { openRunnerStore } from "./store.ts";
 import { roomTenancy } from "./tenancy.ts";
 import { JobTools } from "./tools.ts";
 
-type Env = Readonly<Record<string, string | undefined>>;
-
 /** Where the runner reads and writes. */
 export interface RunnerPaths {
   home: string;
@@ -59,22 +56,14 @@ export interface RunnerPaths {
   socket: string;
 }
 
-function required(env: Env, name: string): string {
-  const value = env[name];
-  if (value === undefined || value === "") {
-    throw new StartRefused(`${name} is not set`);
-  }
-  return value;
-}
-
 export function runnerPaths(env: Env): RunnerPaths {
-  const home = required(env, "HOME");
+  const home = requiredEnv(env, "HOME");
   const stateHome = env["XDG_STATE_HOME"] ?? join(home, ".local", "state");
   return {
     home,
-    config: required(env, "SATAN_RUNNER_CONFIG"),
+    config: requiredEnv(env, "SATAN_RUNNER_CONFIG"),
     store: join(stateHome, "satan", "runner", "runner.sqlite"),
-    socket: join(required(env, "XDG_RUNTIME_DIR"), "satan-runner", "control.sock"),
+    socket: join(requiredEnv(env, "XDG_RUNTIME_DIR"), "satan-runner", "control.sock"),
   };
 }
 
@@ -117,8 +106,9 @@ function roomAccessFromConfig(config: RunnerConfig): RoomAccess {
 export interface StartOptions {
   log: (text: string) => void;
   /**
-   * The model catalog; defaults to pi-ai's plus the coding agent's cache under
-   * HOME. The harness sees it only through the model gate.
+   * The model catalog; defaults to the gateway provider alone, built from the
+   * config's `[gateway]` (gateway.ts). The harness sees it only through the
+   * model gate.
    */
   models?: Models;
   /** How to reach the room; defaults to what the config names (room.ts). */
@@ -155,7 +145,7 @@ export async function startRunner(env: Env, options: StartOptions): Promise<Runn
   const now = Date.now;
   const tenancy = roomTenancy();
   const extensions = [JobTools, jobGuard({ currentJob: tenancy.guarded, jobs, now })];
-  const models = options.models ?? createDaemonModels(readModelsStore(modelsStorePath(paths.home)));
+  const models = options.models ?? (await loadGatewayModels(config.gateway, env));
   // Built before the harness it sits in: usage is unreadable until it opens (I10).
   const usage = harnessUsage();
   const gate = createModelGate({ seated: tenancy.seated, jobs, now, usageOf: usage.usageOf });

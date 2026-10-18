@@ -1,10 +1,12 @@
-import { mkdir, stat, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it, onTestFinished } from "vitest";
 import { fauxAssistantMessage, fauxText } from "@earendil-works/pi-ai/providers/faux";
 import { context } from "../../src/context.ts";
 import { isRecord } from "../../src/json.ts";
 import { StartRefused } from "../../src/runner/errors.ts";
+import { loadGatewayModels } from "../../src/runner/gateway.ts";
+import { parseRunnerConfig } from "../../src/runner/config.ts";
 import {
   type RoomAccess,
   type Runner,
@@ -128,6 +130,83 @@ describe("startRunner refuses to start (I13)", () => {
     const { env } = await host();
     await start(env);
     expect(await refusal(env)).toContain("already serves");
+  });
+});
+
+/**
+ * `host`'s env as systemd would hand a runner its model gateway: the catalog
+ * where `[gateway]` names it, the key under `$CREDENTIALS_DIRECTORY`.
+ */
+async function withGateway({ env, dir }: Host, key = "sk-test-key\n"): Promise<Env> {
+  await mkdir(join(dir, "gateway"));
+  await copyFile(
+    new URL("../gateway-catalog.json", import.meta.url),
+    join(dir, "gateway", "models.json"),
+  );
+  const credentials = join(dir, "credentials");
+  await mkdir(credentials);
+  await writeFile(join(credentials, "satan-runner"), key);
+  return { ...env, CREDENTIALS_DIRECTORY: credentials };
+}
+
+/** What `startRunner` refuses with when it must build its own catalog (no `models`). */
+async function gatewayRefusal(env: Env): Promise<string> {
+  const started = startRunner(env, { log: () => undefined });
+  await expect(started).rejects.toBeInstanceOf(StartRefused);
+  return started.then(
+    () => "started",
+    (error: unknown) => (error instanceof Error ? error.message : String(error)),
+  );
+}
+
+describe("startRunner reads the gateway catalog and credential (I13)", () => {
+  it("refuses without CREDENTIALS_DIRECTORY, naming it", async () => {
+    const env = await withGateway(await host());
+    expect(await gatewayRefusal({ ...env, CREDENTIALS_DIRECTORY: undefined })).toContain(
+      "CREDENTIALS_DIRECTORY",
+    );
+  });
+
+  it("refuses a missing key file, naming its path but never a key", async () => {
+    const h = await host();
+    const env = await withGateway(h);
+    await rm(join(h.dir, "credentials", "satan-runner"));
+    const message = await gatewayRefusal(env);
+    expect(message).toContain(join(h.dir, "credentials", "satan-runner"));
+  });
+
+  it.each([
+    ["empty", ""],
+    ["a newline only", "\n"],
+  ])("refuses a key file that is %s", async (_l, key) => {
+    const env = await withGateway(await host(), key);
+    expect(await gatewayRefusal(env)).toMatch(/satan-runner.*empty/);
+  });
+
+  it("refuses a missing catalog, naming its path", async () => {
+    const h = await host();
+    const env = await withGateway(h);
+    await rm(join(h.dir, "gateway", "models.json"));
+    expect(await gatewayRefusal(env)).toContain(join(h.dir, "gateway", "models.json"));
+  });
+
+  it("refuses a malformed catalog, naming the path and the fault", async () => {
+    const h = await host();
+    const env = await withGateway(h);
+    await writeFile(join(h.dir, "gateway", "models.json"), '{"providers":{}}');
+    expect(await gatewayRefusal(env)).toMatch(/models\.json.*exactly one provider/);
+  });
+
+  it("starts, its catalog offering the gateway provider alone", async () => {
+    const h = await host();
+    const env = await withGateway(h);
+    const runner = await startRunner(env, { log: () => undefined });
+    onTestFinished(() => runner.close());
+    expect(runner.paths.socket).toContain("satan-runner");
+    const config = parseRunnerConfig(await readFile(h.configFile, "utf8"), h.dir);
+    const models = await loadGatewayModels(config.gateway, env);
+    expect(models.getProviders().map((provider) => provider.id)).toEqual(["gateway"]);
+    expect(models.getModel("gateway", "deepseek-flash")).toBeDefined();
   });
 });
 

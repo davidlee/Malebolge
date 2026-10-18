@@ -38,3 +38,14 @@ export class StartRefused extends Error {
     this.name = "StartRefused";
   }
 }
+
+export type Env = Readonly<Record<string, string | undefined>>;
+
+/** `env[name]`, which must be set and non-empty. */
+export function requiredEnv(env: Env, name: string): string {
+  const value = env[name];
+  if (value === undefined || value === "") {
+    throw new StartRefused(`${name} is not set`);
+  }
+  return value;
+}
