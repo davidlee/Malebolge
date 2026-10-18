@@ -171,7 +171,10 @@ describe("startRunner runs jobs (B2.2)", () => {
    * job before start, and the way into the room faked: the slot's channel and a
    * local pi-env daemon in the guest clone.
    */
-  async function queuedHost(enabled: boolean): Promise<{
+  async function queuedHost(
+    enabled: boolean,
+    leftIn?: "preparing",
+  ): Promise<{
     env: Env;
     jobId: string;
     room: RoomAccess;
@@ -189,6 +192,9 @@ describe("startRunner runs jobs (B2.2)", () => {
     await mkdir(stateDir, { recursive: true });
     const store = await openRunnerStore(join(stateDir, "runner.sqlite"));
     const { job } = await store.jobs.submit(NEW_JOB, T0);
+    if (leftIn !== undefined) {
+      await store.jobs.transition(job.id, leftIn, T0);
+    }
     await store.storage.close(context);
     return { env, jobId: job.id, room: { channel: world.channel, connect: localConnection } };
   }
@@ -234,7 +240,39 @@ describe("startRunner runs jobs (B2.2)", () => {
     await runner.close();
     const store = await openRunnerStore(runner.paths.store);
     onTestFinished(() => store.storage.close(context));
-    expect((await store.jobs.get(jobId))?.conversationId).toBeUndefined();
+    const job = await store.jobs.get(jobId);
+    expect(job?.conversationId).toBeUndefined();
+    // Phase A ran at startup: the live job parked (EX-7).
+    expect(job?.parkedAt).toBeDefined();
+    expect(faux.state.callCount).toBe(0);
+  });
+
+  it("with enabled = true rejoins a job a previous process left in flight (phase B)", async () => {
+    const { env, jobId, room } = await queuedHost(true, "preparing");
+    const { faux, models } = fauxModels();
+
+    const runner = await start(env, { models, room });
+    const client = await controlClient(runner.paths.socket);
+    onTestFinished(client.close);
+    await client.call("watch");
+    const frame = await within(
+      20_000,
+      "the rejoined job",
+      client.next((message) => {
+        const job = message["job"];
+        return isRecord(job) && job["jobId"] === jobId && job["state"] === "failed";
+      }),
+    );
+
+    // Its room readied again, then no conversation to submit to: the rejoin ran it.
+    expect(frame["job"]).toMatchObject({ endReason: "error" });
+    await runner.close();
+    const store = await openRunnerStore(runner.paths.store);
+    onTestFinished(() => store.storage.close(context));
+    // Left preparing with no conversation: only the rejoin's prepare could fail it so.
+    expect((await store.jobs.get(jobId))?.failure).toMatchObject({
+      reason: "conversation_missing",
+    });
     expect(faux.state.callCount).toBe(0);
   });
 });

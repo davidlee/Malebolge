@@ -21,6 +21,12 @@
 // re-armed from the `running` row, so waiting is never active time. Waited out
 // or cancelled while waiting, the job goes to `pending_collection`.
 //
+// A run is entered at its prompt (`runJob`, a queued job) or, after a
+// restart, wherever the recovery table puts it (rejoin.ts): `superviseRun`
+// and the segment loop are the same for both. A run whose runner is shutting
+// down (`stopping`) writes no ending its own stop caused: its row stays as a
+// crash would leave it, for restart recovery.
+//
 // EVD-008: every harness call here and every store call are made outside one
 // another's transactions; nothing is called from inside a `decide`.
 
@@ -31,7 +37,6 @@ import type {
   Harness,
   SettledSubmissionRecord,
   Submission,
-  SubmissionRecord,
 } from "@earendil-works/pi-durable";
 import type { Connection } from "@earendil-works/pi-env";
 import { parseModel } from "../config.ts";
@@ -43,6 +48,7 @@ import { type CollectDeps, collectJob } from "./collect.ts";
 import type { RepoConfig } from "./config.ts";
 import { type Conversations, ensureConversation, jobConversation } from "./conversations.ts";
 import { armCeilingTimers, type CeilingTimers, type Timer } from "./deadline.ts";
+import { ceilingEnding, type Ending, enterCollecting, settledEnding } from "./ending.ts";
 import { jobEnv } from "./env.ts";
 import {
   awaitRoom,
@@ -56,9 +62,8 @@ import { configEntry, type ResolvedPolicy, resolvePolicy } from "./policy.ts";
 import { PrepareFailed, preparingFailure, readyRoom, roomShell } from "./prepare.ts";
 import { composePrompt } from "./prompt.ts";
 import type { RunControl } from "./scheduler.ts";
-import type { Job, JobStore } from "./store.ts";
+import type { Job } from "./store.ts";
 import type { Tenancy } from "./tenancy.ts";
-import type { EndReason } from "./vocab.ts";
 import { messageOf } from "./errors.ts";
 import { placed, type RunWarning, runWarning, warningOwed } from "./warning.ts";
 
@@ -78,37 +83,18 @@ export interface RunDeps extends CollectDeps {
   timer: Timer;
   /** Told of what goes wrong that the run outlives (a warning not given). */
   log: (text: string) => void;
-}
-
-/** How a settled run ended, absent a stop the runner asked for. */
-export const endReasonOf = (record: Pick<SubmissionRecord, "status">): EndReason =>
-  record.status === "done" ? "completed" : "error";
-
-/** How the admitted run ended: the `collecting` transition's payload and end reason. */
-export interface Ending {
-  payload: JsonRecord;
-  endReason: EndReason;
-}
-
-/**
- * A settled submission's ending. Its `reason` is kept as `submissionReason`:
- * a payload's `reason` names why the job moved (a cancel's included).
- */
-export function settledEnding(record: SettledSubmissionRecord): Ending {
-  return {
-    payload: {
-      submission: record.status,
-      ...(record.reason === undefined ? {} : { submissionReason: record.reason }),
-      ...(record.detail === undefined ? {} : { detail: record.detail }),
-    },
-    endReason: endReasonOf(record),
-  };
+  /**
+   * Aborted once the runner is shutting down. A harness call that then fails
+   * ends nothing: the run gives up, its row left as it stands, for restart
+   * recovery (DEC-054), as a crash would leave it.
+   */
+  stopping: AbortSignal;
 }
 
 // --- ending before anything ran ---------------------------------------------------
 
 /** A queued or preparing job ends: `cancelled` when asked, else `failed` for `error`. */
-async function endUnrun(
+export async function endUnrun(
   deps: RunDeps,
   job: Job,
   control: RunControl,
@@ -132,7 +118,7 @@ async function endUnrun(
 }
 
 /** What preparing a job needs from config. */
-interface Resolved {
+export interface Resolved {
   policy: ResolvedPolicy;
   repo: RepoConfig;
 }
@@ -161,7 +147,7 @@ async function startPreparing(
 }
 
 /** One segment's pause signal and warning, the tenant seated over them (AS-5). */
-interface Seated {
+export interface Seated {
   warning: RunWarning;
   /**
    * Aborted when a call ends with the job's pause marked (the guard's
@@ -172,7 +158,7 @@ interface Seated {
 }
 
 /** What every segment of one run shares: its conversation, policy, stops and seat. */
-interface Run {
+export interface Run {
   conversation: Conversation;
   policy: ResolvedPolicy;
   stops: Stops;
@@ -181,7 +167,7 @@ interface Run {
 }
 
 /** One running segment: its submission, warning, timers and pause signal. */
-interface Admitted extends Seated {
+export interface Admitted extends Seated {
   run: Run;
   job: Job;
   submission: Submission;
@@ -189,7 +175,7 @@ interface Admitted extends Seated {
 }
 
 /** What stops an admitted run: a cancel, or a ceiling (the gate's refusal, the deadline). */
-interface Stops {
+export interface Stops {
   control: RunControl;
   latch: CeilingLatch;
   /** Aborted by either stop. */
@@ -245,7 +231,7 @@ function meterOf(
 }
 
 /** The run over `conversation`: one env on the job's connection, observed for a lost room. */
-function openRun(
+export function openRun(
   deps: RunDeps,
   job: Job & { conversationId: string },
   { policy, repo }: Resolved,
@@ -289,7 +275,7 @@ function openRun(
 }
 
 /** The segment whose `submission` was admitted and recorded `running`: its timers armed. */
-function armed(
+export function armed(
   deps: RunDeps,
   run: Run,
   seated: Seated,
@@ -309,6 +295,15 @@ function armed(
   });
   return { ...seated, run, job: running, submission, timers };
 }
+
+/** A segment with no timers: one the run aborts at once (a recorded pause, restart row 6). */
+export const unarmed = (run: Run, seated: Seated, job: Job, submission: Submission): Admitted => ({
+  ...seated,
+  run,
+  job,
+  submission,
+  timers: { stop: () => undefined },
+});
 
 /** Steps 3-7: the room readied, the tenant seated, the prompt admitted, `running`. */
 async function admit(
@@ -376,12 +371,16 @@ async function settleSubmission(segment: Admitted): Promise<SettledSubmissionRec
 
 /**
  * How the segment ended. Never throws (I12): a settlement that fails other
- * than by a cancel still ends the run, `end_reason = error`.
+ * than by a cancel still ends the run, `end_reason = error`; unless the
+ * runner is shutting down, when it is restart's to recover.
  */
-async function settle(segment: Admitted): Promise<Ending> {
+async function settle(deps: RunDeps, segment: Admitted): Promise<Ending> {
   try {
     return settledEnding(await settleSubmission(segment));
   } catch (error) {
+    if (deps.stopping.aborted) {
+      throw error;
+    }
     return { payload: { reason: "settle_failed", message: messageOf(error) }, endReason: "error" };
   }
 }
@@ -412,7 +411,7 @@ interface SegmentEnd {
  * deadline's event written, so nothing fires into collection or the wait.
  */
 async function settleSegment(deps: RunDeps, segment: Admitted): Promise<SegmentEnd> {
-  const ending = await settle(segment);
+  const ending = await settle(deps, segment);
   segment.timers.stop();
   const warning = await segment.warning.close();
   await endStrayWarning(segment, warning).catch((error: unknown) => {
@@ -421,20 +420,6 @@ async function settleSegment(deps: RunDeps, segment: Admitted): Promise<SegmentE
   await segment.run.stops.expired();
   return { ending, warning };
 }
-
-/** `ending`, unless a ceiling stopped the run: then its reason, recorded as `ceiling`. */
-export function ceilingEnding(ending: Ending, ceiling: EndReason | undefined): Ending {
-  return ceiling === undefined
-    ? ending
-    : { payload: { ...ending.payload, ceiling }, endReason: ceiling };
-}
-
-/** `collecting`, with `ending`'s payload and end reason; the run's and recovery's one write. */
-export const enterCollecting = (
-  deps: { jobs: Pick<JobStore, "transition">; now: () => number },
-  id: string,
-  { payload, endReason }: Ending,
-): Promise<Job> => deps.jobs.transition(id, "collecting", deps.now(), payload, { endReason });
 
 /**
  * Where the settled segment goes: a cancel, then a ceiling, to `collecting`
@@ -483,7 +468,7 @@ async function toCollecting(
  * The run's warning across its segments (AS-2): whether it was ever due, and
  * the last submission that carried it (the steer, or a resume message).
  */
-interface WarningTrail {
+export interface WarningTrail {
   due: boolean;
   carrier: Submission | undefined;
 }
@@ -494,21 +479,23 @@ async function owesWarning({ due, carrier }: WarningTrail): Promise<boolean> {
   return warningOwed(due || carrier !== undefined, receipt);
 }
 
-/** How a waiting episode ended: resumed into a new segment, or the job left to collection. */
-type Waited = { resumed: Admitted; carried: boolean } | { ended: Job };
+/** Where a run's segment loop goes next: a segment and the trail before it, or the job at rest. */
+export type Entered = { segment: Admitted; trail: WarningTrail } | { ended: Job };
 
 /**
  * The waiting episode of `waiting` (the job as `waiting_room` recorded it):
- * the room probed; on reachable, the resume message admitted, then `running`
- * and the timers re-armed from that row. Waited out, or cancelled, the job
- * goes to `pending_collection`; collection is the scheduler's retry.
+ * the room probed; on reachable, the resume message admitted (carrying the
+ * warning when `withWarning`, by default when the trail owes it), then
+ * `running` and the timers re-armed from that row. Waited out, or cancelled,
+ * the job goes to `pending_collection`; collection is the scheduler's retry.
  */
-async function awaitResume(
+export async function awaitResume(
   deps: RunDeps,
   run: Run,
   waiting: Job,
   trail: WarningTrail,
-): Promise<Waited> {
+  withWarning?: boolean,
+): Promise<Entered> {
   const { control } = run.stops;
   const outcome = await awaitRoom(deps, waiting, control.signal);
   if (outcome === "timed_out") {
@@ -519,41 +506,91 @@ async function awaitResume(
     return { ended: await recordCancel(deps, waiting.id, control, reason) };
   }
   const seated = run.seat();
-  const withWarning = await owesWarning(trail);
+  const carries = withWarning ?? (await owesWarning(trail));
   const submission = await submitResume(
     { conversation: run.conversation, jobs: deps.jobs, jobId: waiting.id, now: deps.now },
-    { pauseCount: waiting.pauseCount, withWarning },
+    { pauseCount: waiting.pauseCount, withWarning: carries },
   );
   const running = await deps.jobs.transition(waiting.id, "running", deps.now(), {
     submissionId: String(submission.id),
     requestId: resumeRequestId(waiting.id, waiting.pauseCount),
   });
-  return { resumed: armed(deps, run, seated, running, submission), carried: withWarning };
+  return {
+    segment: armed(deps, run, seated, running, submission),
+    trail: carries ? { ...trail, carrier: submission } : trail,
+  };
 }
 
 /**
- * Runs segments from `first` until one ends other than by a pause, or a
+ * Runs segments from `entered` until one ends other than by a pause, or a
  * waiting episode ends without a resume. Each segment's own settlement is the
  * one awaited; a paused one's (`unanswered`) is recorded, never an end reason.
  */
-async function runSegments(deps: RunDeps, first: Admitted): Promise<Job> {
-  let segment = first;
-  let trail: WarningTrail = { due: false, carrier: undefined };
-  for (;;) {
+async function runSegments(deps: RunDeps, entered: Entered): Promise<Job> {
+  let next = entered;
+  while ("segment" in next) {
+    const { segment } = next;
     const { ending, warning } = await settleSegment(deps, segment);
-    trail = { due: trail.due || segment.warning.wasDue(), carrier: warning ?? trail.carrier };
+    const trail = {
+      due: next.trail.due || segment.warning.wasDue(),
+      carrier: warning ?? next.trail.carrier,
+    };
     const after = await afterSegment(deps, segment.job, ending, segment.run.stops);
     if (after.state !== "waiting_room") {
       return after;
     }
-    const waited = await awaitResume(deps, segment.run, after, trail);
-    if ("ended" in waited) {
-      return waited.ended;
+    next = await awaitResume(deps, segment.run, after, trail);
+  }
+  return next.ended;
+}
+
+/** A run with no warning on its trail yet: a queued job's. */
+export const NO_TRAIL: WarningTrail = { due: false, carrier: undefined };
+
+/**
+ * Supervises job `job`'s run: its connection and stops opened, the run
+ * entered (`enter`), its segments run, the job collected once `collecting`.
+ * The seat, tenancy and connection outlive every segment and waiting episode
+ * (AS-4). Waited out or cancelled while waiting, the job is left
+ * `pending_collection`, the scheduler's to collect.
+ */
+export async function superviseRun(
+  deps: RunDeps,
+  job: Job,
+  { repo }: Resolved,
+  control: RunControl,
+  enter: (connection: Connection, stops: Stops) => Promise<Entered>,
+): Promise<Job> {
+  const connection = deps.connect(repo);
+  const stops = runStops(deps, job.id, control);
+  let settled: Job;
+  try {
+    settled = await runSegments(deps, await enter(connection, stops));
+  } finally {
+    deps.tenancy.leave(job.id);
+    connection.close();
+  }
+  return settled.state === "collecting" ? collectJob(deps, settled.id, deps.now()) : settled;
+}
+
+/**
+ * The preparing job's room readied and its prompt admitted, or the job ended
+ * before; unless the runner is shutting down, when it stays `preparing`.
+ */
+export async function prepareAndAdmit(
+  deps: RunDeps,
+  job: Job,
+  resolved: Resolved,
+  connection: Connection,
+  stops: Stops,
+): Promise<Entered> {
+  try {
+    return { segment: await admit(deps, job, resolved, connection, stops), trail: NO_TRAIL };
+  } catch (error) {
+    if (deps.stopping.aborted) {
+      throw error;
     }
-    segment = waited.resumed;
-    if (waited.carried) {
-      trail = { ...trail, carrier: segment.submission };
-    }
+    return { ended: await endUnrun(deps, job, stops.control, error) };
   }
 }
 
@@ -568,22 +605,7 @@ export async function runJob(deps: RunDeps, queued: Job, control: RunControl): P
   if (resolved === undefined) {
     return endUnrun(deps, preparing.job, control, preparing.error);
   }
-  // The seat, tenancy and connection outlive every segment and waiting episode (AS-4).
-  const connection = deps.connect(resolved.repo);
-  const stops = runStops(deps, job.id, control);
-  let settled: Job;
-  try {
-    let admitted: Admitted;
-    try {
-      admitted = await admit(deps, preparing.job, resolved, connection, stops);
-    } catch (error) {
-      return await endUnrun(deps, preparing.job, control, error);
-    }
-    settled = await runSegments(deps, admitted);
-  } finally {
-    deps.tenancy.leave(job.id);
-    connection.close();
-  }
-  // Waited out or cancelled while waiting: pending_collection, the scheduler's to collect.
-  return settled.state === "collecting" ? collectJob(deps, settled.id, deps.now()) : settled;
+  return superviseRun(deps, preparing.job, resolved, control, (connection, stops) =>
+    prepareAndAdmit(deps, preparing.job, resolved, connection, stops),
+  );
 }

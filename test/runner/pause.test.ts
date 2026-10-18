@@ -446,6 +446,17 @@ describe("submitResume: the resume message (EX-2)", () => {
     ]);
   });
 
+  it("resubmitted after a crash before running: the same submission, receipted once", async () => {
+    const { jobs, job, conversation } = await resumeWorld();
+    const d = { conversation, jobs, jobId: job.id, now: (): number => T0 };
+
+    const first = await submitResume(d, { pauseCount: 1, withWarning: true });
+    const again = await submitResume(d, { pauseCount: 1, withWarning: true });
+
+    expect(again.id).toBe(first.id);
+    expect(warningEvents(await jobs.events(job.id))).toHaveLength(1);
+  });
+
   it.each([
     [false, undefined, false],
     [true, undefined, true],

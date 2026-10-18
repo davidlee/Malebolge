@@ -51,6 +51,8 @@ interface World {
   scheduler: Scheduler;
   /** Job ids in the order their runs started. */
   ran: string[];
+  /** Job ids in the order their rejoins started. */
+  rejoined: string[];
   /** Most runs in flight at once. */
   maxInFlight: () => number;
   retried: string[];
@@ -71,6 +73,8 @@ interface WorldOptions {
   /** Hold every run at the gate until released. */
   gated?: boolean;
   retryPending?: (jobs: JobStore, job: Job) => Promise<Job>;
+  /** What a rejoin does; default: nothing (the job stays held). */
+  rejoin?: (jobs: JobStore, job: Job, control: Parameters<RunJob>[1]) => Promise<Job>;
   /** The scheduler's backoff pause, after `slept` records it; default: none. */
   sleep?: Sleep;
   newId?: JobIdFactory;
@@ -81,6 +85,7 @@ async function world(options: WorldOptions = {}): Promise<World> {
   onTestFinished(() => store.storage.close(context));
   const { jobs } = store;
   const ran: string[] = [];
+  const rejoined: string[] = [];
   const retried: string[] = [];
   const slept: number[] = [];
   const logs: string[] = [];
@@ -128,6 +133,10 @@ async function world(options: WorldOptions = {}): Promise<World> {
     jobs,
     enabled: options.enabled ?? true,
     run,
+    rejoin: async (job, control) => {
+      rejoined.push(job.id);
+      return options.rejoin === undefined ? job : options.rejoin(jobs, job, control);
+    },
     retryPending: async (job) => {
       retried.push(job.id);
       return options.retryPending === undefined ? job : options.retryPending(jobs, job);
@@ -146,6 +155,7 @@ async function world(options: WorldOptions = {}): Promise<World> {
     jobs,
     scheduler: createScheduler(deps),
     ran,
+    rejoined,
     maxInFlight: () => maxInFlight,
     retried,
     slept,
@@ -460,5 +470,96 @@ describe("cancel", () => {
     w.gate.release();
 
     expect(await rejectionCode(answer)).toBe("invalid_transition");
+  });
+});
+
+describe("rejoin (PHASE-10): a held job a restart left is seated once and rejoined", () => {
+  const RUNNING_PATH: readonly JobState[] = ["preparing", "running"];
+
+  it("is rejoined, not run; once it rests, the queue goes on", async () => {
+    const w = await world({
+      rejoin: (jobs, job) =>
+        jobs.transition(job.id, "collecting", T0, {}, { endReason: "completed" }),
+    });
+    const a = await w.queue("a");
+    await walk(w.jobs, a.id, RUNNING_PATH);
+    const b = await w.queue("b");
+
+    await drain(w);
+
+    // Rejoined from running to collecting; collecting is still held, and was rejoined once.
+    expect(w.rejoined).toEqual([a.id]);
+    expect(w.ran).toEqual([]);
+    expect(w.logs).toEqual([`scheduler: job ${a.id} still collecting after its rejoin; resting`]);
+    await w.jobs.transition(a.id, "needs_review", T0, {}, {});
+    await drain(w);
+    expect(w.ran).toEqual([b.id]);
+    expect(w.rejoined).toEqual([a.id]);
+  });
+
+  it("a held job whose rejoin failed is not rejoined again: the drain rests (no hot loop)", async () => {
+    const w = await world({ rejoin: () => Promise.reject(new Error("rejoin failed")) });
+    const a = await w.queue("a");
+    await walk(w.jobs, a.id, RUNNING_PATH);
+
+    await drain(w);
+    await drain(w);
+
+    expect(w.rejoined).toEqual([a.id]);
+    expect(w.logs).toEqual([
+      "scheduler: stopped draining: rejoin failed",
+      `scheduler: job ${a.id} still running after its rejoin; resting`,
+    ]);
+  });
+
+  it("a held pending_collection job is retried, never rejoined", async () => {
+    const w = await world({
+      retryPending: (jobs, job) => jobs.transition(job.id, "failed", T0, {}, {}),
+    });
+    const a = await w.queue("a");
+    await walk(w.jobs, a.id, [...RUNNING_PATH, "collecting", "pending_collection"]);
+
+    await drain(w);
+
+    expect(w.rejoined).toEqual([]);
+    expect(w.retried).toEqual([a.id]);
+  });
+
+  it("disabled: nothing is rejoined (I14)", async () => {
+    const w = await world({ enabled: false });
+    const a = await w.queue("a");
+    await walk(w.jobs, a.id, RUNNING_PATH);
+
+    await drain(w);
+
+    expect(w.rejoined).toEqual([]);
+    expect(w.logs).toEqual([]);
+  });
+
+  it("a cancel of the rejoined job goes to its rejoin, which records it", async () => {
+    const started = Promise.withResolvers<undefined>();
+    const asked: string[] = [];
+    const w = await world({
+      rejoin: async (jobs, job, control) => {
+        started.resolve(undefined);
+        await new Promise((resolve) => {
+          control.signal.addEventListener("abort", resolve);
+        });
+        asked.push(control.cancelReason ?? "");
+        const cancelled = await jobs.cancel(job.id, T0, { reason: control.cancelReason ?? "" });
+        control.cancelled(cancelled);
+        return cancelled;
+      },
+    });
+    const a = await w.queue("a");
+    await walk(w.jobs, a.id, RUNNING_PATH);
+    w.scheduler.wake();
+    await within(5000, "rejoin", started.promise);
+
+    const answer = await within(5000, "cancel", w.scheduler.cancel(a.id, "stop", T0 + 1));
+
+    expect(asked).toEqual(["stop"]);
+    expect(answer.endReason).toBe("cancelled");
+    await within(5000, "drain", w.scheduler.idle());
   });
 });

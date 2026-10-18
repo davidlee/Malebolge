@@ -10,6 +10,11 @@
 // `max_pending_collection` by collect.ts) — not only when the next submit
 // wakes the scheduler. `stop` ends the drain, cutting a pause short.
 //
+// Any other held job no run of this process seated is one a restart left
+// (PHASE-10): it is seated once and handed to `rejoin` (restart recovery's
+// phase B). If it is still held after that, the drain rests (logged): no hot
+// loop over a job its rejoin could not move.
+//
 // The scheduler owns only the seat and the queue; a job's life is `run`'s.
 // Cancels of the seated job go to its run, which owns every write to it; any
 // other job is cancelled through the store. Picking a job and routing a cancel
@@ -94,6 +99,8 @@ export interface SchedulerDeps {
   jobs: JobStore;
   enabled: boolean;
   run: RunJob;
+  /** Rejoins a held job a restart left, not `pending_collection` (rejoin.ts); once per job. */
+  rejoin: RunJob;
   /**
    * One collection retry of a `pending_collection` job (collect.ts): it owns
    * the `max_pending_collection` bound, so the scheduler only paces retries.
@@ -119,6 +126,12 @@ export interface Scheduler {
 interface Seat {
   jobId: string;
   control: RunControl;
+}
+
+/** A job seated, and how it is driven: run from `queued`, or rejoined. */
+interface Seated extends Seat {
+  job: Job;
+  run: RunJob;
 }
 
 /** Runs each task after every earlier one has settled, whatever its outcome. */
@@ -152,53 +165,34 @@ function pendingRetries(
   };
 }
 
-export function createScheduler(deps: SchedulerDeps): Scheduler {
-  const { jobs } = deps;
-  let seat: Seat | undefined;
-  let dirty = false;
-  let draining: Promise<void> | undefined;
-  const inTurn = turns();
-  const retryHeld = pendingRetries(deps);
-
-  /** The job holding the seat, and the job seated to run next, if any. */
-  const pick = (): Promise<{ held?: Job; seated?: Seat & { job: Job } }> =>
-    inTurn(async () => {
-      const [held] = await jobs.list({ states: [...IN_FLIGHT], limit: 1 });
-      const [queued] = await jobs.list({ states: ["queued"], limit: 1 });
-      const next = nextJob(held, queued, deps.enabled);
-      if (next === undefined) {
-        return held === undefined ? {} : { held };
-      }
-      seat = { jobId: next.id, control: new RunControl() };
-      return { seated: { ...seat, job: next } };
-    });
-
-  async function runSeated({ job, control }: Seat & { job: Job }): Promise<void> {
-    try {
-      control.ended(await deps.run(job, control));
-    } catch (error) {
-      control.failed(error);
-      throw error;
-    } finally {
-      seat = undefined;
-    }
-  }
-
-  /**
-   * One step; whether to take another. A held `pending_collection` job is
-   * retried; any other held state rests the drain (PHASE-10 acts on it).
-   */
-  async function step(): Promise<boolean> {
-    if (deps.stop.aborted) {
+/**
+ * Claims a held job for its rejoin: one a restart left (the drain never
+ * picks while a run is seated, and never runs when disabled), not
+ * `pending_collection`, once per job per process.
+ */
+function rejoinClaims(): (held: Job) => boolean {
+  const claimed = new Set<string>();
+  return (held) => {
+    if (held.state === "pending_collection" || claimed.has(held.id)) {
       return false;
     }
-    const { held, seated } = await pick();
-    if (seated !== undefined) {
-      await runSeated(seated);
-      return true;
-    }
-    return held?.state === "pending_collection" ? retryHeld(held) : false;
-  }
+    claimed.add(held.id);
+    return true;
+  };
+}
+
+/**
+ * Drains with `step` (each answers whether to take another) when woken; a
+ * wake while draining is kept, and drained after. `stopped` makes `wake` a
+ * no-op.
+ */
+function drainer(
+  step: () => Promise<boolean>,
+  stopped: () => boolean,
+  log: (text: string) => void,
+): Pick<Scheduler, "wake" | "idle"> {
+  let dirty = false;
+  let draining: Promise<void> | undefined;
 
   /** Reads and clears the wake flag. */
   function takeDirty(): boolean {
@@ -215,19 +209,84 @@ export function createScheduler(deps: SchedulerDeps): Scheduler {
         }
       }
     } catch (error) {
-      deps.log(`scheduler: stopped draining: ${messageOf(error)}`);
+      log(`scheduler: stopped draining: ${messageOf(error)}`);
     } finally {
       // Synchronous with the last `dirty` check: a wake after it starts a new drain.
       draining = undefined;
     }
   }
 
-  function wake(): void {
-    if (!deps.enabled || deps.stop.aborted) {
-      return;
+  return {
+    wake: (): void => {
+      if (stopped()) {
+        return;
+      }
+      dirty = true;
+      draining ??= drain();
+    },
+    idle: () => draining ?? Promise.resolve(),
+  };
+}
+
+export function createScheduler(deps: SchedulerDeps): Scheduler {
+  const { jobs } = deps;
+  let seat: Seat | undefined;
+  const inTurn = turns();
+  const retryHeld = pendingRetries(deps);
+  const claimRejoin = rejoinClaims();
+
+  /** Seats `job`, to be run by `run`. */
+  function seatFor(job: Job, run: RunJob): Seated {
+    seat = { jobId: job.id, control: new RunControl() };
+    return { ...seat, job, run };
+  }
+
+  /** The job holding the seat, and the job seated to run (or rejoin) next, if any. */
+  const pick = (): Promise<{ held?: Job; seated?: Seated }> =>
+    inTurn(async () => {
+      const [held] = await jobs.list({ states: [...IN_FLIGHT], limit: 1 });
+      if (held !== undefined && claimRejoin(held)) {
+        return { seated: seatFor(held, deps.rejoin) };
+      }
+      const [queued] = await jobs.list({ states: ["queued"], limit: 1 });
+      const next = nextJob(held, queued, deps.enabled);
+      if (next === undefined) {
+        return held === undefined ? {} : { held };
+      }
+      return { seated: seatFor(next, deps.run) };
+    });
+
+  async function runSeated({ job, control, run }: Seated): Promise<void> {
+    try {
+      control.ended(await run(job, control));
+    } catch (error) {
+      control.failed(error);
+      throw error;
+    } finally {
+      seat = undefined;
     }
-    dirty = true;
-    draining ??= drain();
+  }
+
+  /**
+   * One step; whether to take another. A held `pending_collection` job is
+   * retried; any other held state, once rejoined, rests the drain.
+   */
+  async function step(): Promise<boolean> {
+    if (deps.stop.aborted) {
+      return false;
+    }
+    const { held, seated } = await pick();
+    if (seated !== undefined) {
+      await runSeated(seated);
+      return true;
+    }
+    if (held?.state === "pending_collection") {
+      return retryHeld(held);
+    }
+    if (held !== undefined) {
+      deps.log(`scheduler: job ${held.id} still ${held.state} after its rejoin; resting`);
+    }
+    return false;
   }
 
   async function cancel(jobId: string, reason: string, now: number): Promise<Job> {
@@ -241,8 +300,7 @@ export function createScheduler(deps: SchedulerDeps): Scheduler {
   }
 
   return {
-    wake,
+    ...drainer(step, () => !deps.enabled || deps.stop.aborted, deps.log),
     cancel,
-    idle: () => draining ?? Promise.resolve(),
   };
 }

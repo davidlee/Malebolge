@@ -7,7 +7,8 @@
 // after the harness opens and before the socket serves or the scheduler
 // wakes: host work and read-only views only (I15), so no task is scheduled
 // before it completes. Phase B, the in-flight job's harness act then
-// `resume()`, is its rejoined run's, enabled runners only.
+// `resume()`, is its rejoined run's (rejoin.ts), which the woken scheduler
+// seats: enabled runners only, and never with no job in flight (R2).
 //
 // One store feeds control and scheduler, so `watch` sees every transition
 // (observers are per JobStore instance), and pi shares its database handle
@@ -38,7 +39,8 @@ import { jobGuard } from "./guard.ts";
 import { catalogLimits, createModelGate, gatedModels, harnessUsage } from "./model-gate.ts";
 import { recoverHost } from "./recover.ts";
 import { channelFromConfig, type GitChannel, roomConnection } from "./room.ts";
-import { type RunDeps, runJob } from "./run.ts";
+import { type RejoinDeps, rejoinJob } from "./rejoin.ts";
+import { runJob } from "./run.ts";
 import { createScheduler } from "./scheduler.ts";
 import { openRunnerStore } from "./store.ts";
 import { roomTenancy } from "./tenancy.ts";
@@ -172,7 +174,8 @@ export async function startRunner(env: Env, options: StartOptions): Promise<Runn
     quarantine: gitQuarantineReader,
     config,
   };
-  const runDeps: RunDeps = {
+  const stop = new AbortController();
+  const runDeps: RejoinDeps = {
     ...collect,
     harness,
     conversations,
@@ -184,12 +187,14 @@ export async function startRunner(env: Env, options: StartOptions): Promise<Runn
     sleep: abortableSleep,
     timer: systemTimer,
     log: options.log,
+    limitsOf: recoverDeps.limitsOf,
+    stopping: stop.signal,
   };
-  const stop = new AbortController();
   const scheduler = createScheduler({
     jobs,
     enabled: config.enabled,
     run: (job, control) => runJob(runDeps, job, control),
+    rejoin: (job, control) => rejoinJob(runDeps, job, control),
     retryPending: (job) => retryPendingCollection(collect, job.id, now()),
     sleep: abortableSleep,
     stop: stop.signal,

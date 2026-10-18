@@ -25,6 +25,7 @@ import { setDefined } from "../fields.ts";
 import { type Budget, type ModelLimits, shouldWarn } from "./ceilings.ts";
 import type { RunnerConfig } from "./config.ts";
 import { conversationIdOf, submissionRecordOf } from "./durable-ids.ts";
+import { ceilingEnding, enterCollecting, settledEnding } from "./ending.ts";
 import { messageOf } from "./errors.ts";
 import {
   type HostAction,
@@ -37,10 +38,9 @@ import {
 import { spendOf } from "./model-gate.ts";
 import { segmentRequestId } from "./pause.ts";
 import { recordedPolicy } from "./policy.ts";
-import { ceilingEnding, enterCollecting, settledEnding } from "./run.ts";
 import type { Job, JobEvent, JobStore } from "./store.ts";
 import { isEndReason } from "./vocab.ts";
-import { warningRequestId } from "./warning.ts";
+import { type DueTrigger, warningRequestId } from "./warning.ts";
 
 export interface RecoverDeps {
   jobs: JobStore;
@@ -61,6 +61,14 @@ export interface JobRecovery {
   snapshot: RecoverySnapshot;
   /** The running segment's submission record (`segmentRequestId`), if pi admitted it. */
   segment?: SubmissionRecord;
+  /** The last warning receipt's submission record: the warning's latest carrier. */
+  carrier?: SubmissionRecord;
+  /**
+   * What made the warning due, when its threshold passed (AS-4). An admitted
+   * `warn-<id>` with neither threshold passing now was usage's: active
+   * wall-clock only grows (R3).
+   */
+  dueTrigger?: DueTrigger;
 }
 
 const isSettled = (record: SubmissionRecord): record is SettledSubmissionRecord =>
@@ -73,17 +81,17 @@ function lastReceipt(events: readonly JobEvent[]): string | undefined {
 }
 
 /**
- * Whether the job's ceilings crossed the warning threshold (AS-4): active
- * wall-clock (as re-based) or usage read from `pi.usage`, by the gate's own
- * rule. Unreadable usage counts wall-clock only; no recorded policy, nothing.
+ * What made the job's warning due by now (AS-4), by the gate's own rule:
+ * active wall-clock (as re-based), else usage read from `pi.usage`.
+ * Unreadable usage counts wall-clock only; no recorded policy, nothing.
  */
-async function thresholdPassed(
+async function dueTrigger(
   deps: RecoverDeps,
   job: Job,
   conversation: ConversationId | undefined,
-): Promise<boolean> {
+): Promise<DueTrigger | undefined> {
   if (job.policy === undefined) {
-    return false;
+    return undefined;
   }
   const policy = recordedPolicy(job.policy);
   const spend =
@@ -101,7 +109,10 @@ async function thresholdPassed(
     },
     { runningSince: job.runningSince },
   );
-  return shouldWarn(budget);
+  if (shouldWarn({ ...budget, used: undefined })) {
+    return "wall_clock";
+  }
+  return shouldWarn(budget) ? "usage" : undefined;
 }
 
 /**
@@ -124,6 +135,8 @@ export async function readSnapshot(deps: RecoverDeps, job: Job): Promise<JobReco
   const receipt = lastReceipt(await deps.jobs.events(job.id));
   const receiptRecord = receipt === undefined ? undefined : await record(receipt);
   const warned = (await record(warningRequestId(job.id))) !== undefined;
+  const trigger =
+    (await dueTrigger(deps, job, conversation)) ?? (warned ? ("usage" as const) : undefined);
   const snapshot = setDefined<RecoverySnapshot>(
     {
       jobId: job.id,
@@ -132,7 +145,7 @@ export async function readSnapshot(deps: RecoverDeps, job: Job): Promise<JobReco
       pauseCount: job.pauseCount,
       conversationSettled: segment !== undefined && isSettled(segment),
       initialSubmission: (await record(job.id)) !== undefined,
-      warningThresholdPassed: warned || (await thresholdPassed(deps, job, conversation)),
+      warningThresholdPassed: trigger !== undefined,
     },
     {
       conversationId: job.conversationId,
@@ -141,7 +154,10 @@ export async function readSnapshot(deps: RecoverDeps, job: Job): Promise<JobReco
         receipt === undefined ? undefined : { placed: receiptRecord?.entry !== undefined },
     },
   );
-  return setDefined<JobRecovery>({ snapshot }, { segment });
+  return setDefined<JobRecovery>(
+    { snapshot },
+    { segment, carrier: receiptRecord, dueTrigger: trigger },
+  );
 }
 
 /** The ceiling that stopped the run, from its `ceiling` event: the in-memory latch died with it (AS-3). */

@@ -9,6 +9,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   type FauxProviderHandle,
+  type FauxResponseStep,
   fauxAssistantMessage,
   fauxText,
   fauxToolCall,
@@ -34,6 +35,7 @@ import {
 import { type RecoverDeps, recoverHost } from "../../src/runner/recover.ts";
 import type { GitChannel } from "../../src/runner/room.ts";
 import type { Timer } from "../../src/runner/deadline.ts";
+import { type RejoinDeps, rejoinJob } from "../../src/runner/rejoin.ts";
 import { type RunDeps, runJob } from "../../src/runner/run.ts";
 import { createScheduler, type Scheduler } from "../../src/runner/scheduler.ts";
 import {
@@ -268,6 +270,17 @@ interface ProcessOptions {
   crashAt?: string;
 }
 
+/** The rejoin's harness: the run's (as a test wraps it), plus `harness`'s views and `resume()`. */
+const rejoinHarness = (harness: Harness, run: RunDeps["harness"]): RejoinDeps["harness"] => ({
+  conversation: run.conversation.bind(run),
+  commit: run.commit.bind(run),
+  snapshot: harness.snapshot.bind(harness),
+  submission: harness.submission.bind(harness),
+  resume: (): void => {
+    harness.resume();
+  },
+});
+
 /** One runner process over `shared`: store, faux harness, deps, scheduler. */
 async function openProcess(shared: Shared, process: ProcessOptions): Promise<RunWorld> {
   const { world, options, clock } = shared;
@@ -302,8 +315,13 @@ async function openProcess(shared: Shared, process: ProcessOptions): Promise<Run
     resume: process.resume,
   });
   usage.bind(harness);
+  // The runner shutting down (`start.ts`): its runs stop, then the harness closes.
+  const stopping = new AbortController();
   let closed: Promise<void> | undefined;
-  const close = (): Promise<void> => (closed ??= closeHarness(harness));
+  const close = (): Promise<void> => {
+    stopping.abort();
+    return (closed ??= closeHarness(harness));
+  };
   onTestFinished(close);
   const example = exampleConfig();
   const config: RunnerConfig = {
@@ -312,8 +330,12 @@ async function openProcess(shared: Shared, process: ProcessOptions): Promise<Run
     maxima: { ...example.maxima, maxRoomWaitS: options.maxRoomWaitS ?? 60 },
     repos: new Map([[NEW_JOB.repo, world.repo]]),
   };
+  const dead = AbortSignal.any([stopping.signal, jobs.dead]);
+  // A process that died or is shutting down says nothing anyone hears.
   const log = (text: string): void => {
-    throw new Error(`unexpected runner log: ${text}`);
+    if (!dead.aborted) {
+      throw new Error(`unexpected runner log: ${text}`);
+    }
   };
   const deps: RunDeps = {
     jobs,
@@ -335,6 +357,7 @@ async function openProcess(shared: Shared, process: ProcessOptions): Promise<Run
     now,
     timer: timers.timer,
     log,
+    stopping: dead,
     sleep: (ms) => {
       slept.push(ms);
       clock.now += ms;
@@ -349,10 +372,16 @@ async function openProcess(shared: Shared, process: ProcessOptions): Promise<Run
     now,
     log,
   };
+  const rejoinDeps: RejoinDeps = {
+    ...deps,
+    harness: rejoinHarness(harness, deps.harness),
+    limitsOf: recoverDeps.limitsOf,
+  };
   const scheduler = createScheduler({
     jobs,
     enabled: process.enabled,
     run: (job, control) => runJob(deps, job, control),
+    rejoin: (job, control) => rejoinJob(rejoinDeps, job, control),
     retryPending: (job) => retryPendingCollection(deps, job.id, now()),
     sleep: deps.sleep,
     stop: jobs.dead,
@@ -433,15 +462,16 @@ export async function storeFile(): Promise<string> {
 /**
  * The runner restarted as `start.ts` does it: `world`'s process closed
  * without awaiting its run (a crash, or `close`), then a new one opened
- * passive on the same store file, room and clock; phase A (`recoverHost`),
- * then the scheduler woken.
+ * passive on the same store file, room and clock, its model given `script`;
+ * phase A (`recoverHost`), then the scheduler woken.
  */
 export async function restart(
   world: RunWorld,
-  { enabled }: { enabled: boolean },
+  { enabled, script = [] }: { enabled: boolean; script?: FauxResponseStep[] },
 ): Promise<RunWorld> {
   await world.close();
   const next = await openProcess(world.shared, { enabled, resume: false });
+  next.faux.setResponses(script);
   await recoverHost(next.recoverDeps, enabled);
   next.scheduler.wake();
   return next;

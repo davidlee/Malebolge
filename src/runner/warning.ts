@@ -28,14 +28,16 @@ export type WarningTrigger = DueTrigger | "resume";
 
 export interface WarningDeps {
   conversation: Pick<Conversation, "submit">;
-  jobs: Pick<JobStore, "appendEvent">;
+  jobs: Pick<JobStore, "appendEvent" | "events">;
   jobId: string;
   now: () => number;
 }
 
 /**
  * The warning's receipt: a `warning` event naming the admitted submission that
- * carries it (the steer, or a resume message), written after admission.
+ * carries it (the steer, or a resume message), written after admission. Once
+ * per `requestId`: a resubmit after a crash before the caller's next write
+ * returns the same submission, already receipted.
  */
 export async function recordWarning(
   deps: Omit<WarningDeps, "conversation">,
@@ -43,6 +45,12 @@ export async function recordWarning(
   submission: Pick<Submission, "id">,
   trigger: WarningTrigger,
 ): Promise<void> {
+  const events = await deps.jobs.events(deps.jobId);
+  if (
+    events.some((event) => event.kind === "warning" && event.payload["requestId"] === requestId)
+  ) {
+    return;
+  }
   await deps.jobs.appendEvent(deps.jobId, deps.now(), "warning", {
     requestId,
     submissionId: String(submission.id),
@@ -89,6 +97,12 @@ export interface RunWarning {
   /** Whether it was ever made due, given or not: the threshold passed (AS-2). */
   wasDue: () => boolean;
   /**
+   * Resolves, once the warning in progress is admitted and receipted, to its
+   * submission; `undefined` when none is in progress or it was withheld.
+   * Unlike `close`, it withholds nothing.
+   */
+  given: () => Promise<Submission | undefined>;
+  /**
    * No warning is given from now on. Resolves, once one in progress is
    * admitted and receipted, to its submission; `undefined` when none was given.
    */
@@ -96,7 +110,6 @@ export interface RunWarning {
 }
 
 export interface RunWarningDeps extends WarningDeps {
-  jobs: Pick<JobStore, "appendEvent" | "events">;
   /** The run is being stopped (a cancel, a ceiling): a warning is then moot. */
   stop: AbortSignal;
   /** Told of a warning that could not be given; the run goes on (I12). */
@@ -136,6 +149,7 @@ export function runWarning(deps: RunWarningDeps): RunWarning {
         });
     },
     wasDue: () => madeDue,
+    given: () => given ?? Promise.resolve(undefined),
     close: (): Promise<Submission | undefined> => {
       closed = true;
       return given ?? Promise.resolve(undefined);
