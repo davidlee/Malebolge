@@ -1,4 +1,5 @@
 node_modules/
+spike-results/
 # >>> doctrine managed — rewritten by `doctrine install`; edit outside this block
 .doctrine/state/
 .doctrine/slice/*/phases
