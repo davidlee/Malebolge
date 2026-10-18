@@ -5,16 +5,24 @@ import { createInterface } from "node:readline";
 import type { Readable, Writable } from "node:stream";
 import { encodeLine, lineSplitter } from "./ndjson.ts";
 import type { ClientMessage } from "./protocol.ts";
-import { createRenderer, type Printable } from "./render.ts";
+import { createRenderer, toPrintable } from "./render.ts";
 import { connectUnix } from "./unix-socket.ts";
 
 /** What a typed line asks for; `undefined` for a blank line. */
 export function commandOf(typed: string): ClientMessage | "quit" | undefined {
   const text = typed.trim();
-  if (!text) return undefined;
-  if (text === "/quit") return "quit";
-  if (text === "/abort") return { type: "abort" };
-  if (text === "/compact") return { type: "compact" };
+  if (text === "") {
+    return undefined;
+  }
+  if (text === "/quit") {
+    return "quit";
+  }
+  if (text === "/abort") {
+    return { type: "abort" };
+  }
+  if (text === "/compact") {
+    return { type: "compact" };
+  }
   if (text.startsWith("/compact ")) {
     return { type: "compact", instructions: text.slice("/compact ".length).trim() };
   }
@@ -30,13 +38,16 @@ export async function attach(socketPath: string, input: Readable, output: Writab
   const render = createRenderer();
   socket.on(
     "data",
-    lineSplitter((line) => output.write(render(JSON.parse(line) as Printable))),
+    lineSplitter((line) => output.write(render(toPrintable(JSON.parse(line))))),
   );
   const lines = createInterface({ input, terminal: false });
   lines.on("line", (typed) => {
     const command = commandOf(typed);
-    if (command === "quit") socket.end();
-    else if (command) socket.write(encodeLine(command));
+    if (command === "quit") {
+      socket.end();
+    } else if (command !== undefined) {
+      socket.write(encodeLine(command));
+    }
   });
   lines.on("close", () => socket.end());
   await new Promise<void>((resolve) => socket.on("close", resolve));

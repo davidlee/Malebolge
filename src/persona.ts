@@ -10,6 +10,10 @@ export const personaFiles = (corpusRoot: string): string[] => [
   join(corpusRoot, "prompts", "interactive.txt"),
 ];
 
+/** The persona text: `files` in order, read now. */
+export const readPersona = (files: readonly string[]): string =>
+  files.map((file) => readFileSync(file, "utf8")).join("\n");
+
 /**
  * Read on every request, so a corpus edit lands on the next turn. The harness
  * resends a section only when its text changed, so the prompt cache survives.
@@ -17,9 +21,5 @@ export const personaFiles = (corpusRoot: string): string[] => [
 export const personaExtension = (files: readonly string[]): Extension =>
   defineExtension({
     name: "persona",
-    sections: [
-      section("persona", () => files.map((file) => readFileSync(file, "utf8")).join("\n"), {
-        tag: false,
-      }),
-    ],
+    sections: [section("persona", () => readPersona(files), { tag: false })],
   });

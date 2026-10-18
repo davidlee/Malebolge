@@ -3,9 +3,14 @@
 // round and before the next model request, and `Harness.submission(id).status()`
 // reads a submission on a harness whose scheduling is paused without enabling it.
 
-import type { Message } from "@earendil-works/pi-ai";
+import type { AssistantMessage, Message } from "@earendil-works/pi-ai";
 import { fauxAssistantMessage, fauxText } from "@earendil-works/pi-ai/providers/faux";
-import { type Conversation, type Harness, MemoryStorage } from "@earendil-works/pi-durable";
+import {
+  type Conversation,
+  type Harness,
+  MemoryStorage,
+  type Submission,
+} from "@earendil-works/pi-durable";
 import { afterEach, describe, expect, it } from "vitest";
 import { context } from "../../src/context.ts";
 import { tempDir } from "../fixtures.ts";
@@ -14,11 +19,11 @@ import { blockingTool, closeHarness, openSharedStore, within } from "./runner-fi
 
 const WARNING = "Ceiling near: commit work in progress and write notes now.";
 
-const steer = (root: Conversation, requestId: string) =>
+const steer = (root: Conversation, requestId: string): Promise<Submission> =>
   root.submit({ type: "input", content: WARNING, whenBusy: "steer", requestId }, context);
 
 /** Text of a message, whatever its role. */
-const textOf = (message: Message) =>
+const textOf = (message: Message): string =>
   typeof message.content === "string"
     ? message.content
     : message.content.map((block) => (block.type === "text" ? block.text : "")).join("");
@@ -28,8 +33,12 @@ async function transcript(root: Conversation): Promise<string[]> {
   const page = await root.entries({}, 50, undefined, context);
   return [...page.items]
     .reverse()
-    .flatMap((entry) => (entry.model ?? []) as Message[])
-    .filter((message) => (message.role as string) !== "system")
+    .flatMap((entry) => entry.model ?? [])
+    .filter((message) => {
+      // Wider than the type admits: positional system entries carry role "system".
+      const role: string = message.role;
+      return role !== "system";
+    })
     .map((message) => `${message.role}: ${textOf(message)}`);
 }
 
@@ -37,7 +46,9 @@ describe("steer placement and passive status", () => {
   let cleanup: (() => Promise<void>) | undefined;
   let open: Harness | undefined;
   afterEach(async () => {
-    if (open) await closeHarness(open);
+    if (open !== undefined) {
+      await closeHarness(open);
+    }
     open = undefined;
     await cleanup?.();
   });
@@ -52,7 +63,7 @@ describe("steer placement and passive status", () => {
     const [call, final] = callThenAnswer("work", {}, "done");
     faux.setResponses([
       call,
-      (request) => {
+      (request): AssistantMessage => {
         seen.push(request.messages.map((message) => `${message.role}: ${textOf(message)}`));
         return final;
       },

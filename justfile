@@ -1,8 +1,12 @@
-# lint + typecheck + test
-check: lint typecheck test
+# format check + lint + typecheck + test (with coverage gate)
+check: fmt-check lint typecheck test
+
+# Biome is the formatter only; lint is typescript-eslint (IMP-041).
+fmt-check:
+  npx biome format .
 
 lint:
-  npx biome check .
+  npx eslint . --max-warnings 0
 
 typecheck:
   npx tsc --noEmit

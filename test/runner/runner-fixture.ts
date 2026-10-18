@@ -10,12 +10,14 @@ import {
   type Extension,
   type Harness,
 } from "@earendil-works/pi-durable";
-import type { SqliteDatabase } from "@earendil-works/pi-durable/storage/sqlite";
-import { SqliteStorage } from "@earendil-works/pi-durable/storage/sqlite";
+import { type SqliteDatabase, SqliteStorage } from "@earendil-works/pi-durable/storage/sqlite";
 import { openNodeSqliteDatabase } from "@earendil-works/pi-durable/storage/sqlite/node";
 import { context } from "../../src/context.ts";
 
-export type SharedStore = { db: SqliteDatabase; storage: SqliteStorage };
+export interface SharedStore {
+  db: SqliteDatabase;
+  storage: SqliteStorage;
+}
 
 /**
  * pi's storage over a SQLite file, and the same adapter for host tables. Host
@@ -24,23 +26,29 @@ export type SharedStore = { db: SqliteDatabase; storage: SqliteStorage };
  */
 export async function openSharedStore(dir: string, hostSchema?: string): Promise<SharedStore> {
   const db = await openNodeSqliteDatabase(join(dir, "store.sqlite"));
-  if (hostSchema !== undefined) await db.exec(hostSchema);
+  if (hostSchema !== undefined) {
+    await db.exec(hostSchema);
+  }
   return { db, storage: await SqliteStorage.open(db) };
 }
 
 /** Closing the harness closes the storage, and the storage its database. */
-export const closeHarness = (harness: Harness) => harness.close(context);
+export const closeHarness = (harness: Harness): Promise<void> => harness.close(context);
 
 /** `promise`, or a rejection naming `what` once `ms` pass. */
 export function within<T>(ms: number, what: string, promise: Promise<T>): Promise<T> {
   let timer: NodeJS.Timeout | undefined;
   const timeout = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => reject(new Error(`${what} did not settle within ${ms} ms`)), ms);
+    timer = setTimeout(() => {
+      reject(new Error(`${what} did not settle within ${String(ms)} ms`));
+    }, ms);
   });
-  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+  return Promise.race([promise, timeout]).finally(() => {
+    clearTimeout(timer);
+  });
 }
 
-export type BlockingTool = {
+export interface BlockingTool {
   extension: Extension;
   /** Resolves when the next call starts. */
   started: () => Promise<void>;
@@ -48,7 +56,7 @@ export type BlockingTool = {
   release: () => void;
   /** Calls started so far. */
   calls: () => number;
-};
+}
 
 /**
  * A tool `name` whose call stays in flight until `release()`, or until its call
@@ -56,8 +64,8 @@ export type BlockingTool = {
  */
 export function blockingTool(name: string): BlockingTool {
   let calls = 0;
-  let onStart = () => {};
-  let release = () => {};
+  let onStart = (): void => undefined;
+  let release = (): void => undefined;
   const tool = defineTool({
     name,
     description: "Waits for the test.",
@@ -66,7 +74,9 @@ export function blockingTool(name: string): BlockingTool {
       calls++;
       await new Promise<void>((resolve, reject) => {
         release = resolve;
-        callContext.abortSignal?.addEventListener("abort", () => reject(new Error("aborted")));
+        callContext.abortSignal?.addEventListener("abort", () => {
+          reject(new Error("aborted"));
+        });
         onStart();
       });
       return { output: [{ type: "text", text: "released" }] };
@@ -74,8 +84,13 @@ export function blockingTool(name: string): BlockingTool {
   });
   return {
     extension: defineExtension({ name, tools: [tool] }),
-    started: () => new Promise<void>((resolve) => (onStart = resolve)),
-    release: () => release(),
+    started: (): Promise<void> =>
+      new Promise<void>((resolve) => {
+        onStart = resolve;
+      }),
+    release: (): void => {
+      release();
+    },
     calls: () => calls,
   };
 }

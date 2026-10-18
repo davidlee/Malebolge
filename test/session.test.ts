@@ -1,14 +1,14 @@
 import { join } from "node:path";
-import { createModels } from "@earendil-works/pi-ai/models";
+import { createModels, type Models } from "@earendil-works/pi-ai/models";
 import { fauxAssistantMessage, fauxProvider, fauxText } from "@earendil-works/pi-ai/providers/faux";
 import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite/node";
 import { afterEach, describe, expect, it } from "vitest";
 import { context } from "../src/context.ts";
-import { openSession } from "../src/session.ts";
+import { openSession, type Session } from "../src/session.ts";
 import { tempDir } from "./fixtures.ts";
 import { FAUX_MODEL } from "./harness-fixture.ts";
 
-const fauxModels = (answers: string[]) => {
+const fauxModels = (answers: string[]): Models => {
   const faux = fauxProvider();
   faux.setResponses(answers.map((text) => fauxAssistantMessage([fauxText(text)])));
   const models = createModels();
@@ -24,7 +24,7 @@ describe("openSession", () => {
     const tmp = await tempDir();
     cleanup = tmp.cleanup;
     const path = join(tmp.dir, "session.sqlite");
-    const open = async (answers: string[]) =>
+    const open = async (answers: string[]): Promise<Session> =>
       openSession(await openNodeSqliteStorage(path), {
         models: fauxModels(answers),
         extensions: [],
@@ -50,7 +50,7 @@ describe("openSession", () => {
     const tmp = await tempDir();
     cleanup = tmp.cleanup;
     const path = join(tmp.dir, "session.sqlite");
-    const open = async (cwd: string) =>
+    const open = async (cwd: string): Promise<Session> =>
       openSession(await openNodeSqliteStorage(path), {
         models: fauxModels([]),
         extensions: [],

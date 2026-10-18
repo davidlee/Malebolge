@@ -2,11 +2,11 @@ import { join } from "node:path";
 import { McpClient, McpConnectionClosedError } from "@earendil-works/pi-mcp";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { UnixSocketTransport } from "../src/unix-socket-transport.ts";
-import { type Fixture, fakeMcpServer, tempDir } from "./fixtures.ts";
+import { type FakeTool, type Fixture, fakeMcpServer, tempDir } from "./fixtures.ts";
 
-const echo = {
+const echo: FakeTool = {
   name: "echo",
-  call: (args: Record<string, unknown>) => ({ text: String(args.text) }),
+  call: (args: Record<string, unknown>) => ({ text: String(args["text"]) }),
 };
 
 describe("UnixSocketTransport", () => {

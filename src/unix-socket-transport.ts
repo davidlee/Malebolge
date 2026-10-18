@@ -15,7 +15,7 @@ import { encodeLine, lineSplitter } from "./ndjson.ts";
 import { connectUnix } from "./unix-socket.ts";
 
 /** Subscribe `listener` to `set`; the returned function unsubscribes. */
-const subscribe = <T>(set: Set<T>, listener: T) => {
+const subscribe = <T>(set: Set<T>, listener: T): (() => void) => {
   set.add(listener);
   return () => void set.delete(listener);
 };
@@ -37,23 +37,38 @@ export class UnixSocketTransport implements McpTransport {
     this.#socket = socket;
     socket.on(
       "data",
-      lineSplitter((line) => this.#receive(line)),
+      lineSplitter((line) => {
+        this.#receive(line);
+      }),
     );
-    socket.on("error", (error) => this.#emitError(error));
-    socket.on("close", () => this.#markClosed());
+    socket.on("error", (error) => {
+      this.#emitError(error);
+    });
+    socket.on("close", () => {
+      this.#markClosed();
+    });
   }
 
   async send(message: JsonRpcMessage): Promise<void> {
     const socket = this.#socket;
-    if (this.#closed || !socket?.writable) throw new McpConnectionClosedError();
+    if (this.#closed || socket?.writable !== true) {
+      throw new McpConnectionClosedError();
+    }
     await new Promise<void>((resolve, reject) => {
-      socket.write(encodeLine(message), (error) => (error ? reject(error) : resolve()));
+      socket.write(encodeLine(message), (error) => {
+        if (error === undefined || error === null) {
+          resolve();
+        } else {
+          reject(error);
+        }
+      });
     });
   }
 
-  async close(): Promise<void> {
+  close(): Promise<void> {
     this.#socket?.end();
     this.#markClosed();
+    return Promise.resolve();
   }
 
   onMessage(listener: McpTransportMessageListener): () => void {
@@ -76,17 +91,25 @@ export class UnixSocketTransport implements McpTransport {
       this.#emitError(error);
       return;
     }
-    for (const listener of this.#messages) listener(message);
+    for (const listener of this.#messages) {
+      listener(message);
+    }
   }
 
   #emitError(error: unknown): void {
     const normalized = error instanceof Error ? error : new Error(String(error));
-    for (const listener of this.#errors) listener(normalized);
+    for (const listener of this.#errors) {
+      listener(normalized);
+    }
   }
 
   #markClosed(): void {
-    if (this.#closed) return;
+    if (this.#closed) {
+      return;
+    }
     this.#closed = true;
-    for (const listener of this.#closes) listener();
+    for (const listener of this.#closes) {
+      listener();
+    }
   }
 }

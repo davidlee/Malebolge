@@ -4,9 +4,12 @@
 
 import { join } from "node:path";
 
-export type ModelRef = { provider: string; modelId: string };
+export interface ModelRef {
+  provider: string;
+  modelId: string;
+}
 
-export type Config = {
+export interface Config {
   corpusRoot: string;
   storagePath: string;
   mcpSocket: string;
@@ -16,7 +19,7 @@ export type Config = {
   modelsStorePath: string;
   /** Working directory of the agent's coding tools. */
   cwd: string;
-};
+}
 
 type Env = Readonly<Record<string, string | undefined>>;
 
@@ -32,24 +35,26 @@ export function parseModel(ref: string): ModelRef {
 
 function required(env: Env, name: string): string {
   const value = env[name];
-  if (!value) throw new Error(`${name} is not set`);
+  if (value === undefined || value === "") {
+    throw new Error(`${name} is not set`);
+  }
   return value;
 }
 
 /** The daemon socket clients attach to; needs no more environment than a client has. */
 export const daemonSocket = (env: Env): string =>
-  env.MALEBOLGE_SOCKET ?? join(required(env, "XDG_RUNTIME_DIR"), "satan", "durable.sock");
+  env["MALEBOLGE_SOCKET"] ?? join(required(env, "XDG_RUNTIME_DIR"), "satan", "durable.sock");
 
 export function resolveConfig(env: Env, cwd: string): Config {
   const home = required(env, "HOME");
-  const stateRoot = join(env.XDG_STATE_HOME ?? join(home, ".local", "state"), "satan");
+  const stateRoot = join(env["XDG_STATE_HOME"] ?? join(home, ".local", "state"), "satan");
   const runtime = join(required(env, "XDG_RUNTIME_DIR"), "satan");
   return {
-    corpusRoot: env.SATAN_CORPUS_ROOT ?? join(home, "satan-corpus"),
+    corpusRoot: env["SATAN_CORPUS_ROOT"] ?? join(home, "satan-corpus"),
     storagePath: join(stateRoot, "durable", "session.sqlite"),
-    mcpSocket: env.SATAN_MCP_SOCKET ?? join(runtime, "mcp", "mcp.sock"),
+    mcpSocket: env["SATAN_MCP_SOCKET"] ?? join(runtime, "mcp", "mcp.sock"),
     daemonSocket: daemonSocket(env),
-    model: parseModel(env.MALEBOLGE_MODEL ?? DEFAULT_MODEL),
+    model: parseModel(env["MALEBOLGE_MODEL"] ?? DEFAULT_MODEL),
     modelsStorePath: join(home, ".pi", "agent", "models-store.json"),
     cwd,
   };

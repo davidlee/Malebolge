@@ -5,18 +5,25 @@
 // call interrupted by a crash ends in an error result rather than rerunning.
 
 import { Type } from "@earendil-works/pi-ai";
-import { defineExtension, defineTool, type Extension } from "@earendil-works/pi-durable";
+import {
+  defineExtension,
+  defineTool,
+  type Extension,
+  type ToolRegistration,
+} from "@earendil-works/pi-durable";
 import { McpClient, type Tool, toLlmContent } from "@earendil-works/pi-mcp";
 import { UnixSocketTransport } from "./unix-socket-transport.ts";
 
 export const SATAN_EXTENSION = "satan";
 
+type ObjectSchema = ReturnType<typeof Type.Unsafe<Record<string, unknown>>>;
+
 /** Providers require an object schema, and some reject one without `properties`. */
-const objectSchema = (schema: Tool["inputSchema"]) =>
+const objectSchema = (schema: Tool["inputSchema"]): ObjectSchema =>
   Type.Unsafe<Record<string, unknown>>({
     ...schema,
     type: "object",
-    properties: schema?.properties ?? {},
+    properties: schema["properties"] ?? {},
   });
 
 /** Logs one line of daemon diagnostics. */
@@ -26,42 +33,70 @@ export type Log = (text: string) => void;
  * One live MCP client at a time. A client that has closed (satan-mcp restarted
  * with Emacs) is replaced on the next use; concurrent callers share the attempt.
  */
-function reconnectingClient(socketPath: string, log: Log) {
-  const open = async () => {
+interface ReconnectingClient {
+  first: Promise<McpClient>;
+  get: () => Promise<McpClient>;
+  close: () => Promise<void>;
+}
+
+function reconnectingClient(socketPath: string, log: Log): ReconnectingClient {
+  const open = async (): Promise<McpClient> => {
     const client = new McpClient({ name: "malebolge", version: "0.0.0" });
-    client.onClose(() => log("satan-mcp connection closed; reconnecting on next SATAN tool call"));
+    client.onClose(() => {
+      log("satan-mcp connection closed; reconnecting on next SATAN tool call");
+    });
     await client.connect(new UnixSocketTransport(socketPath));
     return client;
   };
   let current = open();
-  const get = async () => {
+  const get = async (): Promise<McpClient> => {
     const pending = current;
     const client = await pending.catch(() => undefined);
-    if (client?.connectionState === "connected") return client;
+    if (client?.connectionState === "connected") {
+      return client;
+    }
     if (current === pending) {
       current = open();
-      current.then(() => log("satan-mcp reconnected")).catch(() => {});
+      // A failure reaches the caller through `current`; only success is logged here.
+      current.then(
+        () => {
+          log("satan-mcp reconnected");
+        },
+        () => undefined,
+      );
     }
     return current;
   };
-  const close = async () => (await current.catch(() => undefined))?.close();
+  const close = async (): Promise<void> => {
+    const client = await current.catch(() => undefined);
+    await client?.close();
+  };
   return { first: current, get, close };
 }
 
-const toDurableTool = (client: () => Promise<McpClient>, tool: Tool) =>
+const toDurableTool = (
+  client: () => Promise<McpClient>,
+  tool: Tool,
+): ToolRegistration<ObjectSchema> =>
   defineTool({
     name: tool.name,
     description: tool.description ?? `SATAN tool: ${tool.name}`,
     parameters: objectSchema(tool.inputSchema),
     execute: async (args, _api, context) => {
-      const result = await (await client()).callTool(tool.name, args, {
-        signal: context.abortSignal,
-      });
+      const signal = context.abortSignal;
+      const result = await (await client()).callTool(
+        tool.name,
+        args,
+        signal === undefined ? {} : { signal },
+      );
       return { output: toLlmContent(result), isError: result.isError === true };
     },
   });
 
-export type SatanTools = { extension: Extension; close: () => Promise<void> };
+export interface SatanTools {
+  extension: Extension;
+  close: () => Promise<void>;
+}
 
 /**
  * Connect to satan-mcp at `socketPath` and wrap the tools it lists. The tool

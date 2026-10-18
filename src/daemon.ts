@@ -9,7 +9,9 @@ import { encodeLine, lineSplitter } from "./ndjson.ts";
 import { type ClientMessage, type ErrorMessage, parseClientMessage } from "./protocol.ts";
 import { listenUnix } from "./unix-socket.ts";
 
-export type Daemon = { close: () => Promise<void> };
+export interface Daemon {
+  close: () => Promise<void>;
+}
 
 const errorMessage = (error: unknown): ErrorMessage => ({
   type: "error",
@@ -30,14 +32,19 @@ async function act(conversation: Conversation, message: ClientMessage): Promise<
   }
 }
 
-async function attach(harness: Harness, conversation: Conversation, socket: Socket) {
-  const write = (value: unknown) => {
-    if (socket.writable) socket.write(encodeLine(value));
+async function attach(harness: Harness, conversation: Conversation, socket: Socket): Promise<void> {
+  const write = (value: unknown): void => {
+    if (socket.writable) {
+      socket.write(encodeLine(value));
+    }
   };
   const stream = await watchEvents(harness, conversation.id, context);
   write(stream.snapshot);
-  stream.start(async (events) => {
-    for (const event of events) write(event);
+  stream.start((events) => {
+    for (const event of events) {
+      write(event);
+    }
+    return Promise.resolve();
   });
   socket.on("close", () => void stream.stop());
   socket.on(
@@ -45,7 +52,9 @@ async function attach(harness: Harness, conversation: Conversation, socket: Sock
     lineSplitter((line) => {
       Promise.resolve()
         .then(() => act(conversation, parseClientMessage(line)))
-        .catch((error) => write(errorMessage(error)));
+        .catch((error: unknown) => {
+          write(errorMessage(error));
+        });
     }),
   );
 }
@@ -61,7 +70,7 @@ export async function serve(
     sockets.add(socket);
     socket.on("close", () => sockets.delete(socket));
     socket.on("error", () => socket.destroy());
-    attach(harness, conversation, socket).catch((error) => {
+    attach(harness, conversation, socket).catch((error: unknown) => {
       socket.end(encodeLine(errorMessage(error)));
     });
   });
@@ -69,10 +78,14 @@ export async function serve(
   await listenUnix(server, socketPath);
   let closing: Promise<void> | undefined;
   return {
-    close: () => {
+    close: (): Promise<void> => {
       closing ??= new Promise<void>((resolve) => {
-        for (const socket of sockets) socket.destroy();
-        server.close(() => resolve());
+        for (const socket of sockets) {
+          socket.destroy();
+        }
+        server.close(() => {
+          resolve();
+        });
       });
       return closing;
     },

@@ -1,7 +1,7 @@
 // A Harness on memory storage driven by pi-ai's faux provider, which replays
 // scripted assistant messages in place of a model.
 
-import type { ToolResultMessage } from "@earendil-works/pi-ai";
+import type { AssistantMessage, ToolResultMessage } from "@earendil-works/pi-ai";
 import { createModels, type Models } from "@earendil-works/pi-ai/models";
 import {
   type FauxProviderHandle,
@@ -10,10 +10,9 @@ import {
   fauxText,
   fauxToolCall,
 } from "@earendil-works/pi-ai/providers/faux";
-import type { JsonObject } from "@earendil-works/pi-durable";
 import {
+  type JsonObject,
   type Conversation,
-  createRegistry,
   type Extension,
   Harness,
   type HarnessOptions,
@@ -23,11 +22,15 @@ import {
   ToolResultEntry,
 } from "@earendil-works/pi-durable";
 import { context } from "../src/context.ts";
-import { openSession } from "../src/session.ts";
+import { openSession, registryOf } from "../src/session.ts";
 
 export const FAUX_MODEL = { provider: "faux", modelId: "faux-1" } as const;
 
-export type TestHarness = { harness: Harness; root: Conversation; faux: FauxProviderHandle };
+export interface TestHarness {
+  harness: Harness;
+  root: Conversation;
+  faux: FauxProviderHandle;
+}
 
 export type FauxOptions = Parameters<typeof fauxProvider>[0];
 
@@ -56,7 +59,7 @@ export async function openTestHarness(
   return { ...session, faux };
 }
 
-export type FauxHarnessOptions = {
+export interface FauxHarnessOptions {
   extensions?: readonly Extension[];
   fauxOptions?: FauxOptions;
   /** What the harness sees in place of the faux catalog, e.g. a gated view of it. */
@@ -65,7 +68,16 @@ export type FauxHarnessOptions = {
   env?: HarnessOptions["env"];
   /** Enable scheduling once open (default). `false` leaves a passive harness that only reads. */
   resume?: boolean;
-};
+}
+
+function harnessOptionsOf(options: FauxHarnessOptions, models: Models): HarnessOptions {
+  return {
+    models: options.models?.(models) ?? models,
+    registry: registryOf(options.extensions ?? []),
+    ...(options.settings === undefined ? {} : { settings: options.settings }),
+    ...(options.env === undefined ? {} : { env: options.env }),
+  };
+}
 
 /**
  * A harness on `storage` whose root runs the faux model, with the harness options
@@ -76,25 +88,20 @@ export async function openFauxHarness(
   options: FauxHarnessOptions = {},
 ): Promise<TestHarness> {
   const { faux, models } = fauxModels(options.fauxOptions);
-  const registry = createRegistry();
-  for (const extension of options.extensions ?? []) registry.install(extension);
-  const harness = await Harness.open(
-    storage,
-    {
-      models: options.models?.(models) ?? models,
-      registry,
-      ...(options.settings === undefined ? {} : { settings: options.settings }),
-      ...(options.env === undefined ? {} : { env: options.env }),
-    },
-    context,
-  );
+  const harness = await Harness.open(storage, harnessOptionsOf(options, models), context);
   const root = await harness.root(context, { agent: { model: FAUX_MODEL } });
-  if (options.resume ?? true) harness.resume();
+  if (options.resume ?? true) {
+    harness.resume();
+  }
   return { harness, root, faux };
 }
 
 /** Scripted model turns: one tool call, then a final text answer. */
-export const callThenAnswer = (tool: string, args: JsonObject, answer: string) => [
+export const callThenAnswer = (
+  tool: string,
+  args: JsonObject,
+  answer: string,
+): [call: AssistantMessage, answer: AssistantMessage] => [
   fauxAssistantMessage([fauxToolCall(tool, args, { id: "call-1" })], { stopReason: "toolUse" }),
   fauxAssistantMessage([fauxText(answer)]),
 ];
@@ -106,7 +113,8 @@ export async function toolResults(harness: Harness): Promise<ToolResultMessage[]
   return [...page.items]
     .reverse()
     .filter((entry) => ToolResultEntry.is(entry))
-    .map((entry) => entry.model?.[0] as ToolResultMessage);
+    .map((entry) => entry.model?.[0])
+    .filter((message) => message?.role === "toolResult");
 }
 
 export const textOf = (message: ToolResultMessage): string =>

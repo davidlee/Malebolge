@@ -13,7 +13,9 @@ export function lineSplitter(onLine: (line: string) => void): (chunk: Buffer | s
     while (newline >= 0) {
       const line = pending.slice(0, newline).replace(/\r$/, "");
       pending = pending.slice(newline + 1);
-      if (line.trim()) onLine(line);
+      if (line.trim() !== "") {
+        onLine(line);
+      }
       newline = pending.indexOf("\n");
     }
   };

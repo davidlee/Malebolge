@@ -4,20 +4,24 @@
 // agent, not pi-ai, so reading its store is the cheap way to see the same models.
 
 import { readFileSync } from "node:fs";
-import type { AnyModel, Api, Model, Provider } from "@earendil-works/pi-ai";
-import type { Models } from "@earendil-works/pi-ai/models";
+import type { AnyModel, Provider } from "@earendil-works/pi-ai";
+import { isModelType, type Models } from "@earendil-works/pi-ai/models";
 import { builtinModels, builtinProviders } from "@earendil-works/pi-ai/providers/all";
+import { isRecord } from "./json.ts";
 
 export type StoredModels = Readonly<Record<string, readonly AnyModel[]>>;
 
 /** `provider`, offering also those of `candidates` its catalog lacks. */
 export function withMissingModels(provider: Provider, candidates: readonly AnyModel[]): Provider {
   const known = new Set(provider.getModels().map((model) => model.id));
-  const missing = candidates.filter((model) => !known.has(model.id)) as Model<Api>[];
-  if (missing.length === 0) return provider;
+  const missing = candidates.filter((model) => !known.has(model.id));
+  if (missing.length === 0) {
+    return provider;
+  }
+  const missingChat = missing.filter((model) => isModelType(model, "chat"));
   return {
     ...provider,
-    getModels: () => [...provider.getModels(), ...missing],
+    getModels: () => [...provider.getModels(), ...missingChat],
     getAllModels: () => [...(provider.getAllModels?.() ?? provider.getModels()), ...missing],
   };
 }
@@ -30,9 +34,24 @@ export function readModelsStore(path: string): StoredModels {
   } catch {
     return {};
   }
-  const store = JSON.parse(text) as Record<string, { models?: AnyModel[] }>;
+  const store: unknown = JSON.parse(text);
+  if (!isRecord(store)) {
+    return {};
+  }
   return Object.fromEntries(
-    Object.entries(store).map(([provider, entry]) => [provider, entry.models ?? []]),
+    Object.entries(store).map(([provider, entry]) => [provider, storedModelsOf(entry)]),
+  );
+}
+
+/** The models of one store entry. The store is the coding agent's, so only identity is checked. */
+function storedModelsOf(entry: unknown): AnyModel[] {
+  const models = isRecord(entry) ? entry["models"] : undefined;
+  return Array.isArray(models) ? models.filter(isStoredModel) : [];
+}
+
+function isStoredModel(value: unknown): value is AnyModel {
+  return (
+    isRecord(value) && typeof value["id"] === "string" && typeof value["provider"] === "string"
   );
 }
 
@@ -40,7 +59,9 @@ export function createDaemonModels(stored: StoredModels): Models {
   const models = builtinModels();
   for (const provider of builtinProviders()) {
     const candidates = stored[provider.id];
-    if (candidates) models.setProvider(withMissingModels(provider, candidates));
+    if (candidates !== undefined) {
+      models.setProvider(withMissingModels(provider, candidates));
+    }
   }
   return models;
 }

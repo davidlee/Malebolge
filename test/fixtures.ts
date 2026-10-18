@@ -5,17 +5,21 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { createServer, type Server, type Socket } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { isRecord, type JsonRecord } from "../src/json.ts";
 import { encodeLine, lineSplitter } from "../src/ndjson.ts";
 import { connectUnix, listenUnix } from "../src/unix-socket.ts";
 
-export type FakeTool = {
+export interface FakeTool {
   name: string;
   description?: string;
-  inputSchema?: Record<string, unknown>;
-  call: (args: Record<string, unknown>) => { text: string; isError?: boolean };
-};
+  inputSchema?: JsonRecord;
+  call: (args: JsonRecord) => { text: string; isError?: boolean };
+}
 
-export type Fixture = { socketPath: string; close: () => Promise<void> };
+export interface Fixture {
+  socketPath: string;
+  close: () => Promise<void>;
+}
 
 /** A fresh directory for sockets; removed by the returned `cleanup`. */
 export async function tempDir(): Promise<{ dir: string; cleanup: () => Promise<void> }> {
@@ -24,63 +28,133 @@ export async function tempDir(): Promise<{ dir: string; cleanup: () => Promise<v
 }
 
 export async function closeServer(server: Server, sockets: Set<Socket>): Promise<void> {
-  for (const socket of sockets) socket.destroy();
-  await new Promise<void>((resolve) => server.close(() => resolve()));
+  for (const socket of sockets) {
+    socket.destroy();
+  }
+  await new Promise<void>((resolve) =>
+    server.close(() => {
+      resolve();
+    }),
+  );
 }
 
-export type LineClient = {
+export interface LineClient<T> {
   send: (value: unknown) => void;
   /** Resolves with the first message, received or still to come, that matches. */
-  next: <T = Record<string, unknown>>(match: (message: T) => boolean) => Promise<T>;
-  received: () => readonly Record<string, unknown>[];
+  next: Recorder<T>["next"];
+  received: () => readonly T[];
   close: () => void;
-};
+}
+
+export interface Recorder<T> {
+  items: readonly T[];
+  push: (item: T) => void;
+  /** Resolves with the first item, received or still to come, that matches. */
+  next: {
+    <U extends T>(match: (item: T) => item is U): Promise<U>;
+    (match: (item: T) => boolean): Promise<T>;
+  };
+}
 
 /** Items in arrival order, and a wait for the first that matches, received or still to come. */
-export function recorder<T>() {
+export function recorder<T>(): Recorder<T> {
   const items: T[] = [];
   const waiters = new Set<() => void>();
-  const push = (item: T) => {
+  const push = (item: T): void => {
     items.push(item);
-    for (const wake of waiters) wake();
+    for (const wake of waiters) {
+      wake();
+    }
   };
-  const next = <U = T>(match: (item: U) => boolean) =>
-    new Promise<U>((resolve) => {
-      const check = () => {
-        const found = (items as unknown as U[]).find(match);
-        if (found === undefined) return;
+  function next<U extends T>(match: (item: T) => item is U): Promise<U>;
+  function next(match: (item: T) => boolean): Promise<T>;
+  function next(match: (item: T) => boolean): Promise<T> {
+    return new Promise<T>((resolve) => {
+      const check = (): void => {
+        const found = items.find(match);
+        if (found === undefined) {
+          return;
+        }
         waiters.delete(check);
         resolve(found);
       };
       waiters.add(check);
       check();
     });
-  return { items: items as readonly T[], push, next };
+  }
+  return { items, push, next };
 }
 
-/** An NDJSON client of the daemon socket that records everything received. */
-export async function lineClient(socketPath: string): Promise<LineClient> {
+/**
+ * An NDJSON client of the daemon socket that records everything received,
+ * each line parsed and then checked by `decode`.
+ */
+export async function lineClient<T>(
+  socketPath: string,
+  decode: (value: unknown) => T,
+): Promise<LineClient<T>> {
   const socket = await connectUnix(socketPath);
-  const messages = recorder<Record<string, unknown>>();
+  const messages = recorder<T>();
   socket.on(
     "data",
-    lineSplitter((line) => messages.push(JSON.parse(line))),
+    lineSplitter((line) => {
+      messages.push(decode(JSON.parse(line)));
+    }),
   );
   return {
-    send: (value) => socket.write(encodeLine(value)),
+    send: (value): void => {
+      socket.write(encodeLine(value));
+    },
     next: messages.next,
     received: () => messages.items,
-    close: () => socket.destroy(),
+    close: (): void => {
+      socket.destroy();
+    },
   };
 }
 
-type Request = { id?: number | string; method: string; params?: Record<string, unknown> };
+interface Request {
+  id: number | string;
+  method: string;
+  params: JsonRecord;
+}
 
-function answer(tools: readonly FakeTool[], request: Request): unknown {
+/** A JSON-RPC request; `undefined` for a notification, which has no id. */
+function requestOf(line: string): Request | undefined {
+  const message: unknown = JSON.parse(line);
+  if (!isRecord(message)) {
+    throw new Error(`not a JSON-RPC message: ${line}`);
+  }
+  const { id, method, params } = message;
+  if (typeof id !== "number" && typeof id !== "string") {
+    return undefined;
+  }
+  if (typeof method !== "string") {
+    throw new Error(`no method: ${line}`);
+  }
+  return { id, method, params: isRecord(params) ? params : {} };
+}
+
+const textResult = (text: string, isError: boolean): JsonRecord => ({
+  content: [{ type: "text", text }],
+  isError,
+});
+
+function callResult(tools: readonly FakeTool[], params: JsonRecord): JsonRecord {
+  const tool = tools.find((t) => t.name === params["name"]);
+  if (tool === undefined) {
+    return textResult("no such tool", true);
+  }
+  const args = params["arguments"];
+  const { text, isError } = tool.call(isRecord(args) ? args : {});
+  return textResult(text, isError ?? false);
+}
+
+function answer(tools: readonly FakeTool[], request: Request): JsonRecord {
   switch (request.method) {
     case "initialize":
       return {
-        protocolVersion: request.params?.protocolVersion,
+        protocolVersion: request.params["protocolVersion"],
         capabilities: { tools: {} },
         serverInfo: { name: "fake-satan", version: "0" },
       };
@@ -92,14 +166,8 @@ function answer(tools: readonly FakeTool[], request: Request): unknown {
           inputSchema: inputSchema ?? { type: "object", properties: {} },
         })),
       };
-    case "tools/call": {
-      const tool = tools.find((t) => t.name === request.params?.name);
-      if (!tool) return { content: [{ type: "text", text: "no such tool" }], isError: true };
-      const { text, isError } = tool.call(
-        (request.params?.arguments as Record<string, unknown>) ?? {},
-      );
-      return { content: [{ type: "text", text }], isError: isError ?? false };
-    }
+    case "tools/call":
+      return callResult(tools, request.params);
     default:
       return {};
   }
@@ -117,8 +185,10 @@ export async function fakeMcpServer(
     socket.on(
       "data",
       lineSplitter((line) => {
-        const request = JSON.parse(line) as Request;
-        if (request.id === undefined) return;
+        const request = requestOf(line);
+        if (request === undefined) {
+          return;
+        }
         socket.write(
           encodeLine({ jsonrpc: "2.0", id: request.id, result: answer(tools, request) }),
         );

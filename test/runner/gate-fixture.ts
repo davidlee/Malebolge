@@ -17,19 +17,21 @@ export const ATTEMPTS_SCHEMA = `CREATE TABLE IF NOT EXISTS runner_attempts (
 /** The gate's refusal, as the model run sees it. Not provider-retryable wording. */
 export const GATE_REFUSAL = "model gate refused the request: request ceiling reached";
 
-export type Gate = {
+export interface Gate {
   /** Count the request durably, or throw once `budget` requests were admitted. */
   admit: (entryPoint: EntryPoint) => Promise<void>;
   /** Admitted requests, oldest first. */
   attempts: () => Promise<EntryPoint[]>;
-};
+}
 
 export function requestGate(db: SqliteDatabase, budget: number): Gate {
   return {
     admit: (entryPoint) =>
       db.transaction(async (tx) => {
         const row = await tx.get<{ n: number }>("SELECT count(*) AS n FROM runner_attempts");
-        if ((row?.n ?? 0) >= budget) throw new Error(GATE_REFUSAL);
+        if ((row?.n ?? 0) >= budget) {
+          throw new Error(GATE_REFUSAL);
+        }
         await tx.run("INSERT INTO runner_attempts (entry_point) VALUES (?)", entryPoint);
       }),
     attempts: async () =>
@@ -48,7 +50,10 @@ export function requestGate(db: SqliteDatabase, budget: number): Gate {
  * pi-ai's own definition, the gated stream's result.
  */
 export function gatedModels(real: Models, gate: Gate): Models {
-  const gated = (entryPoint: EntryPoint, ...args: Parameters<Models["streamSimple"]>) =>
+  const gated = (
+    entryPoint: EntryPoint,
+    ...args: Parameters<Models["streamSimple"]>
+  ): ReturnType<Models["streamSimple"]> =>
     lazyStream(args[0], async () => {
       await gate.admit(entryPoint);
       return real.streamSimple(...args);
@@ -58,10 +63,15 @@ export function gatedModels(real: Models, gate: Gate): Models {
     completeSimple: (...args) => gated("completeSimple", ...args).result(),
   };
   return new Proxy(real, {
-    get(target, key) {
-      if (key in overrides) return overrides[key as keyof Models];
+    get(target, key): unknown {
+      const override: unknown = Reflect.get(overrides, key);
+      if (override !== undefined) {
+        return override;
+      }
       const value: unknown = Reflect.get(target, key, target);
-      return typeof value === "function" ? value.bind(target) : value;
+      return typeof value === "function"
+        ? (...args: unknown[]): unknown => Reflect.apply(value, target, args)
+        : value;
     },
   });
 }

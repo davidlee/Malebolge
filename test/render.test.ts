@@ -1,16 +1,20 @@
 import { describe, expect, it } from "vitest";
-import { createRenderer } from "../src/render.ts";
+import type { JsonRecord } from "../src/json.ts";
+import { createRenderer, toPrintable } from "../src/render.ts";
 
-const assistant = (text: string) => ({
+const assistant = (text: string): JsonRecord => ({
   kind: "pi.assistant",
   model: [{ role: "assistant", content: [{ type: "text", text }] }],
 });
-const user = (text: string) => ({ kind: "pi.user", model: [{ role: "user", content: text }] });
-const toolResult = (isError: boolean) => ({
+const user = (text: string): JsonRecord => ({
+  kind: "pi.user",
+  model: [{ role: "user", content: text }],
+});
+const toolResult = (isError: boolean): JsonRecord => ({
   kind: "pi.tool-result",
   model: [{ role: "toolResult", isError, content: [{ type: "text", text: "x" }] }],
 });
-const snapshot = (entries: unknown[]) => ({
+const snapshot = (entries: unknown[]): JsonRecord => ({
   type: "snapshot",
   entries,
   tools: [],
@@ -21,10 +25,11 @@ const snapshot = (entries: unknown[]) => ({
   usage: {},
 });
 
-// Events are loosely typed here: the renderer reads only the fields it prints.
-const renderAll = (events: unknown[]) => {
+// Events are loosely built here, as they arrive off the wire: the renderer
+// reads only the fields it prints.
+const renderAll = (events: unknown[]): string => {
   const render = createRenderer();
-  return events.map((event) => render(event as never)).join("");
+  return events.map((event) => render(toPrintable(event))).join("");
 };
 
 describe("renderer", () => {
@@ -47,7 +52,7 @@ describe("renderer", () => {
   });
 
   it("streams text deltas, ending the message with a newline", () => {
-    const delta = (d: string) => ({
+    const delta = (d: string): JsonRecord => ({
       type: "message_update",
       changes: [{ type: "text_delta", contentIndex: 0, delta: d }],
     });
@@ -78,7 +83,7 @@ describe("renderer", () => {
   });
 
   it("follows whole-block and whole-message replacements, not just deltas", () => {
-    const text = (t: string) => ({ type: "text", text: t });
+    const text = (t: string): JsonRecord => ({ type: "text", text: t });
     expect(
       renderAll([
         { type: "message_start", message: { role: "assistant", content: [] } },
@@ -203,5 +208,11 @@ describe("renderer", () => {
 
   it("ignores bookkeeping events", () => {
     expect(renderAll([{ type: "usage_changed", usage: {} }, { type: "turn_start" }])).toBe("");
+  });
+});
+
+describe("toPrintable", () => {
+  it.each([[null], [[]], ["text"], [{}], [{ type: 1 }]])("rejects %j as not an event", (value) => {
+    expect(() => toPrintable(value)).toThrow(/not an event/);
   });
 });

@@ -13,17 +13,19 @@ import { personaExtension, personaFiles } from "./persona.ts";
 import { connectSatanTools } from "./satan-tools.ts";
 import { openSession } from "./session.ts";
 
-const log = (text: string) => process.stderr.write(`malebolge: ${text}\n`);
+const log = (text: string): boolean => process.stderr.write(`malebolge: ${text}\n`);
 
 const config = resolveConfig(process.env, process.cwd());
 const models = createDaemonModels(readModelsStore(config.modelsStorePath));
 const { provider, modelId } = config.model;
-if (!models.getModelOfType("chat", provider, modelId)) {
+if (models.getModelOfType("chat", provider, modelId) === undefined) {
   throw new Error(`unknown model ${provider}/${modelId}`);
 }
 
-const satan = await connectSatanTools(config.mcpSocket, log).catch((error) => {
-  throw new Error(`satan-mcp not reachable at ${config.mcpSocket} (satan-mcp-start?): ${error}`);
+const satan = await connectSatanTools(config.mcpSocket, log).catch((error: unknown) => {
+  throw new Error(
+    `satan-mcp not reachable at ${config.mcpSocket} (satan-mcp-start?): ${String(error)}`,
+  );
 });
 
 mkdirSync(dirname(config.storagePath), { recursive: true });
@@ -34,18 +36,27 @@ const session = await openSession(await openNodeSqliteStorage(config.storagePath
   agent: { model: config.model, cwd: config.cwd },
 });
 const daemon = await serve(session.harness, session.root, config.daemonSocket);
-log(`${provider}/${modelId} · ${satan.extension.tools?.length ?? 0} SATAN tools`);
+log(`${provider}/${modelId} · ${String(satan.extension.tools?.length ?? 0)} SATAN tools`);
 log(`session ${config.storagePath}`);
 log(`attach  ${config.daemonSocket}`);
 
 let stopping = false;
-const stop = async () => {
-  if (stopping) return;
+const stop = async (): Promise<void> => {
+  if (stopping) {
+    return;
+  }
   stopping = true;
   await daemon.close();
   await session.harness.close(context);
   await satan.close();
   process.exit(0);
 };
-process.on("SIGINT", stop);
-process.on("SIGTERM", stop);
+/** Signal handlers return nothing, so a failed stop is reported here. */
+const stopOnSignal = (): void => {
+  stop().catch((error: unknown) => {
+    log(`stop failed: ${String(error)}`);
+    process.exit(1);
+  });
+};
+process.on("SIGINT", stopOnSignal);
+process.on("SIGTERM", stopOnSignal);

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { encodeLine, lineSplitter } from "../src/ndjson.ts";
 
-const collect = () => {
+const collect = (): { lines: string[]; push: (chunk: Buffer | string) => void } => {
   const lines: string[] = [];
   return { lines, push: lineSplitter((line) => lines.push(line)) };
 };

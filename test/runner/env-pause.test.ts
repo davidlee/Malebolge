@@ -34,8 +34,8 @@ const LOST_TEXT = "pi-env connection lost";
 
 /** A connection whose every request fails with `error`; it never starts a daemon. */
 class FailingConnection extends Connection {
-  readonly #error: unknown;
-  constructor(error: unknown) {
+  readonly #error: Error;
+  constructor(error: Error) {
     super({ command: [] });
     this.#error = error;
   }
@@ -60,23 +60,23 @@ class FailingConnection extends Connection {
 }
 
 /** A real local pi-env daemon (the binary pi-env ships for this machine). */
-const localConnection = () => new Connection({ command: [localDaemon()] });
+const localConnection = (): Connection => new Connection({ command: [localDaemon()] });
 
-type Observed = {
+interface Observed {
   connection: ObservedConnection;
   marks: LostFailure[];
   env: (cwd: string) => ExecutionEnv;
-};
+}
 
 /** `inner` behind the Connection seam, marking pauses on `db`. */
 function observe(inner: Connection, db: SqliteDatabase, killOnExec: boolean): Observed {
   const marks: LostFailure[] = [];
   const connection = new ObservedConnection(inner, {
-    lost: async (failure) => {
+    lost: async (failure): Promise<void> => {
       marks.push(failure);
       await within(2000, "pause mark", markPause(db, JOB, failure));
     },
-    started: (op) => {
+    started: (op): void => {
       if (killOnExec && op === "exec") {
         void inner.info().then((info) => process.kill(info.pid, "SIGTERM"));
       }
@@ -89,6 +89,13 @@ function observe(inner: Connection, db: SqliteDatabase, killOnExec: boolean): Ob
   };
 }
 
+interface BashRun extends Observed {
+  /** Whether the pause mark was durable at each afterTool. */
+  markedAtAfterTool: boolean[];
+  db: SqliteDatabase;
+  resultText: string;
+}
+
 describe("room-down seam, offline", () => {
   let cleanup: (() => Promise<void>) | undefined;
   let close: (() => Promise<void>) | undefined;
@@ -99,7 +106,7 @@ describe("room-down seam, offline", () => {
   });
 
   /** A harness running `bash` in `inner`, with an afterTool hook reading the pause mark. */
-  async function runBashThrough(inner: Connection, killOnExec: boolean) {
+  async function runBashThrough(inner: Connection, killOnExec: boolean): Promise<BashRun> {
     const tmp = await tempDir();
     cleanup = tmp.cleanup;
     const { db, storage } = await openSharedStore(tmp.dir, PAUSE_SCHEMA);
@@ -120,7 +127,7 @@ describe("room-down seam, offline", () => {
       extensions: [CodingTools, guard],
       env: () => observed.env(tmp.dir),
     });
-    close = async () => {
+    close = async (): Promise<void> => {
       inner.close();
       await closeHarness(harness);
     };
@@ -129,14 +136,19 @@ describe("room-down seam, offline", () => {
     await within(
       15_000,
       "run",
-      (async () => {
+      (async (): Promise<void> => {
         const input = await root.submit({ type: "input", content: "go" }, context);
         await input.wait(context);
       })(),
     );
 
     const [result] = await toolResults(harness);
-    return { ...observed, markedAtAfterTool, db, resultText: result ? textOf(result) : "" };
+    return {
+      ...observed,
+      markedAtAfterTool,
+      db,
+      resultText: result === undefined ? "" : textOf(result),
+    };
   }
 
   it("a daemon killed mid-exec is a lost RemoteError at the Connection seam; the mark is durable before afterTool", async () => {
@@ -166,7 +178,7 @@ describe("room-down seam, offline", () => {
     const tmp = await tempDir();
     cleanup = tmp.cleanup;
     const { db, storage } = await openSharedStore(tmp.dir, PAUSE_SCHEMA);
-    close = () => storage.close(context);
+    close = (): Promise<void> => storage.close(context);
     // A daemon that exits before it is ready: pi-env's own lost failure, deterministically.
     const inner = new Connection({ command: ["sh", "-c", "exit 3"] });
     const { env, marks } = observe(inner, db, false);
@@ -175,12 +187,16 @@ describe("room-down seam, offline", () => {
     const read = await env(tmp.dir).readTextFile("absent.txt", context);
 
     expect(exec.ok).toBe(false);
-    if (exec.ok) return;
+    if (exec.ok) {
+      return;
+    }
     expect(exec.error.code).toBe("unknown");
     expect(exec.error.cause).toBeUndefined();
     expect(isConnectionLost(exec.error.cause)).toBe(false);
     expect(read.ok).toBe(false);
-    if (read.ok) return;
+    if (read.ok) {
+      return;
+    }
     expect(read.error.cause).toBeInstanceOf(RemoteError);
     expect(isConnectionLost(read.error.cause)).toBe(true);
     // Both were typed one layer down; the file op lost it resolving its path (`info`), before any request.
@@ -194,7 +210,7 @@ describe("room-down seam, offline", () => {
     const tmp = await tempDir();
     cleanup = tmp.cleanup;
     const { db, storage } = await openSharedStore(tmp.dir, PAUSE_SCHEMA);
-    close = () => storage.close(context);
+    close = (): Promise<void> => storage.close(context);
 
     const nested = db.transaction(() =>
       within(300, "nested write", db.run("UPDATE runner_jobs SET pause_requested = 1")),

@@ -41,16 +41,29 @@ describe("attach", () => {
     await cleanup();
   });
 
-  const session = async () => {
+  interface Session {
+    input: PassThrough;
+    done: Promise<void>;
+    /** Resolves once the client has printed `text`. */
+    until: (text: string) => Promise<void>;
+    printed: () => string;
+  }
+
+  const session = (): Session => {
     const [input, output] = [new PassThrough(), new PassThrough()];
+    output.setEncoding("utf8");
     let printed = "";
-    output.on("data", (chunk) => {
+    output.on("data", (chunk: string) => {
       printed += chunk;
     });
     const done = attach(socketPath, input, output);
-    const until = (text: string) =>
+    const until = (text: string): Promise<void> =>
       new Promise<void>((resolve) => {
-        const check = () => printed.includes(text) && resolve();
+        const check = (): void => {
+          if (printed.includes(text)) {
+            resolve();
+          }
+        };
         output.on("data", check);
         check();
       });
@@ -59,7 +72,7 @@ describe("attach", () => {
 
   it("sends typed lines as input and prints the answer", async () => {
     test.faux.setResponses([fauxAssistantMessage([fauxText("hello back")])]);
-    const s = await session();
+    const s = session();
     s.input.write("hello\n");
     await s.until("hello back\n");
     s.input.write("/quit\n");
@@ -69,14 +82,14 @@ describe("attach", () => {
   it("shows the transcript so far on attach", async () => {
     test.faux.setResponses([fauxAssistantMessage([fauxText("earlier answer")])]);
     await (await test.root.submit({ type: "input", content: "earlier" }, context)).wait(context);
-    const s = await session();
+    const s = session();
     await s.until("» earlier\nearlier answer\n");
     s.input.end();
     await s.done;
   });
 
   it("ends when the daemon goes away", async () => {
-    const s = await session();
+    const s = session();
     await s.until("[attached]\n");
     await daemon.close();
     await s.done;
@@ -87,7 +100,7 @@ describe("attach", () => {
     // Slow enough to span several 100 ms progress commits, so the client sees
     // what a real provider produces: message_start carrying a partial, deltas,
     // and a tail that only the final entry at message_end holds.
-    const answer = Array.from({ length: 12 }, (_, i) => `w${i}`).join(" ");
+    const answer = Array.from({ length: 12 }, (_, i) => `w${String(i)}`).join(" ");
 
     beforeEach(async () => {
       await daemon.close();
@@ -98,7 +111,7 @@ describe("attach", () => {
     });
 
     it("prints the answer once, with nothing else", async () => {
-      const s = await session();
+      const s = session();
       await s.until("[attached]\n");
       s.input.write("go\n");
       await s.until(`${answer}\n`);
@@ -110,7 +123,7 @@ describe("attach", () => {
     it("prints it exactly once for a client that attaches mid-answer", async () => {
       await test.root.submit({ type: "input", content: "go" }, context);
       await new Promise((resolve) => setTimeout(resolve, 150));
-      const s = await session();
+      const s = session();
       await s.until(`${answer}\n`);
       expect(s.printed()).toBe(`[attached]\n» go\n${answer}\n`);
       s.input.end();

@@ -1,5 +1,6 @@
 node_modules/
 spike-results/
+coverage/
 # >>> doctrine managed — rewritten by `doctrine install`; edit outside this block
 .doctrine/state/
 .doctrine/slice/*/phases

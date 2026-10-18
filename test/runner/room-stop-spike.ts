@@ -18,6 +18,7 @@ import {
   type SshConnectOptions,
   scanHostKey,
 } from "@earendil-works/pi-env";
+import { isRecord } from "../../src/json.ts";
 import {
   type LostFailure,
   markPause,
@@ -27,36 +28,57 @@ import {
 } from "./env-fixture.ts";
 import { openSharedStore, within } from "./runner-fixture.ts";
 
-const slot = process.env.MALEBOLGE_LIVE_SLOT;
-if (!slot) throw new Error("MALEBOLGE_LIVE_SLOT is not set (e.g. f)");
-const host = process.env.SPIKE_HOST ?? "10.99.0.2";
-const waitMs = Number(process.env.SPIKE_WAIT_MS ?? 600_000);
+/** The non-empty value of environment variable `name`, or undefined. */
+const envVar = (name: string): string | undefined => {
+  const value = process.env[name];
+  return value === "" ? undefined : value;
+};
+
+const slot = envVar("MALEBOLGE_LIVE_SLOT");
+if (slot === undefined) {
+  throw new Error("MALEBOLGE_LIVE_SLOT is not set (e.g. f)");
+}
+const host = envVar("SPIKE_HOST") ?? "10.99.0.2";
+const waitMs = Number(envVar("SPIKE_WAIT_MS") ?? 600_000);
+const identity = envVar("SPIKE_IDENTITY");
 const dir = join(process.cwd(), "spike-results");
 const started = Date.now();
-const since = () => Date.now() - started;
-const log = (text: string) => console.log(`[${(since() / 1000).toFixed(1)} s] ${text}`);
+const since = (): number => Date.now() - started;
+const log = (text: string): void => {
+  console.log(`[${(since() / 1000).toFixed(1)} s] ${text}`);
+};
+
+interface ErrorShape {
+  constructor: string | undefined;
+  name: unknown;
+  code: unknown;
+  fields: unknown;
+  message: unknown;
+  isConnectionLost: boolean;
+}
 
 /** Constructor, name, code, fields and recognition of whatever was thrown or returned. */
-const shape = (error: unknown) => {
-  const e = error as { name?: unknown; code?: unknown; fields?: unknown; message?: unknown };
+const shape = (error: unknown): ErrorShape => {
+  const e = isRecord(error) ? error : {};
   return {
-    constructor: (error as object | undefined)?.constructor?.name,
-    name: e?.name,
-    code: e?.code,
-    fields: e?.fields,
-    message: e?.message,
+    constructor: error instanceof Object ? error.constructor.name : undefined,
+    name: e["name"],
+    code: e["code"],
+    fields: e["fields"],
+    message: e["message"],
     isConnectionLost: isConnectionLost(error),
   };
 };
 
-const version = async (name: string) =>
-  (
-    JSON.parse(await readFile(join("node_modules", name, "package.json"), "utf8")) as {
-      version: string;
-    }
-  ).version;
+const version = async (name: string): Promise<string> => {
+  const manifest: unknown = JSON.parse(
+    await readFile(join("node_modules", name, "package.json"), "utf8"),
+  );
+  const found = isRecord(manifest) ? manifest["version"] : undefined;
+  return typeof found === "string" ? found : "unknown";
+};
 
-async function main() {
+async function main(slot: string): Promise<void> {
   await mkdir(dir, { recursive: true });
   const configFile = join(dir, `ssh_config_${slot}`);
   await writeFile(
@@ -69,44 +91,50 @@ async function main() {
     configFile,
     knownHostsFile: join(dir, "known_hosts"),
     hostKeyAlias: `pi-env-oubliette-${slot}`,
-    ...(process.env.SPIKE_IDENTITY ? { identityFile: process.env.SPIKE_IDENTITY } : {}),
-    onLog: (text) => process.stderr.write(`pi-env: ${text}`),
+    ...(identity === undefined ? {} : { identityFile: identity }),
+    onLog: (text): void => {
+      process.stderr.write(`pi-env: ${text}`);
+    },
   };
   // Trust on first use: the route is the slot's own local relay socket.
   const scanned = await scanHostKey(target);
-  await acceptHostKey(target, scanned.lines).catch((error: unknown) =>
-    log(`host key: ${String(error)}`),
-  );
+  await acceptHostKey(target, scanned.lines).catch((error: unknown) => {
+    log(`host key: ${String(error)}`);
+  });
   const { connection: inner, remote } = await connectSsh(target);
   log(`connected: ${remote.platform}/${remote.arch}, home ${remote.home}`);
 
   const store = await openSharedStore(dir, PAUSE_SCHEMA);
-  const job = `room-stop-${started}`;
+  const job = `room-stop-${String(started)}`;
   const seam: { failure: LostFailure; at: number; markSettledMs: number }[] = [];
   const otherFailures: { op: string; at: number; error: unknown }[] = [];
   const connection = new ObservedConnection(inner, {
-    lost: async (failure) => {
+    lost: async (failure): Promise<void> => {
       const at = since();
       await within(5000, "pause mark", markPause(store.db, job, failure));
       seam.push({ failure, at, markSettledMs: since() - at });
     },
-    failed: (op, error) => otherFailures.push({ op, at: since(), error: shape(error) }),
+    failed: (op, error): void => {
+      otherFailures.push({ op, at: since(), error: shape(error) });
+    },
   });
   const env = new RemoteExecutionEnv({ connection, id: `pi-env:${slot}`, cwd: remote.home });
 
   let lastOutputAt: number | undefined;
   let inFlightAt: number | undefined;
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), waitMs);
+  const timer = setTimeout(() => {
+    controller.abort();
+  }, waitMs);
   const execResult = await env.exec(
     "while true; do date +%s; sleep 1; done",
     {
-      onOutput: () => {
+      onOutput: (): void => {
         lastOutputAt = since();
         if (inFlightAt === undefined) {
           inFlightAt = lastOutputAt;
           log(
-            `=== IN FLIGHT: run 'capsule ${slot} stop' now (waiting up to ${waitMs / 1000} s) ===`,
+            `=== IN FLIGHT: run 'capsule ${slot} stop' now (waiting up to ${String(waitMs / 1000)} s) ===`,
           );
         }
       },
@@ -160,4 +188,4 @@ async function main() {
   await store.storage.close(BACKGROUND_CONTEXT);
 }
 
-await main();
+await main(slot);

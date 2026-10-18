@@ -3,8 +3,7 @@
 // request pi-durable 1.3.0 makes — generation, its retry, and compaction — and
 // its durable attempt counter survives a harness reopen.
 
-import type { AssistantMessage } from "@earendil-works/pi-ai";
-import { Type } from "@earendil-works/pi-ai";
+import { type AssistantMessage, Type } from "@earendil-works/pi-ai";
 import { fauxAssistantMessage, fauxText, fauxToolCall } from "@earendil-works/pi-ai/providers/faux";
 import {
   AssistantEntry,
@@ -13,6 +12,7 @@ import {
   defineTool,
   type Harness,
   type HarnessSettings,
+  type SettledSubmissionRecord,
 } from "@earendil-works/pi-durable";
 import { afterEach, describe, expect, it } from "vitest";
 import { context } from "../../src/context.ts";
@@ -27,8 +27,8 @@ import {
 } from "./gate-fixture.ts";
 import { closeHarness, openSharedStore } from "./runner-fixture.ts";
 
-const answer = (text: string) => fauxAssistantMessage([fauxText(text)]);
-const providerError = (errorMessage: string) =>
+const answer = (text: string): AssistantMessage => fauxAssistantMessage([fauxText(text)]);
+const providerError = (errorMessage: string): AssistantMessage =>
   fauxAssistantMessage([], { stopReason: "error", errorMessage });
 
 const FAST_RETRY: HarnessSettings["retry"] = { enabled: true, maxRetries: 3, baseDelayMs: 1 };
@@ -51,29 +51,38 @@ async function openGated(
   return { ...opened, gate };
 }
 
-const ask = async (root: Conversation, content: string) =>
+const ask = async (root: Conversation, content: string): Promise<SettledSubmissionRecord> =>
   (await root.submit({ type: "input", content }, context)).wait(context);
 
 /** The newest assistant message: the run's last answer or failure. */
 async function lastAnswer(root: Conversation): Promise<AssistantMessage> {
   const page = await root.entries({}, 50, undefined, context);
   const entry = page.items.find((item) => AssistantEntry.is(item));
-  return entry?.model?.[0] as AssistantMessage;
+  const message = entry?.model?.[0];
+  if (message?.role !== "assistant") {
+    throw new Error("no assistant answer");
+  }
+  return message;
 }
 
-const textOfAnswer = (message: AssistantMessage) =>
+const textOfAnswer = (message: AssistantMessage): string =>
   message.content.map((block) => (block.type === "text" ? block.text : "")).join("");
 
 describe("model gate spike", () => {
   let cleanup: (() => Promise<void>) | undefined;
   let open: Harness | undefined;
   afterEach(async () => {
-    if (open) await closeHarness(open);
+    if (open !== undefined) {
+      await closeHarness(open);
+    }
     open = undefined;
     await cleanup?.();
   });
 
-  const start = async (budget: number, options: FauxHarnessOptions = {}) => {
+  const start = async (
+    budget: number,
+    options: FauxHarnessOptions = {},
+  ): Promise<Gated & { dir: string }> => {
     const tmp = await tempDir();
     cleanup = tmp.cleanup;
     const gated = await openGated(tmp.dir, budget, options);
@@ -237,7 +246,9 @@ describe("model gate spike", () => {
       parameters: Type.Object({}),
       execute: async (_args, api) => {
         const model = api.models.getModel("faux", "faux-1");
-        if (model === undefined) throw new Error("no faux model");
+        if (model === undefined) {
+          throw new Error("no faux model");
+        }
         const request = { messages: [] };
         outcomes.push((await api.models.completeSimple(model, request)).stopReason);
         outcomes.push((await api.models.complete(model, request)).stopReason);

@@ -1,9 +1,10 @@
 import { join } from "node:path";
+import type { ToolResultMessage } from "@earendil-works/pi-ai";
 import type { JsonObject } from "@earendil-works/pi-durable";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { context } from "../src/context.ts";
 import { connectSatanTools, type SatanTools } from "../src/satan-tools.ts";
-import { type Fixture, fakeMcpServer, recorder, tempDir } from "./fixtures.ts";
+import { type FakeTool, type Fixture, fakeMcpServer, recorder, tempDir } from "./fixtures.ts";
 import {
   callThenAnswer,
   openTestHarness,
@@ -12,12 +13,12 @@ import {
   toolResults,
 } from "./harness-fixture.ts";
 
-const tools = [
+const tools: FakeTool[] = [
   {
     name: "notes_read",
     description: "Read a note",
     inputSchema: { type: "object", properties: { id: { type: "string" } }, required: ["id"] },
-    call: (args: Record<string, unknown>) => ({ text: `note ${args.id}` }),
+    call: (args: Record<string, unknown>) => ({ text: `note ${String(args["id"])}` }),
   },
   { name: "fails", call: () => ({ text: "boom", isError: true }) },
 ];
@@ -45,26 +46,30 @@ describe("connectSatanTools", () => {
     await cleanup();
   });
 
-  const connect = async () => {
+  const connect = async (): Promise<void> => {
     satan = await connectSatanTools(socketPath, logs.push);
     test = await openTestHarness([satan.extension]);
   };
 
   /** Drive one model turn that calls `call`; returns that call's result. */
-  const callTool = async (call: string, args: JsonObject) => {
-    if (!test) throw new Error("connect first");
+  const callTool = async (call: string, args: JsonObject): Promise<ToolResultMessage> => {
+    if (test === undefined) {
+      throw new Error("connect first");
+    }
     test.faux.setResponses(callThenAnswer(call, args, "done"));
     const settled = await (await test.root.submit({ type: "input", content: "go" }, context)).wait(
       context,
     );
     expect(settled.status).toBe("done");
     const result = (await toolResults(test.harness)).at(-1);
-    if (!result) throw new Error("no tool result");
+    if (result === undefined) {
+      throw new Error("no tool result");
+    }
     return result;
   };
 
   /** Stop the MCP server and wait until the daemon side has seen it go. */
-  const stopServer = async () => {
+  const stopServer = async (): Promise<void> => {
     await server?.close();
     server = undefined;
     await logs.next((line) => line.includes("closed"));
