@@ -6,7 +6,9 @@ import {
   type JobState,
   markPauseRequested,
   parseJobState,
+  pendingCollectionExpired,
   type RecoverySnapshot,
+  recordReviewed,
   recoveryPlan,
   TERMINAL,
   transition,
@@ -229,6 +231,34 @@ const RECOVERY_ROWS: readonly (readonly [string, RecoverySnapshot, unknown, unkn
   ["pending_collection", snapshot("pending_collection"), [{ kind: "resume_collection_retry" }], []],
   ["needs_review", snapshot("needs_review"), [], []],
 ];
+
+describe("reviewed_oid is immutable (I7)", () => {
+  it("records an oid on a job without one", () => {
+    expect(recordReviewed({}, "abc")).toEqual({ reviewedOid: "abc" });
+  });
+
+  it("writes nothing when the same oid is collected again", () => {
+    expect(recordReviewed({ reviewedOid: "abc" }, "abc")).toBeUndefined();
+  });
+
+  it("refuses a different oid with reviewed_oid_mismatch", () => {
+    expect(codeOf(() => recordReviewed({ reviewedOid: "abc" }, "def"))).toBe(
+      "reviewed_oid_mismatch",
+    );
+  });
+});
+
+describe("pending_collection bound", () => {
+  const entered = { stateEnteredAt: NOW };
+
+  it("has not expired before max_pending_collection has passed since entering the state", () => {
+    expect(pendingCollectionExpired(entered, NOW + 999, 1000)).toBe(false);
+  });
+
+  it("has expired once it has", () => {
+    expect(pendingCollectionExpired(entered, NOW + 1000, 1000)).toBe(true);
+  });
+});
 
 describe("recovery table", () => {
   it.each(RECOVERY_ROWS)("recovery row: %s", (_row, state, phaseA, phaseB) => {

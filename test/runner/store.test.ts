@@ -257,6 +257,42 @@ describe("the transition writer", () => {
     });
   });
 
+  it("writes collection's outcome fields with a transition, in its one event", async () => {
+    const { jobs } = await openTestStore();
+    await jobs.submit(NEW_JOB, T0);
+    await jobs.transition("pj-1", "preparing", T0 + 1);
+    await jobs.transition("pj-1", "running", T0 + 2);
+    await jobs.transition("pj-1", "collecting", T0 + 3);
+    await jobs.change("pj-1", T0 + 4, () => ({
+      update: { reviewedOid: "abc", quarantineRef: "refs/q/job/pj-1" },
+      event: { kind: "collected", payload: {} },
+    }));
+    const failure = { reason: "path_violation", offending: ["out/x"] };
+    const job = await jobs.transition(
+      "pj-1",
+      "failed",
+      T0 + 5,
+      { class: "path_violation" },
+      {
+        class: "path_violation",
+        failure,
+      },
+    );
+    expect(await jobs.get("pj-1")).toEqual(job);
+    expect(job).toMatchObject({
+      state: "failed",
+      reviewedOid: "abc",
+      quarantineRef: "refs/q/job/pj-1",
+      class: "path_violation",
+      failure,
+      finishedAt: T0 + 5,
+    });
+    expect((await jobs.events("pj-1")).map((event) => event.kind).slice(-2)).toEqual([
+      "collected",
+      "transition",
+    ]);
+  });
+
   it("refuses an illegal move with invalid_transition, row and events unchanged", async () => {
     const { db, jobs } = await openTestStore();
     await jobs.submit(NEW_JOB, T0);

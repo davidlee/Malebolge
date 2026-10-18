@@ -328,6 +328,24 @@ describe("cancel, status, list, result", () => {
       usage: { modelRequests: 0 },
     });
   });
+  it("adds the latest collected event's quarantine, commits and diffstat to result", async () => {
+    const { client, store, repo } = await runner();
+    const job = await reviewed(store, repo.git("rev-parse", "HEAD"));
+    const collected = (n: number): JsonRecord => ({
+      quarantine: "/q.git",
+      quarantineRef: "refs/q",
+      reviewedOid: "r",
+      commits: [{ oid: "r", subject: `take ${String(n)}` }],
+      diffstat: { files: n, insertions: n, deletions: 0 },
+    });
+    await store.jobs.appendEvent(job.id, T0, "collected", collected(1));
+    await store.jobs.appendEvent(job.id, T0, "collected", collected(2));
+    expect(ok(await client.call("result", { jobId: job.id }))).toMatchObject({
+      quarantine: "/q.git",
+      commits: [{ oid: "r", subject: "take 2" }],
+      diffstat: { files: 2, insertions: 2, deletions: 0 },
+    });
+  });
 });
 
 describe("report-disposition: promoted verifies the receipt read-only (I8)", () => {

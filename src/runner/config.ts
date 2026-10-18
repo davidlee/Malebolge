@@ -65,8 +65,14 @@ export interface RepoConfig extends PolicyLayer {
   defaultBranch: string;
 }
 
-/** Slot-recipe connection facts (ASM-005). */
+/** The door into the room: the slot recipe until oubliette SL-005 (ASM-005). */
 export interface DoorConfig {
+  /** The oubliette slot standing in for the room. */
+  slot?: string;
+  /** The slot's quarantine, `$state/collect/<slot>.git`; never derived (I13). */
+  quarantine?: string;
+  /** Passed to `provision` when the slot needs it. */
+  profile?: string;
   sshConfig?: string;
   identity?: string;
   knownHosts?: string;
@@ -195,14 +201,27 @@ function readRepo(fields: JsonRecord, where: string, home: string): RepoConfig {
 }
 
 function readDoor(fields: JsonRecord, home: string): DoorConfig {
-  onlyKeys(fields, ["ssh_config", "identity", "known_hosts"], "door");
+  onlyKeys(
+    fields,
+    ["slot", "quarantine", "profile", "ssh_config", "identity", "known_hosts"],
+    "door",
+  );
+  const text = (key: string): string | undefined =>
+    within("door", () => optionalString(fields, key));
   const path = (key: string): string | undefined => {
-    const value = within("door", () => optionalString(fields, key));
+    const value = text(key);
     return value === undefined ? undefined : expandHome(value, home);
   };
   return setDefined<DoorConfig>(
     {},
-    { sshConfig: path("ssh_config"), identity: path("identity"), knownHosts: path("known_hosts") },
+    {
+      slot: text("slot"),
+      quarantine: path("quarantine"),
+      profile: text("profile"),
+      sshConfig: path("ssh_config"),
+      identity: path("identity"),
+      knownHosts: path("known_hosts"),
+    },
   );
 }
 

@@ -2,7 +2,7 @@
 // `status`, `list` and watch frames, the `result` body, and which jobs a watch
 // replays. Pure. One module, so a change to the wire shapes is one edit.
 
-import { setDefined } from "../fields.ts";
+import { optionalRecord, optionalString, setDefined } from "../fields.ts";
 import type { JsonRecord } from "../json.ts";
 import { isoTime, type Job } from "./rows.ts";
 import type { JobState } from "./vocab.ts";
@@ -33,10 +33,12 @@ export function summary(job: Job): JsonRecord {
 }
 
 /**
- * The `result` body: what the row holds now. Fields not yet known (before
- * collection) are absent; later phases add fields, never rename them.
+ * The `result` body: what the row holds now, and what the job's latest
+ * `collected` event recorded (quarantine path, commits, diffstat). Fields not
+ * yet known (before collection) are absent; later phases add fields, never
+ * rename them.
  */
-export function resultBody(job: Job): JsonRecord {
+export function resultBody(job: Job, collected: JsonRecord = {}): JsonRecord {
   return setDefined<JsonRecord>(
     { jobId: job.id, state: job.state, usage: { modelRequests: job.modelRequests } },
     {
@@ -45,6 +47,9 @@ export function resultBody(job: Job): JsonRecord {
       baseOid: job.baseOid,
       reviewedOid: job.reviewedOid,
       quarantineRef: job.quarantineRef,
+      quarantine: optionalString(collected, "quarantine"),
+      commits: Array.isArray(collected["commits"]) ? collected["commits"] : undefined,
+      diffstat: optionalRecord(collected, "diffstat"),
     },
   );
 }

@@ -75,6 +75,14 @@ describe("resultBody", () => {
     });
   });
 
+  it("adds the collected event's quarantine, commits and diffstat", () => {
+    const commits = [{ oid: "r".repeat(40), subject: "add src/a.ts" }];
+    const diffstat = { files: 1, insertions: 1, deletions: 0 };
+    expect(
+      resultBody(REVIEWED, { quarantine: "/q.git", quarantineRef: "x", commits, diffstat }),
+    ).toMatchObject({ quarantine: "/q.git", commits, diffstat });
+  });
+
   it("answers an uncollected job with only what it holds", () => {
     expect(resultBody(QUEUED)).toEqual({
       jobId: "pj-1",

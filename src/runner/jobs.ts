@@ -132,6 +132,40 @@ export function markPauseRequested(job: JobRecord): { pauseRequested: true } | u
   return job.state === "running" && !job.pauseRequested ? { pauseRequested: true } : undefined;
 }
 
+// --- collection (DEC-060) ---------------------------------------------------------
+
+/**
+ * The patch recording the collected `oid`; `undefined` when it is already
+ * recorded. `reviewed_oid` is immutable once set (I7): a different oid is
+ * refused, never written.
+ */
+export function recordReviewed(
+  job: { reviewedOid?: string },
+  oid: string,
+): { reviewedOid: string } | undefined {
+  if (job.reviewedOid === undefined) {
+    return { reviewedOid: oid };
+  }
+  if (job.reviewedOid !== oid) {
+    throw new RunnerError(
+      "reviewed_oid_mismatch",
+      `reviewed_oid is ${job.reviewedOid}; collection found ${oid}`,
+    );
+  }
+  return undefined;
+}
+
+/**
+ * Whether a `pending_collection` job has waited `maxPendingMs` since it
+ * entered the state; counted from `state_entered_at`, so a restart does not
+ * reset it. At the bound the job is abandoned without another probe.
+ */
+export const pendingCollectionExpired = (
+  job: { stateEnteredAt: number },
+  now: number,
+  maxPendingMs: number,
+): boolean => now - job.stateEnteredAt >= maxPendingMs;
+
 // --- restart recovery (DEC-054) ----------------------------------------------
 
 /** What recovery reads of a job: its row plus read-only harness views. */

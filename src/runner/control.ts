@@ -259,6 +259,13 @@ async function watch(request: OpRequest<"watch">, connection: Connection): Promi
   held = undefined;
 }
 
+/** The row, and what the latest `collected` event recorded. */
+async function result(request: OpRequest<"result">, deps: ControlDeps): Promise<JsonRecord> {
+  const job = await known(deps.jobs, request.jobId);
+  const events = await deps.jobs.events(job.id);
+  return resultBody(job, events.findLast((event) => event.kind === "collected")?.payload);
+}
+
 const OPERATIONS: { [K in Op]: Operation<K> } = {
   submit: answered(submit),
   cancel: answered(cancelJob),
@@ -266,7 +273,7 @@ const OPERATIONS: { [K in Op]: Operation<K> } = {
     job: summary(await known(deps.jobs, request.jobId)),
   })),
   list: answered(async (request, deps) => ({ jobs: (await deps.jobs.list(request)).map(summary) })),
-  result: answered(async (request, deps) => resultBody(await known(deps.jobs, request.jobId))),
+  result: answered(result),
   "report-disposition": answered(reportDisposition),
   ack: answered(ack),
   watch,

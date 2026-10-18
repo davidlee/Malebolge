@@ -27,6 +27,8 @@ describe("parseRunnerConfig", () => {
       ceilings: {},
     });
     expect(config.door).toEqual({
+      slot: "f",
+      quarantine: "/home/test/state/collect/f.git",
       sshConfig: "/home/test/.ssh/config",
       identity: "/home/test/.ssh/id",
       knownHosts: "/home/test/.ssh/known_hosts",
@@ -104,6 +106,11 @@ model = "m"
     ["a non-boolean enabled", "enabled = true", 'enabled = "yes"'],
   ])("refuses %s", (_label, from, to) => {
     expect(() => parseRunnerConfig(variant(from, to), HOME)).toThrow();
+  });
+
+  it("reads the optional door profile", () => {
+    const text = variant('slot = "f"', 'slot = "f"\nprofile = "satan"');
+    expect(parseRunnerConfig(text, HOME).door?.profile).toBe("satan");
   });
 
   it("leaves paths without a leading ~ alone", () => {

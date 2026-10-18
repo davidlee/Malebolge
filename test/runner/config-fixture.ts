@@ -36,6 +36,8 @@ default_branch = "main"
 prompt = "Repo note."
 
 [door]
+slot = "f"
+quarantine = "~/state/collect/f.git"
 ssh_config = "~/.ssh/config"
 identity = "~/.ssh/id"
 known_hosts = "~/.ssh/known_hosts"

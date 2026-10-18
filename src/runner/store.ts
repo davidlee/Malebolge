@@ -164,7 +164,19 @@ async function requireJob(tx: SqliteExecutor, id: string): Promise<Job> {
 // --- the job store ---------------------------------------------------------------
 
 /** The fields one change writes: absent fields are unchanged, `null` clears. */
-export type JobUpdate = Partial<JobPatch> & Partial<Pick<Job, "conversationId" | "announcedAt">>;
+export type JobUpdate = Partial<JobPatch> &
+  Partial<
+    Pick<
+      Job,
+      | "conversationId"
+      | "announcedAt"
+      | "baseOid"
+      | "reviewedOid"
+      | "quarantineRef"
+      | "class"
+      | "failure"
+    >
+  >;
 
 /** A row change and the event recording it. */
 export interface Change {
@@ -197,10 +209,18 @@ function applyUpdate(job: Job, update: JobUpdate, now: number): Job {
   return setDefined(next, { runningSince });
 }
 
-/** A transition's change: the patch, recorded with where it came from and went. */
-function transitionChange(job: Job, patch: JobPatch, payload: JsonRecord = {}): Change {
+/**
+ * A transition's change: the patch, with any `fields` written alongside it,
+ * recorded with where it came from and went.
+ */
+function transitionChange(
+  job: Job,
+  patch: JobPatch,
+  payload: JsonRecord = {},
+  fields: JobUpdate = {},
+): Change {
   return {
-    update: patch,
+    update: { ...fields, ...patch },
     event: {
       kind: "transition",
       payload: setDefined<JsonRecord>(
@@ -303,9 +323,17 @@ export class JobStore {
     }
   }
 
-  /** Moves job `id` to `to`; `payload` adds to the event. */
-  transition(id: string, to: JobState, now: number, payload?: JsonRecord): Promise<Job> {
-    return this.change(id, now, (job) => transitionChange(job, transition(job, to, now), payload));
+  /** Moves job `id` to `to`; `payload` adds to the event, `fields` (an outcome) to the row. */
+  transition(
+    id: string,
+    to: JobState,
+    now: number,
+    payload?: JsonRecord,
+    fields?: JobUpdate,
+  ): Promise<Job> {
+    return this.change(id, now, (job) =>
+      transitionChange(job, transition(job, to, now), payload, fields),
+    );
   }
 
   /** Cancels job `id`; `payload` (e.g. the reason) adds to the event. */

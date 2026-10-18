@@ -9,6 +9,8 @@ export const ERROR_CODES = [
   "ceiling_above_maximum",
   "runner_disabled",
   "receipt_mismatch",
+  // Internal to collection (I7); never an answer on the socket.
+  "reviewed_oid_mismatch",
 ] as const;
 
 export type ErrorCode = (typeof ERROR_CODES)[number];
