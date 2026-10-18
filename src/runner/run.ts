@@ -14,7 +14,9 @@
 // `pause_requested` durably, the guard replaces the call's result and, once
 // the tool round is committed, signals the segment's pause (never the latch);
 // the conversation is aborted here and the job goes to `waiting_room`. A
-// cancel, then a ceiling, wins over a pending pause. The run then waits for
+// cancel, then a ceiling, wins over a pending pause. A lost connection whose
+// start failed the host-key check is no pause (EX-5): it trips the latch, so
+// the run is aborted and collected, `end_reason = error`, reason `host_key`. The run then waits for
 // the room (pause.ts), keeping its seat, tenancy and connection, and resumes
 // with one message (`resume-<job id>-<pause_count>`, carrying the warning when
 // it is owed): a new segment, with its own pause signal, warning and timers
@@ -48,7 +50,7 @@ import { type CollectDeps, collectJob } from "./collect.ts";
 import type { RepoConfig } from "./config.ts";
 import { type Conversations, ensureConversation, jobConversation } from "./conversations.ts";
 import { armCeilingTimers, type CeilingTimers, type Timer } from "./deadline.ts";
-import { ceilingEnding, type Ending, enterCollecting, settledEnding } from "./ending.ts";
+import { type Ending, enterCollecting, latchedEnding, settledEnding } from "./ending.ts";
 import { jobEnv } from "./env.ts";
 import {
   awaitRoom,
@@ -243,7 +245,9 @@ export function openRun(
     jobId: job.id,
     cwd: repo.guestPath,
     connection,
-    observer: pausingObserver(deps, job.id),
+    observer: pausingObserver(deps, job.id, () => {
+      stops.latch.trip("host_key");
+    }),
   });
   const seat = (): Seated => {
     const pause = new AbortController();
@@ -459,7 +463,7 @@ async function toCollecting(
   if (reason !== undefined) {
     return recordCancel(deps, job.id, control, reason, ending.payload);
   }
-  return enterCollecting(deps, job.id, ceilingEnding(ending, latch.reason()));
+  return enterCollecting(deps, job.id, latchedEnding(ending, latch.reason()));
 }
 
 // --- waiting for the room, and the resume (DEC-055) -----------------------------

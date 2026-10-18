@@ -23,6 +23,7 @@ import { retryPendingCollection } from "../../src/runner/collect.ts";
 import type { Ceilings, RunnerConfig } from "../../src/runner/config.ts";
 import { harnessConversations, jobConversation } from "../../src/runner/conversations.ts";
 import { gitQuarantineReader } from "../../src/runner/git.ts";
+import { DaemonConnection } from "../../src/runner/env.ts";
 import { jobGuard } from "../../src/runner/guard.ts";
 import type { JsonRecord } from "../../src/json.ts";
 import {
@@ -51,7 +52,7 @@ import { roomTenancy } from "../../src/runner/tenancy.ts";
 import { JobTools } from "../../src/runner/tools.ts";
 import { openFauxHarness, toolResults } from "../harness-fixture.ts";
 import { exampleConfig } from "./config-fixture.ts";
-import { FailingConnection, localConnection, lostError } from "./env-fixture.ts";
+import { FailingConnection, localConnection, lostError, RebuiltRoom } from "./env-fixture.ts";
 import { type RoomWorld, roomWorld } from "./room-fixture.ts";
 import { blockingTool, type BlockingTool, closeHarness, within } from "./runner-fixture.ts";
 import { NEW_JOB, sequentialIds, T0 } from "./store-fixture.ts";
@@ -87,6 +88,20 @@ export const roomGoesDown =
         op === "exec" && JSON.stringify(json).includes(ROOM_DOWN) ? failure() : undefined,
       local,
     );
+
+/** The local daemon, until an exec carrying `ROOM_DOWN`: from then on every start fails with `failure`. */
+export const roomRebuilt =
+  (failure: () => Error) =>
+  (local: Connection): Connection =>
+    new RebuiltRoom(local, ROOM_DOWN, failure);
+
+/** A room whose host key no longer matches from the first start: every start fails with `failure`. */
+export const roomUntrusted =
+  (failure: () => Error) =>
+  (local: Connection): Connection => {
+    local.close();
+    return new DaemonConnection(() => Promise.reject(failure()));
+  };
 
 /** A bash call the room loses mid-command: the job pauses. */
 export const lostBash = (): AssistantMessage => call("bash", { command: `echo ${ROOM_DOWN}` });

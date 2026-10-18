@@ -9,16 +9,68 @@ import {
   localDaemon,
   RemoteError,
   type RemoteInfo,
+  type RemotePlatform,
   type Reply,
   type RequestOptions,
+  type SshTarget,
 } from "@earendil-works/pi-env";
-import type { LostFailure } from "../../src/runner/env.ts";
+import type { RunnerConfig } from "../../src/runner/config.ts";
+import { DaemonConnection, type DaemonHelpers, type LostFailure } from "../../src/runner/env.ts";
+import {
+  daemonLaunch,
+  type Launch,
+  type RoomConnection,
+  roomConnection,
+} from "../../src/runner/room.ts";
 
 /** A real local pi-env daemon (the binary pi-env ships for this machine). */
 export const localConnection = (): Connection => new Connection({ command: [localDaemon()] });
 
 /** A daemon that exits before it is ready: pi-env's own lost failure, deterministically. */
 export const lostConnection = (): Connection => new Connection({ command: ["sh", "-c", "exit 3"] });
+
+/** The remote pi-env's detection answers in a test, and where the daemon is deployed. */
+export const REMOTE: RemotePlatform = {
+  platform: "linux",
+  arch: "x64",
+  home: "/home/agent",
+  warnings: [],
+};
+export const DAEMON = "/home/agent/.pi/mobile/tools/pi-env-0123";
+
+/** pi-env's start steps, faked: the targets each was given; `failure`, if given, fails every deploy. */
+export function fakeHelpers(
+  ssh = "ssh",
+  failure?: () => Error,
+): DaemonHelpers & { detected: SshTarget[]; deployed: SshTarget[] } {
+  const detected: SshTarget[] = [];
+  const deployed: SshTarget[] = [];
+  return {
+    ssh,
+    detected,
+    deployed,
+    detectPlatform: (target): Promise<RemotePlatform> => {
+      detected.push(target);
+      return Promise.resolve(REMOTE);
+    },
+    deployDaemon: (target, remote): Promise<string> => {
+      deployed.push(target);
+      if (failure !== undefined) {
+        return Promise.reject(failure());
+      }
+      return Promise.resolve(remote === REMOTE ? DAEMON : "unexpected-remote");
+    },
+  };
+}
+
+/** The configured connection facts, and repo `satan`'s launch. */
+export function doorFacts(config: RunnerConfig): { facts: RoomConnection; launch: Launch } {
+  const repo = config.repos.get("satan");
+  if (repo === undefined) {
+    throw new Error("fixture has no repo satan");
+  }
+  return { facts: roomConnection(config), launch: daemonLaunch(config, repo) };
+}
 
 /** The text pi-env gives a lost connection. */
 export const LOST_TEXT = "pi-env connection lost";
@@ -94,6 +146,57 @@ export class FailingConnection extends Connection {
 
   override kill(id: number, session: number): void {
     this.#inner?.kill(id, session);
+  }
+}
+
+/**
+ * The local daemon until an exec carrying `marker`; from then on a room whose
+ * host key no longer matches: every start fails with `failure`, seen by the
+ * runner's own trust record (a `DaemonConnection`'s), as in production.
+ */
+export class RebuiltRoom extends DaemonConnection {
+  readonly #local: Connection;
+  readonly #marker: string;
+  #rebuilt = false;
+
+  constructor(local: Connection, marker: string, failure: () => Error) {
+    super(() => Promise.reject(failure()));
+    this.#local = local;
+    this.#marker = marker;
+  }
+
+  override info(): Promise<RemoteInfo> {
+    return this.#rebuilt ? super.info() : this.#local.info();
+  }
+
+  override session(): Promise<number> {
+    return this.#rebuilt ? super.session() : this.#local.session();
+  }
+
+  override request(
+    op: string,
+    json: Record<string, unknown>,
+    options?: RequestOptions,
+  ): Promise<Reply> {
+    if (op === "exec" && JSON.stringify(json).includes(this.#marker)) {
+      this.#rebuilt = true;
+    }
+    return this.#rebuilt
+      ? super.request(op, json, options)
+      : this.#local.request(op, json, options);
+  }
+
+  override close(): void {
+    this.#local.close();
+    super.close();
+  }
+
+  override kill(id: number, session: number): void {
+    if (this.#rebuilt) {
+      super.kill(id, session);
+    } else {
+      this.#local.kill(id, session);
+    }
   }
 }
 

@@ -59,10 +59,11 @@ export class ChannelUnavailable extends Error {
 /**
  * The channel failed for any other reason. `reason` is what the audit
  * records: `channel_refusal` is the door refusing the runner's own argv or
- * config (a runner bug).
+ * config (a runner bug); `host_key` is the room's host key unknown or changed
+ * at a daemon start (a trust failure, never retried).
  */
 export class ChannelFailed extends Error {
-  readonly reason: "channel_failed" | "channel_refusal";
+  readonly reason: "channel_failed" | "channel_refusal" | "host_key";
 
   constructor(message: string, options: ChannelErrorOptions<ChannelFailed["reason"]> = {}) {
     super(message, options);
@@ -353,6 +354,25 @@ export interface RoomConnection {
   /** An ssh config file (e.g. the relay's ProxyCommand) instead of `~/.ssh/config`. */
   sshConfig?: string;
   identity?: string;
+}
+
+/**
+ * The words that start the daemon at path `daemon` in the guest; the
+ * execution environment quotes them into ssh's remote command.
+ */
+export type Launch = (daemon: string) => readonly string[];
+
+/**
+ * How `repo`'s daemon is started: a slot's is the daemon itself; a room's
+ * runs it through the room's session program in the repo's checkout
+ * (oubliette SL-006 sec-6: `<session_path> <repo> -- <daemon>`).
+ */
+export function daemonLaunch(config: RunnerConfig, repo: RepoConfig): Launch {
+  const door = doorOf(config);
+  if (door.kind === "slot") {
+    return (daemon) => [daemon];
+  }
+  return (daemon) => [door.sessionPath, repo.name, "--", daemon];
 }
 
 /** The execution environment's connection facts, as configured: none derived (I13). */

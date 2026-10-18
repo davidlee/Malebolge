@@ -109,6 +109,9 @@ async function main(slot: string): Promise<void> {
       await within(5000, "pause mark", markPause(store.db, job, failure));
       seam.push({ failure, at, markSettledMs: since() - at });
     },
+    untrusted: (failure, trust): void => {
+      otherFailures.push({ op: failure.op, at: since(), error: shape(trust) });
+    },
     failed: (op, error): void => {
       otherFailures.push({ op, at: since(), error: shape(error) });
     },

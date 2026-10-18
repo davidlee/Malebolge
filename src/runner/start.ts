@@ -32,13 +32,13 @@ import { parseRunnerConfig, type RepoConfig, type RunnerConfig } from "./config.
 import { type ControlDeps, serveControl } from "./control.ts";
 import { harnessConversations } from "./conversations.ts";
 import { systemTimer } from "./deadline.ts";
-import { roomDaemon } from "./env.ts";
+import { daemonConnection } from "./env.ts";
 import { messageOf, StartRefused } from "./errors.ts";
 import { gitQuarantineReader, gitRepoReader } from "./git.ts";
 import { jobGuard } from "./guard.ts";
 import { catalogLimits, createModelGate, gatedModels, harnessUsage } from "./model-gate.ts";
 import { recoverHost } from "./recover.ts";
-import { channelFromConfig, type GitChannel, roomConnection } from "./room.ts";
+import { channelFromConfig, daemonLaunch, type GitChannel, roomConnection } from "./room.ts";
 import { type RejoinDeps, rejoinJob } from "./rejoin.ts";
 import { runJob } from "./run.ts";
 import { createScheduler } from "./scheduler.ts";
@@ -104,11 +104,14 @@ export interface RoomAccess {
   connect: (repo: RepoConfig) => Connection;
 }
 
-/** The configured way in: its git channel and an ssh daemon into the guest (I13). */
+/** The configured way in: its git channel and, per job, a strict ssh daemon into the guest (I13). */
 function roomAccessFromConfig(config: RunnerConfig): RoomAccess {
   const channel = channelFromConfig(config);
   const connection = roomConnection(config);
-  return { channel, connect: () => roomDaemon(connection) };
+  return {
+    channel,
+    connect: (repo) => daemonConnection(connection, daemonLaunch(config, repo)),
+  };
 }
 
 export interface StartOptions {

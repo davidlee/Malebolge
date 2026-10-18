@@ -16,7 +16,7 @@ import type {
   Submission,
   SubmissionRecord,
 } from "@earendil-works/pi-durable";
-import type { Connection } from "@earendil-works/pi-env";
+import { type Connection, HostKeyChangedError } from "@earendil-works/pi-env";
 import { describe, expect, it } from "vitest";
 import { context } from "../../src/context.ts";
 import { conversationIdOf, submissionRecordOf } from "../../src/runner/durable-ids.ts";
@@ -39,6 +39,7 @@ import {
   restart,
   ROOM_DOWN,
   roomGoesDown,
+  roomUntrusted,
   type RunWorld,
   type RunWorldOptions,
   runWorld,
@@ -61,6 +62,8 @@ interface Room {
   calls: string[];
   /** Told of each channel verb (`refresh`, `collect`, `probe`), and awaited, before it runs. */
   before?: ((verb: string) => void | Promise<void>) | undefined;
+  /** Set: every daemon connection from then on fails its starts with this trust failure. */
+  untrusted?: (() => Error) | undefined;
 }
 
 /** The fake slot and the local daemon, watched; `down` makes probes fail and collection unavailable. */
@@ -87,6 +90,9 @@ const watched = (room: Room): Pick<RunWorldOptions, "channel" | "connection"> =>
   }),
   connection: (local): Connection => {
     room.calls.push("connect");
+    if (room.untrusted !== undefined) {
+      return roomUntrusted(room.untrusted)(local);
+    }
     // The branch judgement's git commands, as the room sees them.
     const judged = new FailingConnection(({ op, json }) => {
       const command = JSON.stringify(json);
@@ -506,6 +512,21 @@ describe("enabled restart: the in-flight job rejoined, phase B then resume() (VT
     const [interrupted] = await jobToolResults(r, job);
     expect(interrupted === undefined ? "" : textOf(interrupted)).toContain("interrupted");
     expect(job.modelRequests).toBe(before.modelRequests + 2);
+  });
+
+  it("row 8, the room's host key changed meanwhile: the rejoined run aborts to collecting, host_key, never waiting_room (EX-5)", async () => {
+    const c = await inFlight([call("wait", {})]);
+    c.w.crash();
+    c.room.untrusted = (): Error => new HostKeyChangedError("the host key changed");
+
+    const { r, job } = await rejoined(c);
+
+    expect(job).toMatchObject({ state: "failed", endReason: "error", pauseRequested: false });
+    const events = await r.events(c.id);
+    expect(kinds(events)).not.toContain("transition:waiting_room");
+    expect(kinds(events)).not.toContain("pause");
+    expect(eventOf(events, "transition:collecting")?.payload).toMatchObject({ reason: "host_key" });
+    expect(c.room.calls).toContain("collect");
   });
 
   it("row 8 (VT-3): parked while disabled, the deadline is re-armed with only pre-park active time", async () => {

@@ -4,10 +4,11 @@
 // room that is down retried with backoff up to `max_room_wait`. One
 // `describe` per function; PHASE-15 appends room checks here.
 
-import type { Connection } from "@earendil-works/pi-env";
+import { type Connection, HostKeyChangedError, HostKeyUnknownError } from "@earendil-works/pi-env";
 import { afterEach, describe, expect, it } from "vitest";
 import { roomRetryDelay } from "../../src/runner/backoff.ts";
 import type { RepoConfig, RunnerConfig } from "../../src/runner/config.ts";
+import { daemonConnection } from "../../src/runner/env.ts";
 import { RunnerError } from "../../src/runner/errors.ts";
 import {
   ensureJobBranch,
@@ -22,8 +23,8 @@ import {
 import { ChannelFailed, ChannelUnavailable, type GitChannel } from "../../src/runner/room.ts";
 import type { Job, JobStore } from "../../src/runner/store.ts";
 import { tempDir } from "../fixtures.ts";
-import { exampleConfig } from "./config-fixture.ts";
-import { localConnection, lostConnection } from "./env-fixture.ts";
+import { exampleConfig, roomConfig } from "./config-fixture.ts";
+import { doorFacts, fakeHelpers, localConnection, lostConnection } from "./env-fixture.ts";
 import { type RoomWorld, roomWorld } from "./room-fixture.ts";
 import { NEW_JOB, openTestStore, T0 } from "./store-fixture.ts";
 
@@ -86,6 +87,37 @@ describe("roomShell", () => {
     const shell = shellIn(localConnection(), `${await scratch()}/absent`);
 
     expect(await rejection(shell(["true"], never()))).toBeInstanceOf(ChannelFailed);
+  });
+
+  // Carry-forward 5 (EX-8): either door kind's daemon connection, counted, never paused.
+  describe.each([
+    ["slot", exampleConfig],
+    ["room", roomConfig],
+  ])("over a %s door's daemon connection", (_kind, config) => {
+    it("a lost start is ChannelUnavailable: retried, no pause", async () => {
+      const { facts, launch } = doorFacts(config());
+      const shell = shellIn(daemonConnection(facts, launch, fakeHelpers("false")), await scratch());
+
+      expect(await rejection(shell(["true"], never()))).toBeInstanceOf(ChannelUnavailable);
+    });
+
+    it.each([
+      ["HostKeyChangedError", (): Error => new HostKeyChangedError("changed")],
+      ["HostKeyUnknownError", (): Error => new HostKeyUnknownError("unknown")],
+    ])("a start failing %s is ChannelFailed host_key: never retried", async (_name, failure) => {
+      const { facts, launch } = doorFacts(config());
+      const connection = daemonConnection(facts, launch, fakeHelpers("ssh", failure));
+      const shell = shellIn(connection, await scratch());
+
+      const error = await rejection(shell(["true"], never()));
+
+      expect(error).toBeInstanceOf(ChannelFailed);
+      expect(error).toMatchObject({ reason: "host_key" });
+      expect(preparingFailure(error)).toMatchObject({
+        failure: { reason: "host_key" },
+        endReason: "error",
+      });
+    });
   });
 });
 

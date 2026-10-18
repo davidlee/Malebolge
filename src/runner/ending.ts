@@ -5,6 +5,7 @@
 
 import type { SettledSubmissionRecord, SubmissionRecord } from "@earendil-works/pi-durable";
 import type { JsonRecord } from "../json.ts";
+import type { LatchReason } from "./ceiling-latch.ts";
 import type { Job, JobStore } from "./store.ts";
 import type { EndReason } from "./vocab.ts";
 
@@ -38,6 +39,16 @@ export function ceilingEnding(ending: Ending, ceiling: EndReason | undefined): E
   return ceiling === undefined
     ? ending
     : { payload: { ...ending.payload, ceiling }, endReason: ceiling };
+}
+
+/**
+ * `ending`, unless the run's latch stopped it: a ceiling as `ceilingEnding`;
+ * a trust failure as `end_reason = error`, the payload's reason `host_key`.
+ */
+export function latchedEnding(ending: Ending, latched: LatchReason | undefined): Ending {
+  return latched === "host_key"
+    ? { payload: { ...ending.payload, reason: latched }, endReason: "error" }
+    : ceilingEnding(ending, latched);
 }
 
 /** `collecting`, with `ending`'s payload and end reason; the run's and recovery's one write. */

@@ -12,7 +12,7 @@ import {
   MemoryStorage,
   type Submission,
 } from "@earendil-works/pi-durable";
-import { RemoteError } from "@earendil-works/pi-env";
+import { HostKeyChangedError, HostKeyUnknownError, RemoteError } from "@earendil-works/pi-env";
 import { describe, expect, it, onTestFinished } from "vitest";
 import { context } from "../../src/context.ts";
 import type { JsonRecord } from "../../src/json.ts";
@@ -43,6 +43,8 @@ import {
   lostBash,
   ROOM_DOWN,
   roomGoesDown,
+  roomRebuilt,
+  roomUntrusted,
   type RunWorld,
   runWorld,
   SETTLE_MS,
@@ -69,7 +71,9 @@ async function runningConnection(failWhen: FailWhen): Promise<{
   let clock = T0 + 10;
   const connection = new JobConnection(
     new FailingConnection(failWhen),
-    pausingObserver({ jobs, now: () => ++clock }, job.id),
+    pausingObserver({ jobs, now: () => ++clock }, job.id, () => {
+      throw new Error("no trust failure here");
+    }),
   );
   return { jobs, job, connection };
 }
@@ -766,5 +770,80 @@ describe("the run: the room does not return (EX-3)", () => {
     expect(job).toMatchObject({ state: "cancelled", endReason: "cancelled", pauseCount: 1 });
     expect(runningPayloads(await w.events(job.id))).toHaveLength(1);
     expect(w.verbs()).toContain("collect");
+  });
+});
+
+// --- a trust failure is no pause (PHASE-15 batch B: EX-5; VT-6) ---------------------
+
+const TRUST_FAILURES = [
+  ["HostKeyChangedError", (): Error => new HostKeyChangedError("the host key changed")],
+  ["HostKeyUnknownError", (): Error => new HostKeyUnknownError("the host key is not trusted")],
+] as const;
+
+describe("the run: a trust failure is no pause (VT-6, EX-5)", () => {
+  it.each(TRUST_FAILURES)(
+    "running, the room's restart failing %s: aborted, end_reason error (host_key), collected; never waiting_room",
+    async (_name, failure) => {
+      const probe: Probe = { answer: () => true };
+      const w = await runWorld({ connection: roomRebuilt(failure), channel: probed(probe) });
+      w.faux.setResponses([writeAndCommit(), lostBash(), answer("never")]);
+
+      const queued = await w.submit();
+      const job = await settled(w, queued.id);
+
+      // Collected and classified (I12): an `error` end is class error, `failed`.
+      expect(job).toMatchObject({
+        state: "failed",
+        class: "error",
+        endReason: "error",
+        pauseRequested: false,
+        pauseCount: 0,
+      });
+      const events = await w.events(job.id);
+      expect(kinds(events)).toContain("collected");
+      expect(kinds(events)).not.toContain("pause");
+      expect(kinds(events)).not.toContain("transition:waiting_room");
+      expect(kinds(events)).not.toContain("ceiling");
+      expect(eventOf(events, "transition:collecting")?.payload).toMatchObject({
+        from: "running",
+        reason: "host_key",
+      });
+      expect(w.verbs()).toContain("collect");
+    },
+  );
+
+  it.each(TRUST_FAILURES)(
+    "preparing, the first start failing %s: failed, reason host_key, never retried",
+    async (_name, failure) => {
+      const w = await runWorld({ connection: roomUntrusted(failure) });
+      w.faux.setResponses([answer("never")]);
+
+      const queued = await w.submit();
+      const job = await settled(w, queued.id);
+
+      expect(job).toMatchObject({ state: "failed", endReason: "error", pauseRequested: false });
+      const events = await w.events(job.id);
+      expect(eventOf(events, "transition:failed")?.payload).toMatchObject({ reason: "host_key" });
+      expect(kinds(events)).not.toContain("pause");
+      expect(w.slept).toEqual([]);
+      expect(w.faux.state.callCount).toBe(0);
+    },
+  );
+
+  it("a plain failure of the same restart is a lost room: the job pauses (waiting_room)", async () => {
+    const probe: Probe = { answer: () => true };
+    const w = await runWorld({
+      connection: roomRebuilt(() => new Error("no route to the room")),
+      channel: probed(probe),
+    });
+    w.faux.setResponses([lostBash(), answer("resumed")]);
+
+    const queued = await w.submit();
+    const job = await settled(w, queued.id);
+
+    const events = await w.events(job.id);
+    expect(kinds(events)).toContain("pause");
+    expect(kinds(events)).toContain("transition:waiting_room");
+    expect(job.pauseCount).toBe(1);
   });
 });

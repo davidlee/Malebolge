@@ -44,6 +44,9 @@ function observe(inner: Connection, db: SqliteDatabase, killOnExec: boolean): Ob
       marks.push(failure);
       await within(2000, "pause mark", markPause(db, JOB, failure));
     },
+    untrusted: (): void => {
+      throw new Error("no trust failure over a local daemon");
+    },
     started: (op): void => {
       if (killOnExec && op === "exec") {
         void inner.info().then((info) => process.kill(info.pid, "SIGTERM"));

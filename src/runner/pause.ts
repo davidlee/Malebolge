@@ -21,13 +21,20 @@ export interface PauseDeps {
 /**
  * The running job's connection observer: a lost connection marks the job
  * `pause_requested` with a `pause` event, settled before the failure is
- * rethrown. Idempotent in the store (one stop raises two lost failures).
+ * rethrown. Idempotent in the store (one stop raises two lost failures). A
+ * trust failure is no pause: it marks nothing and calls `untrusted`, the
+ * run's stop (EX-5).
  */
-export function pausingObserver(deps: PauseDeps, jobId: string): ConnectionObserver {
+export function pausingObserver(
+  deps: PauseDeps,
+  jobId: string,
+  untrusted: () => void,
+): ConnectionObserver {
   return {
     lost: async (failure): Promise<void> => {
       await deps.jobs.markPause(jobId, deps.now(), { ...failure });
     },
+    untrusted,
   };
 }
 
