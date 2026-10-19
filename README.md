@@ -2,53 +2,77 @@
 
 ![bridges](./assets/wall.jpg)
 
-A place for a conversation with [SATAN](https://github.com/davidlee/SATAN) to
-live, so it outlasts the terminal or Emacs buffer you started it in.
+A durable home for [SATAN](https://github.com/davidlee/SATAN): conversations
+that outlast their clients, and patch jobs that run in a microVM and return
+work for human review. Built on
+[pi-durable](https://github.com/earendil-works/pi/tree/main/packages/durable).
 
 ## What it's for
 
-SATAN is a personal agent: it knows my notes and recent activity, and talks
-through Emacs. Talking to it interactively used to tie the conversation to one
-window. Close the window, restart Emacs, or crash, and the conversation was
-gone.
+SATAN is a personal agent: it knows my notes and recent activity, and can
+propose changes to its own code, persona and other projects. Malebolge hosts
+its agent conversations independently of Emacs. This repository currently
+ships two programs:
 
-Malebolge is a small background process (a daemon) that holds one ongoing
-conversation with SATAN. You attach to it from a terminal or Emacs, talk, and
-detach. The conversation carries on without you, and whoever attaches next
-sees it so far.
+- **`malebolge`**, the interactive daemon. It holds one ongoing conversation;
+  terminal and Emacs clients attach, talk and detach. Several clients can
+  share it, and a new client sees the conversation so far.
+- **`satan-runner`**, the patch-job daemon. It owns a durable queue and runs
+  one job at a time, each with its own conversation. The model loop runs on
+  the host; coding tools execute in an
+  [oubliette](https://github.com/davidlee/oubliette) room over pi-env. Commits
+  return to a host quarantine for review in Emacs.
+
+These are separate processes with separate SQLite stores. SATAN supplies the
+persona, prompts and model-facing tools; Malebolge supplies the durable
+harness and, for jobs, scheduling, policy enforcement and recovery.
 
 ## Why
 
-- **It doesn't forget.** The conversation is saved to disk as it happens.
-  Restart the daemon and it picks up where it was, even halfway through an
-  answer.
+- **It survives a restart.** Conversations are saved as they happen. The
+  harness resumes interrupted turns; unsafe tool calls interrupted by a crash
+  return an error rather than silently running again.
 - **Attach from anywhere.** Several terminals and Emacs buffers can be
   attached at once, all in the same conversation.
-- **SATAN wears many faces.** Whatever the harness, it still has the same motives, persona, and tools.
-  Here, edits to the persona apply from the next message, with no restart.
-- **It's fenced in.** The daemon runs in a jail, enforcing policy about what it can read and edit.
+- **The persona stays live.** The interactive daemon re-reads SATAN's persona
+  on each request. Skills are listed at startup and their bodies read on use.
+- **Jobs have bounds.** The runner checks mode scopes at admission, enforces
+  per-job request, token, cost and active-time ceilings, and pauses through
+  room outages within configured limits.
+- **Changes need review.** The runner checks collected commits for ancestry
+  and allowed paths. It never writes the real repository; a human promotes
+  the reviewed commit to a branch from Emacs, then decides whether to merge.
 
-If you're not me, this is mostly of interest as a small example of
-keeping an LLM session alive behind a socket, using
-[pi-durable](https://github.com/earendil-works/pi/tree/main/packages/durable).
+This is personal infrastructure, coupled to my SATAN, oubliette and Nix
+deployment. The reusable idea is a durable host-side agent loop with thin
+clients and a separate execution environment.
 
 ## The picture
 
 ```
-  you                          malebolge (daemon)
- ─────                        ─────────────────────────────────
-  terminal ──┐                 one conversation, saved to disk
-             ├── attach ────▶  SATAN's persona   (~/satan-corpus)
-                               skills            SKILL.md listings ($MALEBOLGE_SKILLS)
-  Emacs ─────┘   detach        coding tools      read/write/edit/bash
-                               SATAN's tools ──────────▶ satan-mcp (in Emacs)
-                               model ──────────────────▶ LLM provider
+ terminal / Emacs ── attach ──▶ malebolge (interactive daemon, host jail)
+                                ├─ one durable conversation
+                                ├─ live persona + skill listings
+                                ├─ coding tools in the host jail
+                                ├─ SATAN tools ──▶ satan-mcp (Emacs)
+                                └─ model ────────▶ LLM gateway
+
+ Emacs patch_job_* ── RPC ────▶ satan-runner (host)
+                                ├─ queue + per-job conversations
+                                ├─ scopes, ceilings, recovery
+                                ├─ model ────────▶ LLM gateway
+                                └─ coding tools ─▶ oubliette room (pi-env)
+                                                     │ commits
+ real repo ◀── human promotion in Emacs ◀── host quarantine
 ```
 
-Clients only display and send; the daemon does all the work and holds all the
-state. Detaching a client changes nothing else.
+Each daemon owns its store; clients use sockets rather than opening it.
+Detaching an interactive client leaves the conversation running. The runner
+keeps enforcing job limits with Emacs absent; Emacs remains the approval
+surface. Patch jobs currently have coding tools, without the interactive
+daemon's SATAN MCP tools or skills listing.
 
-## How to use it
+## Interactive conversation
 
 You need Node 24 or later and a working SATAN setup (Emacs with `satan-mcp`,
 and a corpus).
@@ -103,6 +127,81 @@ The gateway key is read from its file at start and held only in the provider;
 it is never in the environment or on a command line. The coding tools work in
 the daemon's current directory.
 
+The current jailed launcher starts in `~/notes` and binds its launch directory
+read-write. Its coding tools therefore have host-side write access there;
+moving interactive execution into the room is still future work.
+
+## Patch jobs
+
+SATAN submits jobs through `patch_job_create` in Emacs. A job names a
+configured repository, a base branch, a directive and allowed paths. The
+client stamps the acting mode; the runner refuses repositories or paths
+outside that mode's configured scope. Lanes include `self-edit-mech`,
+`self-edit-mind`, `tick-agent` and `interactive`; their deployment is configured
+outside this repository. An unbounded mode still uses configured repos and
+each job's path allowlist.
+
+The runner refreshes the room clone from the host branch, runs the agent on
+`job/<id>`, and collects committed work into quarantine. It checks every
+commit between the base and collected tip, so reverting an out-of-scope edit
+does not hide it. Uncommitted work does not travel. A ceiling or outage may
+leave a partial result offered with a flag; passing these checks does not
+establish that the code is correct.
+
+Reviewable jobs appear in SATAN's Emacs inbox. At the entry, use
+`M-x satan-patch-promote` or `M-x satan-patch-reject`. Promotion creates
+`satan/patch/<id>` at the exact reviewed commit and is verified by the runner.
+It does not merge the branch.
+
+The deployed runner is a `satan-runner` user service configured by
+`~/flakes/features/satan/runner.nix`. For development, `just runner` runs
+`node src/runner-main.ts`; it requires the same room, gateway and config setup.
+
+| Setting | Purpose |
+|---|---|
+| `SATAN_RUNNER_CONFIG` | required path to the runner's TOML config, read at startup |
+| `XDG_RUNTIME_DIR` | required; control socket at `satan-runner/control.sock` |
+| `XDG_STATE_HOME` | jobs, audit and conversations at `satan/runner/runner.sqlite`; defaults to `~/.local/state` |
+| `CREDENTIALS_DIRECTORY` | systemd credential directory; `[gateway].credential` names the key file within it |
+
+The TOML config names the prompt file, gateway catalog, room door, repos,
+modes and policy ceilings. Missing or invalid configuration refuses startup.
+The control socket is private to host clients and must stay outside jails.
+The room has no uplink or provider credentials. Oubliette owns the room and
+git transfer; the host LLM gateway owns provider credentials. The runner has
+its own gateway credential and enforces job ceilings at the model boundary.
+
+## Where it's going
+
+The design lives in the SATAN repo. The two latest RFCs explain the direction;
+both remain open, and some of their original sketches have since changed:
+
+- [RFC-018: Durable SATAN and brokered authority](https://github.com/davidlee/SATAN/blob/main/.doctrine/rfc/018/rfc-018.md)
+  proposes one persistent organism, with modes such as tick, morning and
+  self-edit becoming events, and a microVM habitat with little authority
+  outside it. Model access now goes through the host LLM gateway; patch jobs
+  use oubliette's git channel and human promotion. A generic git-broker is
+  not part of this implementation.
+- [RFC-019: One Malebolge agent](https://github.com/davidlee/SATAN/blob/main/.doctrine/rfc/019/rfc-019.md)
+  proposes shared agent composition with two execution modes: `vm`, living
+  under `/home/agent`, and `patch`, working in a scoped `/work/<repo>` job.
+  Coding tools would always run in the room; host data would be reached
+  through scoped SATAN tools. Tools that do not need Emacs would move into
+  native pi-durable tools, sequenced to avoid duplicate implementations.
+  This does not yet settle whether the two processes should merge.
+
+Today's split is the diagram above: interactive coding tools still run on
+the host, while patch coding tools run in the room. Broker-driven tick and
+morning runs have not become events in the interactive conversation, and
+patch jobs do not yet have SATAN's host-reading tools.
+
+Recent slices supplied the runner and room integration (SL-023), skill
+listings (SL-024), and mode scopes (SL-025). SL-026 has designed the next coding
+layer: project instructions read from the execution environment, explicit
+working-directory context, and a ripgrep-backed `grep` tool. Those additions
+are not implemented in this checkout yet. Tool filtering, operation without
+Emacs, and a coding-agent evaluation remain part of the wider RFC-019 work.
+
 ## Develop
 
 ```sh
@@ -110,6 +209,11 @@ npm install
 just check        # lint, format check, typecheck, tests
 ```
 
-Node runs the TypeScript directly; there is no build step. How it works
-inside — the wire protocol, the jail, design decisions — is in
-[docs/internals.md](docs/internals.md).
+Node 24+ runs the TypeScript directly; there is no TypeScript build step.
+`nix build .#runner` packages `satan-runner` with its production dependencies;
+the flake also exports `dev-tools` and a development shell. pi-durable and
+pi-env are experimental and pinned to 1.3.0.
+
+[docs/internals.md](docs/internals.md) covers the interactive daemon's wire
+protocol and implementation details. SATAN's SL-023–SL-026 records and
+SPEC-004 (patch runner) carry the cross-repository design.
