@@ -12,10 +12,12 @@ import { loadGatewayModels } from "./models.ts";
 import { personaExtension, personaFiles } from "./persona.ts";
 import { connectSatanTools } from "./satan-tools.ts";
 import { openSession } from "./session.ts";
+import { loadSkills, skillsExtension } from "./skills.ts";
 
 const log = (text: string): boolean => process.stderr.write(`malebolge: ${text}\n`);
 
 const config = resolveConfig(process.env, process.cwd());
+const skills = loadSkills(config.skillDirs, log);
 const models = await loadGatewayModels(config.gatewayCatalog, config.gatewayKeyFile);
 const { provider, modelId } = config.model;
 if (models.getModelOfType("chat", provider, modelId) === undefined) {
@@ -32,11 +34,18 @@ mkdirSync(dirname(config.storagePath), { recursive: true });
 mkdirSync(dirname(config.daemonSocket), { recursive: true });
 const session = await openSession(await openNodeSqliteStorage(config.storagePath), {
   models,
-  extensions: [personaExtension(personaFiles(config.corpusRoot)), CodingTools, satan.extension],
+  extensions: [
+    personaExtension(personaFiles(config.corpusRoot)),
+    skillsExtension(skills),
+    CodingTools,
+    satan.extension,
+  ],
   agent: { model: config.model, cwd: config.cwd },
 });
 const daemon = await serve(session.harness, session.root, config.daemonSocket);
-log(`${provider}/${modelId} · ${String(satan.extension.tools?.length ?? 0)} SATAN tools`);
+log(
+  `${provider}/${modelId} · ${String(satan.extension.tools?.length ?? 0)} SATAN tools · ${String(skills.length)} skills`,
+);
 log(`session ${config.storagePath}`);
 log(`attach  ${config.daemonSocket}`);
 

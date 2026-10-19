@@ -13,9 +13,21 @@ describe("resolveConfig", () => {
       model: { provider: "gateway", modelId: "deepseek-flash" },
       gatewayCatalog: "/h/.config/malebolge/gateway-models.json",
       gatewayKeyFile: "/h/.config/llm-gateway/keys/malebolge",
+      skillDirs: [],
       cwd: "/cwd",
     });
   });
+
+  it.each([
+    ["", []],
+    ["a::b:", ["a", "b"]],
+    ["/s/one:/s/two", ["/s/one", "/s/two"]],
+  ])(
+    "splits MALEBOLGE_SKILLS %j on ':' into skillDirs %j, dropping empty segments",
+    (value, dirs) => {
+      expect(resolveConfig({ ...base, MALEBOLGE_SKILLS: value }, "/cwd").skillDirs).toEqual(dirs);
+    },
+  );
 
   it("honours XDG_STATE_HOME and explicit overrides", () => {
     const config = resolveConfig(

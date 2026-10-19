@@ -19,6 +19,8 @@ export interface Config {
   gatewayCatalog: string;
   /** The file holding this daemon's gateway key; the key itself is never in the environment. */
   gatewayKeyFile: string;
+  /** Agent Skill directories (each holds a SKILL.md), from MALEBOLGE_SKILLS. */
+  skillDirs: string[];
   /** Working directory of the agent's coding tools. */
   cwd: string;
 }
@@ -62,6 +64,7 @@ export function resolveConfig(env: Env, cwd: string): Config {
     gatewayKeyFile:
       env["MALEBOLGE_GATEWAY_KEY_FILE"] ??
       join(home, ".config", "llm-gateway", "keys", "malebolge"),
+    skillDirs: (env["MALEBOLGE_SKILLS"] ?? "").split(":").filter((dir) => dir !== ""),
     cwd,
   };
 }

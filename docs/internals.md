@@ -12,6 +12,7 @@ harness").
 malebolge (daemon, owns the session)                     clients
  ├─ Harness on SQLite  ~/.local/state/satan/durable/         malebolge-attach (terminal)
  ├─ persona section    ~/satan-corpus scaffold + interactive  M-x malebolge-attach (comint)
+ ├─ skills section     SKILL.md listings from $MALEBOLGE_SKILLS
  ├─ CodingTools        read · write · edit · bash
  ├─ satan extension    pi-mcp client ──unix socket──▶ emacs satan-mcp
  └─ $XDG_RUNTIME_DIR/satan/durable.sock ◀──NDJSON──── clients
@@ -49,6 +50,11 @@ One JSON message per line on the daemon socket.
   retried. The tool list is the one satan-mcp offered at daemon start.
 - **Persona is live.** The section re-reads the corpus files on each request;
   the harness resends only changed sections, so prompt caching survives.
+- **Skills are read once.** `$MALEBOLGE_SKILLS` directories are loaded and
+  parsed at daemon start (DEC-067); the section then renders a constant. Bad
+  or missing entries are logged `skill <dir>: <reason>` and dropped, never
+  fatal. Editing a skill needs a daemon restart. Wording and rules follow
+  pi 1.3.0's `formatSkillsForPrompt`.
 - **Model catalog.** pi-ai 1.3.0's built-in catalog lags the coding agent's
   remote one; `src/models.ts` adds the models found in
   `~/.pi/agent/models-store.json`.
