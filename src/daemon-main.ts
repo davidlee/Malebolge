@@ -4,20 +4,30 @@
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite/node";
-import { CodingTools } from "@earendil-works/pi-durable/tools";
 import { resolveConfig } from "./config.ts";
 import { context } from "./context.ts";
+import { daemonExtensions } from "./daemon-extensions.ts";
 import { serve } from "./daemon.ts";
 import { loadGatewayModels } from "./models.ts";
-import { personaExtension, personaFiles } from "./persona.ts";
+import { personaFiles } from "./persona.ts";
+import {
+  gitRootDirs,
+  nodeSourceReader,
+  readSources,
+  renderProjectContext,
+} from "./project-context.ts";
 import { connectSatanTools } from "./satan-tools.ts";
 import { openSession } from "./session.ts";
-import { loadSkills, skillsExtension } from "./skills.ts";
+import { loadSkills } from "./skills.ts";
 
 const log = (text: string): boolean => process.stderr.write(`malebolge: ${text}\n`);
 
 const config = resolveConfig(process.env, process.cwd());
 const skills = loadSkills(config.skillDirs, log);
+// Read once: a context file edit takes a restart.
+const projectContext = renderProjectContext(
+  await readSources(config.cwd, gitRootDirs(config.cwd), nodeSourceReader),
+);
 const models = await loadGatewayModels(config.gatewayCatalog, config.gatewayKeyFile);
 const { provider, modelId } = config.model;
 if (models.getModelOfType("chat", provider, modelId) === undefined) {
@@ -34,17 +44,18 @@ mkdirSync(dirname(config.storagePath), { recursive: true });
 mkdirSync(dirname(config.daemonSocket), { recursive: true });
 const session = await openSession(await openNodeSqliteStorage(config.storagePath), {
   models,
-  extensions: [
-    personaExtension(personaFiles(config.corpusRoot)),
-    skillsExtension(skills),
-    CodingTools,
-    satan.extension,
-  ],
+  extensions: daemonExtensions({
+    personaFiles: personaFiles(config.corpusRoot),
+    projectContext,
+    skills,
+    cwd: config.cwd,
+    satan: satan.extension,
+  }),
   agent: { model: config.model, cwd: config.cwd },
 });
 const daemon = await serve(session.harness, session.root, config.daemonSocket);
 log(
-  `${provider}/${modelId} · ${String(satan.extension.tools?.length ?? 0)} SATAN tools · ${String(skills.length)} skills`,
+  `${provider}/${modelId} · ${String(satan.extension.tools?.length ?? 0)} SATAN tools · ${String(skills.length)} skills · ${projectContext === undefined ? "no " : ""}project context`,
 );
 log(`session ${config.storagePath}`);
 log(`attach  ${config.daemonSocket}`);
