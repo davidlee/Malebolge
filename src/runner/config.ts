@@ -120,20 +120,11 @@ export interface RoomDoorConfig extends RoomDoor {
 /** The door into the room, by kind (DEC-065). */
 export type DoorConfig = SlotDoorConfig | RoomDoorConfig;
 
-/** Each kind's `[door]` keys: the table is closed per kind; a room's are the room door's and two more. */
+const SHARED_DOOR_KEYS = ["kind", "user", "known_hosts", "host_key_alias"];
+
+/** Each kind's `[door]` keys: the table is closed per kind. A room's are the room door's and two more. */
 const DOOR_KEYS = {
-  slot: [
-    "kind",
-    "user",
-    "known_hosts",
-    "host_key_alias",
-    "slot",
-    "quarantine",
-    "host",
-    "profile",
-    "ssh_config",
-    "identity",
-  ],
+  slot: [...SHARED_DOOR_KEYS, "slot", "quarantine", "host", "profile", "ssh_config", "identity"],
   room: ["kind", ...ROOM_DOOR_KEYS, "ssh_config", "session_path"],
 } as const;
 
