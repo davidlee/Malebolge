@@ -241,6 +241,20 @@ describe("grepTool: output (VT-1)", () => {
     expect(scripted.emitted()).toBe(3);
   });
 
+  it("counts only match messages toward the limit, context lines kept between them", async () => {
+    const all = Array.from({ length: 5 }, (_, at) => [
+      contextLine("./a", 2 * at + 1, "near"),
+      match("./a", 2 * at + 2, "x"),
+    ]).flat();
+    const scripted = scriptedEnv(chunks(...all));
+    const result = await runGrep(scripted.env, { pattern: "x", limit: 2 }, context);
+    expect(result).toEqual({
+      text: "a-1- near\na:2: x\na-3- near\na:4: x\n\n[2 matches limit reached. Use limit=4 for more, or refine pattern]",
+      isError: false,
+    });
+    expect(scripted.emitted()).toBe(4);
+  });
+
   it("stops at 50 KB: a success with the notice, within 50 KB, and the env saw the abort", async () => {
     const all = Array.from({ length: 1000 }, (_, line) => match("./a", line + 1, "z".repeat(400)));
     const scripted = scriptedEnv(chunks(...all));

@@ -18,6 +18,7 @@ import {
 import {
   ChannelFailed,
   ChannelUnavailable,
+  checkRoomClone,
   PREPARE_LIMITS,
   type ShellOutput,
 } from "../../src/runner/room.ts";
@@ -90,12 +91,15 @@ function room(
   });
 }
 
+/** The fetch as a room channel runs it: its re-check over the room's shell. */
+const fetchStep = fetchProjectContext(REPO, checkRoomClone);
+
 async function fetchOver(
   answer: ShellAnswer,
   signal = never(),
 ): Promise<{ fetched: Fetched; calls: ShellCall[] }> {
   const { shell, calls } = recordingShell(answer);
-  return { fetched: await fetchProjectContext(REPO)(shell, signal), calls };
+  return { fetched: await fetchStep(shell, signal), calls };
 }
 
 const headed = (calls: readonly ShellCall[]): string[] =>
@@ -528,7 +532,7 @@ describe("fetchProjectContext's doctrine step (VT-1, design §4.3)", () => {
       overrides: Record<string, ShellAnswer>,
     ): Promise<{ error: unknown; calls: ShellCall[] }> {
       const { shell, calls } = recordingShell(doctrineRoom(overrides));
-      const error = await rejection(fetchProjectContext(REPO)(shell, never()));
+      const error = await rejection(fetchStep(shell, never()));
       expect(cleaned(calls)).toBe(false);
       expect(commands(calls)).not.toContain("stat -L");
       return { error, calls };
@@ -634,7 +638,7 @@ describe("fetchProjectContext's doctrine step (VT-1, design §4.3)", () => {
   ])("%s from doctrine is rethrown before any re-check", async (_case, thrown) => {
     const { shell, calls } = recordingShell(doctrineRoom({ doctrine: throwing(thrown) }));
 
-    expect(await rejection(fetchProjectContext(REPO)(shell, never()))).toBe(thrown);
+    expect(await rejection(fetchStep(shell, never()))).toBe(thrown);
     expect(calls.map((call) => call.argv[0])).toEqual(["test", "git", "doctrine"]);
   });
 
@@ -652,7 +656,7 @@ describe("fetchProjectContext's doctrine step (VT-1, design §4.3)", () => {
       }),
     );
 
-    expect(await rejection(fetchProjectContext(REPO)(shell, stop.signal))).toBe(aborted);
+    expect(await rejection(fetchStep(shell, stop.signal))).toBe(aborted);
     expect(calls.map((call) => call.argv[0])).toEqual(["test", "git", "doctrine"]);
   });
 

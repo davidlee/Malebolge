@@ -19,7 +19,7 @@ import {
   ChannelFailed,
   ChannelUnavailable,
   type CloneDefect,
-  checkRoomClone,
+  type GitChannel,
   type RoomShell,
   type ShellLimits,
   type ShellOutput,
@@ -220,21 +220,25 @@ function bootOf(ran: Attempt): { source: ContextSource } | { failure: Failure } 
     : { source: capSource(BOOT_ORIGIN, stdout) };
 }
 
+/** The clone check readyRoom runs before the job branch, reused as the re-check. */
+type CheckClone = GitChannel["checkClone"];
+
 /**
- * The clone checked again after doctrine ran (design §4.3): a defect fails
- * preparing with it, as the check before it; a check that cannot finish
+ * The clone checked again after doctrine ran (design §4.3), by the check
+ * before it: a defect fails preparing with it; a check that cannot finish
  * (timeout, overflowed probe, failed status) fails closed as `dirty_clone`
  * with no paths. A lost room, a host key and the caller's abort are
  * rethrown. Never cleans.
  */
 async function recheckClone(
+  checkClone: CheckClone,
   shell: RoomShell,
   repo: RepoConfig,
   signal: AbortSignal,
 ): Promise<void> {
   let defect: CloneDefect | undefined;
   try {
-    defect = await checkRoomClone(shell, repo, signal);
+    defect = await checkClone(shell, repo, signal);
   } catch (error) {
     answerable(error, signal); // rethrows all but a ChannelFailed the step answers for
     defect = { reason: "dirty_clone", paths: [] };
@@ -253,6 +257,7 @@ type BootStep = { source?: ContextSource } | { failure: Failure };
  * the clone re-checked, since a repo's doctrine may write more than its boot.
  */
 async function doctrineBoot(
+  checkClone: CheckClone,
   shell: RoomShell,
   repo: RepoConfig,
   signal: AbortSignal,
@@ -273,20 +278,21 @@ async function doctrineBoot(
     return { failure: { reason: "boot_not_ignored" } };
   }
   const boot = bootOf(await attempt(shell, signal, DOCTRINE_ARGV, DOCTRINE_LIMITS));
-  await recheckClone(shell, repo, signal);
+  await recheckClone(checkClone, shell, repo, signal);
   return boot;
 }
 
 /**
  * readyRoom's final step for `repo`: its context sources read from the
  * room's clone (the runner's cwd, its git root), doctrine's boot among them,
- * and what could not be read. Degradations belong to the call, so a retried
- * attempt's are dropped with it.
+ * and what could not be read; `checkClone` is the channel's, which readyRoom
+ * ran first. Degradations belong to the call, so a retried attempt's are
+ * dropped with it.
  */
-export function fetchProjectContext(repo: RepoConfig): FinalStep<Fetched> {
+export function fetchProjectContext(repo: RepoConfig, checkClone: CheckClone): FinalStep<Fetched> {
   return async (shell, signal) => {
     const degraded: Degradation[] = [];
-    const boot = await doctrineBoot(shell, repo, signal);
+    const boot = await doctrineBoot(checkClone, shell, repo, signal);
     if ("failure" in boot) {
       degraded.push({ source: "doctrine", ...boot.failure });
     }

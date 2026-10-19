@@ -136,7 +136,7 @@ async function probe(options: ProbeOptions = {}): Promise<ProbeRun> {
       return observed.shell;
     },
   });
-  const fetch = fetchProjectContext(world.repo);
+  const fetch = fetchProjectContext(world.repo, world.channel.checkClone);
   let stepMs = 0;
   const timed: FinalStep<Fetched> = async (shell, signal) => {
     const start = performance.now();
@@ -431,6 +431,33 @@ exec ${realBin("git")} "$@"`,
         ["git", "status"],
       ]);
     });
+
+    it.each([
+      ["rev-parse", "never exits", "exec sleep 30"],
+      ["rev-parse", "streams without end", "exec yes"],
+      ["switch", "never exits", "exec sleep 30"],
+      ["switch", "streams without end", "exec yes"],
+    ])(
+      "P16: a git whose %s in ensureJobBranch %s: preparing fails channel_failed, the fetch not run, bounded",
+      async (subcommand, _case, hostile) => {
+        const run = await probe({
+          scaled: true,
+          fakes: () => ({
+            git: `if [ "$1" = "${subcommand}" ]; then ${hostile}; fi
+exec ${realBin("git")} "$@"`,
+          }),
+        });
+
+        expectBounded(run);
+        const { failure: why, error } = failure(run);
+        expect(why).toMatchObject({ reason: "channel_failed" });
+        expect(error).toBeInstanceOf(ChannelFailed);
+        const last = run.calls.at(-1);
+        expect(last?.argv.slice(0, 2)).toEqual(["git", subcommand]);
+        expect(last?.passedTimeoutS).toBe(PREPARE_LIMITS.timeoutS / TIME_DIVISOR);
+        expect(run.stepMs).toBe(0);
+      },
+    );
   });
 
   describe("doctrine's boot and the clone re-check (design §4.3)", () => {
@@ -578,6 +605,35 @@ exec ${realBin("test")} "$@"`,
         });
 
         expectBounded(run);
+        expect(doctrineCall(run)).toBeUndefined();
+        expect(fetched(run)).toEqual({
+          sources: [agentsMd(run)],
+          degraded: [{ source: "doctrine", reason }],
+        });
+      },
+    );
+
+    it.each([
+      ["streaming without end: overflow", "exec yes", "overflow"],
+      ["never exiting: timeout", "exec sleep 30", "timeout"],
+    ])(
+      "P14: a git check-ignore %s: degraded, doctrine not run, the chain read",
+      async (_case, hostile, reason) => {
+        const run = await probe({
+          scaled: true,
+          base: (real) => {
+            doctrineRepo(real);
+          },
+          fakes: () => ({
+            doctrine: WRITES_BOOT,
+            git: `if [ "$1" = "check-ignore" ]; then ${hostile}; fi
+exec ${realBin("git")} "$@"`,
+          }),
+        });
+
+        expectBounded(run);
+        const ignore = run.calls.find((call) => call.argv[1] === "check-ignore");
+        expect(ignore?.passedTimeoutS).toBe(FETCH_LIMITS.timeoutS / TIME_DIVISOR);
         expect(doctrineCall(run)).toBeUndefined();
         expect(fetched(run)).toEqual({
           sources: [agentsMd(run)],

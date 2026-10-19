@@ -83,9 +83,16 @@ One JSON message per line on the daemon socket.
     `.doctrine/` and its boot file is git-ignored it also runs
     `doctrine prompt resolve --role orchestrator` (60 s, output a source,
     overflow truncating) and re-checks the clone, since doctrine may write.
-    Any failure (missing binary, timeout, non-zero exit, empty or overflowed
-    output, unignored boot) degrades: one `context_degraded` audit event per
-    degradation, and the job continues without that source.
+    A source that cannot be had degrades: one `context_degraded` audit event
+    per degradation, and the job continues without that source. For doctrine
+    that is an unignored boot, a missing binary, a timeout, a non-zero exit
+    without overflow, empty (all-whitespace) output, or a `test -d .doctrine`
+    or `git check-ignore` that times out, overflows or exits other than 0/1;
+    for a file, a `stat` or `head` that cannot run or times out (a `stat`
+    also when it overflows or exits other than 0/1). The re-check does not
+    degrade: a defect it finds fails preparing with that defect, and a check
+    that cannot finish fails it `dirty_clone` with no paths. A lost room, an
+    untrusted host key and an abort are rethrown, never degraded.
   - *Composition* of the job prompt: corpus text, policy fragments, project
     instructions, then the job block (which carries `Working directory:`).
     The repo's text precedes the block and never alters it.

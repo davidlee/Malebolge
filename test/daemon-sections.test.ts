@@ -115,7 +115,7 @@ describe("daemon system prompt sections", () => {
         satan,
       }),
     });
-    // The fixture lists entries newest first, despite its doc comment.
+    // Oldest first: the fixture lists them newest first.
     const entries = (await systemPromptSections(after)).reverse();
     expect(entries.map(keysOf)).toEqual([
       ["persona", "skills"],

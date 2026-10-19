@@ -358,7 +358,7 @@ async function admit(
     repo,
     shell,
     control.signal,
-    fetchProjectContext(repo),
+    fetchProjectContext(repo, deps.channel.checkClone),
   );
   await recordDegradations(deps, job.id, fetched.degraded);
   const run = openRun(deps, { ...job, conversationId }, resolved, conversation, connection, stops);

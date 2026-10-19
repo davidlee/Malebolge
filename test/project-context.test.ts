@@ -1,5 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { mkdir, symlink, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
@@ -20,6 +21,16 @@ import { tempDir } from "./fixtures.ts";
 import { openTestHarness, systemPromptSections } from "./harness-fixture.ts";
 
 const MARKER = "[truncated at 65536 bytes]";
+
+/** Whether git finds a work tree at or above `dir`: an oracle independent of gitRootDirs. */
+const underRepo = (dir: string): boolean => {
+  try {
+    execFileSync("git", ["-C", dir, "rev-parse", "--show-toplevel"], { stdio: "ignore" });
+    return true;
+  } catch {
+    return false;
+  }
+};
 const pathSource = (path: string, text: string): ContextSource => ({ origin: { path }, text });
 
 /** A reader over an in-memory file map; `regular` lists the paths that are regular files. */
@@ -213,12 +224,14 @@ describe("gitRootDirs and nodeSourceReader", () => {
     expect(gitRootDirs("/")).toEqual(["/"]);
   });
 
-  it("gitRootDirs is cwd alone when no ancestor holds .git", async () => {
-    const root = await fresh();
-    // tmp may itself sit under a repo; the walk must still end in cwd's own ancestry.
-    const dirs = gitRootDirs(root);
-    expect(dirs.at(-1)).toBe(root);
-  });
+  // tmp may itself sit under a repo, whose root would then start the chain.
+  it.skipIf(underRepo(tmpdir()))(
+    "gitRootDirs is cwd alone when no ancestor holds .git",
+    async () => {
+      const root = await fresh();
+      expect(gitRootDirs(root)).toEqual([root]);
+    },
+  );
 
   it("reads AGENTS.md through a symlink", async () => {
     const dir = await fresh();

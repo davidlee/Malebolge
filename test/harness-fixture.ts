@@ -124,7 +124,10 @@ export async function toolResults(
 export const textOf = (message: ToolResultMessage): string =>
   message.content.map((block) => (block.type === "text" ? block.text : "")).join("");
 
-/** Run one turn, close the harness, and return the sections of each system prompt it recorded. */
+/**
+ * Run one turn, close the harness, and return the sections of each system
+ * prompt it recorded, newest first (the order `entries` pages in).
+ */
 export async function systemPromptSections(test: TestHarness): Promise<unknown[]> {
   test.faux.setResponses([fauxAssistantMessage([fauxText("ok")])]);
   await (await test.root.submit({ type: "input", content: "hi" }, context)).wait(context);

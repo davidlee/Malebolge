@@ -456,20 +456,20 @@ describe("readyRoom", () => {
       expect(w.slept).toEqual([]);
     });
 
-    it("fetchProjectContext as the step: doctrine leaving the clone dirty fails preparing dirty_clone, unretried, never cleaned", async () => {
+    it("fetchProjectContext as the step: its re-check is the channel's, a defect after doctrine fails preparing, unretried, never cleaned", async () => {
+      const defect: CloneDefect = { reason: "dirty_clone", paths: ["doctrine-wrote-this"] };
+      let checked = 0;
       const w = await readyWorld({
-        answer: by({
-          doctrine: () => exit(0, "boot"),
-          status: () => exit(0, "?? doctrine-wrote-this\n"),
-        }),
+        answer: by({ doctrine: () => exit(0, "boot") }),
+        checkClone: () => Promise.resolve(checked++ === 0 ? undefined : defect),
       });
 
-      const error = await rejection(readyWith(w, fetchProjectContext(REPO)));
+      const error = await rejection(
+        readyWith(w, fetchProjectContext(REPO, w.deps.channel.checkClone)),
+      );
 
-      expect(preparingFailure(error).failure).toEqual({
-        reason: "dirty_clone",
-        paths: ["doctrine-wrote-this"],
-      });
+      expect(preparingFailure(error).failure).toEqual(defect);
+      expect(w.checks()).toBe(2);
       expect(w.slept).toEqual([]);
       expect(w.cleans()).toBe(0);
       expect(w.shellCalls.filter((argv) => ["reset", "clean"].includes(argv[1] ?? ""))).toEqual([]);
