@@ -57,7 +57,6 @@ describe("resolveConfig", () => {
       gatewayCatalog: "/h/.config/malebolge/gateway-models.json",
       gatewayKeyFile: "/h/.config/llm-gateway/keys/malebolge",
       skillDirs: [],
-      cwd: "/cwd",
       execution: { profile: "host", cwd: "/cwd" },
     });
   });
@@ -108,12 +107,11 @@ describe("the execution profile (design §4.2)", () => {
     expect(refusal({ ...host, MALEBOLGE_PROFILE: profile })).toContain(error);
   });
 
-  it("room: the door file's room, through the jail's ssh_config, cwd the room user's home", () => {
+  it("room: the door file's room, through the jail's ssh_config, and the room user's home", () => {
     const config = resolve({ ...room, MALEBOLGE_GATEWAY_SOCKET: "/run/gateway.sock" });
     expect(config).toMatchObject({
       storagePath: "/h/.local/state/satan/durable/room/session.sqlite",
       daemonSocket: "/run/u/satan/durable/room/durable.sock",
-      cwd: "/home/satan",
     });
     expect(config.execution).toEqual({
       profile: "room",

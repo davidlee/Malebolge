@@ -64,6 +64,12 @@ export interface LostFailure {
 /** A daemon start refused by strict host-key checking: a trust failure, never downtime. */
 export type HostKeyFailure = HostKeyChangedError | HostKeyUnknownError;
 
+/** What a lost connection means: the room is down, or its host key is not trusted. */
+export type RoomFault = "unavailable" | "untrusted";
+
+/** The error a caller's tools see for `fault` in place of `error` (design §4.4). */
+export type Reword = (fault: RoomFault, error: RemoteError) => RemoteError;
+
 export interface ConnectionObserver {
   /** A call failed because the connection was lost; settles before the failure is rethrown. */
   lost: (failure: LostFailure, error: unknown) => Promise<void>;
@@ -85,18 +91,20 @@ const describeLost = (op: string, error: RemoteError): LostFailure => ({
 /**
  * `inner`, observed: a call failing with `isConnectionLost` is reported (trust
  * failure or loss, by `DaemonConnection.trustFailure`) and awaited before the
- * error is rethrown. pi-env's `Connection` has private fields, so the seam is
- * a subclass delegating every public method; its own (never started)
- * connection has no command.
+ * error is rethrown, through `reword` when given. pi-env's `Connection` has
+ * private fields, so the seam is a subclass delegating every public method;
+ * its own (never started) connection has no command.
  */
 export class ObservedConnection extends Connection {
   readonly #inner: Connection;
   readonly #observer: ConnectionObserver;
+  readonly #reword: Reword | undefined;
 
-  constructor(inner: Connection, observer: ConnectionObserver) {
+  constructor(inner: Connection, observer: ConnectionObserver, reword?: Reword) {
     super({ command: [] });
     this.#inner = inner;
     this.#observer = observer;
+    this.#reword = reword;
   }
 
   // `info` and `session` connect too: a file op resolving a path can lose the
@@ -131,22 +139,23 @@ export class ObservedConnection extends Connection {
     } catch (error) {
       // isConnectionLost is `instanceof RemoteError && fields.lost === true`; never the message.
       if (error instanceof RemoteError && isConnectionLost(error)) {
-        await this.#lost(describeLost(op, error), error);
-      } else {
-        this.#observer.failed?.(op, error);
+        const fault = await this.#lost(describeLost(op, error), error);
+        throw this.#reword?.(fault, error) ?? error;
       }
+      this.#observer.failed?.(op, error);
       throw error;
     }
   }
 
   /** Read at every lost failure: one dead start fails every request waiting on it. */
-  async #lost(failure: LostFailure, error: RemoteError): Promise<void> {
+  async #lost(failure: LostFailure, error: RemoteError): Promise<RoomFault> {
     const trust = this.#inner instanceof DaemonConnection ? this.#inner.trustFailure() : undefined;
     if (trust === undefined) {
       await this.#observer.lost(failure, error);
-    } else {
-      this.#observer.untrusted(failure, trust);
+      return "unavailable";
     }
+    this.#observer.untrusted(failure, trust);
+    return "untrusted";
   }
 
   override close(): void {
@@ -160,17 +169,21 @@ export class ObservedConnection extends Connection {
 
 /**
  * pi-env's remote environment `id` in `cwd` over `connection`, observed by
- * `observer`: the one way an observed env is built. `connection` is the daemon
- * connection itself, never another `ObservedConnection`: the trust check reads
- * the inner connection, so a nested wrapper reports a host-key refusal as a
- * loss (design §4.3).
+ * `observer`, its lost failures through `reword` when given: the one way an
+ * observed env is built. `connection` is the daemon connection itself, never
+ * another `ObservedConnection`: the trust check reads the inner connection, so
+ * a nested wrapper reports a host-key refusal as a loss (design §4.3).
  */
 export const observedEnv = (
   connection: Connection,
   observer: ConnectionObserver,
-  { id, cwd }: { id: string; cwd: string },
+  { id, cwd, reword }: { id: string; cwd: string; reword?: Reword },
 ): RemoteExecutionEnv =>
-  new RemoteExecutionEnv({ connection: new ObservedConnection(connection, observer), id, cwd });
+  new RemoteExecutionEnv({
+    connection: new ObservedConnection(connection, observer, reword),
+    id,
+    cwd,
+  });
 
 /** pi-env's ssh target for the room. */
 export const sshTarget = (room: RoomConnection): SshTarget =>

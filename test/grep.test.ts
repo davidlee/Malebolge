@@ -297,7 +297,7 @@ describe("grepTool: output (VT-1)", () => {
       exec: () => Promise.resolve(err(new ExecutionError("spawn_error", "spawn rg ENOENT"))),
     };
     expect(await runGrep(env, { pattern: "x" }, context)).toEqual({
-      text: "ripgrep (rg) is not available: spawn rg ENOENT",
+      text: "rg could not run: spawn rg ENOENT",
       isError: true,
     });
   });

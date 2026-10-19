@@ -9,7 +9,7 @@ import {
   Harness,
   type Storage,
 } from "@earendil-works/pi-durable";
-import { NodeExecutionEnv } from "@earendil-works/pi-durable/env/node";
+import type { ExecutionEnv } from "@earendil-works/pi-durable/env";
 import { context } from "./context.ts";
 import { registryOf } from "./registry.ts";
 
@@ -23,6 +23,8 @@ export interface SessionOptions {
   extensions: readonly Extension[];
   /** Applied on every open, so a changed model or cwd takes effect on restart. */
   agent: AgentChange;
+  /** pi-durable's per-call environment hook: where the agent's tools run (daemon-env.ts). */
+  env: (state: { cwd?: string }) => ExecutionEnv;
 }
 
 export async function openSession(storage: Storage, options: SessionOptions): Promise<Session> {
@@ -31,7 +33,7 @@ export async function openSession(storage: Storage, options: SessionOptions): Pr
     {
       models: options.models,
       registry: registryOf(options.extensions),
-      env: ({ cwd }) => new NodeExecutionEnv({ cwd: cwd ?? process.cwd() }),
+      env: options.env,
     },
     context,
   );

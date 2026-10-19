@@ -46,8 +46,7 @@ export interface Config {
   gatewayKeyFile: string;
   /** Agent Skill directories (each holds a SKILL.md), from MALEBOLGE_SKILLS. */
   skillDirs: string[];
-  /** Working directory of the agent's coding tools: the host cwd, or the room user's home. */
-  cwd: string;
+  /** Where the agent's tools run; daemon-env.ts turns it into their environment and cwd. */
   execution: Execution;
 }
 
@@ -131,10 +130,6 @@ function executionOf(env: Env, cwd: string, readFile: (path: string) => string):
   );
 }
 
-/** Where the coding tools start: the host cwd, or the room user's home (§7 R2). */
-const toolsCwd = (execution: Execution): string =>
-  execution.profile === "host" ? execution.cwd : execution.home;
-
 /** The daemon's configuration; `readFile` reads the door file. */
 export function resolveConfig(env: Env, cwd: string, readFile: (path: string) => string): Config {
   const home = requireEnv(env, "HOME");
@@ -154,7 +149,6 @@ export function resolveConfig(env: Env, cwd: string, readFile: (path: string) =>
       env["MALEBOLGE_GATEWAY_KEY_FILE"] ??
       join(home, ".config", "llm-gateway", "keys", "malebolge"),
     skillDirs: (env["MALEBOLGE_SKILLS"] ?? "").split(":").filter((dir) => dir !== ""),
-    cwd: toolsCwd(execution),
     execution,
   };
 }

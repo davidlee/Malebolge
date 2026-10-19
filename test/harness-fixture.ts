@@ -21,6 +21,7 @@ import {
   type Storage,
   ToolResultEntry,
 } from "@earendil-works/pi-durable";
+import { NodeExecutionEnv } from "@earendil-works/pi-durable/env/node";
 import { context } from "../src/context.ts";
 import { isRecord } from "../src/json.ts";
 import { registryOf } from "../src/registry.ts";
@@ -57,6 +58,7 @@ export async function openTestHarness(
     models,
     extensions,
     agent: { model: FAUX_MODEL },
+    env: ({ cwd }) => new NodeExecutionEnv({ cwd: cwd ?? process.cwd() }),
   });
   return { ...session, faux };
 }

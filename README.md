@@ -105,8 +105,41 @@ M-x malebolge-attach      ; load emacs/malebolge.el first
 **Stop the daemon** with Ctrl-C. Starting it again reopens the same
 conversation.
 
-To run the daemon on the host, outside the jail: `node src/daemon-main.ts`.
-It reaches models through the LLM gateway, with a key read from a file.
+To run the daemon on the host, outside the jail:
+`MALEBOLGE_PROFILE=host node src/daemon-main.ts`. It reaches models through
+the LLM gateway, with a key read from a file.
+
+### Execution profiles
+
+The launcher picks where the agent's coding tools run, with
+`MALEBOLGE_PROFILE`; there is no default.
+
+| Profile | Tools run | Working directory | Project context from |
+|---|---|---|---|
+| `room` | in the room VM, as the room user, over one pi-env connection the daemon holds | the room user's home | the home (no git walk) |
+| `host` | on this machine | the launch directory | the launch directory up to its git root |
+
+Each profile keeps its own conversation and socket, under
+`durable/<profile>/`: the room's and the host's conversations never mix. A
+store or socket path in another profile's directory is refused at start.
+
+The room profile reads its room from the **door file** (`MALEBOLGE_DOOR`), a
+TOML file with one `[door]` table and nothing else:
+
+```toml
+[door]
+room = "assistant"                 # the room's name (the ssh host)
+user = "satan"                     # the room user
+known_hosts = "/var/lib/capsule/room/assistant/known_hosts"
+host_key_alias = "room-assistant"  # the name the host keys are stored under
+identity = "~/.ssh/malebolge-vm.key"
+home = "/home/satan"               # the tools' working directory
+```
+
+The daemon never starts the room. A room that is down or whose host key is
+not trusted fails the tool call with `room unavailable: …` or
+`room host key untrusted: …`; the conversation carries on and the next call
+tries again. At start, an unreachable room means no project context, logged.
 
 ### Configuration
 
@@ -114,22 +147,24 @@ Set through environment variables:
 
 | Variable | Purpose | Default |
 |---|---|---|
+| `MALEBOLGE_PROFILE` | execution profile, `room` or `host` (above) | required |
+| `MALEBOLGE_DOOR` | the room's door file (room only) | required for `room` |
+| `MALEBOLGE_SSH_CONFIG` | the ssh config the room is reached through (room only) | required for `room` |
+| `MALEBOLGE_GATEWAY_SOCKET` | the LLM gateway's client socket; start is refused if it is set and missing | none |
 | `MALEBOLGE_MODEL` | model, as `provider/model` | `gateway/deepseek-flash` |
 | `MALEBOLGE_GATEWAY_CATALOG` | gateway model catalog (JSON file) | `~/.config/malebolge/gateway-models.json` |
 | `MALEBOLGE_GATEWAY_KEY_FILE` | file holding the daemon's gateway key (names a file; never carries the key) | `~/.config/llm-gateway/keys/malebolge` |
 | `MALEBOLGE_SKILLS` | Agent Skill directories, `:`-separated, each holding a `SKILL.md`; use absolute paths; listed once at start, bodies read on use | none |
-| `MALEBOLGE_SOCKET` | where clients attach | `$XDG_RUNTIME_DIR/satan/durable.sock` |
+| `MALEBOLGE_SOCKET` | where clients attach (clients default to the room's) | `$XDG_RUNTIME_DIR/satan/durable/<profile>/durable.sock` |
 | `SATAN_MCP_SOCKET` | where SATAN's tools are | `$XDG_RUNTIME_DIR/satan/mcp/mcp.sock` |
 | `SATAN_CORPUS_ROOT` | SATAN's persona files | `~/satan-corpus` |
-| `XDG_STATE_HOME` | saved conversation lives at `satan/durable/session.sqlite` under this | `~/.local/state` |
+| `XDG_STATE_HOME` | saved conversation lives at `satan/durable/<profile>/session.sqlite` under this | `~/.local/state` |
 
 The gateway key is read from its file at start and held only in the provider;
-it is never in the environment or on a command line. The coding tools work in
-the daemon's current directory.
+it is never in the environment or on a command line.
 
-The current jailed launcher starts in `~/notes` and binds its launch directory
-read-write. Its coding tools therefore have host-side write access there;
-moving interactive execution into the room is still future work.
+The jailed launcher does not yet set `MALEBOLGE_PROFILE`, so it refuses to
+start until it becomes the room profile (satan SL-027 PHASE-05).
 
 ## Patch jobs
 

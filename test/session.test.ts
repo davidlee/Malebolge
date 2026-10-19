@@ -1,12 +1,21 @@
 import { join } from "node:path";
 import { createModels, type Models } from "@earendil-works/pi-ai/models";
 import { fauxAssistantMessage, fauxProvider, fauxText } from "@earendil-works/pi-ai/providers/faux";
+import { MemoryStorage } from "@earendil-works/pi-durable";
+import { NodeExecutionEnv } from "@earendil-works/pi-durable/env/node";
 import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite/node";
+import { CodingTools } from "@earendil-works/pi-durable/tools";
 import { afterEach, describe, expect, it } from "vitest";
 import { context } from "../src/context.ts";
 import { openSession, type Session } from "../src/session.ts";
 import { tempDir } from "./fixtures.ts";
-import { FAUX_MODEL } from "./harness-fixture.ts";
+import {
+  callThenAnswer,
+  FAUX_MODEL,
+  fauxModels as scriptedModels,
+  textOf,
+  toolResults,
+} from "./harness-fixture.ts";
 
 const fauxModels = (answers: string[]): Models => {
   const faux = fauxProvider();
@@ -15,6 +24,9 @@ const fauxModels = (answers: string[]): Models => {
   models.setProvider(faux.provider);
   return models;
 };
+
+const nodeEnv = ({ cwd }: { cwd?: string }): NodeExecutionEnv =>
+  new NodeExecutionEnv({ cwd: cwd ?? process.cwd() });
 
 describe("openSession", () => {
   let cleanup: (() => Promise<void>) | undefined;
@@ -29,6 +41,7 @@ describe("openSession", () => {
         models: fauxModels(answers),
         extensions: [],
         agent: { model: FAUX_MODEL, cwd: tmp.dir },
+        env: nodeEnv,
       });
 
     const first = await open(["one"]);
@@ -55,10 +68,35 @@ describe("openSession", () => {
         models: fauxModels([]),
         extensions: [],
         agent: { model: FAUX_MODEL, cwd },
+        env: nodeEnv,
       });
     await (await open("/first")).harness.close(context);
     const second = await open("/second");
     expect((await second.root.agent(context)).cwd).toBe("/second");
     await second.harness.close(context);
+  });
+
+  it("runs the agent's tools in the environment its env hook gives, at the agent's cwd", async () => {
+    const tmp = await tempDir();
+    cleanup = tmp.cleanup;
+    const { faux, models } = scriptedModels();
+    faux.setResponses(callThenAnswer("bash", { command: "pwd" }, "done"));
+    const asked: (string | undefined)[] = [];
+    const session = await openSession(new MemoryStorage(), {
+      models,
+      extensions: [CodingTools],
+      agent: { model: FAUX_MODEL, cwd: tmp.dir },
+      env: (state) => {
+        asked.push(state.cwd);
+        return nodeEnv(state);
+      },
+    });
+
+    await (await session.root.submit({ type: "input", content: "go" }, context)).wait(context);
+    const [result] = await toolResults(session.harness);
+    await session.harness.close(context);
+
+    expect(asked).toContain(tmp.dir);
+    expect(result === undefined ? "" : textOf(result)).toContain(tmp.dir);
   });
 });

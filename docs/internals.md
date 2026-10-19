@@ -10,16 +10,53 @@ harness").
 
 ```
 malebolge (daemon, owns the session)                     clients
- ├─ Harness on SQLite  ~/.local/state/satan/durable/         malebolge-attach (terminal)
+ ├─ Harness on SQLite  ~/.local/state/satan/durable/<profile>/   malebolge-attach (terminal)
  ├─ persona section    ~/satan-corpus scaffold + interactive  M-x malebolge-attach (comint)
+ │                     + prompts/env/<profile>.txt
  ├─ project_context section   AGENTS.md chain, .pi/APPEND_SYSTEM.md (read once)
  ├─ skills section     SKILL.md listings from $MALEBOLGE_SKILLS
  ├─ cwd section        "Current working directory: …"
- ├─ CodingTools        read · write · edit · bash
- ├─ grep               ripgrep through the execution environment
+ ├─ CodingTools        read · write · edit · bash  ┐ through daemonEnv's
+ ├─ grep               ripgrep                     ┘ environment (below)
  ├─ satan extension    pi-mcp client ──unix socket──▶ emacs satan-mcp
- └─ $XDG_RUNTIME_DIR/satan/durable.sock ◀──NDJSON──── clients
+ └─ $XDG_RUNTIME_DIR/satan/durable/<profile>/durable.sock ◀──NDJSON── clients
 ```
+
+## Execution profiles and the room
+
+`resolveConfig` (`src/config.ts`) turns `MALEBOLGE_PROFILE` into an
+`Execution`; `daemonEnv` (`src/daemon-env.ts`) is the one place an
+`Execution` becomes the tools' environment, their cwd and the startup
+project context.
+
+```
+host:  env(state) ─▶ NodeExecutionEnv(cwd = state.cwd ?? launch dir)
+room:  env(state) ─▶ RemoteExecutionEnv "pi-env:daemon-room", cwd = state.cwd ?? home
+                       └─ ObservedConnection(reword, logs) ─┐
+       readContext ─▶ roomShell ─▶ (its own ObservedConnection) ─┤
+                                                             DaemonConnection (one, lazy)
+                                                               ssh ─▶ pi-env in the room
+                                                               (directLaunch: no `session`)
+```
+
+- **One connection for the daemon's life.** Nothing runs until the first
+  call; a failed start fails that call and the next call tries again.
+  `close` at shutdown closes it. The daemon never starts the room.
+- **An `ObservedConnection` always wraps a `DaemonConnection` directly.** Its
+  trust check reads `trustFailure()` from its immediate inner connection, so
+  a nested wrapper would report a host-key refusal as a lost room
+  (satan RV-035 F-4; the control test is in `test/daemon-env.test.ts`).
+- **Room faults are worded once, at the connection seam** (`reword`), so
+  `read`, `write`, `edit`, `bash` and `grep` alike see `room unavailable: …`
+  (lost, no trust failure) or `room host key untrusted: …` (the start failed
+  host-key checking; never reported as unavailable). Both are logged. Any
+  other failure keeps pi-env's message. The runner passes no reword.
+- **Startup context in the room** is read from the home only, through the
+  room's source reader, every exec bounded (`FETCH_LIMITS` / `HEAD_LIMITS`).
+  A down or untrusted room is logged and yields no project context; the
+  daemon starts anyway.
+- **Gateway socket.** When `MALEBOLGE_GATEWAY_SOCKET` is set and absent,
+  start is refused (`gateway socket missing: …`). Presence only.
 
 ## Jail
 
@@ -29,6 +66,8 @@ The daemon runs in `jailed-malebolge` (`~/dev/satan/flake.nix`), started by
 `$XDG_RUNTIME_DIR/satan/`. Its only secret is the gateway key file, bound
 read-only with the catalog; `MALEBOLGE_GATEWAY_KEY_FILE` and
 `MALEBOLGE_GATEWAY_CATALOG` point at them. No provider keys, no `op run`.
+It sets no `MALEBOLGE_PROFILE` yet, so it refuses to start until it becomes
+the room profile (satan SL-027 PHASE-05).
 
 ## Protocol
 
@@ -73,9 +112,10 @@ One JSON message per line on the daemon socket.
   (outermost first), plus `.pi/APPEND_SYSTEM.md` at the cwd. Each source is
   capped at 64 KiB (`SOURCE_CAP_BYTES`) with a `[truncated at 65536 bytes]`
   marker; an empty source, and an empty set, are omitted.
-  - *Daemon:* read once at start with a node fs reader (`stat` decides what
-    is a regular file, so a FIFO is never opened); edits need a restart. It
-    does not run doctrine.
+  - *Daemon:* read once at start; edits need a restart. It does not run
+    doctrine. Host profile: a node fs reader (`stat` decides what is a
+    regular file, so a FIFO is never opened). Room profile: the room's
+    source reader over the home only, no root walk (above).
   - *Runner:* read in the room during `preparing`, as `readyRoom`'s final
     step (`src/runner/project-context.ts`), through the room's shell: one
     `stat -L` from the clone root over absolute paths (a clone-root-only

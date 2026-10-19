@@ -361,7 +361,7 @@ export async function runGrep(
     return collector.render(0);
   }
   if (result.error.code === "spawn_error") {
-    return { text: `ripgrep (rg) is not available: ${result.error.message}`, isError: true };
+    return { text: `rg could not run: ${result.error.message}`, isError: true };
   }
   throw result.error;
 }

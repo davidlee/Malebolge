@@ -7,6 +7,8 @@ import {
   Connection,
   HostKeyChangedError,
   HostKeyUnknownError,
+  isConnectionLost,
+  RemoteError,
   sshArguments,
 } from "@earendil-works/pi-env";
 import { describe, expect, it } from "vitest";
@@ -17,15 +19,19 @@ import {
   ObservedConnection,
   observedEnv,
   type RoomConnection,
+  type RoomFault,
   sshTarget,
 } from "../../src/room/connection.ts";
 import { context } from "../../src/context.ts";
 import { tempDir } from "../fixtures.ts";
 import {
   DAEMON,
+  FailingConnection,
   fakeHelpers,
   ignoreLost,
   localConnection,
+  lostConnection,
+  lostError,
   recordingObserver,
 } from "./connection-fixture.ts";
 
@@ -204,5 +210,59 @@ describe("the daemon connection under an ObservedConnection (VT-5, EX-5)", () =>
     connection.close();
 
     expect(observer.seen).toEqual(["lost unknown"]);
+  });
+});
+
+describe("the observed connection's reword (design §4.4)", () => {
+  /** A reword that names the fault and keeps the error's fields. */
+  const reword = (fault: RoomFault, error: RemoteError): RemoteError =>
+    new RemoteError({ ...error.fields, message: `${fault}: ${error.message}` });
+
+  it("a lost connection with no trust failure is rethrown reworded unavailable, still lost", async () => {
+    const connection = new ObservedConnection(lostConnection(), ignoreLost, reword);
+
+    const error: unknown = await connection.info().catch((caught: unknown) => caught);
+    connection.close();
+
+    expect(error).toBeInstanceOf(RemoteError);
+    expect(error instanceof RemoteError && error.message).toMatch(/^unavailable: /);
+    expect(isConnectionLost(error)).toBe(true);
+  });
+
+  it("a start that failed host-key checking is reworded untrusted, never unavailable", async () => {
+    const inner = new DaemonConnection(() => Promise.reject(new HostKeyChangedError("changed")));
+    const connection = new ObservedConnection(inner, ignoreLost, reword);
+
+    await expect(connection.info()).rejects.toThrow(/^untrusted: /);
+    connection.close();
+  });
+
+  it("any other failure is rethrown unchanged", async () => {
+    const other = new Error("refused");
+    const connection = new ObservedConnection(
+      new FailingConnection(() => other),
+      ignoreLost,
+      reword,
+    );
+
+    await expect(connection.info()).rejects.toBe(other);
+  });
+
+  it("without a reword a lost failure is rethrown unchanged (the runner's case)", async () => {
+    const lost = lostError();
+    const connection = new ObservedConnection(new FailingConnection(() => lost), ignoreLost);
+
+    await expect(connection.info()).rejects.toBe(lost);
+  });
+
+  it("an observed env carries the reword to the tool's error text", async () => {
+    const lost = lostConnection();
+    const env = observedEnv(lost, ignoreLost, { id: "pi-env:t", cwd: "/", reword });
+
+    const result = await env.exec(["true"], {}, context);
+    lost.close();
+
+    expect(result.ok).toBe(false);
+    expect(result.ok ? "" : result.error.message).toMatch(/^unavailable: /);
   });
 });
