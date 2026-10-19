@@ -19,6 +19,7 @@ format:
 
 # Run the daemon (owns the durable session).
 daemon:
+  emacsclient -e "(satan-mcp-start)"
   node src/daemon-main.ts
 
 # Run the patch-job runner (config path from $SATAN_RUNNER_CONFIG).
