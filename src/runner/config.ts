@@ -12,11 +12,13 @@ import {
   optionalPositiveNumber,
   optionalRecord,
   optionalString,
+  isStringArray,
   required,
   requireString,
   setDefined,
 } from "../fields.ts";
 import { isRecord, type JsonRecord } from "../json.ts";
+import { normaliseAllowedEntry } from "./classify.ts";
 import { messageOf } from "./errors.ts";
 
 export const CEILING_KEYS = [
@@ -54,6 +56,15 @@ export interface PolicyLayer {
   ceilings: Partial<Ceilings>;
   /** Prompt fragment; modes and repos only. */
   prompt?: string;
+}
+
+/** A mode's bound on one axis: a closed list, or "*" for unbounded (DEC-069). */
+export type Scope = readonly string[] | "*";
+
+/** A mode: a ladder rung plus the repos and paths a job under it may touch. */
+export interface ModeConfig extends PolicyLayer {
+  repos: Scope;
+  allowedPaths: Scope;
 }
 
 export interface DefaultsLayer extends PolicyLayer {
@@ -138,7 +149,7 @@ export interface RunnerConfig {
   promptFile: string;
   maxima: Maxima;
   defaults: DefaultsLayer;
-  modes: ReadonlyMap<string, PolicyLayer>;
+  modes: ReadonlyMap<string, ModeConfig>;
   /** Keyed by the tag rule's name, e.g. `cheap+code`. */
   tags: ReadonlyMap<string, PolicyLayer>;
   repos: ReadonlyMap<string, RepoConfig>;
@@ -238,6 +249,49 @@ function readLayer(fields: JsonRecord, where: string, extra: readonly string[]):
       },
     ),
   );
+}
+
+/**
+ * The scope at `key`: "*", or a non-empty list of strings, each run through
+ * `normalise`. "*" as a list member is refused: it is a mistaken unbounded marker.
+ */
+function readScope(fields: JsonRecord, key: string, normalise: (entry: string) => string): Scope {
+  const value = required(fields, key, (f, k) => f[k]);
+  if (value === "*") {
+    return "*";
+  }
+  if (!isStringArray(value) || value.length === 0) {
+    throw new Error(`${key} must be "*" or a non-empty list of strings`);
+  }
+  return within(key, () =>
+    value.map((entry) => {
+      if (entry === "*") {
+        throw new Error('"*" is not a list member; write the bare string "*" for unbounded');
+      }
+      return normalise(entry);
+    }),
+  );
+}
+
+/** A `[mode.*]` table: a ladder rung plus its required scopes, `repos` among `repoNames`. */
+function readMode(
+  fields: JsonRecord,
+  name: string,
+  repoNames: ReadonlyMap<string, unknown>,
+): ModeConfig {
+  const where = `mode.${name}`;
+  const layer = readLayer(fields, where, ["prompt", "repos", "allowed_paths"]);
+  const knownRepo = (entry: string): string => {
+    if (!repoNames.has(entry)) {
+      throw new Error(`unknown repo ${JSON.stringify(entry)}`);
+    }
+    return entry;
+  };
+  return within(where, () => ({
+    ...layer,
+    repos: readScope(fields, "repos", knownRepo),
+    allowedPaths: readScope(fields, "allowed_paths", normaliseAllowedEntry),
+  }));
 }
 
 function readDefaults(fields: JsonRecord): DefaultsLayer {
@@ -383,6 +437,7 @@ export function parseRunnerConfig(text: string, home: string): RunnerConfig {
     within("config", () => required(doc, key, optionalRecord));
   const doorTable = within("config", () => optionalRecord(doc, "door"));
   const door = doorTable === undefined ? undefined : readDoor(doorTable, home);
+  const repos = readNamed(doc, "repo", (fields, name) => readRepo(fields, name, home, door?.kind));
   return {
     ...within("config", () => ({
       enabled: required(doc, "enabled", optionalBoolean),
@@ -391,9 +446,9 @@ export function parseRunnerConfig(text: string, home: string): RunnerConfig {
     gateway: readGateway(table("gateway"), home),
     maxima: readMaxima(table("maxima")),
     defaults: readDefaults(table("defaults")),
-    modes: readNamed(doc, "mode", (fields, name) => readLayer(fields, `mode.${name}`, ["prompt"])),
+    modes: readNamed(doc, "mode", (fields, name) => readMode(fields, name, repos)),
     tags: readNamed(doc, "tag", (fields, name) => readLayer(fields, `tag.${name}`, [])),
-    repos: readNamed(doc, "repo", (fields, name) => readRepo(fields, name, home, door?.kind)),
+    repos,
     ...(door === undefined ? {} : { door }),
   };
 }

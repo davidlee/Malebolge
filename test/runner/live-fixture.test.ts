@@ -60,11 +60,11 @@ describe("deployedPaths", () => {
 });
 
 describe("smokeSubmit", () => {
-  it("asks for one exact file on goad-walk, never a prefix", () => {
+  it("asks, as interactive, for one exact file on goad-walk, never a prefix", () => {
     const request = smokeSubmit({ submissionId: "s-1", date: "2026-10-19", slow: false });
     expect(request).toMatchObject({
       submissionId: "s-1",
-      mode: "fix",
+      mode: "interactive",
       repo: "goad-walk",
       allowedPaths: ["SMOKE.md"],
     });

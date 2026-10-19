@@ -10,7 +10,7 @@ import {
 } from "../../src/runner/policy.ts";
 import { composePrompt, type PromptJob } from "../../src/runner/prompt.ts";
 import { checkSubmit, parseRequest, type SubmitRequest } from "../../src/runner/protocol.ts";
-import { exampleConfig, HOME, variant } from "./config-fixture.ts";
+import { exampleConfig, FIX_SCOPE, HOME, scopedConfig, variant } from "./config-fixture.ts";
 import { codeOf } from "./refusal-fixture.ts";
 
 const MAXIMA: Ceilings = {
@@ -42,14 +42,23 @@ describe("policy ladder: layers", () => {
   });
 
   it("mode layer wins over [defaults]", () => {
-    const config = withTables('[mode.deep]\nmodel = "gateway/deep"\nthinking_level = "high"');
+    const config = withTables(
+      `[mode.deep]\nmodel = "gateway/deep"\nthinking_level = "high"\n${FIX_SCOPE}`,
+    );
     const policy = resolvePolicy(config, { ...JOB, mode: "deep" });
     expect(policy.model).toBe("gateway/deep");
     expect(policy.thinkingLevel).toBe("high");
   });
 
+  it("a mode's scope stays outside the ladder: the policy carries neither axis", () => {
+    const config = scopedConfig('repos = ["satan"]\nallowed_paths = ["src/"]');
+    const policy = resolvePolicy(config, JOB);
+    expect(policy).not.toHaveProperty("repos");
+    expect(policy).not.toHaveProperty("allowedPaths");
+  });
+
   it("tag rule wins over mode", () => {
-    const config = withTables('[mode.deep]\nmodel = "gateway/deep"');
+    const config = withTables(`[mode.deep]\nmodel = "gateway/deep"\n${FIX_SCOPE}`);
     const policy = resolvePolicy(config, { ...JOB, mode: "deep", tags: ["code", "cheap"] });
     expect(policy.model).toBe("gateway/cheap");
     expect(policy.ceilings.tokens).toBe(500_000);

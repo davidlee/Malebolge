@@ -50,7 +50,7 @@ export interface SmokeOptions {
   slow: boolean;
 }
 
-/** The smoke's `submit` fields: one `fix` job on goad-walk, one exact file. */
+/** The smoke's `submit` fields: one `interactive` job on goad-walk, one exact file. */
 export function smokeSubmit({ submissionId, date, slow }: SmokeOptions): JsonRecord & {
   directive: string;
 } {
@@ -59,7 +59,7 @@ export function smokeSubmit({ submissionId, date, slow }: SmokeOptions): JsonRec
     `\`runner smoke ${date}\`, and commit it. Change nothing else.`;
   return {
     submissionId,
-    mode: "fix",
+    mode: "interactive",
     repo: "goad-walk",
     allowedPaths: ["SMOKE.md"],
     directive: slow ? `First run \`sleep 120\` in the shell. Then: ${task}` : task,

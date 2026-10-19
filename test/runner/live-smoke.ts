@@ -3,7 +3,7 @@
 // `assistant` room: `SATAN_RUNNER_LIVE=1 just smoke-runner [--slow]`. Not part
 // of `just check` (not a `*.test.ts`).
 //
-// Submits one `fix` job on goad-walk over the control socket (it writes and
+// Submits one `interactive` job on goad-walk over the control socket (it writes and
 // commits SMOKE.md, the only allowed path), follows it by `status` every 2 s,
 // and prints each state, then the result and the job's audit, read from the
 // store without writing to it. Exits 0 only on `needs_review`.

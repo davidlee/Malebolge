@@ -13,6 +13,7 @@ import { type RunDeps, runJob } from "../../src/runner/run.ts";
 import { RunControl } from "../../src/runner/scheduler.ts";
 import type { Job } from "../../src/runner/store.ts";
 import { textOf } from "../harness-fixture.ts";
+import { narrowedModes } from "./config-fixture.ts";
 import {
   answer,
   call,
@@ -109,6 +110,19 @@ describe("runJob: submit to review (VT-1)", () => {
       "transition:needs_review",
     ]);
     expect(w.room.git("show", `job/${job.id}:src/a.ts`)).toBe("export {};");
+  });
+
+  it("an admitted job runs to preparing, its policy recorded, after its mode's scope narrowed", async () => {
+    const w = await runWorld({ modes: narrowedModes() });
+    w.faux.setResponses([writeAndCommit(), answer()]);
+
+    const queued = await w.submit();
+    const job = await settled(w, queued.id);
+
+    expect(kinds(await w.events(job.id))).toEqual(
+      expect.arrayContaining(["policy", "transition:preparing"]),
+    );
+    expect(job.state).toBe("needs_review");
   });
 
   it("submits the initial prompt with requestId = job id, recorded on running", async () => {

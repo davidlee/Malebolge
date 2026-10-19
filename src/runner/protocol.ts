@@ -15,7 +15,7 @@ import {
 } from "../fields.ts";
 import type { JsonRecord } from "../json.ts";
 import { CEILING_KEYS, type Ceilings, readCeilings, type RunnerConfig } from "./config.ts";
-import { normaliseAllowedEntry } from "./classify.ts";
+import { disallowedPaths, normaliseAllowedEntry } from "./classify.ts";
 import { type ErrorCode, isRunnerError, messageOf, RunnerError } from "./errors.ts";
 import { checkCeilingsWithinMaxima, configEntry } from "./policy.ts";
 import { isJobState, type JobState } from "./vocab.ts";
@@ -265,27 +265,48 @@ export const encodeError = (
 
 type SubmitCheck = (request: SubmitRequest, config: RunnerConfig) => void;
 
-function knownMode(request: SubmitRequest, config: RunnerConfig): void {
-  configEntry(config.modes, "mode", request.mode);
+/** The submit's repo and paths lie inside its mode's scope (DEC-069). */
+function withinModeScope(request: SubmitRequest, config: RunnerConfig): void {
+  const mode = configEntry(config.modes, "mode", request.mode);
+  const name = JSON.stringify(request.mode);
+  if (mode.repos !== "*" && !mode.repos.includes(request.repo)) {
+    throw new RunnerError(
+      "invalid_request",
+      `mode ${name} does not allow repo ${JSON.stringify(request.repo)}; ` +
+        `it allows: ${mode.repos.join(", ")}`,
+    );
+  }
+  if (mode.allowedPaths === "*") {
+    return;
+  }
+  const outside = disallowedPaths(request.allowedPaths, mode.allowedPaths);
+  if (outside.length > 0) {
+    throw new RunnerError(
+      "invalid_request",
+      `mode ${name} does not allow paths ${outside.join(", ")}; ` +
+        `it allows: ${mode.allowedPaths.join(", ")}`,
+    );
+  }
 }
 
 function ceilingsWithinMaxima(request: SubmitRequest, config: RunnerConfig): void {
   checkCeilingsWithinMaxima(request.ceilings, config.maxima.ceilings);
 }
 
-const SUBMIT_CHECKS: readonly SubmitCheck[] = [knownMode, ceilingsWithinMaxima];
+const SUBMIT_CHECKS: readonly SubmitCheck[] = [withinModeScope, ceilingsWithinMaxima];
 
 /**
- * `request` checked against `config`, with an omitted `baseRef` resolved to
+ * `request` checked against `config` (its mode's scope before the repo lookup, so a
+ * scoped mode answers a wrong repo with the repos it allows), with an omitted `baseRef` resolved to
  * the repo's default branch. Existence of the branch is the git layer's check.
  */
 export function checkSubmit(
   request: SubmitRequest,
   config: RunnerConfig,
 ): SubmitRequest & { baseRef: string } {
-  const repo = configEntry(config.repos, "repo", request.repo);
   for (const check of SUBMIT_CHECKS) {
     check(request, config);
   }
+  const repo = configEntry(config.repos, "repo", request.repo);
   return { ...request, baseRef: request.baseRef ?? repo.defaultBranch };
 }

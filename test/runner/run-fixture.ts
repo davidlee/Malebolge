@@ -171,6 +171,8 @@ export interface RunWorldOptions {
   usageOf?: GateDeps["usageOf"];
   /** The job's daemon connection, given the local one; e.g. one that loses chosen calls. */
   connection?: (local: Connection) => Connection;
+  /** The modes the process's config holds; default the example's. */
+  modes?: RunnerConfig["modes"];
   /** A store file that outlives the process, for `restart`; default `:memory:`. */
   path?: string;
   /**
@@ -280,10 +282,16 @@ interface Shared {
 
 interface ProcessOptions {
   enabled: boolean;
+  /** The modes this process's config holds. */
+  modes: RunnerConfig["modes"];
   /** Restarts open passive (`start.ts`); the first process schedules at once. */
   resume: boolean;
   crashAt?: string;
 }
+
+/** The modes a process under `options` holds: the example's unless `options` narrows them. */
+const modesOf = (options: RunWorldOptions): RunnerConfig["modes"] =>
+  options.modes ?? exampleConfig().modes;
 
 /** The rejoin's harness: the run's (as a test wraps it), plus `harness`'s views and `resume()`. */
 const rejoinHarness = (harness: Harness, run: RunDeps["harness"]): RejoinDeps["harness"] => ({
@@ -341,6 +349,7 @@ async function openProcess(shared: Shared, process: ProcessOptions): Promise<Run
   const example = exampleConfig();
   const config: RunnerConfig = {
     ...example,
+    modes: process.modes,
     defaults: { ...example.defaults, model: "faux/faux-1" },
     maxima: { ...example.maxima, maxRoomWaitS: options.maxRoomWaitS ?? 60 },
     repos: new Map([[NEW_JOB.repo, world.repo]]),
@@ -463,6 +472,7 @@ export async function runWorld(options: RunWorldOptions = {}): Promise<RunWorld>
   return openProcess(shared, {
     enabled: true,
     resume: true,
+    modes: modesOf(options),
     ...(options.crashAt === undefined ? {} : { crashAt: options.crashAt }),
   });
 }
@@ -482,10 +492,18 @@ export async function storeFile(): Promise<string> {
  */
 export async function restart(
   world: RunWorld,
-  { enabled, script = [] }: { enabled: boolean; script?: FauxResponseStep[] },
+  {
+    enabled,
+    script = [],
+    modes,
+  }: { enabled: boolean; script?: FauxResponseStep[]; modes?: RunnerConfig["modes"] },
 ): Promise<RunWorld> {
   await world.close();
-  const next = await openProcess(world.shared, { enabled, resume: false });
+  const next = await openProcess(world.shared, {
+    enabled,
+    resume: false,
+    modes: modes ?? modesOf(world.shared.options),
+  });
   next.faux.setResponses(script);
   await recoverHost(next.recoverDeps, enabled);
   next.scheduler.wake();

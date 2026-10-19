@@ -5,6 +5,7 @@ import {
   HOME,
   ROOM_TOML,
   roomVariant,
+  scopedConfig,
   variant,
 } from "./config-fixture.ts";
 
@@ -24,7 +25,12 @@ describe("parseRunnerConfig", () => {
       thinkingLevel: "low",
       ceilings: { cost_usd: 1.5 },
     });
-    expect(config.modes.get("fix")?.prompt).toBe("Fix mode: keep the change small.");
+    expect(config.modes.get("fix")).toEqual({
+      prompt: "Fix mode: keep the change small.",
+      ceilings: {},
+      repos: "*",
+      allowedPaths: "*",
+    });
     expect(config.repos.get("satan")).toEqual({
       name: "satan",
       path: "/home/test/dev/satan",
@@ -101,6 +107,14 @@ model = "m"
     ["mode", "[mode.fix]", "[mode.fix]\nextra = 1", /mode\.fix.*extra/],
     ["tag", 'model = "gateway/cheap"', 'model = "gateway/cheap"\nextra = 1', /extra/],
     ["repo", 'path = "~/dev/satan"', 'path = "~/dev/satan"\nextra = 1', /repo\.satan.*extra/],
+    ["tag scope", 'model = "gateway/cheap"', 'model = "gateway/cheap"\nrepos = "*"', /repos/],
+    [
+      "repo scope",
+      'path = "~/dev/satan"',
+      'path = "~/dev/satan"\nallowed_paths = "*"',
+      /repo\.satan.*allowed_paths/,
+    ],
+    ["defaults scope", 'thinking_level = "low"', 'thinking_level = "low"\nrepos = "*"', /repos/],
     ["door", 'identity = "~/.ssh/id"', 'identity = "~/.ssh/id"\nextra = 1', /door.*extra/],
   ])("refuses an unknown %s key", (_label, from, to, reason) => {
     expect(() => parseRunnerConfig(variant(from, to), HOME)).toThrow(reason);
@@ -298,5 +312,36 @@ describe("parseRunnerConfig: the door kind (DEC-065)", () => {
     ["a string transfer_timeout_s", "transfer_timeout_s = 600", 'transfer_timeout_s = "600"'],
   ])("refuses %s", (_label, from, to) => {
     expect(() => parseRunnerConfig(roomVariant(from, to), HOME)).toThrow(/timeout_s/);
+  });
+});
+
+describe("parseRunnerConfig: mode scope (DEC-069)", () => {
+  it("normalises list scopes and keeps their order", () => {
+    const config = scopedConfig('repos = ["satan"]\nallowed_paths = ["./docs/", "a.el"]');
+    expect(config.modes.get("fix")).toMatchObject({
+      repos: ["satan"],
+      allowedPaths: ["docs/", "a.el"],
+    });
+  });
+
+  it.each([
+    ["missing repos", 'allowed_paths = "*"', /mode\.fix.*repos/],
+    ["missing allowed_paths", 'repos = "*"', /mode\.fix.*allowed_paths/],
+    ["an empty list", 'repos = []\nallowed_paths = "*"', /mode\.fix.*repos/],
+    ["a non-string member", 'repos = "*"\nallowed_paths = [1]', /mode\.fix.*allowed_paths/],
+    ['a string other than "*"', 'repos = "satan"\nallowed_paths = "*"', /mode\.fix.*repos/],
+    ['"*" as an allowed_paths member', 'repos = "*"\nallowed_paths = ["*"]', /allowed_paths.*"\*"/],
+    ['"*" as a repos member', 'repos = ["*"]\nallowed_paths = "*"', /repos.*"\*"/],
+    [
+      "an unknown repo",
+      'repos = ["nope"]\nallowed_paths = "*"',
+      /mode\.fix.*repos.*unknown repo "nope"/,
+    ],
+    ["an absolute path", 'repos = "*"\nallowed_paths = ["/etc/"]', /mode\.fix.*allowed_paths/],
+    ["a .. path", 'repos = "*"\nallowed_paths = ["../x"]', /mode\.fix.*allowed_paths/],
+    ["an empty path", 'repos = "*"\nallowed_paths = [""]', /mode\.fix.*allowed_paths/],
+    ["a padded path", 'repos = "*"\nallowed_paths = [" a"]', /mode\.fix.*allowed_paths/],
+  ])("refuses %s, naming mode.fix and the key", (_label, scope, reason) => {
+    expect(() => scopedConfig(scope)).toThrow(reason);
   });
 });

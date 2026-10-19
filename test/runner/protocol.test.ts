@@ -7,7 +7,7 @@ import {
   peekRequestId,
   type Request,
 } from "../../src/runner/protocol.ts";
-import { exampleConfig } from "./config-fixture.ts";
+import { exampleConfig, narrowedModes, scopedConfig } from "./config-fixture.ts";
 import { codeOf } from "./refusal-fixture.ts";
 
 const SUBMIT = {
@@ -231,13 +231,64 @@ describe("checkSubmit", () => {
   });
 
   it("refuses a repo missing from the config as invalid_request", () => {
-    expect(codeOf(() => checkSubmit(submit({ repo: "elsewhere" }), config))).toBe(
-      "invalid_request",
-    );
+    const request = submit({ repo: "elsewhere" });
+    expect(codeOf(() => checkSubmit(request, config))).toBe("invalid_request");
+    expect(() => checkSubmit(request, config)).toThrow(/unknown repo "elsewhere"/);
   });
 
   it("refuses a mode with no [mode.*] table as invalid_request", () => {
-    expect(codeOf(() => checkSubmit(submit({ mode: "bogus" }), config))).toBe("invalid_request");
+    const request = submit({ mode: "bogus" });
+    expect(codeOf(() => checkSubmit(request, config))).toBe("invalid_request");
+    expect(() => checkSubmit(request, config)).toThrow(/unknown mode "bogus"/);
+  });
+
+  describe("mode scope (DEC-069)", () => {
+    const scoped = (paths: string): ReturnType<typeof exampleConfig> =>
+      scopedConfig(`repos = ["satan"]\nallowed_paths = ${paths}`);
+
+    it.each([
+      ["a prefix covers itself", '["satan/"]', ["satan/"], true],
+      ["a prefix covers a file under it", '["satan/"]', ["satan/satan-broker.el"], true],
+      ["a prefix does not cover the bare name", '["satan/"]', ["satan"], false],
+      ["a prefix does not cover a sibling", '["satan/"]', ["satanic/"], false],
+      ["an exact file covers itself", '["a.el"]', ["a.el"], true],
+      ["an exact file does not cover a prefix", '["a.el"]', ["a.el/"], false],
+    ])("%s", (_label, modeAllows, submitted, admitted) => {
+      const request = submit({ allowedPaths: submitted });
+      const run = (): unknown => checkSubmit(request, scoped(modeAllows));
+      if (admitted) {
+        expect(run).not.toThrow();
+      } else {
+        expect(codeOf(run)).toBe("invalid_request");
+        expect(run).toThrow(/does not allow paths .*; it allows: /);
+      }
+    });
+
+    it("names only the uncovered entries, in input order", () => {
+      const request = submit({ allowedPaths: ["satan/x.el", "docs/", "other.el"] });
+      expect(() => checkSubmit(request, scoped('["satan/"]'))).toThrow(
+        /does not allow paths docs\/, other\.el; it allows: satan\//,
+      );
+    });
+
+    it("answers a repo outside the mode, and an unknown repo, with the repos the mode allows", () => {
+      const request = submit({ repo: "elsewhere" });
+      expect(codeOf(() => checkSubmit(request, scoped('["satan/"]')))).toBe("invalid_request");
+      expect(() => checkSubmit(request, scoped('["satan/"]'))).toThrow(
+        /mode "fix" does not allow repo "elsewhere"; it allows: satan/,
+      );
+    });
+
+    it('"*" admits any normal path', () => {
+      const request = submit({ allowedPaths: ["any/where/", "x.el"] });
+      expect(() => checkSubmit(request, config)).not.toThrow();
+    });
+
+    it("refuses NEW_JOB's shape once its mode's paths narrow", () => {
+      const request = submit({ allowedPaths: ["src/"] });
+      const narrowed = { ...config, modes: narrowedModes() };
+      expect(() => checkSubmit(request, narrowed)).toThrow(/does not allow paths src\//);
+    });
   });
 
   it.each(["toString", "__proto__", "constructor"])(

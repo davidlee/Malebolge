@@ -22,6 +22,7 @@ import { type Connection, HostKeyChangedError } from "@earendil-works/pi-env";
 import { describe, expect, it } from "vitest";
 import { context } from "../../src/context.ts";
 import { conversationIdOf, submissionRecordOf } from "../../src/runner/durable-ids.ts";
+import type { RunnerConfig } from "../../src/runner/config.ts";
 import { RESUME_TEXT } from "../../src/runner/pause.ts";
 import { recordedPolicy } from "../../src/runner/policy.ts";
 import type { RunDeps } from "../../src/runner/run.ts";
@@ -36,6 +37,7 @@ import {
 import type { Job, JobEvent } from "../../src/runner/store.ts";
 import { WARNING_TEXT } from "../../src/runner/warning.ts";
 import { textOf } from "../harness-fixture.ts";
+import { narrowedModes } from "./config-fixture.ts";
 import {
   answer,
   call,
@@ -344,9 +346,10 @@ const WORK = (): AssistantMessage[] => [writeAndCommit(), answer()];
 async function rejoined(
   { w, id, room }: Crashed,
   script: FauxResponseStep[] = WORK(),
+  modes?: RunnerConfig["modes"],
 ): Promise<{ r: RunWorld; job: Job }> {
   room.calls.length = 0;
-  const r = await restart(w, { enabled: true, script });
+  const r = await restart(w, { enabled: true, script, ...(modes === undefined ? {} : { modes }) });
   return { r, job: await settled(r, id) };
 }
 
@@ -462,6 +465,14 @@ describe("enabled restart: the in-flight job rejoined, phase B then resume() (VT
     const [running] = runningPayloads(await r.events(c.id));
     expect(running).toMatchObject({ requestId: c.id });
     expect(r.faux.state.callCount).toBe(2);
+  });
+
+  it("a held job rejoins after a restart whose config scope narrowed its mode", async () => {
+    const c = await crashedAt("prompt", []);
+
+    const { job } = await rejoined(c, WORK(), narrowedModes());
+
+    expect(job.state).toBe("needs_review");
   });
 
   it("row 4: job/<id> at another oid: failed job_branch_moved, nothing asked of the harness (R2)", async () => {

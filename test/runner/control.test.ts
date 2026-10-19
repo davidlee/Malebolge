@@ -2,7 +2,7 @@ import { chmod, mkdir, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it, onTestFinished } from "vitest";
 import { isRecord, type JsonRecord } from "../../src/json.ts";
-import { parseRunnerConfig } from "../../src/runner/config.ts";
+import { parseRunnerConfig, type RunnerConfig } from "../../src/runner/config.ts";
 import { harnessConversations } from "../../src/runner/conversations.ts";
 import { type ControlDeps, serveControl } from "../../src/runner/control.ts";
 import { StartRefused } from "../../src/runner/errors.ts";
@@ -11,7 +11,7 @@ import type { Job, NewJob } from "../../src/runner/rows.ts";
 import { JobStore, openRunnerStore, type RunnerStore } from "../../src/runner/store.ts";
 import { tempDir } from "../fixtures.ts";
 import { openFauxHarness } from "../harness-fixture.ts";
-import { exampleConfig, HOME, variant } from "./config-fixture.ts";
+import { exampleConfig, HOME, narrowedModes, variant } from "./config-fixture.ts";
 import { type ControlClient, controlClient, errorCode } from "./control-fixture.ts";
 import { tempRepo, type TestRepo } from "./git-fixture.ts";
 import { closeHarness } from "./runner-fixture.ts";
@@ -40,6 +40,8 @@ interface Runner {
 
 interface RunnerOptions {
   enabled?: boolean;
+  /** The modes the server's config holds; default the example's. */
+  modes?: RunnerConfig["modes"];
   repos?: RepoReader;
   /** The job store the server sees, over the test's database. */
   jobs?: (store: RunnerStore) => JobStore;
@@ -59,7 +61,11 @@ async function runner(options: RunnerOptions = {}): Promise<Runner> {
   const logs: string[] = [];
   const jobs = options.jobs?.(store) ?? store.jobs;
   const deps: ControlDeps = {
-    config: { ...config, enabled: options.enabled ?? true },
+    config: {
+      ...config,
+      enabled: options.enabled ?? true,
+      ...(options.modes === undefined ? {} : { modes: options.modes }),
+    },
     jobs,
     conversations: harnessConversations(harness),
     repos: options.repos ?? gitRepoReader,
@@ -214,6 +220,18 @@ describe("submit", () => {
     expect(again["jobId"]).toBe(first["jobId"]);
     expect(await store.jobs.list()).toHaveLength(1);
     expect(wakes()).toBe(1);
+  });
+
+  it("a replayed submissionId returns its job after the mode's scope narrowed: no re-admission", async () => {
+    const { client, store, wakes } = await runner({ modes: narrowedModes() });
+    const seeded = await seed(store, [], { submissionId: NEW_JOB.submissionId });
+    const again = ok(await client.call("submit", SUBMIT));
+    expect(again["jobId"]).toBe(seeded.id);
+    expect(await store.jobs.list()).toHaveLength(1);
+    expect(wakes()).toBe(0);
+    // Positive control: the same fields under a fresh submissionId do bite.
+    const fresh = await client.call("submit", { ...SUBMIT, submissionId: "sat-fresh" });
+    expect(errorCode(fresh)).toBe("invalid_request");
   });
 
   it("returns the existing job even when its base branch has since gone", async () => {

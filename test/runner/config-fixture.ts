@@ -4,6 +4,9 @@ import { parseRunnerConfig, type RunnerConfig } from "../../src/runner/config.ts
 
 export const HOME = "/home/test";
 
+/** [mode.fix]'s scope: unbounded, so tests not about scope admit anything. */
+export const FIX_SCOPE = 'repos = "*"\nallowed_paths = "*"';
+
 /** Everything but the repos and the door: shared by both door kinds. */
 const COMMON_TOML = `
 enabled = true
@@ -29,6 +32,7 @@ cost_usd = 1.5
 
 [mode.fix]
 prompt = "Fix mode: keep the change small."
+${FIX_SCOPE}
 
 [tag."cheap+code"]
 model = "gateway/cheap"
@@ -91,6 +95,14 @@ export const variant = (from: string, to: string): string => replaced(EXAMPLE_TO
 
 /** The room example with `from` replaced by `to`. */
 export const roomVariant = (from: string, to: string): string => replaced(ROOM_TOML, from, to);
+
+/** The slot example with [mode.fix]'s scope lines replaced by `scope`. */
+export const scopedConfig = (scope: string): RunnerConfig =>
+  parseRunnerConfig(variant(FIX_SCOPE, scope), HOME);
+
+/** Modes under which NEW_JOB (repo satan, paths src/) is no longer admissible. */
+export const narrowedModes = (): RunnerConfig["modes"] =>
+  scopedConfig('repos = ["satan"]\nallowed_paths = ["docs/"]').modes;
 
 export const exampleConfig = (): RunnerConfig => parseRunnerConfig(EXAMPLE_TOML, HOME);
 
