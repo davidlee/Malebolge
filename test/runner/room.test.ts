@@ -602,12 +602,13 @@ const SRC = join(import.meta.dirname, "../../src");
 const DOOR_WORDS = /\bcapsule|\bslot|\bdoor/i;
 /**
  * Telling the door kinds apart (SL-027 design §4.1): `kind` compared with a
- * kind, a key only one kind has (`session_path`, the room timeouts), or
- * either kind's door config type. A bare quoted "room" is not one: the
- * execution profile of that name is no door kind.
+ * kind or a `case` on one, a key only one kind has (`session_path`, the room
+ * timeouts), or either kind's door config type. A bare quoted "room" is not
+ * one: the execution profile of that name is no door kind. Who may import the
+ * room door's parser is test/structure.test.ts's rule, not this text match.
  */
 const KIND_WORDS =
-  /\bkind\b\W{1,8}["'](?:slot|room)["']|\bsession_?path|\b(?:probe|transfer)_?timeout_?s\b|\b(?:slot|room)DoorConfig\b/i;
+  /\b(?:kind\b\W{1,8}|case\s+)["'](?:slot|room)["']|\bsession_?path|\b(?:probe|transfer)_?timeout_?s\b|\b(?:slot|room)DoorConfig\b/i;
 
 function sourceFiles(dir: string, prefix = ""): string[] {
   return readdirSync(dir, { withFileTypes: true }).flatMap((entry) =>
@@ -643,6 +644,8 @@ describe("door knowledge (EX-10)", () => {
     expect(KIND_WORDS.test('door.kind === "room"')).toBe(true);
     expect(KIND_WORDS.test("kind: 'slot'")).toBe(true);
     expect(KIND_WORDS.test("RoomDoorConfig")).toBe(true);
+    expect(KIND_WORDS.test('switch (door.kind) { case "slot": }')).toBe(true);
+    expect(KIND_WORDS.test("case 'room':")).toBe(true);
     expect(KIND_WORDS.test('const PROFILES = ["host", "room"] as const;')).toBe(false);
     expect(KIND_WORDS.test('profile === "room"')).toBe(false);
     expect(KIND_WORDS.test("interface RoomDoor {")).toBe(false);

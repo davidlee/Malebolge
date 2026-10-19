@@ -26,6 +26,10 @@ const RUNNER_ROOTS = [
 /** Root modules src/room/ may import. */
 const ROOM_ROOTS = ["context", "fields", "json", "project-context", "truncate"];
 
+/** The room door's parser and facts (design §4.1), and the modules that may read them. */
+const ROOM_DOOR = "room/door.ts";
+const ROOM_DOOR_READERS = ["runner/config.ts", "runner/door.ts"];
+
 /** Source text by path relative to src/. */
 type Sources = Readonly<Record<string, string>>;
 
@@ -71,7 +75,11 @@ function violations(sources: Sources): string[] {
   return Object.entries(sources)
     .flatMap(([file, source]) =>
       targets(file, source)
-        .filter((target) => !ALLOWS[tierOf(file)](target, file))
+        .filter(
+          (target) =>
+            !ALLOWS[tierOf(file)](target, file) ||
+            (target === ROOM_DOOR && !ROOM_DOOR_READERS.includes(file)),
+        )
         .map((target) => `${file} -> ${target}`),
     )
     .sort();
@@ -136,6 +144,15 @@ describe("violations: the allowlist checker", () => {
       "room/shell.ts -> models.ts",
       "room/shell.ts -> runner/env.ts",
     ]);
+  });
+
+  it("rejects importing the room door outside its readers", () => {
+    const source = 'import { readRoomDoor } from "../room/door.ts";';
+    expect(rejects("runner/prepare.ts", source)).toEqual(["runner/prepare.ts -> room/door.ts"]);
+    expect(rejects("room/shell.ts", 'import { RoomDoor } from "./door.ts";')).toEqual([
+      "room/shell.ts -> room/door.ts",
+    ]);
+    expect(rejects("runner/config.ts", source)).toEqual([]);
   });
 
   it("accepts the runner importing room/, a listed root module and packages", () => {
