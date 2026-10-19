@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // malebolge: own SATAN's durable interactive session and serve it on a socket.
 
-import { mkdirSync } from "node:fs";
+import { mkdirSync, readFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite/node";
 import { resolveConfig } from "./config.ts";
@@ -22,7 +22,8 @@ import { loadSkills } from "./skills.ts";
 
 const log = (text: string): boolean => process.stderr.write(`malebolge: ${text}\n`);
 
-const config = resolveConfig(process.env, process.cwd());
+const config = resolveConfig(process.env, process.cwd(), (path) => readFileSync(path, "utf8"));
+const persona = personaFiles(config.corpusRoot, config.execution.profile);
 const skills = loadSkills(config.skillDirs, log);
 // Read once: a context file edit takes a restart.
 const projectContext = renderProjectContext(
@@ -45,7 +46,7 @@ mkdirSync(dirname(config.daemonSocket), { recursive: true });
 const session = await openSession(await openNodeSqliteStorage(config.storagePath), {
   models,
   extensions: daemonExtensions({
-    personaFiles: personaFiles(config.corpusRoot),
+    personaFiles: persona,
     projectContext,
     skills,
     cwd: config.cwd,

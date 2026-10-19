@@ -4,7 +4,6 @@
 // so a misspelt key refuses the config instead of being ignored (I13).
 
 import type { ThinkingLevel } from "@earendil-works/pi-ai";
-import { parse } from "smol-toml";
 import {
   expandHome,
   onlyKeys,
@@ -14,14 +13,15 @@ import {
   optionalRecord,
   optionalString,
   isStringArray,
+  parseToml,
   required,
   requireString,
   setDefined,
+  within,
 } from "../fields.ts";
 import { isRecord, type JsonRecord } from "../json.ts";
 import { readRoomDoor, ROOM_DOOR_KEYS, type RoomDoor } from "../room/door.ts";
 import { normaliseAllowedEntry } from "./classify.ts";
-import { messageOf } from "./errors.ts";
 
 export const CEILING_KEYS = [
   "model_requests",
@@ -179,17 +179,6 @@ const THINKING_LEVELS: readonly ThinkingLevel[] = [
 
 export const isThinkingLevel = (value: string): value is ThinkingLevel =>
   THINKING_LEVELS.some((level) => level === value);
-
-/** Runs `read`, prefixing any Error with the table it was reading. */
-function within<T>(where: string, read: () => T): T {
-  try {
-    return read();
-  } catch (error) {
-    throw new Error(`${where}: ${messageOf(error)}`, {
-      cause: error,
-    });
-  }
-}
 
 const readCeiling = (fields: JsonRecord, key: CeilingKey): number | undefined =>
   key === "cost_usd" ? optionalPositiveNumber(fields, key) : optionalPositiveInt(fields, key);
@@ -411,24 +400,9 @@ function readNamed<T>(
   );
 }
 
-function parseToml(text: string): JsonRecord {
-  let doc: unknown;
-  try {
-    doc = parse(text);
-  } catch (error) {
-    throw new Error(`config is not valid TOML: ${messageOf(error)}`, {
-      cause: error,
-    });
-  }
-  if (!isRecord(doc)) {
-    throw new Error("config must be a table");
-  }
-  return doc;
-}
-
 /** The runner config in `text`; `~` in paths expands against `home`. */
 export function parseRunnerConfig(text: string, home: string): RunnerConfig {
-  const doc = parseToml(text);
+  const doc = parseToml(text, "config");
   onlyKeys(
     doc,
     ["enabled", "prompt_file", "maxima", "defaults", "mode", "tag", "repo", "door", "gateway"],

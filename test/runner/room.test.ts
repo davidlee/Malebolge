@@ -628,11 +628,17 @@ const knowing = (words: RegExp): string[] =>
     .sort();
 
 describe("door knowledge (EX-10)", () => {
-  it("the door is named only in the runner's config.ts and door.ts, and room/door.ts and room/connection.ts", () => {
-    const owners = ["room/connection.ts", "room/door.ts", "runner/config.ts", "runner/door.ts"];
+  it("the door is named only in the daemon's and runner's config.ts, runner/door.ts, and room/door.ts and room/connection.ts", () => {
+    const owners = [
+      "config.ts",
+      "room/connection.ts",
+      "room/door.ts",
+      "runner/config.ts",
+      "runner/door.ts",
+    ];
     expect(knowing(DOOR_WORDS).filter((file) => !owners.includes(file))).toEqual([]);
     expect(knowing(DOOR_WORDS)).toEqual(
-      expect.arrayContaining(["room/door.ts", "runner/config.ts", "runner/door.ts"]),
+      expect.arrayContaining(["config.ts", "room/door.ts", "runner/config.ts", "runner/door.ts"]),
     );
   });
 

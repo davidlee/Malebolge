@@ -1,8 +1,10 @@
-// Readers for untrusted JSON objects: each takes one field and returns it
-// typed, or throws an Error naming the field. Callers map the Error onto
-// their own error vocabulary.
+// Readers for untrusted JSON objects (a JSON line, a TOML document): each
+// takes one field and returns it typed, or throws an Error naming the field.
+// Callers map the Error onto their own error vocabulary.
 
+import { parse } from "smol-toml";
 import { isRecord, type JsonRecord } from "./json.ts";
+import { messageOf } from "./message-of.ts";
 
 /** The object a line of JSON holds. */
 export function parseObject(line: string): JsonRecord {
@@ -16,6 +18,29 @@ export function parseObject(line: string): JsonRecord {
     throw new Error("message must be an object");
   }
   return value;
+}
+
+/** The table a TOML document holds; `what` names the document in errors. */
+export function parseToml(text: string, what: string): JsonRecord {
+  let doc: unknown;
+  try {
+    doc = parse(text);
+  } catch (error) {
+    throw new Error(`${what} is not valid TOML: ${messageOf(error)}`, { cause: error });
+  }
+  if (!isRecord(doc)) {
+    throw new Error(`${what} must be a table`);
+  }
+  return doc;
+}
+
+/** Runs `read`, prefixing any Error with the table it was reading. */
+export function within<T>(where: string, read: () => T): T {
+  try {
+    return read();
+  } catch (error) {
+    throw new Error(`${where}: ${messageOf(error)}`, { cause: error });
+  }
 }
 
 /** Field `key` when present and passing `guard`; `undefined` when absent. */

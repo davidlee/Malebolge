@@ -1,4 +1,4 @@
-import { writeFile } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { personaExtension, personaFiles, readPersona } from "../src/persona.ts";
@@ -11,8 +11,24 @@ describe("persona", () => {
     await cleanup?.();
   });
 
-  it("draws on the scaffold, then the interactive prompt, as hello-satan does", () => {
-    expect(personaFiles("/c")).toEqual(["/c/system/scaffold.txt", "/c/prompts/interactive.txt"]);
+  it("draws on the scaffold, the interactive prompt, then the profile's environment", async () => {
+    const tmp = await tempDir();
+    cleanup = tmp.cleanup;
+    await mkdir(join(tmp.dir, "prompts", "env"), { recursive: true });
+    await writeFile(join(tmp.dir, "prompts", "env", "room.txt"), "room\n");
+    expect(personaFiles(tmp.dir, "room")).toEqual([
+      join(tmp.dir, "system", "scaffold.txt"),
+      join(tmp.dir, "prompts", "interactive.txt"),
+      join(tmp.dir, "prompts", "env", "room.txt"),
+    ]);
+  });
+
+  it("refuses a profile without an environment file, naming its path", async () => {
+    const tmp = await tempDir();
+    cleanup = tmp.cleanup;
+    expect(() => personaFiles(tmp.dir, "host")).toThrow(
+      `no environment prompt for profile host: ${join(tmp.dir, "prompts", "env", "host.txt")}`,
+    );
   });
 
   it("renders the files in order, re-reading them so corpus edits apply next request", async () => {

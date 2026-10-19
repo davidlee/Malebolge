@@ -28,7 +28,7 @@ const ROOM_ROOTS = ["context", "fields", "json", "project-context", "truncate"];
 
 /** The room door's parser and facts (design §4.1), and the modules that may read them. */
 const ROOM_DOOR = "room/door.ts";
-const ROOM_DOOR_READERS = ["runner/config.ts", "runner/door.ts"];
+const ROOM_DOOR_READERS = ["config.ts", "runner/config.ts", "runner/door.ts"];
 
 /** Source text by path relative to src/. */
 type Sources = Readonly<Record<string, string>>;
