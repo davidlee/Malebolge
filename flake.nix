@@ -3,11 +3,14 @@
 
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
   inputs.doctrine.url = "github:davidlee/doctrine";
+  # The host-side bwrap jails an agent works on this repo in (`jailed-*`).
+  inputs.agents.url = "github:davidlee/nix-config?dir=flakes/agents";
 
   outputs = {
     self,
     nixpkgs,
     doctrine,
+    agents,
   }: let
     systems = ["x86_64-linux" "aarch64-linux" "aarch64-darwin"];
     forAll = f: nixpkgs.lib.genAttrs systems (system: f nixpkgs.legacyPackages.${system});
@@ -22,6 +25,41 @@
       (with pkgs; [nodejs_24 just])
       ++ pkgs.lib.optional (doctrine.packages ? ${pkgs.stdenv.hostPlatform.system})
       doctrine.packages.${pkgs.stdenv.hostPlatform.system}.default;
+
+    # Linux only (bwrap). Every jail shares one posture; only the agent
+    # differs. No provider key enters a jail: each reaches models through the
+    # LLM gateway on the shared `pi` key.
+    jails = pkgs: let
+      jailLib = agents.lib.${pkgs.stdenv.hostPlatform.system}.mkJailedAgents {};
+      mkJail = maker: args:
+        maker ({
+            profile = "specDev";
+            extraPkgs = devToolPkgs pkgs;
+            gateway = jailLib.gatewayClient "pi";
+          }
+          // args);
+    in
+      pkgs.lib.optionalAttrs pkgs.stdenv.isLinux {
+        jailed-pi = mkJail jailLib.makeJailedPi {
+          allowSelfAsSubagent = true;
+          maxSubagentDepth = 2;
+        };
+        jailed-pi-research = mkJail jailLib.makeJailedPi {
+          name = "pi-research";
+          profile = "research";
+          allowSelfAsSubagent = true;
+        };
+        jailed-claude = mkJail jailLib.makeJailedClaude {
+          allowSelfAsSubagent = true;
+          subagents = ["pi"];
+          maxSubagentDepth = 2;
+        };
+        jailed-shell = mkJail jailLib.makeJailedAgent {
+          name = "shell";
+          agent = pkgs.zsh;
+          subagents = ["pi" "claude"];
+        };
+      };
 
     # The patch-job runner, for the satan-runner user unit (~/flakes
     # features/satan/runner.nix): the tree's src/ with production deps only.
@@ -54,13 +92,15 @@
   in {
     # One closure, the oubliette room's `toolsPackage`, so the VM and the
     # devshell can't drift.
-    packages = forAll (pkgs: {
-      dev-tools = pkgs.buildEnv {
-        name = "malebolge-dev-tools";
-        paths = devToolPkgs pkgs;
-      };
-      runner = runner pkgs;
-    });
+    packages = forAll (pkgs:
+      jails pkgs
+      // {
+        dev-tools = pkgs.buildEnv {
+          name = "malebolge-dev-tools";
+          paths = devToolPkgs pkgs;
+        };
+        runner = runner pkgs;
+      });
 
     # The built runner loads its whole module graph and refuses to start for
     # want of a config: imports resolve from the store, and it runs.
@@ -77,7 +117,9 @@
     });
 
     devShells = forAll (pkgs: {
-      default = pkgs.mkShell {packages = devToolPkgs pkgs;};
+      default = pkgs.mkShell {
+        packages = devToolPkgs pkgs ++ builtins.attrValues (jails pkgs);
+      };
     });
   };
 }
