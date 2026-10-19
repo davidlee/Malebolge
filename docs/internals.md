@@ -19,10 +19,12 @@ malebolge (daemon, owns the session)                     clients
 
 ## Jail
 
-The daemon runs in `jailed-malebolge` (`~/notes/flake.nix`), with jpi's
-posture. The jail sees this repo read-only, `~/satan-corpus` read-only, the
-session store, and `$XDG_RUNTIME_DIR/satan/`; its launcher runs `op run` and
-passes only the provider keys listed there (`apiKeys`).
+The daemon runs in `jailed-malebolge` (`~/dev/satan/flake.nix`), started by
+`just hello-durable` in `~/notes`. The jail sees this repo read-only,
+`~/satan-corpus` read-only (its `goad/` read-write), the session store, and
+`$XDG_RUNTIME_DIR/satan/`. Its only secret is the gateway key file, bound
+read-only with the catalog; `MALEBOLGE_GATEWAY_KEY_FILE` and
+`MALEBOLGE_GATEWAY_CATALOG` point at them. No provider keys, no `op run`.
 
 ## Protocol
 
