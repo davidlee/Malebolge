@@ -20,7 +20,7 @@ import type { RepoConfig, RunnerConfig } from "./config.ts";
 import { isRunnerError, messageOf, RunnerError } from "./errors.ts";
 import type { QuarantineFacts, QuarantineReader } from "./git.ts";
 import { pendingCollectionExpired, recordReviewed } from "./jobs.ts";
-import { type Collected, type GitChannel } from "./room.ts";
+import { type Collected, type GitChannel } from "./door.ts";
 import { isoTime } from "./rows.ts";
 import type { Job, JobStore, JobUpdate } from "./store.ts";
 import type { EndReason, JobState } from "./vocab.ts";

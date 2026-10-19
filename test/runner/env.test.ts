@@ -28,7 +28,7 @@ import {
   roomShell,
 } from "../../src/room/shell.ts";
 import { never, rejection, shellKit } from "../room/shell-fixture.ts";
-import { daemonLaunch, roomConnection } from "../../src/runner/room.ts";
+import { daemonLaunch, roomConnection } from "../../src/runner/door.ts";
 import { tempDir } from "../fixtures.ts";
 import { DAEMON, fakeHelpers, localConnection } from "../room/connection-fixture.ts";
 import { exampleConfig, roomConfig } from "./config-fixture.ts";

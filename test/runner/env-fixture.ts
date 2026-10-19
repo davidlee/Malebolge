@@ -6,7 +6,7 @@
 import type { SqliteDatabase } from "@earendil-works/pi-durable/storage/sqlite";
 import type { Launch, LostFailure, RoomConnection } from "../../src/room/connection.ts";
 import type { RunnerConfig } from "../../src/runner/config.ts";
-import { daemonLaunch, roomConnection } from "../../src/runner/room.ts";
+import { daemonLaunch, roomConnection } from "../../src/runner/door.ts";
 
 /** The configured connection facts, and repo `satan`'s launch. */
 export function doorFacts(config: RunnerConfig): { facts: RoomConnection; launch: Launch } {

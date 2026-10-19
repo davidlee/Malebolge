@@ -15,7 +15,7 @@ import {
 } from "../../src/runner/project-context.ts";
 import { FETCH_LIMITS, HEAD_LIMITS, type ReadFailure } from "../../src/room/source-reader.ts";
 import { ChannelFailed, ChannelUnavailable, type ShellOutput } from "../../src/room/shell.ts";
-import { checkRoomClone, PREPARE_LIMITS } from "../../src/runner/room.ts";
+import { checkRoomClone, PREPARE_LIMITS } from "../../src/runner/door.ts";
 import {
   by,
   exit,

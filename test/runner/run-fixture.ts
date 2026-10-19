@@ -34,7 +34,7 @@ import {
   harnessUsage,
 } from "../../src/runner/model-gate.ts";
 import { type RecoverDeps, recoverHost } from "../../src/runner/recover.ts";
-import type { GitChannel } from "../../src/runner/room.ts";
+import type { GitChannel } from "../../src/runner/door.ts";
 import type { Timer } from "../../src/runner/deadline.ts";
 import { type RejoinDeps, rejoinJob } from "../../src/runner/rejoin.ts";
 import { type RunDeps, runJob } from "../../src/runner/run.ts";

@@ -22,7 +22,7 @@ import {
 } from "../room/source-reader.ts";
 import type { RepoConfig } from "./config.ts";
 import { type FinalStep, PrepareFailed } from "./prepare.ts";
-import { type CloneDefect, type GitChannel } from "./room.ts";
+import { type CloneDefect, type GitChannel } from "./door.ts";
 
 /** The bounds of doctrine's boot (design §4.3): its stdout is a source, so overflow is truncation. */
 export const DOCTRINE_LIMITS = {

@@ -4,12 +4,13 @@
 // command line: the slot adapter (the live rung) and the room adapter, built
 // against oubliette SL-006 design sec-6 at 73ec574 (collect's stdout as pinned
 // at ad2dd7d) and provisional until SL-006 locks (re-checked then, CHR-016).
-// This file and config.ts are the only ones that know the door (held by a
-// structural test): everything else sees `GitChannel`, `channelFromConfig`
-// and `roomConnection`.
+// This file and config.ts are the only runner modules that know the door and
+// its kind (EX-10, held by a structural test): everything else sees
+// `GitChannel`, `channelFromConfig` and `roomConnection`.
 
 import { setDefined } from "../fields.ts";
 import { directLaunch, type Launch, type RoomConnection } from "../room/connection.ts";
+import { type RoomDoor, roomConnectionOf } from "../room/door.ts";
 import {
   ChannelFailed,
   ChannelUnavailable,
@@ -19,13 +20,7 @@ import {
   succeeded,
   successStdout,
 } from "../room/shell.ts";
-import type {
-  DoorConfig,
-  RepoConfig,
-  RoomDoorConfig,
-  RunnerConfig,
-  SlotDoorConfig,
-} from "./config.ts";
+import type { DoorConfig, RepoConfig, RunnerConfig, SlotDoorConfig } from "./config.ts";
 import { messageOf, RunnerError, StartRefused } from "./errors.ts";
 import { type ProgramOptions, type ProgramOutput, runProgram, TimedOut } from "./exec.ts";
 import { gitRepoReader, type RepoReader, resolveCommit } from "./git.ts";
@@ -253,8 +248,6 @@ const OID = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
 /** Collect's one stdout line, `<oid>\t<ref>` in `ls-remote` order (SL-006 sec-6 at ad2dd7d). */
 const lsRemoteLine = ({ oid, ref }: Pick<Collected, "oid" | "ref">): string => `${oid}\t${ref}`;
 
-export type RoomDoor = Pick<RoomDoorConfig, "room">;
-
 /** The room keys of `repo`; config refuses a room repo without them (I13). */
 function roomRepo(repo: RepoConfig): { quarantine: string; transferTimeoutMs: number } {
   const { quarantine, transferTimeoutS } = repo;
@@ -266,7 +259,7 @@ function roomRepo(repo: RepoConfig): { quarantine: string; transferTimeoutMs: nu
 
 /** A git channel over an oubliette room. Reads the real repo only through `reader` (I3). */
 export function roomChannel(
-  door: RoomDoor,
+  door: Pick<RoomDoor, "room">,
   cli: CapsuleCli,
   reader: RepoReader = gitRepoReader,
 ): GitChannel {
@@ -420,8 +413,10 @@ export function daemonLaunch(config: RunnerConfig, repo: RepoConfig): Launch {
 /** The execution environment's connection facts, as configured: none derived (I13). */
 export function roomConnection(config: RunnerConfig): RoomConnection {
   const door = doorOf(config);
-  const { user, hostKeyAlias, knownHosts, sshConfig, identity } = door;
-  const host = door.kind === "slot" ? door.host : door.room;
+  if (door.kind === "room") {
+    return roomConnectionOf(door, door.sshConfig);
+  }
+  const { host, user, hostKeyAlias, knownHosts, sshConfig, identity } = door;
   return setDefined<RoomConnection>(
     { host, user, hostKeyAlias, knownHosts },
     { sshConfig, identity },

@@ -15,7 +15,7 @@ import {
 import { pausedForRetry, roomWaitDeadline, type Sleep } from "./backoff.ts";
 import type { RepoConfig, RunnerConfig } from "./config.ts";
 import { isRunnerError, messageOf } from "./errors.ts";
-import { type GitChannel, jobBranch, PREPARE_LIMITS } from "./room.ts";
+import { type GitChannel, jobBranch, PREPARE_LIMITS } from "./door.ts";
 import type { Job, JobStore } from "./store.ts";
 import type { EndReason } from "./vocab.ts";
 

@@ -37,7 +37,7 @@ import { gitQuarantineReader, gitRepoReader } from "./git.ts";
 import { jobGuard } from "./guard.ts";
 import { catalogLimits, createModelGate, gatedModels, harnessUsage } from "./model-gate.ts";
 import { recoverHost } from "./recover.ts";
-import { channelFromConfig, daemonLaunch, type GitChannel, roomConnection } from "./room.ts";
+import { channelFromConfig, daemonLaunch, type GitChannel, roomConnection } from "./door.ts";
 import { type RejoinDeps, rejoinJob } from "./rejoin.ts";
 import { runJob } from "./run.ts";
 import { createScheduler } from "./scheduler.ts";
@@ -111,7 +111,7 @@ export interface StartOptions {
    * model gate.
    */
   models?: Models;
-  /** How to reach the room; defaults to what the config names (room.ts). */
+  /** How to reach the room; defaults to what the config names (`roomConnection`). */
   room?: RoomAccess;
 }
 

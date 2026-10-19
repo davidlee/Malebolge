@@ -28,7 +28,7 @@ import { recordedPolicy } from "../../src/runner/policy.ts";
 import type { RunDeps } from "../../src/runner/run.ts";
 import { readSnapshot, recoverHost } from "../../src/runner/recover.ts";
 import { ChannelFailed, ChannelUnavailable } from "../../src/room/shell.ts";
-import { checkRoomClone, cleanRoomClone, type GitChannel } from "../../src/runner/room.ts";
+import { checkRoomClone, cleanRoomClone, type GitChannel } from "../../src/runner/door.ts";
 import type { Job, JobEvent } from "../../src/runner/store.ts";
 import { WARNING_TEXT } from "../../src/runner/warning.ts";
 import { textOf } from "../harness-fixture.ts";

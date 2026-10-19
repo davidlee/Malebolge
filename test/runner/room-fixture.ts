@@ -47,7 +47,7 @@ import {
   type GitChannel,
   roomChannel,
   slotChannel,
-} from "../../src/runner/room.ts";
+} from "../../src/runner/door.ts";
 import { localConnection } from "../room/connection-fixture.ts";
 import {
   type BareRepo,

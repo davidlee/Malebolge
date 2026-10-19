@@ -19,6 +19,7 @@ import {
   setDefined,
 } from "../fields.ts";
 import { isRecord, type JsonRecord } from "../json.ts";
+import { readRoomDoor, ROOM_DOOR_KEYS, type RoomDoor } from "../room/door.ts";
 import { normaliseAllowedEntry } from "./classify.ts";
 import { messageOf } from "./errors.ts";
 
@@ -107,14 +108,11 @@ export interface SlotDoorConfig extends DoorSsh {
   identity?: string;
 }
 
-/** An oubliette room (SL-006 design sec-6). */
-export interface RoomDoorConfig extends DoorSsh {
+/** An oubliette room (SL-006 design sec-6); `room` is also `capsule`'s argv. */
+export interface RoomDoorConfig extends RoomDoor {
   kind: "room";
-  /** The room's name: `capsule` argv, and the placeholder ssh host. */
-  room: string;
   /** The relay's ProxyCommand. */
   sshConfig: string;
-  identity: string;
   /** The guest's `session` program, verbatim; no built-in fallback. */
   sessionPath: string;
 }
@@ -122,13 +120,22 @@ export interface RoomDoorConfig extends DoorSsh {
 /** The door into the room, by kind (DEC-065). */
 export type DoorConfig = SlotDoorConfig | RoomDoorConfig;
 
-/** Each kind's `[door]` keys beyond the shared ones: the table is closed per kind. */
+/** Each kind's `[door]` keys: the table is closed per kind; a room's are the room door's and two more. */
 const DOOR_KEYS = {
-  slot: ["slot", "quarantine", "host", "profile", "ssh_config", "identity"],
-  room: ["room", "ssh_config", "identity", "session_path"],
+  slot: [
+    "kind",
+    "user",
+    "known_hosts",
+    "host_key_alias",
+    "slot",
+    "quarantine",
+    "host",
+    "profile",
+    "ssh_config",
+    "identity",
+  ],
+  room: ["kind", ...ROOM_DOOR_KEYS, "ssh_config", "session_path"],
 } as const;
-
-const SHARED_DOOR_KEYS = ["kind", "user", "known_hosts", "host_key_alias"];
 
 /** The `[repo.*]` keys taken, and required, only under a room door. */
 const ROOM_REPO_KEYS = ["quarantine", "transfer_timeout_s"];
@@ -338,7 +345,7 @@ function readDoorKind(fields: JsonRecord): DoorConfig["kind"] {
 
 function readDoor(fields: JsonRecord, home: string): DoorConfig {
   const kind = readDoorKind(fields);
-  onlyKeys(fields, [...SHARED_DOOR_KEYS, ...DOOR_KEYS[kind]], `door (kind = ${kind})`);
+  onlyKeys(fields, DOOR_KEYS[kind], `door (kind = ${kind})`);
   return within("door", () => {
     const text = (key: string): string => requireString(fields, key);
     const path = (key: string): string => expandHome(text(key), home);
@@ -346,21 +353,19 @@ function readDoor(fields: JsonRecord, home: string): DoorConfig {
       const value = optionalString(fields, key);
       return value === undefined ? undefined : expandHome(value, home);
     };
+    if (kind === "room") {
+      return {
+        kind,
+        ...readRoomDoor(fields, home),
+        sshConfig: path("ssh_config"),
+        sessionPath: text("session_path"),
+      };
+    }
     const ssh: DoorSsh = {
       user: text("user"),
       knownHosts: path("known_hosts"),
       hostKeyAlias: text("host_key_alias"),
     };
-    if (kind === "room") {
-      return {
-        kind,
-        room: text("room"),
-        ...ssh,
-        sshConfig: path("ssh_config"),
-        identity: path("identity"),
-        sessionPath: text("session_path"),
-      };
-    }
     return setDefined<SlotDoorConfig>(
       { kind, slot: text("slot"), quarantine: path("quarantine"), host: text("host"), ...ssh },
       {

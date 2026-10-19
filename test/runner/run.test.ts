@@ -10,7 +10,7 @@ import type { Connection } from "@earendil-works/pi-env";
 import { describe, expect, it } from "vitest";
 import { context } from "../../src/context.ts";
 import { conversationIdOf } from "../../src/runner/durable-ids.ts";
-import type { GitChannel } from "../../src/runner/room.ts";
+import type { GitChannel } from "../../src/runner/door.ts";
 import { type RunDeps, runJob } from "../../src/runner/run.ts";
 import { RunControl } from "../../src/runner/scheduler.ts";
 import type { Job } from "../../src/runner/store.ts";

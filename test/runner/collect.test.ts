@@ -11,7 +11,7 @@ import { describe, expect, it } from "vitest";
 import { jobEnvId } from "../../src/runner/env.ts";
 import { collectJob } from "../../src/runner/collect.ts";
 import { daemonConnection } from "../../src/room/connection.ts";
-import { cleanRoomClone } from "../../src/runner/room.ts";
+import { cleanRoomClone } from "../../src/runner/door.ts";
 import { roomShell } from "../../src/room/shell.ts";
 import { fakeHelpers, localConnection, lostConnection } from "../room/connection-fixture.ts";
 import { exampleConfig, roomConfig } from "./config-fixture.ts";

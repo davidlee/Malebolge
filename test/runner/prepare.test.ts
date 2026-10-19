@@ -32,7 +32,7 @@ import {
   cleanRoomClone,
   type GitChannel,
   PREPARE_LIMITS,
-} from "../../src/runner/room.ts";
+} from "../../src/runner/door.ts";
 import { fetchProjectContext } from "../../src/runner/project-context.ts";
 import type { Job, JobStore } from "../../src/runner/store.ts";
 import { localConnection } from "../room/connection-fixture.ts";

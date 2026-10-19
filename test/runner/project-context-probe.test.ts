@@ -29,7 +29,7 @@ import {
 } from "../../src/runner/project-context.ts";
 import { FETCH_LIMITS, HEAD_LIMITS } from "../../src/room/source-reader.ts";
 import { ChannelFailed, type ShellLimits } from "../../src/room/shell.ts";
-import { PREPARE_LIMITS } from "../../src/runner/room.ts";
+import { PREPARE_LIMITS } from "../../src/runner/door.ts";
 import { localConnection, pathWith } from "../room/connection-fixture.ts";
 import { type ObservedCall, observedShell } from "../room/shell-fixture.ts";
 import { fakeBin, pathWithout, realBin } from "./fake-bin.ts";

@@ -13,7 +13,7 @@ import {
   roomChannel,
   roomConnection,
   slotChannel,
-} from "../../src/runner/room.ts";
+} from "../../src/runner/door.ts";
 import { runProgram } from "../../src/runner/exec.ts";
 import { isoTime } from "../../src/runner/rows.ts";
 import { type Job, JobStore } from "../../src/runner/store.ts";
@@ -601,11 +601,13 @@ const SRC = join(import.meta.dirname, "../../src");
 /** Naming the door: oubliette's command, its slots, the door table. */
 const DOOR_WORDS = /\bcapsule|\bslot|\bdoor/i;
 /**
- * Telling the kinds apart: a kind as a literal, or a key only one kind has
- * (`session_path`, the room timeouts, either kind's door type).
+ * Telling the door kinds apart (SL-027 design §4.1): `kind` compared with a
+ * kind, a key only one kind has (`session_path`, the room timeouts), or
+ * either kind's door config type. A bare quoted "room" is not one: the
+ * execution profile of that name is no door kind.
  */
 const KIND_WORDS =
-  /["'](?:slot|room)["']|\bsession_?path|\b(?:probe|transfer)_?timeout_?s\b|\b(?:slot|room)Door(?:Config)?\b/i;
+  /\bkind\b\W{1,8}["'](?:slot|room)["']|\bsession_?path|\b(?:probe|transfer)_?timeout_?s\b|\b(?:slot|room)DoorConfig\b/i;
 
 function sourceFiles(dir: string, prefix = ""): string[] {
   return readdirSync(dir, { withFileTypes: true }).flatMap((entry) =>
@@ -615,22 +617,42 @@ function sourceFiles(dir: string, prefix = ""): string[] {
   );
 }
 
+/** `source` less its module specifiers: importing door.ts is not knowing the door. */
+const withoutSpecifiers = (source: string): string =>
+  source.replace(/\bfrom\s+["'][^"']+["']/g, "from");
+
 const knowing = (words: RegExp): string[] =>
   sourceFiles(SRC)
-    .filter((file) => words.test(readFileSync(join(SRC, file), "utf8")))
+    .filter((file) => words.test(withoutSpecifiers(readFileSync(join(SRC, file), "utf8"))))
     .sort();
 
 describe("door knowledge (EX-10)", () => {
-  it("the door is named only in room.ts, config.ts and the room tier's connection", () => {
-    const owners = ["room/connection.ts", "runner/config.ts", "runner/room.ts"];
+  it("the door is named only in the runner's config.ts and door.ts, and room/door.ts and room/connection.ts", () => {
+    const owners = ["room/connection.ts", "room/door.ts", "runner/config.ts", "runner/door.ts"];
     expect(knowing(DOOR_WORDS).filter((file) => !owners.includes(file))).toEqual([]);
     expect(knowing(DOOR_WORDS)).toEqual(
-      expect.arrayContaining(["runner/config.ts", "runner/room.ts"]),
+      expect.arrayContaining(["room/door.ts", "runner/config.ts", "runner/door.ts"]),
     );
   });
 
-  it("which kind is known only in room.ts and config.ts", () => {
-    expect(knowing(KIND_WORDS)).toEqual(["runner/config.ts", "runner/room.ts"]);
+  it("which kind is known only in the runner's config.ts and door.ts", () => {
+    expect(knowing(KIND_WORDS)).toEqual(["runner/config.ts", "runner/door.ts"]);
+  });
+
+  it("the kind check is the door's kind, not any quoted room", () => {
+    expect(KIND_WORDS.test('door.kind === "room"')).toBe(true);
+    expect(KIND_WORDS.test("kind: 'slot'")).toBe(true);
+    expect(KIND_WORDS.test("RoomDoorConfig")).toBe(true);
+    expect(KIND_WORDS.test('const PROFILES = ["host", "room"] as const;')).toBe(false);
+    expect(KIND_WORDS.test('profile === "room"')).toBe(false);
+    expect(KIND_WORDS.test("interface RoomDoor {")).toBe(false);
+  });
+
+  it("importing door.ts is not naming the door; a comment about it is", () => {
+    expect(DOOR_WORDS.test(withoutSpecifiers('import { roomConnection } from "./door.ts";'))).toBe(
+      false,
+    );
+    expect(DOOR_WORDS.test(withoutSpecifiers("// built from the door's facts"))).toBe(true);
   });
 });
 

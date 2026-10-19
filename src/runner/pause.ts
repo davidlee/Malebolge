@@ -10,7 +10,7 @@ import type { ConnectionObserver } from "../room/connection.ts";
 import type { ChannelFailed } from "../room/shell.ts";
 import { pausedForRetry, roomWaitDeadline, type Sleep } from "./backoff.ts";
 import type { RepoConfig, RunnerConfig } from "./config.ts";
-import type { GitChannel } from "./room.ts";
+import type { GitChannel } from "./door.ts";
 import type { Job, JobStore } from "./store.ts";
 import { recordWarning, WARNING_TEXT, type WarningDeps } from "./warning.ts";
 
