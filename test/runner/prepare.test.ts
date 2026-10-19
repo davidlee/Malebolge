@@ -1,16 +1,14 @@
-// Readying the room for a preparing job (EX-2, design §5.2, §5.4): the room's
-// shell over the job's daemon connection, the job branch made against real
-// git through a local pi-env daemon, the base refreshed and recorded, and a
+// Readying the room for a preparing job (EX-2, design §5.2, §5.4): the job
+// branch made against real git through a local pi-env daemon, the base refreshed and recorded, and a
 // room that is down retried with backoff up to `max_room_wait`. One
 // `describe` per function; PHASE-15 appends room checks here.
 
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { type Connection, HostKeyChangedError, HostKeyUnknownError } from "@earendil-works/pi-env";
-import { afterEach, describe, expect, it } from "vitest";
+import { ExecutionError } from "@earendil-works/pi-durable/env";
+import { describe, expect, it } from "vitest";
 import { roomRetryDelay } from "../../src/runner/backoff.ts";
 import type { RepoConfig, RunnerConfig } from "../../src/runner/config.ts";
-import { daemonConnection } from "../../src/runner/env.ts";
 import { RunnerError } from "../../src/runner/errors.ts";
 import {
   ensureJobBranch,
@@ -23,15 +21,18 @@ import {
   ChannelFailed,
   ChannelUnavailable,
   type CloneDefect,
+  checkRoomClone,
+  cleanRoomClone,
   type GitChannel,
+  PREPARE_LIMITS,
   type RoomShell,
+  type ShellLimits,
   type ShellOutput,
 } from "../../src/runner/room.ts";
 import { roomShell } from "../../src/runner/shell.ts";
 import type { Job, JobStore } from "../../src/runner/store.ts";
-import { tempDir } from "../fixtures.ts";
-import { exampleConfig, roomConfig } from "./config-fixture.ts";
-import { doorFacts, fakeHelpers, localConnection, lostConnection } from "./env-fixture.ts";
+import { exampleConfig } from "./config-fixture.ts";
+import { localConnection } from "./env-fixture.ts";
 import {
   readying,
   type RoomKindWorld,
@@ -39,100 +40,24 @@ import {
   roomKindWorld,
   roomWorld,
 } from "./room-fixture.ts";
+import { never, rejection, shellKit } from "./shell-fixture.ts";
 import { NEW_JOB, openTestStore, T0 } from "./store-fixture.ts";
 
 const JOB_ID = "pj-1";
-const never = (): AbortSignal => new AbortController().signal;
+const { open, scratch } = shellKit();
+const BASE = "b".repeat(40);
 
-/** Connections a test opened; closed after it. */
-const opened: Connection[] = [];
-const cleanups: (() => Promise<void>)[] = [];
-afterEach(async () => {
-  for (const connection of opened.splice(0)) {
-    connection.close();
-  }
-  for (const cleanup of cleanups.splice(0)) {
-    await cleanup();
-  }
-});
+/** For a faked channel and shell: the repo is only passed through. */
+const REPO: RepoConfig = {
+  name: "r",
+  path: "/r",
+  guestPath: "/g",
+  defaultBranch: "main",
+  ceilings: {},
+};
 
-function open(connection: Connection): Connection {
-  opened.push(connection);
-  return connection;
-}
-
-/** A temp dir removed after the test. */
-async function scratch(): Promise<string> {
-  const tmp = await tempDir();
-  cleanups.push(tmp.cleanup);
-  return tmp.dir;
-}
-
-/** Rejection of `promise`, or a failure if it resolves. */
-async function rejection(promise: Promise<unknown>): Promise<unknown> {
-  try {
-    await promise;
-  } catch (error) {
-    return error;
-  }
-  throw new Error("expected a rejection");
-}
-
-describe("roomShell", () => {
-  const shellIn = (connection: Connection, cwd: string): RoomShell =>
-    roomShell(open(connection), JOB_ID, cwd);
-
-  it("answers the exit code and captures stdout and stderr", async () => {
-    const shell = shellIn(localConnection(), await scratch());
-
-    const output = await shell(["sh", "-c", "echo out; echo err >&2; exit 3"], never());
-
-    expect(output).toEqual({ code: 3, stdout: "out\n", stderr: "err\n" });
-  });
-
-  it("a lost daemon connection is ChannelUnavailable: the room is down", async () => {
-    const shell = shellIn(lostConnection(), await scratch());
-
-    expect(await rejection(shell(["true"], never()))).toBeInstanceOf(ChannelUnavailable);
-  });
-
-  it("an exec that fails on a live connection is ChannelFailed: not retried", async () => {
-    const shell = shellIn(localConnection(), `${await scratch()}/absent`);
-
-    expect(await rejection(shell(["true"], never()))).toBeInstanceOf(ChannelFailed);
-  });
-
-  // Carry-forward 5 (EX-8): either door kind's daemon connection, counted, never paused.
-  describe.each([
-    ["slot", exampleConfig],
-    ["room", roomConfig],
-  ])("over a %s door's daemon connection", (_kind, config) => {
-    it("a lost start is ChannelUnavailable: retried, no pause", async () => {
-      const { facts, launch } = doorFacts(config());
-      const shell = shellIn(daemonConnection(facts, launch, fakeHelpers("false")), await scratch());
-
-      expect(await rejection(shell(["true"], never()))).toBeInstanceOf(ChannelUnavailable);
-    });
-
-    it.each([
-      ["HostKeyChangedError", (): Error => new HostKeyChangedError("changed")],
-      ["HostKeyUnknownError", (): Error => new HostKeyUnknownError("unknown")],
-    ])("a start failing %s is ChannelFailed host_key: never retried", async (_name, failure) => {
-      const { facts, launch } = doorFacts(config());
-      const connection = daemonConnection(facts, launch, fakeHelpers("ssh", failure));
-      const shell = shellIn(connection, await scratch());
-
-      const error = await rejection(shell(["true"], never()));
-
-      expect(error).toBeInstanceOf(ChannelFailed);
-      expect(error).toMatchObject({ reason: "host_key" });
-      expect(preparingFailure(error)).toMatchObject({
-        failure: { reason: "host_key" },
-        endReason: "error",
-      });
-    });
-  });
-});
+/** A shell answer: exit `code` with `stdout`, no stderr. */
+const exit = (code: number, stdout = ""): ShellOutput => ({ code, stdout, stderr: "" });
 
 describe("ensureJobBranch (real git through a local daemon)", () => {
   interface BranchWorld {
@@ -188,7 +113,6 @@ describe("ensureJobBranch (real git through a local daemon)", () => {
 });
 
 describe("readyRoom", () => {
-  const BASE = "b".repeat(40);
   type Step = () => string;
   const down = (): never => {
     throw new ChannelUnavailable("room down");
@@ -218,6 +142,8 @@ describe("readyRoom", () => {
     onSleep?: () => void;
     /** What every clone check finds; default none. */
     defect?: CloneDefect;
+    /** The clone check run on each attempt; default: finds `defect`. */
+    checkClone?: GitChannel["checkClone"];
   }
 
   async function readyWorld(options: ReadyOptions = {}): Promise<ReadyWorld> {
@@ -240,21 +166,18 @@ describe("readyRoom", () => {
       },
       collect: () => Promise.reject(new Error("not in preparing")),
       reachable: () => Promise.resolve(true),
-      checkClone: () => {
+      checkClone: (shell, repo, signal) => {
         checks++;
-        return Promise.resolve(options.defect);
+        return options.checkClone?.(shell, repo, signal) ?? Promise.resolve(options.defect);
       },
       cleanClone: () => Promise.reject(new Error("preparing never cleans")),
     };
-    const answers = options.shell ?? [
-      (): ShellOutput => ({ code: 1, stdout: "", stderr: "" }),
-      (): ShellOutput => ({ code: 0, stdout: "", stderr: "" }),
-    ];
+    const answers = options.shell ?? [(): ShellOutput => exit(1), (): ShellOutput => exit(0)];
     const shellCalls: string[][] = [];
     const shell: RoomShell = (argv) => {
       const answer = answers[Math.min(shellCalls.length, answers.length - 1)];
       shellCalls.push([...argv]);
-      return Promise.resolve().then(() => answer?.() ?? { code: 0, stdout: "", stderr: "" });
+      return Promise.resolve().then(() => answer?.() ?? exit(0));
     };
     const example = exampleConfig();
     const config: RunnerConfig = {
@@ -286,15 +209,6 @@ describe("readyRoom", () => {
       shell,
     };
   }
-
-  /** The channel and shell are faked: the repo is only passed through. */
-  const REPO: RepoConfig = {
-    name: "r",
-    path: "/r",
-    guestPath: "/g",
-    defaultBranch: "main",
-    ceilings: {},
-  };
 
   const ready = (w: ReadyWorld, signal = never()): Promise<string> =>
     readyRoom(w.deps, w.job, REPO, w.shell, signal);
@@ -342,11 +256,7 @@ describe("readyRoom", () => {
 
   it("retries a room down in the shell without refreshing again", async () => {
     const w = await readyWorld({
-      shell: [
-        down,
-        (): ShellOutput => ({ code: 1, stdout: "", stderr: "" }),
-        (): ShellOutput => ({ code: 0, stdout: "", stderr: "" }),
-      ],
+      shell: [down, (): ShellOutput => exit(1), (): ShellOutput => exit(0)],
     });
 
     expect(await ready(w)).toBe(BASE);
@@ -385,8 +295,8 @@ describe("readyRoom", () => {
         (): ShellOutput => {
           throw new ChannelUnavailable("room down");
         },
-        (): ShellOutput => ({ code: 1, stdout: "", stderr: "" }),
-        (): ShellOutput => ({ code: 0, stdout: "", stderr: "" }),
+        (): ShellOutput => exit(1),
+        (): ShellOutput => exit(0),
       ],
     });
 
@@ -418,6 +328,26 @@ describe("readyRoom", () => {
     });
 
     expect(await rejection(ready(w))).toBe(failed);
+    expect(w.slept).toEqual([]);
+  });
+
+  // A preparing exec past PREPARE_LIMITS.timeoutS, as the shell reports it.
+  const timedOut = (): never => {
+    throw new ChannelFailed("git: timeout", { cause: new ExecutionError("timeout", "timeout:60") });
+  };
+
+  it.each([
+    ["checkRoomClone", { checkClone: checkRoomClone, shell: [timedOut] }],
+    ["ensureJobBranch", { shell: [timedOut] }],
+  ])("a timeout in %s fails preparing channel_failed, never retried", async (_case, options) => {
+    const w = await readyWorld(options);
+
+    const error = await rejection(ready(w));
+
+    expect(preparingFailure(error)).toMatchObject({
+      failure: { reason: "channel_failed" },
+      endReason: "error",
+    });
     expect(w.slept).toEqual([]);
   });
 
@@ -499,6 +429,27 @@ describe("readyRoom over a room's clone: checked, never cleaned (VT-7, EX-6)", (
     expect(before.branch).toBe(false);
   });
 
+  it("a git status past PREPARE_LIMITS' stdout cap is dirty_clone, its paths the complete head", async () => {
+    const w = world();
+    // 2000 untracked files, each a 44-byte porcelain line "?? <40 chars>\n": 88 000 bytes.
+    const names = Array.from(
+      { length: 2000 },
+      (_, i) => `untracked-${String(i).padStart(30, "0")}`,
+    );
+    for (const name of names) {
+      writeFileSync(join(w.room.path, name), "");
+    }
+
+    const shell = roomShell(open(localConnection()), JOB_ID, w.room.path);
+
+    const defect = await checkRoomClone(shell, w.repo, never());
+
+    expect(defect?.reason).toBe("dirty_clone");
+    const paths = defect?.reason === "dirty_clone" ? defect.paths : [];
+    // The 64 KiB head holds floor(65_536 / 44) complete lines.
+    expect(paths).toEqual(names.slice(0, Math.floor(PREPARE_LIMITS.maxStdoutBytes / 44)));
+  });
+
   it("an ignored file is not dirty: the job branch is made", async () => {
     const w = world();
     const r = await readying(w);
@@ -548,4 +499,123 @@ describe("preparingFailure", () => {
   ] as const)("%s", (_title, error, failure, endReason) => {
     expect(preparingFailure(error)).toEqual({ failure, endReason });
   });
+});
+
+describe("preparing execs carry PREPARE_LIMITS (VT-2, design §4.2)", () => {
+  interface ShellCall {
+    argv: string[];
+    cwd: string | undefined;
+    limits: ShellLimits | undefined;
+  }
+
+  /** A shell answering each call by `answer(argv)` (a thrown error rejects), recording every call. */
+  function recordingShell(answer: (argv: readonly string[]) => ShellOutput): {
+    shell: RoomShell;
+    calls: ShellCall[];
+  } {
+    const calls: ShellCall[] = [];
+    const shell: RoomShell = (argv, _signal, cwd, limits) => {
+      calls.push({ argv: [...argv], cwd, limits });
+      return Promise.resolve().then(() => answer(argv));
+    };
+    return { shell, calls };
+  }
+
+  const overflowed = (stdout: string): ShellOutput => ({
+    code: -1,
+    stdout,
+    stderr: "",
+    overflowed: true,
+  });
+  /** Answers by the command: `test` passes, `rev-parse` finds nothing (1), the rest exit 0. */
+  const by =
+    (overrides: Record<string, () => ShellOutput> = {}) =>
+    (argv: readonly string[]): ShellOutput => {
+      const command = argv[0] === "git" ? (argv[1] ?? "") : (argv[0] ?? "");
+      return overrides[command]?.() ?? exit(command === "rev-parse" ? 1 : 0);
+    };
+
+  it("are bounded to 60 s, 64 KiB of stdout and 4 KiB of stderr", () => {
+    expect(PREPARE_LIMITS).toEqual({ timeoutS: 60, maxStdoutBytes: 65_536, maxStderrBytes: 4096 });
+  });
+
+  it("checkRoomClone passes PREPARE_LIMITS on test -d and git status", async () => {
+    const { shell, calls } = recordingShell(by());
+
+    expect(await checkRoomClone(shell, REPO, never())).toBeUndefined();
+
+    expect(calls.map((call) => [call.argv[0], call.argv[1], call.limits])).toEqual([
+      ["test", "-d", PREPARE_LIMITS],
+      ["git", "status", PREPARE_LIMITS],
+    ]);
+    expect(calls.every((call) => call.limits === PREPARE_LIMITS)).toBe(true);
+  });
+
+  const REV_PARSE = ["git", "rev-parse", "--verify", "--quiet", `refs/heads/job/${JOB_ID}`];
+
+  it.each([
+    ["absent: switch -c", exit(1), ["git", "switch", "--quiet", "-c", `job/${JOB_ID}`, BASE]],
+    ["at the base: switch", exit(0, `${BASE}\n`), ["git", "switch", "--quiet", `job/${JOB_ID}`]],
+  ])(
+    "ensureJobBranch passes PREPARE_LIMITS on rev-parse and switch, branch %s",
+    async (_case, found, switched) => {
+      const { shell, calls } = recordingShell(by({ "rev-parse": () => found }));
+
+      await ensureJobBranch(shell, JOB_ID, BASE, never());
+
+      expect(calls).toEqual([
+        { argv: REV_PARSE, cwd: undefined, limits: PREPARE_LIMITS },
+        { argv: switched, cwd: undefined, limits: PREPARE_LIMITS },
+      ]);
+    },
+  );
+
+  it("cleanRoomClone passes no limits: it runs after collect, outside preparing", async () => {
+    const { shell, calls } = recordingShell(by());
+
+    await cleanRoomClone(shell, never());
+
+    expect(calls.map((call) => [call.argv[1], call.limits])).toEqual([
+      ["reset", undefined],
+      ["clean", undefined],
+    ]);
+  });
+
+  it.each([
+    ["its complete lines", " M a.txt\n?? new/\n?? partial-na", ["a.txt", "new/"]],
+    ["no complete line", "?? partial-na", []],
+  ])("a git status that overflows is dirty_clone, paths from %s", async (_case, head, paths) => {
+    const { shell } = recordingShell(by({ status: () => overflowed(head) }));
+
+    expect(await checkRoomClone(shell, REPO, never())).toEqual({ reason: "dirty_clone", paths });
+  });
+
+  it.each([
+    [
+      "test -d",
+      "test",
+      (shell: RoomShell): Promise<unknown> => checkRoomClone(shell, REPO, never()),
+    ],
+    [
+      "git rev-parse",
+      "rev-parse",
+      (shell: RoomShell): Promise<unknown> => ensureJobBranch(shell, JOB_ID, BASE, never()),
+    ],
+    [
+      "git switch",
+      "switch",
+      (shell: RoomShell): Promise<unknown> => ensureJobBranch(shell, JOB_ID, BASE, never()),
+    ],
+  ])(
+    "%s that overflows is ChannelFailed: no overflow is expected there",
+    async (_case, command, step) => {
+      const { shell } = recordingShell(by({ [command]: () => overflowed("x") }));
+
+      const error = await rejection(step(shell));
+
+      expect(error).toBeInstanceOf(ChannelFailed);
+      expect(error).toMatchObject({ reason: "channel_failed" });
+      expect(error instanceof Error ? error.message : "").toMatch(/output overflowed$/);
+    },
+  );
 });

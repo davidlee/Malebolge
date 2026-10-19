@@ -59,20 +59,41 @@ export type CloneDefect =
   | { reason: "guest_path_invalid"; guestPath: string }
   | { reason: "dirty_clone"; paths: string[] };
 
+/** Per-exec bounds on a room shell call (design §4.2); each absent bound is no bound. */
+export interface ShellLimits {
+  /** Stop the exec once stdout passes this many bytes; the result is `overflowed`. */
+  maxStdoutBytes?: number;
+  /** Keep at most this many stderr bytes. */
+  maxStderrBytes?: number;
+  /** pi-env's exec timeout, seconds. */
+  timeoutS?: number;
+}
+
+/** The bounds of every `preparing` exec in the room's clone (design §4.2). */
+export const PREPARE_LIMITS = {
+  timeoutS: 60,
+  maxStdoutBytes: 65_536,
+  maxStderrBytes: 4096,
+} as const satisfies ShellLimits;
+
 export interface ShellOutput {
+  /** The exit code; meaningless when `overflowed` (the shell may have stopped the process). */
   code: number;
   stdout: string;
   stderr: string;
+  /** Stdout passed `maxStdoutBytes`: `stdout` is its head, cut at a character boundary. */
+  overflowed?: true;
 }
 
 /**
- * Runs an argument vector in the room's clone (or `cwd`); ChannelUnavailable
- * when the room is down.
+ * Runs an argument vector in the room's clone (or `cwd`), within `limits`;
+ * ChannelUnavailable when the room is down.
  */
 export type RoomShell = (
   argv: readonly string[],
   signal: AbortSignal,
   cwd?: string,
+  limits?: ShellLimits,
 ) => Promise<ShellOutput>;
 
 interface ChannelErrorOptions<Reason> extends ErrorOptions {
@@ -112,19 +133,35 @@ export class ChannelFailed extends Error {
 /** The branch a job's commits are made on in the room. */
 export const jobBranch = (jobId: string): string => `job/${jobId}`;
 
-/** `argv`'s stdout; ChannelFailed when it exits non-zero. */
+/**
+ * `argv`'s `output`, when it did not overflow: ChannelFailed when it did, for
+ * a step that expects no more output than its limits allow (its exit code is
+ * then meaningless).
+ */
+export function notOverflowed(argv: readonly string[], output: ShellOutput): ShellOutput {
+  if (output.overflowed) {
+    throw new ChannelFailed(`${argv.join(" ")}: output overflowed`);
+  }
+  return output;
+}
+
+/** `argv`'s stdout from `output`; ChannelFailed when it overflowed or exited non-zero. */
+function successStdout(argv: readonly string[], output: ShellOutput): string {
+  const { code, stdout, stderr } = notOverflowed(argv, output);
+  if (code !== 0) {
+    throw new ChannelFailed(`${argv.join(" ")} exited ${String(code)}: ${stderr.trim()}`);
+  }
+  return stdout;
+}
+
+/** `argv`'s stdout, run within `limits`; ChannelFailed when it overflows or exits non-zero. */
 export async function succeeded(
   shell: RoomShell,
   argv: readonly string[],
   signal: AbortSignal,
+  limits?: ShellLimits,
 ): Promise<string> {
-  const output = await shell(argv, signal);
-  if (output.code !== 0) {
-    throw new ChannelFailed(
-      `${argv.join(" ")} exited ${String(output.code)}: ${output.stderr.trim()}`,
-    );
-  }
-  return output.stdout;
+  return successStdout(argv, await shell(argv, signal, undefined, limits));
 }
 
 /** `capsule args`. Rejects only when it cannot run, or (`TimedOut`) outlives `timeoutMs`. */
@@ -398,6 +435,8 @@ export function roomChannel(
  * The room's preparing checks (design §5.2): `<guest_path>/.git` is a
  * directory, and `git status --porcelain` is empty (untracked counted, ignored
  * not). Run from `/`, so an absent `guest_path` is a defect, not a failed exec.
+ * Both run within PREPARE_LIMITS (design §4.2): a status that overflows is
+ * dirty, its paths those of the head's complete lines.
  */
 export async function checkRoomClone(
   shell: RoomShell,
@@ -405,15 +444,21 @@ export async function checkRoomClone(
   signal: AbortSignal,
 ): Promise<CloneDefect | undefined> {
   const { guestPath } = repo;
-  if ((await shell(["test", "-d", `${guestPath}/.git`], signal, "/")).code !== 0) {
+  const probe = ["test", "-d", `${guestPath}/.git`];
+  if (notOverflowed(probe, await shell(probe, signal, "/", PREPARE_LIMITS)).code !== 0) {
     return { reason: "guest_path_invalid", guestPath };
   }
   const status = ["git", "status", "--porcelain", "--untracked-files=normal"];
-  const paths = (await succeeded(shell, status, signal))
+  const output = await shell(status, signal, undefined, PREPARE_LIMITS);
+  // An overflowed head ends mid-line: only its complete lines name paths.
+  const listing = output.overflowed
+    ? output.stdout.slice(0, output.stdout.lastIndexOf("\n") + 1)
+    : successStdout(status, output);
+  const paths = listing
     .split("\n")
     .filter((line) => line !== "")
     .map((line) => line.slice(3));
-  return paths.length === 0 ? undefined : { reason: "dirty_clone", paths };
+  return paths.length === 0 && !output.overflowed ? undefined : { reason: "dirty_clone", paths };
 }
 
 /**

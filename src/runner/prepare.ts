@@ -13,6 +13,8 @@ import {
   ChannelUnavailable,
   type GitChannel,
   jobBranch,
+  notOverflowed,
+  PREPARE_LIMITS,
   type RoomShell,
   succeeded,
 } from "./room.ts";
@@ -65,12 +67,15 @@ export async function ensureJobBranch(
   signal: AbortSignal,
 ): Promise<void> {
   const branch = jobBranch(jobId);
-  const found = await shell(
-    ["git", "rev-parse", "--verify", "--quiet", `refs/heads/${branch}`],
-    signal,
-  );
+  const lookup = ["git", "rev-parse", "--verify", "--quiet", `refs/heads/${branch}`];
+  const found = notOverflowed(lookup, await shell(lookup, signal, undefined, PREPARE_LIMITS));
   if (found.code === 1) {
-    await succeeded(shell, ["git", "switch", "--quiet", "-c", branch, baseOid], signal);
+    await succeeded(
+      shell,
+      ["git", "switch", "--quiet", "-c", branch, baseOid],
+      signal,
+      PREPARE_LIMITS,
+    );
     return;
   }
   if (found.code !== 0) {
@@ -80,7 +85,7 @@ export async function ensureJobBranch(
   if (oid !== baseOid) {
     throw new PrepareFailed({ reason: "job_branch_moved", branch, baseOid, found: oid });
   }
-  await succeeded(shell, ["git", "switch", "--quiet", branch], signal);
+  await succeeded(shell, ["git", "switch", "--quiet", branch], signal, PREPARE_LIMITS);
 }
 
 // --- readying, with backoff ------------------------------------------------------
