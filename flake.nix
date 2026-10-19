@@ -2,18 +2,26 @@
   description = "malebolge: its tool set, for a devshell and the oubliette room";
 
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+  inputs.doctrine.url = "github:davidlee/doctrine";
 
   outputs = {
     self,
     nixpkgs,
+    doctrine,
   }: let
     systems = ["x86_64-linux" "aarch64-linux" "aarch64-darwin"];
     forAll = f: nixpkgs.lib.genAttrs systems (system: f nixpkgs.legacyPackages.${system});
 
     # node runs the TypeScript directly (package.json `engines`: >=24); biome,
     # eslint, tsc and vitest are npm devDependencies, reached through `npx`, so
-    # they need `npm ci` and are not here.
-    devToolPkgs = pkgs: with pkgs; [nodejs_24 just];
+    # they need `npm ci` and are not here. doctrine is how the patch runner
+    # reads a repo's boot inside the room (design SL-026 §4.3); harmless in the
+    # devshell. It publishes packages for x86_64-linux and aarch64-darwin only,
+    # so it is included only where its flake has this system.
+    devToolPkgs = pkgs:
+      (with pkgs; [nodejs_24 just])
+      ++ pkgs.lib.optional (doctrine.packages ? ${pkgs.stdenv.hostPlatform.system})
+      doctrine.packages.${pkgs.stdenv.hostPlatform.system}.default;
 
     # The patch-job runner, for the satan-runner user unit (~/flakes
     # features/satan/runner.nix): the tree's src/ with production deps only.
