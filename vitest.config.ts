@@ -4,6 +4,9 @@ import { defineConfig } from "vitest/config";
 // excluded. Ratchet the threshold up, never down.
 export default defineConfig({
   test: {
+    // Only this repo's suite: direnv copies flake inputs (with their own
+    // tests) under .direnv/, which vitest's default glob would collect.
+    include: ["test/**/*.test.ts"],
     coverage: {
       enabled: true,
       provider: "v8",
