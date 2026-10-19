@@ -333,7 +333,8 @@ async function admit(
     });
   }
   const shell = roomShell(connection, job.id, repo.guestPath);
-  await readyRoom(deps, job, repo, shell, control.signal);
+  // No final step: the project-context fetch is not composed into the prompt yet.
+  await readyRoom(deps, job, repo, shell, control.signal, () => Promise.resolve(undefined));
   const run = openRun(deps, { ...job, conversationId }, resolved, conversation, connection, stops);
   const seated = run.seat();
   await conversation.configure(

@@ -275,7 +275,11 @@ describe("startRunner runs jobs (B2.2)", () => {
       await store.jobs.transition(job.id, leftIn, T0);
     }
     await store.storage.close(context);
-    return { env, jobId: job.id, room: { channel: world.channel, connect: localConnection } };
+    return {
+      env,
+      jobId: job.id,
+      room: { channel: world.channel, connect: () => localConnection() },
+    };
   }
 
   it("with enabled = true drains a job queued before it started, through the model", async () => {

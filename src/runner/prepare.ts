@@ -109,20 +109,28 @@ async function recordBase(deps: ReadyDeps, job: Job, repo: RepoConfig): Promise<
 }
 
 /**
+ * The last step of readying (design §4.2): run with the loop's shell and
+ * signal once the job branch is at the base. A ChannelUnavailable from it
+ * retries the whole attempt, so whatever it gathers belongs to its own call.
+ */
+export type FinalStep<T> = (shell: RoomShell, signal: AbortSignal) => Promise<T>;
+
+/**
  * The room ready for preparing `job`: its base refreshed (once; a recorded
  * `base_oid` is kept), its clone checked (never cleaned: a defect is
- * PrepareFailed with it, design §5.2) and the job branch at the base. Returns the base oid. A room
- * that is down is retried until `max_room_wait` from `state_entered_at`, then
- * PrepareFailed `room_unavailable`. Stops early, rethrowing, once `signal`
- * aborts.
+ * PrepareFailed with it, design §5.2), the job branch at the base, then
+ * `finalStep`. Returns the base oid and the step's value. A room that is down
+ * is retried until `max_room_wait` from `state_entered_at`, then PrepareFailed
+ * `room_unavailable`. Stops early, rethrowing, once `signal` aborts.
  */
-export async function readyRoom(
+export async function readyRoom<T>(
   deps: ReadyDeps,
   job: Job,
   repo: RepoConfig,
   shell: RoomShell,
   signal: AbortSignal,
-): Promise<string> {
+  finalStep: FinalStep<T>,
+): Promise<{ baseOid: string; value: T }> {
   const deadline = roomWaitDeadline(job.stateEnteredAt, deps.config.maxima.maxRoomWaitS);
   let baseOid = job.baseOid;
   for (let attempt = 0; ; attempt++) {
@@ -134,7 +142,7 @@ export async function readyRoom(
         throw new PrepareFailed(defect);
       }
       await ensureJobBranch(shell, job.id, baseOid, signal);
-      return baseOid;
+      return { baseOid, value: await finalStep(shell, signal) };
     } catch (error) {
       if (!(error instanceof ChannelUnavailable)) {
         throw error;

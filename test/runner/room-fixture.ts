@@ -32,8 +32,9 @@
 import { execFileSync } from "node:child_process";
 import { join } from "node:path";
 import type { SqliteDatabase } from "@earendil-works/pi-durable/storage/sqlite";
+import type { Connection } from "@earendil-works/pi-env";
 import { type CollectDeps } from "../../src/runner/collect.ts";
-import { readyRoom, type ReadyDeps } from "../../src/runner/prepare.ts";
+import { type FinalStep, readyRoom, type ReadyDeps } from "../../src/runner/prepare.ts";
 import { roomShell } from "../../src/runner/shell.ts";
 import type { RepoConfig, RunnerConfig } from "../../src/runner/config.ts";
 import { gitQuarantineReader } from "../../src/runner/git.ts";
@@ -43,6 +44,7 @@ import { type ProgramOutput, TimedOut } from "../../src/runner/exec.ts";
 import {
   type CapsuleCli,
   type GitChannel,
+  type RoomShell,
   roomChannel,
   slotChannel,
 } from "../../src/runner/room.ts";
@@ -505,13 +507,30 @@ export interface Readying {
   job: Job;
   /** Each pause, in ms; the clock moves by it. */
   slept: number[];
-  /** `readyRoom` for the job over `repo` (default the world's), its shell in `repo.guestPath`. */
+  /** `readyRoom` for the job over `repo` (default the world's), its shell in `repo.guestPath`; the base. */
   ready: (repo?: RepoConfig) => Promise<string>;
+  /** `ready` with `finalStep` as readyRoom's last step: the base and the step's value. */
+  readyWith: <T>(finalStep: FinalStep<T>, repo?: RepoConfig) => Promise<Readied<T>>;
+}
+
+/** What readyRoom returns. */
+export interface Readied<T> {
+  baseOid: string;
+  value: T;
+}
+
+export interface ReadyingOptions {
+  maxRoomWaitS?: number;
+  onSleep?: () => void;
+  /** The daemon each ready connects to; default `localConnection()`. */
+  connect?: () => Connection;
+  /** The shell readyRoom is given, from the room shell; default as is. */
+  wrap?: (shell: RoomShell) => RoomShell;
 }
 
 export async function readying(
   world: RoomKindWorld,
-  options: { maxRoomWaitS?: number; onSleep?: () => void } = {},
+  options: ReadyingOptions = {},
 ): Promise<Readying> {
   const { jobs } = await openTestStore();
   const { job: queued } = await jobs.submit(NEW_JOB, T0);
@@ -531,14 +550,18 @@ export async function readying(
       return Promise.resolve();
     },
   };
-  const ready = async (repo = world.repo): Promise<string> => {
-    const connection = localConnection();
+  const connect = options.connect ?? ((): Connection => localConnection());
+  const wrap = options.wrap ?? ((shell: RoomShell): RoomShell => shell);
+  const readyWith = async <T>(finalStep: FinalStep<T>, repo = world.repo): Promise<Readied<T>> => {
+    const connection = connect();
     try {
-      const shell = roomShell(connection, job.id, repo.guestPath);
-      return await readyRoom(deps, job, repo, shell, new AbortController().signal);
+      const shell = wrap(roomShell(connection, job.id, repo.guestPath));
+      return await readyRoom(deps, job, repo, shell, new AbortController().signal, finalStep);
     } finally {
       connection.close();
     }
   };
-  return { jobs, job, slept, ready };
+  const ready = async (repo = world.repo): Promise<string> =>
+    (await readyWith(() => Promise.resolve(undefined), repo)).baseOid;
+  return { jobs, job, slept, ready, readyWith };
 }

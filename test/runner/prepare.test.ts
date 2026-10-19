@@ -12,6 +12,7 @@ import type { RepoConfig, RunnerConfig } from "../../src/runner/config.ts";
 import { RunnerError } from "../../src/runner/errors.ts";
 import {
   ensureJobBranch,
+  type FinalStep,
   PrepareFailed,
   preparingFailure,
   readyRoom,
@@ -26,7 +27,6 @@ import {
   type GitChannel,
   PREPARE_LIMITS,
   type RoomShell,
-  type ShellLimits,
   type ShellOutput,
 } from "../../src/runner/room.ts";
 import { roomShell } from "../../src/runner/shell.ts";
@@ -40,7 +40,15 @@ import {
   roomKindWorld,
   roomWorld,
 } from "./room-fixture.ts";
-import { never, rejection, shellKit } from "./shell-fixture.ts";
+import {
+  by,
+  exit,
+  never,
+  overflowed,
+  recordingShell,
+  rejection,
+  shellKit,
+} from "./shell-fixture.ts";
 import { NEW_JOB, openTestStore, T0 } from "./store-fixture.ts";
 
 const JOB_ID = "pj-1";
@@ -55,9 +63,6 @@ const REPO: RepoConfig = {
   defaultBranch: "main",
   ceilings: {},
 };
-
-/** A shell answer: exit `code` with `stdout`, no stderr. */
-const exit = (code: number, stdout = ""): ShellOutput => ({ code, stdout, stderr: "" });
 
 describe("ensureJobBranch (real git through a local daemon)", () => {
   interface BranchWorld {
@@ -210,8 +215,15 @@ describe("readyRoom", () => {
     };
   }
 
-  const ready = (w: ReadyWorld, signal = never()): Promise<string> =>
-    readyRoom(w.deps, w.job, REPO, w.shell, signal);
+  const readyWith = <T>(
+    w: ReadyWorld,
+    finalStep: FinalStep<T>,
+    signal = never(),
+  ): Promise<{ baseOid: string; value: T }> =>
+    readyRoom(w.deps, w.job, REPO, w.shell, signal, finalStep);
+
+  const ready = async (w: ReadyWorld, signal = never()): Promise<string> =>
+    (await readyWith(w, () => Promise.resolve(undefined), signal)).baseOid;
 
   it("refreshes the base once, records it with a refreshed event, and makes the job branch at it", async () => {
     const w = await readyWorld();
@@ -365,6 +377,71 @@ describe("readyRoom", () => {
     expect(w.refreshes()).toBe(1);
     expect(w.slept).toHaveLength(1);
   });
+
+  describe("its FinalStep (VT-3, design §4.2)", () => {
+    it("runs last, after the job branch, with the loop's shell and signal; its value is returned beside the base", async () => {
+      const w = await readyWorld();
+      const stop = new AbortController();
+      const seen: { shell: RoomShell; signal: AbortSignal; callsBefore: string[][] }[] = [];
+
+      const readied = await readyWith(
+        w,
+        (shell, signal) => {
+          seen.push({ shell, signal, callsBefore: w.shellCalls.map((argv) => [...argv]) });
+          return Promise.resolve("fetched");
+        },
+        stop.signal,
+      );
+
+      expect(readied).toEqual({ baseOid: BASE, value: "fetched" });
+      expect(seen).toHaveLength(1);
+      expect(seen[0]?.shell).toBe(w.shell);
+      expect(seen[0]?.signal).toBe(stop.signal);
+      expect(seen[0]?.callsBefore.map((argv) => argv[1])).toEqual(["rev-parse", "switch"]);
+    });
+
+    it("a ChannelUnavailable inside the step is retried, and the failed attempt's data is discarded", async () => {
+      // Attempt 1 makes the branch; attempt 2 finds it at the base and switches.
+      const w = await readyWorld({
+        shell: [
+          (): ShellOutput => exit(1),
+          (): ShellOutput => exit(0),
+          (): ShellOutput => exit(0, `${BASE}\n`),
+          (): ShellOutput => exit(0),
+        ],
+      });
+      let attempts = 0;
+      const step: FinalStep<string[]> = () => {
+        const degraded = [`attempt ${String(++attempts)}`];
+        if (attempts === 1) {
+          // A room lost while starting an exec: a spawn_error cause, still a retry.
+          return Promise.reject(
+            new ChannelUnavailable("lost", {
+              cause: new ExecutionError("spawn_error", "spawn"),
+            }),
+          );
+        }
+        return Promise.resolve(degraded);
+      };
+
+      const readied = await readyWith(w, step);
+
+      expect(readied).toEqual({ baseOid: BASE, value: ["attempt 2"] });
+      expect(w.slept).toEqual([roomRetryDelay(0)]);
+      expect(w.refreshes()).toBe(1);
+      expect(w.checks()).toBe(2);
+    });
+
+    it.each([
+      ["a ChannelFailed", new ChannelFailed("host key", { reason: "host_key" })],
+      ["a PrepareFailed", new PrepareFailed({ reason: "dirty_clone", paths: [] })],
+    ])("%s from the step propagates, never retried", async (_case, failure) => {
+      const w = await readyWorld();
+
+      expect(await rejection(readyWith(w, () => Promise.reject(failure)))).toBe(failure);
+      expect(w.slept).toEqual([]);
+    });
+  });
 });
 
 describe("readyRoom over a room's clone: checked, never cleaned (VT-7, EX-6)", () => {
@@ -502,39 +579,6 @@ describe("preparingFailure", () => {
 });
 
 describe("preparing execs carry PREPARE_LIMITS (VT-2, design §4.2)", () => {
-  interface ShellCall {
-    argv: string[];
-    cwd: string | undefined;
-    limits: ShellLimits | undefined;
-  }
-
-  /** A shell answering each call by `answer(argv)` (a thrown error rejects), recording every call. */
-  function recordingShell(answer: (argv: readonly string[]) => ShellOutput): {
-    shell: RoomShell;
-    calls: ShellCall[];
-  } {
-    const calls: ShellCall[] = [];
-    const shell: RoomShell = (argv, _signal, cwd, limits) => {
-      calls.push({ argv: [...argv], cwd, limits });
-      return Promise.resolve().then(() => answer(argv));
-    };
-    return { shell, calls };
-  }
-
-  const overflowed = (stdout: string): ShellOutput => ({
-    code: -1,
-    stdout,
-    stderr: "",
-    overflowed: true,
-  });
-  /** Answers by the command: `test` passes, `rev-parse` finds nothing (1), the rest exit 0. */
-  const by =
-    (overrides: Record<string, () => ShellOutput> = {}) =>
-    (argv: readonly string[]): ShellOutput => {
-      const command = argv[0] === "git" ? (argv[1] ?? "") : (argv[0] ?? "");
-      return overrides[command]?.() ?? exit(command === "rev-parse" ? 1 : 0);
-    };
-
   it("are bounded to 60 s, 64 KiB of stdout and 4 KiB of stderr", () => {
     expect(PREPARE_LIMITS).toEqual({ timeoutS: 60, maxStdoutBytes: 65_536, maxStderrBytes: 4096 });
   });

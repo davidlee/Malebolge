@@ -23,8 +23,18 @@ import {
   roomConnection,
 } from "../../src/runner/room.ts";
 
-/** A real local pi-env daemon (the binary pi-env ships for this machine). */
-export const localConnection = (): Connection => new Connection({ command: [localDaemon()] });
+/**
+ * A real local pi-env daemon (the binary pi-env ships for this machine). With
+ * `path`, the daemon starts with that PATH, so its execs resolve binaries
+ * from it (a fake first on `path` is the one run).
+ */
+export const localConnection = (path?: string): Connection =>
+  new Connection({
+    command: path === undefined ? [localDaemon()] : ["env", `PATH=${path}`, localDaemon()],
+  });
+
+/** `dir` first, then the test process's PATH. */
+export const pathWith = (dir: string): string => `${dir}:${process.env["PATH"] ?? ""}`;
 
 /** A daemon that exits before it is ready: pi-env's own lost failure, deterministically. */
 export const lostConnection = (): Connection => new Connection({ command: ["sh", "-c", "exit 3"] });

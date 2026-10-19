@@ -101,7 +101,7 @@ describe("a clean that fails: audited, the job's outcome unchanged", () => {
     const world = await withResidue();
     writeFileSync(join(world.room.path, ".git", "index.lock"), "");
 
-    await collectedWith(world, localConnection);
+    await collectedWith(world, () => localConnection());
 
     const failed = (await world.events()).find((event) => event.kind === "clean_failed");
     expect(failed?.payload).toMatchObject({ reason: "channel_failed" });
@@ -162,7 +162,7 @@ describe("a crash between collect and clean (EX-7)", () => {
     expect(await world.job()).toMatchObject({ state: "collecting", reviewedOid: world.tip });
     expect(status(world)).toBe(before);
 
-    world.deps.connect = localConnection;
+    world.deps.connect = (): Connection => localConnection();
     const job = await collectJob(world.deps, world.jobId, T0 + 20);
 
     expect(job.state).toBe("needs_review");
