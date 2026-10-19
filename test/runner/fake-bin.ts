@@ -37,3 +37,14 @@ export function realBin(name: string): string {
   }
   return found;
 }
+
+/**
+ * `dir`, then the entries of the test process's PATH holding no executable
+ * `name`: a daemon PATH on which `name` cannot be found.
+ */
+export function pathWithout(name: string, dir: string): string {
+  const kept = (process.env["PATH"] ?? "")
+    .split(delimiter)
+    .filter((entry) => !isExecutableFile(join(entry, name)));
+  return [dir, ...kept].join(delimiter);
+}

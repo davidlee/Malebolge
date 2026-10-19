@@ -29,6 +29,7 @@ import {
   type RoomShell,
   type ShellOutput,
 } from "../../src/runner/room.ts";
+import { fetchProjectContext } from "../../src/runner/project-context.ts";
 import { roomShell } from "../../src/runner/shell.ts";
 import type { Job, JobStore } from "../../src/runner/store.ts";
 import { exampleConfig } from "./config-fixture.ts";
@@ -47,6 +48,7 @@ import {
   overflowed,
   recordingShell,
   rejection,
+  type ShellAnswer,
   shellKit,
 } from "./shell-fixture.ts";
 import { NEW_JOB, openTestStore, T0 } from "./store-fixture.ts";
@@ -131,6 +133,8 @@ describe("readyRoom", () => {
     refreshes: () => number;
     /** Clone checks so far. */
     checks: () => number;
+    /** Clone cleans tried so far (preparing never cleans). */
+    cleans: () => number;
     slept: number[];
     shellCalls: string[][];
     shell: RoomShell;
@@ -141,6 +145,8 @@ describe("readyRoom", () => {
     refresh?: Step[];
     /** Each shell call takes the next answer; the last repeats. Default: branch absent, made. */
     shell?: (() => ShellOutput)[];
+    /** Answers each shell call by its argv instead of `shell`'s sequence. */
+    answer?: ShellAnswer;
     baseOid?: string;
     maxRoomWaitS?: number;
     /** Called on each pause, after the clock moves. */
@@ -164,6 +170,7 @@ describe("readyRoom", () => {
     const refreshSteps = options.refresh ?? [(): string => BASE];
     let refreshes = 0;
     let checks = 0;
+    let cleans = 0;
     const channel: GitChannel = {
       refresh: () => {
         const next = refreshSteps[Math.min(refreshes++, refreshSteps.length - 1)];
@@ -175,14 +182,20 @@ describe("readyRoom", () => {
         checks++;
         return options.checkClone?.(shell, repo, signal) ?? Promise.resolve(options.defect);
       },
-      cleanClone: () => Promise.reject(new Error("preparing never cleans")),
+      cleanClone: () => {
+        cleans++;
+        return Promise.reject(new Error("preparing never cleans"));
+      },
     };
     const answers = options.shell ?? [(): ShellOutput => exit(1), (): ShellOutput => exit(0)];
     const shellCalls: string[][] = [];
     const shell: RoomShell = (argv) => {
       const answer = answers[Math.min(shellCalls.length, answers.length - 1)];
       shellCalls.push([...argv]);
-      return Promise.resolve().then(() => answer?.() ?? exit(0));
+      const { answer: byArgv } = options;
+      return Promise.resolve().then(() =>
+        byArgv === undefined ? (answer?.() ?? exit(0)) : byArgv(argv),
+      );
     };
     const example = exampleConfig();
     const config: RunnerConfig = {
@@ -209,6 +222,7 @@ describe("readyRoom", () => {
       job,
       refreshes: () => refreshes,
       checks: () => checks,
+      cleans: () => cleans,
       slept,
       shellCalls,
       shell,
@@ -440,6 +454,25 @@ describe("readyRoom", () => {
 
       expect(await rejection(readyWith(w, () => Promise.reject(failure)))).toBe(failure);
       expect(w.slept).toEqual([]);
+    });
+
+    it("fetchProjectContext as the step: doctrine leaving the clone dirty fails preparing dirty_clone, unretried, never cleaned", async () => {
+      const w = await readyWorld({
+        answer: by({
+          doctrine: () => exit(0, "boot"),
+          status: () => exit(0, "?? doctrine-wrote-this\n"),
+        }),
+      });
+
+      const error = await rejection(readyWith(w, fetchProjectContext(REPO)));
+
+      expect(preparingFailure(error).failure).toEqual({
+        reason: "dirty_clone",
+        paths: ["doctrine-wrote-this"],
+      });
+      expect(w.slept).toEqual([]);
+      expect(w.cleans()).toBe(0);
+      expect(w.shellCalls.filter((argv) => ["reset", "clean"].includes(argv[1] ?? ""))).toEqual([]);
     });
   });
 });

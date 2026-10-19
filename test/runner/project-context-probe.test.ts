@@ -17,12 +17,13 @@
 // device node in the clone needs mknod, which needs root.
 
 import { execFileSync } from "node:child_process";
-import { mkdirSync, statSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { SOURCE_CAP_BYTES } from "../../src/project-context.ts";
 import { type FinalStep, preparingFailure } from "../../src/runner/prepare.ts";
 import {
+  DOCTRINE_LIMITS,
   FETCH_LIMITS,
   type Fetched,
   fetchProjectContext,
@@ -30,7 +31,7 @@ import {
 } from "../../src/runner/project-context.ts";
 import { ChannelFailed, PREPARE_LIMITS, type ShellLimits } from "../../src/runner/room.ts";
 import { localConnection, pathWith } from "./env-fixture.ts";
-import { fakeBin, realBin } from "./fake-bin.ts";
+import { fakeBin, pathWithout, realBin } from "./fake-bin.ts";
 import { tempDir, type TestRepo } from "./git-fixture.ts";
 import { type RoomKindWorld, readying, roomKindWorld } from "./room-fixture.ts";
 import { type ObservedCall, observedShell } from "./shell-fixture.ts";
@@ -46,10 +47,26 @@ const HONEST_STEP_MS = 3000;
 
 const PROBE_TIMEOUT_MS = 20_000;
 
-/** The limits production requests per binary: the fetch's; preparing's for the rest. */
-const FETCH_EXEC_LIMITS: Record<string, ShellLimits> = { head: HEAD_LIMITS, stat: FETCH_LIMITS };
-const limitsFor = (argv: readonly string[]): ShellLimits =>
-  FETCH_EXEC_LIMITS[argv[0] ?? ""] ?? PREPARE_LIMITS;
+/**
+ * The limits production requests for `argv`: the fetch's for its own execs
+ * (`stat`, `head`, the doctrine step's `test -d .doctrine` and `git
+ * check-ignore`, doctrine itself); preparing's for the rest (checkClone, both
+ * times, and the job branch), though they run the same binaries.
+ */
+function limitsFor(argv: readonly string[]): ShellLimits {
+  const [command, first, second] = argv;
+  if (command === "doctrine") {
+    return DOCTRINE_LIMITS;
+  }
+  if (command === "head") {
+    return HEAD_LIMITS;
+  }
+  const fetchProbe =
+    command === "stat" ||
+    (command === "test" && second === ".doctrine") ||
+    (command === "git" && first === "check-ignore");
+  return fetchProbe ? FETCH_LIMITS : PREPARE_LIMITS;
+}
 
 interface ProbeOptions {
   /** Commits in the real repo, beyond the regular `CLAUDE.md` every probe has. */
@@ -60,6 +77,8 @@ interface ProbeOptions {
   fakes?: (world: RoomKindWorld) => Record<string, string>;
   /** Divide each exec's timeout by TIME_DIVISOR. */
   scaled?: boolean;
+  /** The daemon's PATH, from the fakes' directory; default that directory first, then the host's. */
+  path?: (bin: string) => string;
 }
 
 interface ProbeRun {
@@ -84,7 +103,9 @@ function commitLink(real: TestRepo, name: string, target: string): void {
 
 /** A file `name` holding `text`, committed in `real`. */
 function commitText(real: TestRepo, name: string, text: string): void {
-  writeFileSync(join(real.path, name), text);
+  const path = join(real.path, name);
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, text);
   real.git("add", "--", name);
   real.git("commit", "--quiet", "--no-verify", "-m", `add ${name}`);
 }
@@ -106,7 +127,7 @@ async function probe(options: ProbeOptions = {}): Promise<ProbeRun> {
   }
   let calls: ObservedCall[] = [];
   const r = await readying(world, {
-    connect: () => localConnection(pathWith(bin)),
+    connect: () => localConnection((options.path ?? pathWith)(bin)),
     wrap: (shell) => {
       const observed = observedShell(shell, {
         timeScale: options.scaled === true ? 1 / TIME_DIVISOR : 1,
@@ -409,6 +430,193 @@ exec ${realBin("git")} "$@"`,
         ["test", "-d"],
         ["git", "status"],
       ]);
+    });
+  });
+
+  describe("doctrine's boot and the clone re-check (design §4.3)", () => {
+    /** `real` with doctrine set up: a committed `.doctrine/`, its state ignored. */
+    function doctrineRepo(real: TestRepo, ignore = ".doctrine/state/\n"): void {
+      real.commit(".doctrine/config.toml");
+      if (ignore !== "") {
+        commitText(real, ".gitignore", ignore);
+      }
+      real.commit("AGENTS.md");
+    }
+
+    /** A fake doctrine as the real one behaves: the boot written to its ignored file, and printed. */
+    const WRITES_BOOT = `mkdir -p .doctrine/state
+printf 'the boot\\n' > .doctrine/state/boot.md
+exec ${realBin("cat")} .doctrine/state/boot.md`;
+
+    const doctrineCall = (run: ProbeRun): ObservedCall | undefined =>
+      run.calls.find((call) => call.argv[0] === "doctrine");
+
+    /** The execs after doctrine, up to the chain: the re-check. */
+    const recheck = (run: ProbeRun): string[][] => {
+      const after = run.calls.findIndex((call) => call.argv[0] === "doctrine") + 1;
+      return run.calls.slice(after, after + 2).map((call) => call.argv.slice(0, 2));
+    };
+    const RECHECK = [
+      ["test", "-d"],
+      ["git", "status"],
+    ];
+
+    const agentsMd = (run: ProbeRun): Fetched["sources"][number] => ({
+      origin: { path: at(run, "AGENTS.md") },
+      text: "AGENTS.md\n",
+    });
+    const BOOT = { command: "doctrine prompt resolve --role orchestrator" };
+
+    it("P12: a doctrine writing its ignored boot and printing it: a source before AGENTS.md, the clone still clean", async () => {
+      const run = await probe({
+        scaled: true,
+        base: (real) => {
+          doctrineRepo(real);
+        },
+        fakes: () => ({ doctrine: WRITES_BOOT }),
+      });
+
+      expectBounded(run);
+      expect(fetched(run)).toEqual({
+        sources: [{ origin: BOOT, text: "the boot\n" }, agentsMd(run)],
+        degraded: [],
+      });
+      expect(recheck(run)).toEqual(RECHECK);
+      expect(existsSync(at(run, ".doctrine/state/boot.md"))).toBe(true);
+    });
+
+    it("P12: a doctrine streaming without end: the cap's head, truncated, promptly", async () => {
+      const run = await probe({
+        scaled: true,
+        base: (real) => {
+          doctrineRepo(real);
+        },
+        fakes: () => ({ doctrine: "exec yes" }),
+      });
+
+      expectBounded(run);
+      expect(run.stepMs).toBeLessThan(HONEST_STEP_MS);
+      expect(fetched(run)).toEqual({
+        sources: [
+          { origin: BOOT, text: `${"y\n".repeat(SOURCE_CAP_BYTES / 2)}${TRUNCATED}` },
+          agentsMd(run),
+        ],
+        degraded: [],
+      });
+    });
+
+    it("P12: a doctrine that never exits: timeout within one 60 s timeout, then the re-check, the job going on", async () => {
+      const run = await probe({
+        scaled: true,
+        base: (real) => {
+          doctrineRepo(real);
+        },
+        fakes: () => ({ doctrine: "exec sleep 30" }),
+      });
+
+      expectBounded(run);
+      expect(doctrineCall(run)?.passedTimeoutS).toBe(DOCTRINE_LIMITS.timeoutS / TIME_DIVISOR);
+      expect(recheck(run)).toEqual(RECHECK);
+      expect(fetched(run)).toEqual({
+        sources: [agentsMd(run)],
+        degraded: [{ source: "doctrine", reason: "timeout" }],
+      });
+    });
+
+    it("P12: a doctrine leaving an untracked file: PrepareFailed dirty_clone, the file left there (never cleaned)", async () => {
+      const run = await probe({
+        scaled: true,
+        base: (real) => {
+          doctrineRepo(real);
+        },
+        fakes: () => ({ doctrine: `printf stray > stray.txt\n${WRITES_BOOT}` }),
+      });
+
+      expectBounded(run);
+      expect(failure(run).failure).toEqual({ reason: "dirty_clone", paths: ["stray.txt"] });
+      expect(existsSync(at(run, "stray.txt"))).toBe(true);
+      expect(run.calls.some((call) => ["reset", "clean"].includes(call.argv[1] ?? ""))).toBe(false);
+    });
+
+    it("P13: a git whose status never exits once doctrine has run: dirty_clone, no paths, bounded", async () => {
+      const marker = join(tempDir("mb-mark-"), "doctrine-ran");
+      const run = await probe({
+        scaled: true,
+        base: (real) => {
+          doctrineRepo(real);
+        },
+        fakes: () => ({
+          doctrine: `touch '${marker}'\n${WRITES_BOOT}`,
+          git: `if [ "$1" = "status" ] && [ -e '${marker}' ]; then exec sleep 30; fi
+exec ${realBin("git")} "$@"`,
+        }),
+      });
+
+      expectBounded(run);
+      expect(failure(run).failure).toEqual({ reason: "dirty_clone", paths: [] });
+      const status = run.calls.filter((call) => call.argv[1] === "status");
+      expect(status.map((call) => call.rejected)).toEqual([false, true]);
+      expect(status[1]?.passedTimeoutS).toBe(PREPARE_LIMITS.timeoutS / TIME_DIVISOR);
+    });
+
+    it.each([
+      ["streaming without end: overflow", "exec yes", "overflow"],
+      ["never exiting: timeout", "exec sleep 30", "timeout"],
+    ])(
+      "P14: a test %s on -d .doctrine: degraded, doctrine not run, the chain read",
+      async (_case, hostile, reason) => {
+        const run = await probe({
+          scaled: true,
+          base: (real) => {
+            doctrineRepo(real);
+          },
+          fakes: () => ({
+            doctrine: WRITES_BOOT,
+            test: `if [ "$1" = "-d" ] && [ "$2" = ".doctrine" ]; then ${hostile}; fi
+exec ${realBin("test")} "$@"`,
+          }),
+        });
+
+        expectBounded(run);
+        expect(doctrineCall(run)).toBeUndefined();
+        expect(fetched(run)).toEqual({
+          sources: [agentsMd(run)],
+          degraded: [{ source: "doctrine", reason }],
+        });
+      },
+    );
+
+    it("P15: no doctrine on the daemon's PATH: missing (pi-env's spawn_error), then the re-check, the chain read", async () => {
+      const run = await probe({
+        base: (real) => {
+          doctrineRepo(real);
+        },
+        path: (bin) => pathWithout("doctrine", bin),
+      });
+
+      expectBounded(run);
+      expect(doctrineCall(run)?.rejected).toBe(true);
+      expect(recheck(run)).toEqual(RECHECK);
+      expect(fetched(run)).toEqual({
+        sources: [agentsMd(run)],
+        degraded: [{ source: "doctrine", reason: "missing" }],
+      });
+    });
+
+    it(".doctrine/ present, its boot not ignored: boot_not_ignored, doctrine not run, the chain read", async () => {
+      const run = await probe({
+        base: (real) => {
+          doctrineRepo(real, "");
+        },
+        fakes: () => ({ doctrine: WRITES_BOOT }),
+      });
+
+      expectBounded(run);
+      expect(doctrineCall(run)).toBeUndefined();
+      expect(fetched(run)).toEqual({
+        sources: [agentsMd(run)],
+        degraded: [{ source: "doctrine", reason: "boot_not_ignored" }],
+      });
     });
   });
 });

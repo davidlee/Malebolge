@@ -8,15 +8,18 @@ import { join } from "node:path";
 import { ExecutionError } from "@earendil-works/pi-durable/env";
 import {
   type ContextSource,
+  capSource,
   readSources,
   SOURCE_CAP_BYTES,
   type SourceReader,
 } from "../project-context.ts";
 import type { RepoConfig } from "./config.ts";
-import type { FinalStep } from "./prepare.ts";
+import { type FinalStep, PrepareFailed } from "./prepare.ts";
 import {
   ChannelFailed,
   ChannelUnavailable,
+  type CloneDefect,
+  checkRoomClone,
   type RoomShell,
   type ShellLimits,
   type ShellOutput,
@@ -33,6 +36,13 @@ export const FETCH_LIMITS = {
 export const HEAD_LIMITS = {
   ...FETCH_LIMITS,
   maxStdoutBytes: SOURCE_CAP_BYTES + 1,
+} as const satisfies ShellLimits;
+
+/** The bounds of doctrine's boot (design §4.3): its stdout is a source, so overflow is truncation. */
+export const DOCTRINE_LIMITS = {
+  timeoutS: 60,
+  maxStdoutBytes: SOURCE_CAP_BYTES + 1,
+  maxStderrBytes: 4096,
 } as const satisfies ShellLimits;
 
 /** A source the fetch could not read, and why; the job runs on without it. */
@@ -53,13 +63,11 @@ export interface Fetched {
 }
 
 /**
- * The degradation an exec's rejection is, or the rejection rethrown (design
- * §4.2 table, first match wins): the caller's abort, a lost room (retried by
- * readyRoom, whatever its cause) and an untrusted host key are rethrown, as
- * is anything not a channel error (a bug); a ChannelFailed is classified by
- * its exec cause's code.
+ * `error`, unless it is a ChannelFailed a step may answer for: the caller's
+ * abort, a lost room (retried by readyRoom, whatever its cause) and an
+ * untrusted host key are rethrown, as is anything not a channel error (a bug).
  */
-function classifyFetchFailure(error: unknown, signal: AbortSignal): Failure {
+function answerable(error: unknown, signal: AbortSignal): ChannelFailed {
   if (
     signal.aborted ||
     error instanceof ChannelUnavailable ||
@@ -68,6 +76,16 @@ function classifyFetchFailure(error: unknown, signal: AbortSignal): Failure {
   ) {
     throw error;
   }
+  return error;
+}
+
+/**
+ * The degradation an exec's rejection is, or the rejection rethrown (design
+ * §4.2 table, first match wins; `answerable`): a ChannelFailed is classified
+ * by its exec cause's code.
+ */
+function classifyFetchFailure(rejected: unknown, signal: AbortSignal): Failure {
+  const error = answerable(rejected, signal);
   const code = error.cause instanceof ExecutionError ? error.cause.code : error.reason;
   if (code === "spawn_error") {
     return { reason: "missing" };
@@ -184,16 +202,97 @@ function roomSourceReader(
   };
 }
 
+const DOCTRINE_ARGV = ["doctrine", "prompt", "resolve", "--role", "orchestrator"] as const;
+const BOOT_ORIGIN = { command: DOCTRINE_ARGV.join(" ") };
+
+/** Doctrine's run as a source, or the failure it degrades to (design §4.3). */
+function bootOf(ran: Attempt): { source: ContextSource } | { failure: Failure } {
+  if ("failure" in ran) {
+    return ran;
+  }
+  const { code, stdout, stderr, overflowed } = ran.output;
+  if (!overflowed && code !== 0) {
+    return { failure: { reason: "exit", code, stderr } };
+  }
+  // Whitespace says nothing: the boot is empty.
+  return stdout.trim() === ""
+    ? { failure: { reason: "empty" } }
+    : { source: capSource(BOOT_ORIGIN, stdout) };
+}
+
+/**
+ * The clone checked again after doctrine ran (design §4.3): a defect fails
+ * preparing with it, as the check before it; a check that cannot finish
+ * (timeout, overflowed probe, failed status) fails closed as `dirty_clone`
+ * with no paths. A lost room, a host key and the caller's abort are
+ * rethrown. Never cleans.
+ */
+async function recheckClone(
+  shell: RoomShell,
+  repo: RepoConfig,
+  signal: AbortSignal,
+): Promise<void> {
+  let defect: CloneDefect | undefined;
+  try {
+    defect = await checkRoomClone(shell, repo, signal);
+  } catch (error) {
+    answerable(error, signal); // rethrows all but a ChannelFailed the step answers for
+    defect = { reason: "dirty_clone", paths: [] };
+  }
+  if (defect !== undefined) {
+    throw new PrepareFailed(defect);
+  }
+}
+
+/** The doctrine step's answer: its boot (none without `.doctrine/`), or why it has none. */
+type BootStep = { source?: ContextSource } | { failure: Failure };
+
+/**
+ * Doctrine's boot for the clone (design §4.3), when `.doctrine/` is there and
+ * its boot is ignored: `doctrine prompt resolve`, whatever its outcome, then
+ * the clone re-checked, since a repo's doctrine may write more than its boot.
+ */
+async function doctrineBoot(
+  shell: RoomShell,
+  repo: RepoConfig,
+  signal: AbortSignal,
+): Promise<BootStep> {
+  const present = await attemptNamed(shell, signal, ["test", "-d", ".doctrine"], [0, 1]);
+  if ("failure" in present) {
+    return present;
+  }
+  if (present.output.code === 1) {
+    return {};
+  }
+  const ignore = ["git", "check-ignore", "-q", ".doctrine/state/boot.md"];
+  const ignored = await attemptNamed(shell, signal, ignore, [0, 1]);
+  if ("failure" in ignored) {
+    return ignored;
+  }
+  if (ignored.output.code === 1) {
+    return { failure: { reason: "boot_not_ignored" } };
+  }
+  const boot = bootOf(await attempt(shell, signal, DOCTRINE_ARGV, DOCTRINE_LIMITS));
+  await recheckClone(shell, repo, signal);
+  return boot;
+}
+
 /**
  * readyRoom's final step for `repo`: its context sources read from the
- * room's clone (the runner's cwd, its git root), and what could not be read.
- * Degradations belong to the call, so a retried attempt's are dropped with it.
+ * room's clone (the runner's cwd, its git root), doctrine's boot among them,
+ * and what could not be read. Degradations belong to the call, so a retried
+ * attempt's are dropped with it.
  */
 export function fetchProjectContext(repo: RepoConfig): FinalStep<Fetched> {
   return async (shell, signal) => {
     const degraded: Degradation[] = [];
+    const boot = await doctrineBoot(shell, repo, signal);
+    if ("failure" in boot) {
+      degraded.push({ source: "doctrine", ...boot.failure });
+    }
     const reader = roomSourceReader(shell, signal, degraded);
-    const sources = await readSources(repo.guestPath, [repo.guestPath], reader);
+    const extra = "source" in boot ? boot.source : undefined;
+    const sources = await readSources(repo.guestPath, [repo.guestPath], reader, extra);
     return { sources, degraded };
   };
 }
