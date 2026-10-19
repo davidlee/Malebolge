@@ -4,7 +4,7 @@
 
 import type { Connection } from "@earendil-works/pi-env";
 import { afterEach } from "vitest";
-import type { RoomShell, ShellLimits, ShellOutput } from "../../src/runner/room.ts";
+import type { RoomShell, ShellLimits, ShellOutput } from "../../src/room/shell.ts";
 import { tempDir } from "../fixtures.ts";
 
 /** A signal that never aborts. */

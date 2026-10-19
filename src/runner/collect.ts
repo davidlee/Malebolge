@@ -13,14 +13,15 @@
 import type { Connection } from "@earendil-works/pi-env";
 import { setDefined } from "../fields.ts";
 import type { JsonRecord } from "../json.ts";
+import { ChannelFailed, ChannelUnavailable, roomShell } from "../room/shell.ts";
+import { jobEnvId } from "./env.ts";
 import { type Classification, type ClassifyInput, classify } from "./classify.ts";
 import type { RepoConfig, RunnerConfig } from "./config.ts";
 import { isRunnerError, messageOf, RunnerError } from "./errors.ts";
 import type { QuarantineFacts, QuarantineReader } from "./git.ts";
 import { pendingCollectionExpired, recordReviewed } from "./jobs.ts";
-import { ChannelFailed, ChannelUnavailable, type Collected, type GitChannel } from "./room.ts";
+import { type Collected, type GitChannel } from "./room.ts";
 import { isoTime } from "./rows.ts";
-import { roomShell } from "./shell.ts";
 import type { Job, JobStore, JobUpdate } from "./store.ts";
 import type { EndReason, JobState } from "./vocab.ts";
 
@@ -174,7 +175,7 @@ async function cleanAfterCollect(
   const connection = deps.connect(repo);
   try {
     await deps.channel.cleanClone(
-      roomShell(connection, id, repo.guestPath),
+      roomShell(connection, { id: jobEnvId(id), cwd: repo.guestPath }),
       new AbortController().signal,
     );
   } catch (error) {

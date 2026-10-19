@@ -13,17 +13,16 @@ import {
   SOURCE_CAP_BYTES,
   type SourceReader,
 } from "../project-context.ts";
-import type { RepoConfig } from "./config.ts";
-import { type FinalStep, PrepareFailed } from "./prepare.ts";
 import {
   ChannelFailed,
   ChannelUnavailable,
-  type CloneDefect,
-  type GitChannel,
   type RoomShell,
   type ShellLimits,
   type ShellOutput,
-} from "./room.ts";
+} from "../room/shell.ts";
+import type { RepoConfig } from "./config.ts";
+import { type FinalStep, PrepareFailed } from "./prepare.ts";
+import { type CloneDefect, type GitChannel } from "./room.ts";
 
 /** The bounds of a fetch exec that prints little: `stat`, `test`, `git` (design §4.2). */
 export const FETCH_LIMITS = {

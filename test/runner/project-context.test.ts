@@ -15,13 +15,8 @@ import {
   fetchProjectContext,
   HEAD_LIMITS,
 } from "../../src/runner/project-context.ts";
-import {
-  ChannelFailed,
-  ChannelUnavailable,
-  checkRoomClone,
-  PREPARE_LIMITS,
-  type ShellOutput,
-} from "../../src/runner/room.ts";
+import { ChannelFailed, ChannelUnavailable, type ShellOutput } from "../../src/room/shell.ts";
+import { checkRoomClone, PREPARE_LIMITS } from "../../src/runner/room.ts";
 import {
   by,
   exit,
@@ -31,7 +26,7 @@ import {
   rejection,
   type ShellAnswer,
   type ShellCall,
-} from "./shell-fixture.ts";
+} from "../room/shell-fixture.ts";
 
 const GUEST = "/g";
 const REPO: RepoConfig = {

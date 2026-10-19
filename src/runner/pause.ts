@@ -7,9 +7,10 @@
 import type { Conversation, Submission } from "@earendil-works/pi-durable";
 import { context } from "../context.ts";
 import type { ConnectionObserver } from "../room/connection.ts";
+import type { ChannelFailed } from "../room/shell.ts";
 import { pausedForRetry, roomWaitDeadline, type Sleep } from "./backoff.ts";
 import type { RepoConfig, RunnerConfig } from "./config.ts";
-import type { ChannelFailed, GitChannel } from "./room.ts";
+import type { GitChannel } from "./room.ts";
 import type { Job, JobStore } from "./store.ts";
 import { recordWarning, WARNING_TEXT, type WarningDeps } from "./warning.ts";
 

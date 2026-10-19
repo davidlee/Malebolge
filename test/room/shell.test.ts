@@ -1,4 +1,4 @@
-// The room's shell (design §4.2, §5.2): an argument vector over a job's daemon
+// The room's shell (design §4.1, §4.2): an argument vector over a daemon
 // connection, typed by how it failed, and bounded by optional ShellLimits —
 // stdout past maxStdoutBytes stops the process and answers its head as
 // `overflowed`, stderr is capped while streaming, timeoutS is pi-env's timeout,
@@ -8,44 +8,27 @@ import { execFileSync } from "node:child_process";
 import { constants, openSync } from "node:fs";
 import { join } from "node:path";
 import { ExecutionError } from "@earendil-works/pi-durable/env";
-import {
-  type Connection,
-  HostKeyChangedError,
-  HostKeyUnknownError,
-  type RequestOptions,
-} from "@earendil-works/pi-env";
+import { type Connection, HostKeyChangedError, type RequestOptions } from "@earendil-works/pi-env";
 import { describe, expect, it } from "vitest";
-import { daemonConnection } from "../../src/room/connection.ts";
-import { preparingFailure } from "../../src/runner/prepare.ts";
 import {
   ChannelFailed,
   ChannelUnavailable,
   type RoomShell,
   type ShellLimits,
-} from "../../src/runner/room.ts";
-import {
   type ExecFacts,
   OVERFLOW_EXIT_CODE,
   type OutputCollector,
   outputCollector,
   roomShell,
   settle,
-} from "../../src/runner/shell.ts";
-import {
-  FailingConnection,
-  fakeHelpers,
-  localConnection,
-  lostConnection,
-} from "../room/connection-fixture.ts";
-import { exampleConfig, roomConfig } from "./config-fixture.ts";
-import { doorFacts } from "./env-fixture.ts";
+} from "../../src/room/shell.ts";
+import { FailingConnection, localConnection, lostConnection } from "./connection-fixture.ts";
 import { never, rejection, shellKit } from "./shell-fixture.ts";
 
-const JOB_ID = "pj-1";
 const { open, scratch } = shellKit();
 
 const shellIn = (connection: Connection, cwd: string): RoomShell =>
-  roomShell(open(connection), JOB_ID, cwd);
+  roomShell(open(connection), { id: "pi-env:test", cwd });
 
 /** A shell over the local daemon in a fresh temp dir. */
 const localShell = async (): Promise<RoomShell> => shellIn(localConnection(), await scratch());
@@ -90,37 +73,6 @@ describe("roomShell", () => {
     const shell = shellIn(localConnection(), `${await scratch()}/absent`);
 
     expect(await rejection(shell(["true"], never()))).toBeInstanceOf(ChannelFailed);
-  });
-
-  // Carry-forward 5 (EX-8): either door kind's daemon connection, counted, never paused.
-  describe.each([
-    ["slot", exampleConfig],
-    ["room", roomConfig],
-  ])("over a %s door's daemon connection", (_kind, config) => {
-    it("a lost start is ChannelUnavailable: retried, no pause", async () => {
-      const { facts, launch } = doorFacts(config());
-      const shell = shellIn(daemonConnection(facts, launch, fakeHelpers("false")), await scratch());
-
-      expect(await rejection(shell(["true"], never()))).toBeInstanceOf(ChannelUnavailable);
-    });
-
-    it.each([
-      ["HostKeyChangedError", (): Error => new HostKeyChangedError("changed")],
-      ["HostKeyUnknownError", (): Error => new HostKeyUnknownError("unknown")],
-    ])("a start failing %s is ChannelFailed host_key: never retried", async (_name, failure) => {
-      const { facts, launch } = doorFacts(config());
-      const connection = daemonConnection(facts, launch, fakeHelpers("ssh", failure));
-      const shell = shellIn(connection, await scratch());
-
-      const error = await rejection(shell(["true"], never()));
-
-      expect(error).toBeInstanceOf(ChannelFailed);
-      expect(error).toMatchObject({ reason: "host_key" });
-      expect(preparingFailure(error)).toMatchObject({
-        failure: { reason: "host_key" },
-        endReason: "error",
-      });
-    });
   });
 });
 

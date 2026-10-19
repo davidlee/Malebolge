@@ -7,6 +7,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { ExecutionError } from "@earendil-works/pi-durable/env";
 import { describe, expect, it } from "vitest";
+import { jobEnvId } from "../../src/runner/env.ts";
 import { roomRetryDelay } from "../../src/runner/backoff.ts";
 import type { RepoConfig, RunnerConfig } from "../../src/runner/config.ts";
 import { RunnerError } from "../../src/runner/errors.ts";
@@ -21,26 +22,20 @@ import {
 import {
   ChannelFailed,
   ChannelUnavailable,
+  type RoomShell,
+  type ShellOutput,
+  roomShell,
+} from "../../src/room/shell.ts";
+import {
   type CloneDefect,
   checkRoomClone,
   cleanRoomClone,
   type GitChannel,
   PREPARE_LIMITS,
-  type RoomShell,
-  type ShellOutput,
 } from "../../src/runner/room.ts";
 import { fetchProjectContext } from "../../src/runner/project-context.ts";
-import { roomShell } from "../../src/runner/shell.ts";
 import type { Job, JobStore } from "../../src/runner/store.ts";
 import { localConnection } from "../room/connection-fixture.ts";
-import { exampleConfig } from "./config-fixture.ts";
-import {
-  readying,
-  type RoomKindWorld,
-  type RoomWorld,
-  roomKindWorld,
-  roomWorld,
-} from "./room-fixture.ts";
 import {
   by,
   exit,
@@ -50,7 +45,15 @@ import {
   rejection,
   type ShellAnswer,
   shellKit,
-} from "./shell-fixture.ts";
+} from "../room/shell-fixture.ts";
+import {
+  readying,
+  type RoomKindWorld,
+  type RoomWorld,
+  roomKindWorld,
+  roomWorld,
+} from "./room-fixture.ts";
+import { exampleConfig } from "./config-fixture.ts";
 import { NEW_JOB, openTestStore, T0 } from "./store-fixture.ts";
 
 const JOB_ID = "pj-1";
@@ -76,7 +79,10 @@ describe("ensureJobBranch (real git through a local daemon)", () => {
 
   function branchWorld(): BranchWorld {
     const world = roomWorld({ guestAtClone: true });
-    const shell = roomShell(open(localConnection()), JOB_ID, world.room.path);
+    const shell = roomShell(open(localConnection()), {
+      id: jobEnvId(JOB_ID),
+      cwd: world.room.path,
+    });
     const git = world.room.git;
     return { world, shell, base: git("rev-parse", "HEAD"), git };
   }
@@ -550,7 +556,7 @@ describe("readyRoom over a room's clone: checked, never cleaned (VT-7, EX-6)", (
       writeFileSync(join(w.room.path, name), "");
     }
 
-    const shell = roomShell(open(localConnection()), JOB_ID, w.room.path);
+    const shell = roomShell(open(localConnection()), { id: jobEnvId(JOB_ID), cwd: w.room.path });
 
     const defect = await checkRoomClone(shell, w.repo, never());
 

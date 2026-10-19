@@ -29,12 +29,13 @@ import {
   fetchProjectContext,
   HEAD_LIMITS,
 } from "../../src/runner/project-context.ts";
-import { ChannelFailed, PREPARE_LIMITS, type ShellLimits } from "../../src/runner/room.ts";
+import { ChannelFailed, type ShellLimits } from "../../src/room/shell.ts";
+import { PREPARE_LIMITS } from "../../src/runner/room.ts";
 import { localConnection, pathWith } from "../room/connection-fixture.ts";
+import { type ObservedCall, observedShell } from "../room/shell-fixture.ts";
 import { fakeBin, pathWithout, realBin } from "./fake-bin.ts";
 import { tempDir, type TestRepo } from "./git-fixture.ts";
 import { type RoomKindWorld, readying, roomKindWorld } from "./room-fixture.ts";
-import { type ObservedCall, observedShell } from "./shell-fixture.ts";
 
 /** Hostile cases: each exec's timeout is divided by this before it reaches the shell. */
 const TIME_DIVISOR = 20;

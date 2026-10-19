@@ -44,6 +44,7 @@ import type { Connection } from "@earendil-works/pi-env";
 import { parseModel } from "../models.ts";
 import { context } from "../context.ts";
 import type { JsonRecord } from "../json.ts";
+import { ChannelFailed, roomShell } from "../room/shell.ts";
 import type { Sleep } from "./backoff.ts";
 import { type CeilingLatch, ceilingLatch } from "./ceiling-latch.ts";
 import { type CollectDeps, collectJob } from "./collect.ts";
@@ -51,7 +52,7 @@ import type { RepoConfig } from "./config.ts";
 import { type Conversations, ensureConversation, jobConversation } from "./conversations.ts";
 import { armCeilingTimers, type CeilingTimers, type Timer } from "./deadline.ts";
 import { type Ending, enterCollecting, latchedEnding, settledEnding } from "./ending.ts";
-import { jobEnv } from "./env.ts";
+import { jobEnv, jobEnvId } from "./env.ts";
 import {
   awaitRoom,
   pausingObserver,
@@ -66,8 +67,6 @@ import { configEntry, type ResolvedPolicy, resolvePolicy } from "./policy.ts";
 import { PrepareFailed, preparingFailure, readyRoom } from "./prepare.ts";
 import { composePrompt } from "./prompt.ts";
 import { type Degradation, fetchProjectContext } from "./project-context.ts";
-import { ChannelFailed } from "./room.ts";
-import { roomShell } from "./shell.ts";
 import type { RunControl } from "./scheduler.ts";
 import type { Job } from "./store.ts";
 import type { Tenancy } from "./tenancy.ts";
@@ -350,7 +349,7 @@ async function admit(
       conversationId: conversationId ?? null,
     });
   }
-  const shell = roomShell(connection, job.id, repo.guestPath);
+  const shell = roomShell(connection, { id: jobEnvId(job.id), cwd: repo.guestPath });
   // The fetch is the last step of the ready loop: a retried attempt's data is dropped.
   const { value: fetched } = await readyRoom(
     deps,

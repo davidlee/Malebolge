@@ -8,10 +8,11 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { type Connection, HostKeyChangedError } from "@earendil-works/pi-env";
 import { describe, expect, it } from "vitest";
+import { jobEnvId } from "../../src/runner/env.ts";
 import { collectJob } from "../../src/runner/collect.ts";
 import { daemonConnection } from "../../src/room/connection.ts";
 import { cleanRoomClone } from "../../src/runner/room.ts";
-import { roomShell } from "../../src/runner/shell.ts";
+import { roomShell } from "../../src/room/shell.ts";
 import { fakeHelpers, localConnection, lostConnection } from "../room/connection-fixture.ts";
 import { exampleConfig, roomConfig } from "./config-fixture.ts";
 import { doorFacts } from "./env-fixture.ts";
@@ -63,7 +64,7 @@ describe("after a successful collect: git reset --hard, git clean -ffd", () => {
     const connection = localConnection();
     try {
       await cleanRoomClone(
-        roomShell(connection, world.jobId, world.room.path),
+        roomShell(connection, { id: jobEnvId(world.jobId), cwd: world.room.path }),
         new AbortController().signal,
       );
     } finally {

@@ -28,7 +28,8 @@ import {
   resumeRequestId,
   submitResume,
 } from "../../src/runner/pause.ts";
-import { ChannelFailed, type GitChannel } from "../../src/runner/room.ts";
+import { ChannelFailed } from "../../src/room/shell.ts";
+import { type GitChannel } from "../../src/runner/room.ts";
 import type { RunDeps } from "../../src/runner/run.ts";
 import type { Job, JobEvent, JobStore } from "../../src/runner/store.ts";
 import { WARNING_TEXT, warningOwed } from "../../src/runner/warning.ts";

@@ -10,6 +10,15 @@
 
 import { setDefined } from "../fields.ts";
 import { directLaunch, type Launch, type RoomConnection } from "../room/connection.ts";
+import {
+  ChannelFailed,
+  ChannelUnavailable,
+  notOverflowed,
+  type RoomShell,
+  type ShellLimits,
+  succeeded,
+  successStdout,
+} from "../room/shell.ts";
 import type {
   DoorConfig,
   RepoConfig,
@@ -60,16 +69,6 @@ export type CloneDefect =
   | { reason: "guest_path_invalid"; guestPath: string }
   | { reason: "dirty_clone"; paths: string[] };
 
-/** Per-exec bounds on a room shell call (design §4.2); each absent bound is no bound. */
-export interface ShellLimits {
-  /** Stop the exec once stdout passes this many bytes; the result is `overflowed`. */
-  maxStdoutBytes?: number;
-  /** Keep at most this many stderr bytes. */
-  maxStderrBytes?: number;
-  /** pi-env's exec timeout, seconds. */
-  timeoutS?: number;
-}
-
 /** The bounds of every `preparing` exec in the room's clone (design §4.2). */
 export const PREPARE_LIMITS = {
   timeoutS: 60,
@@ -77,93 +76,8 @@ export const PREPARE_LIMITS = {
   maxStderrBytes: 4096,
 } as const satisfies ShellLimits;
 
-export interface ShellOutput {
-  /** The exit code; meaningless when `overflowed` (the shell may have stopped the process). */
-  code: number;
-  stdout: string;
-  stderr: string;
-  /** Stdout passed `maxStdoutBytes`: `stdout` is its head, cut at a character boundary. */
-  overflowed?: true;
-}
-
-/**
- * Runs an argument vector in the room's clone (or `cwd`), within `limits`;
- * ChannelUnavailable when the room is down.
- */
-export type RoomShell = (
-  argv: readonly string[],
-  signal: AbortSignal,
-  cwd?: string,
-  limits?: ShellLimits,
-) => Promise<ShellOutput>;
-
-interface ChannelErrorOptions<Reason> extends ErrorOptions {
-  reason?: Reason;
-}
-
-/**
- * The room is down: retry later. `reason` is what the audit records: a verb
- * past its bound is `channel_timeout`, apart from a room known to be down.
- */
-export class ChannelUnavailable extends Error {
-  readonly reason: "channel_unavailable" | "channel_timeout";
-
-  constructor(message: string, options: ChannelErrorOptions<ChannelUnavailable["reason"]> = {}) {
-    super(message, options);
-    this.name = "ChannelUnavailable";
-    this.reason = options.reason ?? "channel_unavailable";
-  }
-}
-
-/**
- * The channel failed for any other reason. `reason` is what the audit
- * records: `channel_refusal` is the door refusing the runner's own argv or
- * config (a runner bug); `host_key` is the room's host key unknown or changed
- * at a daemon start (a trust failure, never retried).
- */
-export class ChannelFailed extends Error {
-  readonly reason: "channel_failed" | "channel_refusal" | "host_key";
-
-  constructor(message: string, options: ChannelErrorOptions<ChannelFailed["reason"]> = {}) {
-    super(message, options);
-    this.name = "ChannelFailed";
-    this.reason = options.reason ?? "channel_failed";
-  }
-}
-
 /** The branch a job's commits are made on in the room. */
 export const jobBranch = (jobId: string): string => `job/${jobId}`;
-
-/**
- * `argv`'s `output`, when it did not overflow: ChannelFailed when it did, for
- * a step that expects no more output than its limits allow (its exit code is
- * then meaningless).
- */
-export function notOverflowed(argv: readonly string[], output: ShellOutput): ShellOutput {
-  if (output.overflowed) {
-    throw new ChannelFailed(`${argv.join(" ")}: output overflowed`);
-  }
-  return output;
-}
-
-/** `argv`'s stdout from `output`; ChannelFailed when it overflowed or exited non-zero. */
-function successStdout(argv: readonly string[], output: ShellOutput): string {
-  const { code, stdout, stderr } = notOverflowed(argv, output);
-  if (code !== 0) {
-    throw new ChannelFailed(`${argv.join(" ")} exited ${String(code)}: ${stderr.trim()}`);
-  }
-  return stdout;
-}
-
-/** `argv`'s stdout, run within `limits`; ChannelFailed when it overflows or exits non-zero. */
-export async function succeeded(
-  shell: RoomShell,
-  argv: readonly string[],
-  signal: AbortSignal,
-  limits?: ShellLimits,
-): Promise<string> {
-  return successStdout(argv, await shell(argv, signal, undefined, limits));
-}
 
 /** `capsule args`. Rejects only when it cannot run, or (`TimedOut`) outlives `timeoutMs`. */
 export type CapsuleCli = (

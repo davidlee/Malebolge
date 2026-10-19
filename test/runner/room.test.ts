@@ -5,15 +5,13 @@ import type { JsonRecord } from "../../src/json.ts";
 import { collectJob, retryPendingCollection } from "../../src/runner/collect.ts";
 import { StartRefused } from "../../src/runner/errors.ts";
 import { gitQuarantineReader } from "../../src/runner/git.ts";
+import { ChannelFailed, ChannelUnavailable, type RoomShell } from "../../src/room/shell.ts";
 import {
-  ChannelFailed,
-  ChannelUnavailable,
   channelFromConfig,
   jobBranch,
   type CapsuleCli,
   roomChannel,
   roomConnection,
-  type RoomShell,
   slotChannel,
 } from "../../src/runner/room.ts";
 import { runProgram } from "../../src/runner/exec.ts";

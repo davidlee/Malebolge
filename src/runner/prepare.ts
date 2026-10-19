@@ -5,19 +5,17 @@
 // entered `preparing`; nothing here touches the conversation.
 
 import type { JsonRecord } from "../json.ts";
-import { pausedForRetry, roomWaitDeadline, type Sleep } from "./backoff.ts";
-import type { RepoConfig, RunnerConfig } from "./config.ts";
-import { isRunnerError, messageOf } from "./errors.ts";
 import {
   ChannelFailed,
   ChannelUnavailable,
-  type GitChannel,
-  jobBranch,
   notOverflowed,
-  PREPARE_LIMITS,
   type RoomShell,
   succeeded,
-} from "./room.ts";
+} from "../room/shell.ts";
+import { pausedForRetry, roomWaitDeadline, type Sleep } from "./backoff.ts";
+import type { RepoConfig, RunnerConfig } from "./config.ts";
+import { isRunnerError, messageOf } from "./errors.ts";
+import { type GitChannel, jobBranch, PREPARE_LIMITS } from "./room.ts";
 import type { Job, JobStore } from "./store.ts";
 import type { EndReason } from "./vocab.ts";
 

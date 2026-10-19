@@ -33,9 +33,10 @@ import { execFileSync } from "node:child_process";
 import { join } from "node:path";
 import type { SqliteDatabase } from "@earendil-works/pi-durable/storage/sqlite";
 import type { Connection } from "@earendil-works/pi-env";
+import { jobEnvId } from "../../src/runner/env.ts";
 import { type CollectDeps } from "../../src/runner/collect.ts";
 import { type FinalStep, readyRoom, type ReadyDeps } from "../../src/runner/prepare.ts";
-import { roomShell } from "../../src/runner/shell.ts";
+import { roomShell, type RoomShell } from "../../src/room/shell.ts";
 import type { RepoConfig, RunnerConfig } from "../../src/runner/config.ts";
 import { gitQuarantineReader } from "../../src/runner/git.ts";
 import { type Job, type JobEvent, JobStore } from "../../src/runner/store.ts";
@@ -44,7 +45,6 @@ import { type ProgramOutput, TimedOut } from "../../src/runner/exec.ts";
 import {
   type CapsuleCli,
   type GitChannel,
-  type RoomShell,
   roomChannel,
   slotChannel,
 } from "../../src/runner/room.ts";
@@ -555,7 +555,7 @@ export async function readying(
   const readyWith = async <T>(finalStep: FinalStep<T>, repo = world.repo): Promise<Readied<T>> => {
     const connection = connect();
     try {
-      const shell = wrap(roomShell(connection, job.id, repo.guestPath));
+      const shell = wrap(roomShell(connection, { id: jobEnvId(job.id), cwd: repo.guestPath }));
       return await readyRoom(deps, job, repo, shell, new AbortController().signal, finalStep);
     } finally {
       connection.close();
