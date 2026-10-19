@@ -23,7 +23,7 @@ import type { Models } from "@earendil-works/pi-ai/models";
 import { Harness } from "@earendil-works/pi-durable";
 import type { Connection } from "@earendil-works/pi-env";
 import { context } from "../context.ts";
-import { registryOf } from "../session.ts";
+import { registryOf } from "../registry.ts";
 import { abortableSleep } from "./backoff.ts";
 import { type CollectDeps, retryPendingCollection } from "./collect.ts";
 import { parseRunnerConfig, type RepoConfig, type RunnerConfig } from "./config.ts";

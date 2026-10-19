@@ -41,7 +41,7 @@ import type {
   Submission,
 } from "@earendil-works/pi-durable";
 import type { Connection } from "@earendil-works/pi-env";
-import { parseModel } from "../config.ts";
+import { parseModel } from "../models.ts";
 import { context } from "../context.ts";
 import type { JsonRecord } from "../json.ts";
 import type { Sleep } from "./backoff.ts";

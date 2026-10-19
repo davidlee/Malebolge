@@ -33,7 +33,7 @@ import {
   UsageDoc,
   type UsageState,
 } from "@earendil-works/pi-durable";
-import { type ModelRef, parseModel } from "../config.ts";
+import { type ModelRef, parseModel } from "../models.ts";
 import { context } from "../context.ts";
 import { setDefined } from "../fields.ts";
 import {

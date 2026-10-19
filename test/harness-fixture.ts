@@ -23,7 +23,8 @@ import {
 } from "@earendil-works/pi-durable";
 import { context } from "../src/context.ts";
 import { isRecord } from "../src/json.ts";
-import { openSession, registryOf } from "../src/session.ts";
+import { registryOf } from "../src/registry.ts";
+import { openSession } from "../src/session.ts";
 
 export const FAUX_MODEL = { provider: "faux", modelId: "faux-1" } as const;
 

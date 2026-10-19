@@ -23,6 +23,21 @@ import { messageOf } from "./message-of.ts";
 /** The provider id catalog references use: `gateway/<model id>`. */
 export const GATEWAY_PROVIDER = "gateway";
 
+export interface ModelRef {
+  provider: string;
+  modelId: string;
+}
+
+export const DEFAULT_MODEL = "gateway/deepseek-flash";
+
+export function parseModel(ref: string): ModelRef {
+  const slash = ref.indexOf("/");
+  if (slash <= 0 || slash === ref.length - 1) {
+    throw new Error(`model must be provider/model, got ${JSON.stringify(ref)}`);
+  }
+  return { provider: ref.slice(0, slash), modelId: ref.slice(slash + 1) };
+}
+
 type GatewayModel = Model<"openai-completions">;
 
 /** A parsed gateway catalog: the provider's endpoint and its models, `provider` and `baseUrl` set. */

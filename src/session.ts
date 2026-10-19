@@ -5,14 +5,13 @@ import type { Models } from "@earendil-works/pi-ai/models";
 import {
   type AgentChange,
   type Conversation,
-  createRegistry,
   type Extension,
   Harness,
-  type Registry,
   type Storage,
 } from "@earendil-works/pi-durable";
 import { NodeExecutionEnv } from "@earendil-works/pi-durable/env/node";
 import { context } from "./context.ts";
+import { registryOf } from "./registry.ts";
 
 export interface Session {
   harness: Harness;
@@ -24,15 +23,6 @@ export interface SessionOptions {
   extensions: readonly Extension[];
   /** Applied on every open, so a changed model or cwd takes effect on restart. */
   agent: AgentChange;
-}
-
-/** A registry with `extensions` installed, in order. */
-export function registryOf(extensions: readonly Extension[]): Registry {
-  const registry = createRegistry();
-  for (const extension of extensions) {
-    registry.install(extension);
-  }
-  return registry;
 }
 
 export async function openSession(storage: Storage, options: SessionOptions): Promise<Session> {

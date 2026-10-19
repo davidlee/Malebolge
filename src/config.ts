@@ -3,11 +3,7 @@
 // $XDG_STATE_HOME/satan, sockets under $XDG_RUNTIME_DIR/satan.
 
 import { join } from "node:path";
-
-export interface ModelRef {
-  provider: string;
-  modelId: string;
-}
+import { DEFAULT_MODEL, type ModelRef, parseModel } from "./models.ts";
 
 export interface Config {
   corpusRoot: string;
@@ -26,16 +22,6 @@ export interface Config {
 }
 
 type Env = Readonly<Record<string, string | undefined>>;
-
-export const DEFAULT_MODEL = "gateway/deepseek-flash";
-
-export function parseModel(ref: string): ModelRef {
-  const slash = ref.indexOf("/");
-  if (slash <= 0 || slash === ref.length - 1) {
-    throw new Error(`model must be provider/model, got ${JSON.stringify(ref)}`);
-  }
-  return { provider: ref.slice(0, slash), modelId: ref.slice(slash + 1) };
-}
 
 function required(env: Env, name: string): string {
   const value = env[name];
