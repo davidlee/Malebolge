@@ -9,8 +9,8 @@ work for human review. Built on
 
 ## What it's for
 
-SATAN is a personal agent: it knows my notes and recent activity, and can
-propose changes to its own code, persona and other projects. Malebolge hosts
+SATAN is a personal agent: it knows my notes and [recent activity](https://github.com/davidlee/panopticon), and can
+propose changes to its [own code](https://github.com/davidlee/satan), persona, and [other](https://github.com/davidlee/org-incremental-writing) [projects](https://github.com/davidlee/doctrine). Malebolge hosts
 its agent conversations independently of Emacs. This repository currently
 ships two programs:
 
