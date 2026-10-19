@@ -13,7 +13,7 @@ import { withAbortSignal } from "@earendil-works/chord/context";
 import type { ExecutionError, Result, ShellExecResult } from "@earendil-works/pi-durable/env";
 import type { Connection } from "@earendil-works/pi-env";
 import { context } from "../context.ts";
-import { capUtf8 } from "../truncate.ts";
+import { headKeeper } from "../truncate.ts";
 import { type HostKeyFailure, jobEnv } from "./env.ts";
 import {
   ChannelFailed,
@@ -47,31 +47,25 @@ export interface OutputCollector {
  * passing its cap calls `onOverflow`, once; stderr's cap is silent.
  */
 export function outputCollector(limits: ShellLimits, onOverflow: () => void): OutputCollector {
-  const max = {
-    stdout: limits.maxStdoutBytes ?? Infinity,
-    stderr: limits.maxStderrBytes ?? Infinity,
+  const kept = {
+    stdout: headKeeper(limits.maxStdoutBytes ?? Infinity),
+    stderr: headKeeper(limits.maxStderrBytes ?? Infinity),
   };
-  const kept = { stdout: "", stderr: "" };
-  const bytes = { stdout: 0, stderr: 0 };
-  const full = { stdout: false, stderr: false };
   return {
     accept: (stream, text): void => {
-      if (full[stream]) {
+      const keeper = kept[stream];
+      if (keeper.full) {
         return;
       }
-      const size = Buffer.byteLength(text, "utf8");
-      if (bytes[stream] + size <= max[stream]) {
-        kept[stream] += text;
-        bytes[stream] += size;
-        return;
-      }
-      kept[stream] += capUtf8(text, max[stream] - bytes[stream]).text;
-      full[stream] = true;
-      if (stream === "stdout") {
+      if (!keeper.accept(text) && stream === "stdout") {
         onOverflow();
       }
     },
-    output: (): Collected => ({ ...kept, overflowed: full.stdout }),
+    output: (): Collected => ({
+      stdout: kept.stdout.text,
+      stderr: kept.stderr.text,
+      overflowed: kept.stdout.full,
+    }),
   };
 }
 

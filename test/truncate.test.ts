@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { capUtf8, truncateLine } from "../src/truncate.ts";
+import { capUtf8, headKeeper, truncateLine } from "../src/truncate.ts";
 
 describe("capUtf8", () => {
   it("leaves text that fits, including exactly at the cap", () => {
@@ -36,5 +36,21 @@ describe("truncateLine", () => {
 
   it("cuts a longer line and says so, as pi does", () => {
     expect(truncateLine("abcdef", 5)).toEqual({ text: "abcde... [truncated]", wasTruncated: true });
+  });
+});
+
+describe("headKeeper", () => {
+  it("keeps chunks up to the cap and is not full at exactly the cap", () => {
+    const keeper = headKeeper(4);
+    keeper.accept("ab");
+    keeper.accept("cd");
+    expect([keeper.text, keeper.bytes, keeper.full]).toEqual(["abcd", 4, false]);
+  });
+
+  it("cuts the chunk that passes the cap on a character boundary and drops the rest", () => {
+    const keeper = headKeeper(4);
+    keeper.accept("ab€");
+    keeper.accept("more");
+    expect([keeper.text, keeper.bytes, keeper.full]).toEqual(["ab", 2, true]);
   });
 });
