@@ -20,8 +20,9 @@ import {
   HostKeyChangedError,
   HostKeyUnknownError,
   isConnectionLost,
-  type RemotePlatform,
   RemoteError,
+  RemoteExecutionEnv,
+  type RemotePlatform,
   type RemoteInfo,
   type Reply,
   type RequestOptions,
@@ -156,6 +157,20 @@ export class ObservedConnection extends Connection {
     this.#inner.kill(id, session);
   }
 }
+
+/**
+ * pi-env's remote environment `id` in `cwd` over `connection`, observed by
+ * `observer`: the one way an observed env is built. `connection` is the daemon
+ * connection itself, never another `ObservedConnection`: the trust check reads
+ * the inner connection, so a nested wrapper reports a host-key refusal as a
+ * loss (design §4.3).
+ */
+export const observedEnv = (
+  connection: Connection,
+  observer: ConnectionObserver,
+  { id, cwd }: { id: string; cwd: string },
+): RemoteExecutionEnv =>
+  new RemoteExecutionEnv({ connection: new ObservedConnection(connection, observer), id, cwd });
 
 /** pi-env's ssh target for the room. */
 export const sshTarget = (room: RoomConnection): SshTarget =>

@@ -11,20 +11,23 @@ import {
 } from "@earendil-works/pi-env";
 import { describe, expect, it } from "vitest";
 import {
-  type ConnectionObserver,
   DaemonConnection,
   daemonCommand,
   directLaunch,
   ObservedConnection,
+  observedEnv,
   type RoomConnection,
   sshTarget,
 } from "../../src/room/connection.ts";
-import { DAEMON, fakeHelpers } from "./connection-fixture.ts";
-
-const ignoreLost: ConnectionObserver = {
-  lost: () => Promise.resolve(),
-  untrusted: () => undefined,
-};
+import { context } from "../../src/context.ts";
+import { tempDir } from "../fixtures.ts";
+import {
+  DAEMON,
+  fakeHelpers,
+  ignoreLost,
+  localConnection,
+  recordingObserver,
+} from "./connection-fixture.ts";
 
 /** A connection that only records what it is told to stop. */
 class StopRecorder extends Connection {
@@ -49,6 +52,31 @@ describe("the observed connection stops its inner connection", () => {
     connection.close();
 
     expect(inner.stops).toEqual(["kill 7/2", "close"]);
+  });
+});
+
+describe("an observed env", () => {
+  it("is pi-env's remote env over the connection, observed", async () => {
+    const tmp = await tempDir();
+    const inner = localConnection();
+    try {
+      const started: string[] = [];
+      const env = observedEnv(
+        inner,
+        { ...ignoreLost, started: (op) => started.push(op) },
+        { id: "pi-env:test", cwd: tmp.dir },
+      );
+
+      const result = await env.exec("true", undefined, context);
+
+      expect(env.connection).toBeInstanceOf(ObservedConnection);
+      expect([env.id, env.cwd]).toEqual(["pi-env:test", tmp.dir]);
+      expect(result.ok && result.value.exitCode).toBe(0);
+      expect(started).toContain("exec");
+    } finally {
+      inner.close();
+      await tmp.cleanup();
+    }
   });
 });
 
@@ -112,27 +140,12 @@ describe("the direct launch", () => {
   });
 });
 
-/** What an `ObservedConnection`'s observer was told. */
-function observed(): ConnectionObserver & { seen: string[] } {
-  const seen: string[] = [];
-  return {
-    seen,
-    lost: (failure): Promise<void> => {
-      seen.push(`lost ${failure.code}`);
-      return Promise.resolve();
-    },
-    untrusted: (failure, trust): void => {
-      seen.push(`untrusted ${failure.code} ${trust.constructor.name}`);
-    },
-  };
-}
-
 describe("the daemon connection under an ObservedConnection (VT-5, EX-5)", () => {
   it.each([
     ["HostKeyChangedError", (): Error => new HostKeyChangedError("changed")],
     ["HostKeyUnknownError", (): Error => new HostKeyUnknownError("unknown")],
   ])("a start failing %s is untrusted, never lost", async (name, failure) => {
-    const observer = observed();
+    const observer = recordingObserver();
     const inner = new DaemonConnection(() => Promise.reject(failure()));
     const connection = new ObservedConnection(inner, observer);
 
@@ -148,7 +161,7 @@ describe("the daemon connection under an ObservedConnection (VT-5, EX-5)", () =>
   });
 
   it("a later start failing otherwise keeps the record: still untrusted (fail closed)", async () => {
-    const observer = observed();
+    const observer = recordingObserver();
     let starts = 0;
     const inner = new DaemonConnection(() =>
       Promise.reject(starts++ === 0 ? new HostKeyChangedError("changed") : new Error("no route")),
@@ -166,7 +179,7 @@ describe("the daemon connection under an ObservedConnection (VT-5, EX-5)", () =>
   });
 
   it("a later start past the key check clears the record: its loss is lost", async () => {
-    const observer = observed();
+    const observer = recordingObserver();
     let starts = 0;
     // The second start's command is built; its daemon (`false`) exits before it is ready.
     const inner = new DaemonConnection(() =>
@@ -184,7 +197,7 @@ describe("the daemon connection under an ObservedConnection (VT-5, EX-5)", () =>
   });
 
   it("a connection that is not a daemon's has no trust record: its losses are lost", async () => {
-    const observer = observed();
+    const observer = recordingObserver();
     const connection = new ObservedConnection(new Connection({ command: ["false"] }), observer);
 
     await expect(connection.info()).rejects.toThrow();

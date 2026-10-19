@@ -13,7 +13,6 @@ import {
 import { afterEach, describe, expect, it } from "vitest";
 import { context } from "../../src/context.ts";
 import {
-  type ConnectionObserver,
   daemonCommand,
   daemonConnection,
   ObservedConnection,
@@ -30,14 +29,15 @@ import {
 import { never, rejection, shellKit } from "../room/shell-fixture.ts";
 import { daemonLaunch, roomConnection } from "../../src/runner/door.ts";
 import { tempDir } from "../fixtures.ts";
-import { DAEMON, fakeHelpers, localConnection } from "../room/connection-fixture.ts";
+import {
+  DAEMON,
+  fakeHelpers,
+  ignoreLost,
+  localConnection,
+  recordingObserver,
+} from "../room/connection-fixture.ts";
 import { exampleConfig, roomConfig } from "./config-fixture.ts";
 import { doorFacts } from "./env-fixture.ts";
-
-const ignoreLost: ConnectionObserver = {
-  lost: () => Promise.resolve(),
-  untrusted: () => undefined,
-};
 
 registerEnvConformance(
   { describe, expect, it },
@@ -153,28 +153,13 @@ describe("the daemon command: one for both door kinds (VT-5, EX-4)", () => {
   });
 });
 
-/** What an `ObservedConnection`'s observer was told. */
-function observed(): ConnectionObserver & { seen: string[] } {
-  const seen: string[] = [];
-  return {
-    seen,
-    lost: (failure): Promise<void> => {
-      seen.push(`lost ${failure.code}`);
-      return Promise.resolve();
-    },
-    untrusted: (failure, trust): void => {
-      seen.push(`untrusted ${failure.code} ${trust.constructor.name}`);
-    },
-  };
-}
-
 describe("each door kind's daemon connection under an ObservedConnection (VT-5, EX-5)", () => {
   it.each([
     ["slot", exampleConfig],
     ["room", roomConfig],
   ])("%s: a lost failure still reaches the observer as lost", async (_kind, config) => {
     const { facts, launch } = doorFacts(config());
-    const observer = observed();
+    const observer = recordingObserver();
     // `false` as ssh: the daemon exits before it is ready, pi-env's lost failure.
     const inner = daemonConnection(facts, launch, fakeHelpers("false"));
     const connection = new ObservedConnection(inner, observer);

@@ -11,10 +11,10 @@
 
 import { withAbortSignal } from "@earendil-works/chord/context";
 import type { ExecutionError, Result, ShellExecResult } from "@earendil-works/pi-durable/env";
-import { type Connection, RemoteExecutionEnv } from "@earendil-works/pi-env";
+import type { Connection } from "@earendil-works/pi-env";
 import { context } from "../context.ts";
 import { headKeeper } from "../truncate.ts";
-import { type HostKeyFailure, ObservedConnection } from "./connection.ts";
+import { type HostKeyFailure, observedEnv } from "./connection.ts";
 
 /** Per-exec bounds on a room shell call (design §4.2); each absent bound is no bound. */
 export interface ShellLimits {
@@ -213,16 +213,19 @@ export function roomShell(
 ): RoomShell {
   let losses = 0;
   const untrusted: HostKeyFailure[] = [];
-  const observed = new ObservedConnection(connection, {
-    lost: (): Promise<void> => {
-      losses++;
-      return Promise.resolve();
+  const env = observedEnv(
+    connection,
+    {
+      lost: (): Promise<void> => {
+        losses++;
+        return Promise.resolve();
+      },
+      untrusted: (_failure, trust): void => {
+        untrusted.push(trust);
+      },
     },
-    untrusted: (_failure, trust): void => {
-      untrusted.push(trust);
-    },
-  });
-  const env = new RemoteExecutionEnv({ connection: observed, id, cwd });
+    { id, cwd },
+  );
   return async (argv, signal, at, limits = {}) => {
     const before = losses;
     const trustedBefore = untrusted.length;

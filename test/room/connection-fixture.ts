@@ -1,6 +1,6 @@
 // pi-env connections for tests: a real local daemon, one that is lost before
 // it starts, one that fails chosen calls, and a room whose host key changes
-// mid-run; and pi-env's start steps, faked.
+// mid-run; pi-env's start steps, faked; and observers that ignore or record.
 
 import {
   Connection,
@@ -12,7 +12,32 @@ import {
   type RequestOptions,
   type SshTarget,
 } from "@earendil-works/pi-env";
-import { DaemonConnection, type DaemonHelpers } from "../../src/room/connection.ts";
+import {
+  type ConnectionObserver,
+  DaemonConnection,
+  type DaemonHelpers,
+} from "../../src/room/connection.ts";
+
+/** An observer that reacts to nothing. */
+export const ignoreLost: ConnectionObserver = {
+  lost: () => Promise.resolve(),
+  untrusted: () => undefined,
+};
+
+/** An observer that records what it was told, in order. */
+export function recordingObserver(): ConnectionObserver & { seen: string[] } {
+  const seen: string[] = [];
+  return {
+    seen,
+    lost: (failure): Promise<void> => {
+      seen.push(`lost ${failure.code}`);
+      return Promise.resolve();
+    },
+    untrusted: (failure, trust): void => {
+      seen.push(`untrusted ${failure.code} ${trust.constructor.name}`);
+    },
+  };
+}
 
 /**
  * A real local pi-env daemon (the binary pi-env ships for this machine). With
