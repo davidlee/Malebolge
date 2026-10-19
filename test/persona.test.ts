@@ -19,7 +19,7 @@ describe("persona", () => {
     expect(personaFiles(tmp.dir, "room")).toEqual([
       join(tmp.dir, "system", "scaffold.txt"),
       join(tmp.dir, "prompts", "interactive.txt"),
-      join(tmp.dir, "prompts", "env", "room.txt"),
+      `${tmp.dir}/prompts/env/room.txt`,
     ]);
   });
 
