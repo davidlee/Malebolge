@@ -54,5 +54,6 @@ coverage/
 /.claude/skills/spec-tech
 /.claude/skills/walkthrough
 /.claude/skills/worktree
-/.agents/skills/
+/.pi/agents/dispatch-worker.md
+/.agents/skills
 # <<< doctrine managed
