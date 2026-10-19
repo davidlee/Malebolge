@@ -6,6 +6,7 @@ import { basename, join } from "node:path";
 import { defineExtension, type Extension, section } from "@earendil-works/pi-durable";
 import { parse } from "yaml";
 import { isRecord, type JsonRecord } from "./json.ts";
+import { escapeXml } from "./xml.ts";
 
 export interface Skill {
   name: string;
@@ -116,14 +117,6 @@ export const loadSkills = (dirs: readonly string[], log: (line: string) => void)
   }
   return [...byName.values()];
 };
-
-const escapeXml = (text: string): string =>
-  text
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&apos;");
 
 const listing = (skill: Skill): string[] => [
   "  <skill>",
