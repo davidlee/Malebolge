@@ -24,11 +24,10 @@ import { SOURCE_CAP_BYTES } from "../../src/project-context.ts";
 import { type FinalStep, preparingFailure } from "../../src/runner/prepare.ts";
 import {
   DOCTRINE_LIMITS,
-  FETCH_LIMITS,
   type Fetched,
   fetchProjectContext,
-  HEAD_LIMITS,
 } from "../../src/runner/project-context.ts";
+import { FETCH_LIMITS, HEAD_LIMITS } from "../../src/room/source-reader.ts";
 import { ChannelFailed, type ShellLimits } from "../../src/room/shell.ts";
 import { PREPARE_LIMITS } from "../../src/runner/room.ts";
 import { localConnection, pathWith } from "../room/connection-fixture.ts";

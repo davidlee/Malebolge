@@ -10,11 +10,10 @@ import { PrepareFailed, preparingFailure } from "../../src/runner/prepare.ts";
 import {
   type Degradation,
   DOCTRINE_LIMITS,
-  FETCH_LIMITS,
   type Fetched,
   fetchProjectContext,
-  HEAD_LIMITS,
 } from "../../src/runner/project-context.ts";
+import { FETCH_LIMITS, HEAD_LIMITS, type ReadFailure } from "../../src/room/source-reader.ts";
 import { ChannelFailed, ChannelUnavailable, type ShellOutput } from "../../src/room/shell.ts";
 import { checkRoomClone, PREPARE_LIMITS } from "../../src/runner/room.ts";
 import {
@@ -690,7 +689,7 @@ describe("fetchProjectContext's doctrine step (VT-1, design §4.3)", () => {
           stderr: "bad\n",
         },
       ],
-    ] satisfies [string, ShellAnswer, Omit<Degradation, "source">][])(
+    ] satisfies [string, ShellAnswer, ReadFailure][])(
       "%s; no doctrine exec, the chain read",
       async (_case, answer, failure) => {
         const { fetched, calls } = await fetchOver(doctrineRoom(at(answer)));

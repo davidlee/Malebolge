@@ -321,7 +321,7 @@ async function recordDegradations(
 ): Promise<void> {
   for (const degradation of degraded) {
     await deps.jobs.appendEvent(jobId, deps.now(), "context_degraded", { ...degradation });
-    const code = degradation.code === undefined ? "" : ` ${String(degradation.code)}`;
+    const code = "code" in degradation ? ` ${String(degradation.code)}` : "";
     deps.log(`job ${jobId}: context degraded: ${degradation.source} ${degradation.reason}${code}`);
   }
 }
