@@ -7,7 +7,7 @@ import unusedImports from "eslint-plugin-unused-imports";
 import tseslint from "typescript-eslint";
 
 export default defineConfig(
-  { ignores: ["node_modules", "coverage", "spike-results"] },
+  { ignores: ["node_modules", "coverage", "spike-results", ".pi"] },
   {
     linterOptions: { reportUnusedDisableDirectives: "error" },
   },
