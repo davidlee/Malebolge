@@ -4,7 +4,9 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { fauxAssistantMessage } from "@earendil-works/pi-ai/providers/faux";
+import type { AssistantMessage } from "@earendil-works/pi-ai";
 import type { Conversation, Harness, Submission } from "@earendil-works/pi-durable";
+import type { Connection } from "@earendil-works/pi-env";
 import { describe, expect, it } from "vitest";
 import { context } from "../../src/context.ts";
 import { conversationIdOf } from "../../src/runner/durable-ids.ts";
@@ -14,6 +16,7 @@ import { RunControl } from "../../src/runner/scheduler.ts";
 import type { Job } from "../../src/runner/store.ts";
 import { textOf } from "../harness-fixture.ts";
 import { narrowedModes } from "./config-fixture.ts";
+import { FailingConnection, lostError } from "./env-fixture.ts";
 import {
   answer,
   call,
@@ -24,6 +27,7 @@ import {
   runWorld,
   SETTLE_MS,
   settled,
+  userTexts,
   writeAndCommit,
 } from "./run-fixture.ts";
 import { within } from "./runner-fixture.ts";
@@ -423,5 +427,70 @@ describe("runJob: a gate refusal ends the run (EX-1, EX-4 gate path)", () => {
     expect(eventOf(await w.events(job.id), "ceiling")?.payload).toMatchObject({
       reason: "usage_unavailable",
     });
+  });
+});
+
+describe("runJob: project context (PHASE-04, design §4.2-4.4)", () => {
+  /** Loses the first exec whose argv names `stat` (the fetch's file probe), then lets all through. */
+  const losingFirstStat = (local: Connection): Connection => {
+    let lost = false;
+    return new FailingConnection(({ op, json }) => {
+      if (!lost && op === "exec" && JSON.stringify(json).includes('"stat"')) {
+        lost = true;
+        return lostError();
+      }
+      return undefined;
+    }, local);
+  };
+
+  it("records one context_degraded per degradation of the attempt that stood, across a retry", async () => {
+    // .doctrine/ committed, no .gitignore: boot_not_ignored, and no host doctrine runs.
+    const w = await runWorld({
+      connection: losingFirstStat,
+      allowLog: (text) => text.includes("context degraded"),
+    });
+    w.real.commit(".doctrine/config.toml");
+    w.faux.setResponses([writeAndCommit(), answer()]);
+
+    const queued = await w.submit();
+    const job = await settled(w, queued.id);
+
+    expect(job.state).toBe("needs_review");
+    expect(w.slept).toHaveLength(1);
+    const events = await w.events(job.id);
+    const degraded = events.filter(({ kind }) => kind === "context_degraded");
+    expect(degraded.map(({ payload }) => payload)).toEqual([
+      { source: "doctrine", reason: "boot_not_ignored" },
+    ]);
+    const labels = kinds(events);
+    const at = labels.indexOf("context_degraded");
+    expect(at).toBeGreaterThan(labels.indexOf("refreshed"));
+    expect(at).toBeLessThan(labels.indexOf("transition:running"));
+    expect(w.logs).toHaveLength(1);
+    expect(w.logs[0]).toContain("doctrine");
+    expect(w.logs[0]).toContain("boot_not_ignored");
+  });
+
+  it("composes the fetched sources into the first message, before the job block", async () => {
+    const w = await runWorld();
+    w.real.commit("AGENTS.md");
+    const firstPrompts: string[][] = [];
+    w.faux.setResponses([
+      (request): AssistantMessage => {
+        firstPrompts.push(userTexts(request.messages));
+        return answer();
+      },
+    ]);
+
+    const queued = await w.submit();
+    const job = await settled(w, queued.id);
+
+    const prompt = firstPrompts[0]?.[0] ?? "";
+    const guest = w.repo.guestPath;
+    const block = prompt.indexOf(`<project_instructions path="${guest}/AGENTS.md">`);
+    expect(block).toBeGreaterThanOrEqual(0);
+    expect(prompt).toContain(`Working directory: ${guest}`);
+    expect(block).toBeLessThan(prompt.indexOf("# patch-agent job"));
+    expect(kinds(await w.events(job.id))).not.toContain("context_degraded");
   });
 });

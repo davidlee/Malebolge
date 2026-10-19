@@ -69,6 +69,7 @@ export const EVENT_KINDS = [
   "parked",
   "unparked",
   "clean_failed",
+  "context_degraded",
 ] as const;
 
 export type EventKind = (typeof EVENT_KINDS)[number];

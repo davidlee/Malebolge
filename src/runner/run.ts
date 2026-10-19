@@ -65,6 +65,7 @@ import type { Meter } from "./model-gate.ts";
 import { configEntry, type ResolvedPolicy, resolvePolicy } from "./policy.ts";
 import { PrepareFailed, preparingFailure, readyRoom } from "./prepare.ts";
 import { composePrompt } from "./prompt.ts";
+import { type Degradation, fetchProjectContext } from "./project-context.ts";
 import { ChannelFailed } from "./room.ts";
 import { roomShell } from "./shell.ts";
 import type { RunControl } from "./scheduler.ts";
@@ -313,7 +314,24 @@ export const unarmed = (run: Run, seated: Seated, job: Job, submission: Submissi
   timers: { stop: () => undefined },
 });
 
-/** Steps 3-7: the room readied, the tenant seated, the prompt admitted, `running`. */
+/** One audited event (and one log line) per source the fetch could not read; the job runs on. */
+async function recordDegradations(
+  deps: RunDeps,
+  jobId: string,
+  degraded: readonly Degradation[],
+): Promise<void> {
+  for (const degradation of degraded) {
+    await deps.jobs.appendEvent(jobId, deps.now(), "context_degraded", { ...degradation });
+    const code = degradation.code === undefined ? "" : ` ${String(degradation.code)}`;
+    deps.log(`job ${jobId}: context degraded: ${degradation.source} ${degradation.reason}${code}`);
+  }
+}
+
+/**
+ * Steps 3-7: the room readied and its project context fetched, the tenant
+ * seated, the prompt (with that context) admitted, `running`. The fetch's
+ * degradations are audited once, after the ready loop.
+ */
 async function admit(
   deps: RunDeps,
   job: Job,
@@ -333,8 +351,16 @@ async function admit(
     });
   }
   const shell = roomShell(connection, job.id, repo.guestPath);
-  // No final step: the project-context fetch is not composed into the prompt yet.
-  await readyRoom(deps, job, repo, shell, control.signal, () => Promise.resolve(undefined));
+  // The fetch is the last step of the ready loop: a retried attempt's data is dropped.
+  const { value: fetched } = await readyRoom(
+    deps,
+    job,
+    repo,
+    shell,
+    control.signal,
+    fetchProjectContext(repo),
+  );
+  await recordDegradations(deps, job.id, fetched.degraded);
   const run = openRun(deps, { ...job, conversationId }, resolved, conversation, connection, stops);
   const seated = run.seat();
   await conversation.configure(
@@ -346,7 +372,12 @@ async function admit(
     },
     context,
   );
-  const prompt = composePrompt(await deps.readPrompt(), policy, job);
+  const prompt = composePrompt(
+    await deps.readPrompt(),
+    policy,
+    { ...job, cwd: repo.guestPath },
+    fetched.sources,
+  );
   if (control.cancelReason !== undefined) {
     throw new Error("cancelled before admission");
   }

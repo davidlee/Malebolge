@@ -171,6 +171,8 @@ export interface RunWorldOptions {
   usageOf?: GateDeps["usageOf"];
   /** The job's daemon connection, given the local one; e.g. one that loses chosen calls. */
   connection?: (local: Connection) => Connection;
+  /** The runner log lines this test expects (kept in `logs`); any other still throws. */
+  allowLog?: (text: string) => boolean;
   /** The modes the process's config holds; default the example's. */
   modes?: RunnerConfig["modes"];
   /** A store file that outlives the process, for `restart`; default `:memory:`. */
@@ -262,6 +264,8 @@ export interface RunWorld extends RoomWorld {
   verbs: () => string[];
   /** Every backoff pause asked of `sleep` (it returns at once, advancing the clock), in order. */
   slept: number[];
+  /** The runner log lines `allowLog` let through, in order. */
+  logs: string[];
   /** Moves the clock on by `ms`. */
   advance: (ms: number) => void;
   /** The process dies now: every later write throws `Crash`, the scheduler stops. */
@@ -313,6 +317,7 @@ async function openProcess(shared: Shared, process: ProcessOptions): Promise<Run
   const tenancy = roomTenancy();
   const timers = manualTimer();
   const slept: number[] = [];
+  const logs: string[] = [];
   const blocking = blockingTool("wait");
   const extensions = [
     JobTools,
@@ -357,7 +362,9 @@ async function openProcess(shared: Shared, process: ProcessOptions): Promise<Run
   const dead = AbortSignal.any([stopping.signal, jobs.dead]);
   // A process that died or is shutting down says nothing anyone hears.
   const log = (text: string): void => {
-    if (!dead.aborted) {
+    if (options.allowLog?.(text) === true) {
+      logs.push(text);
+    } else if (!dead.aborted) {
       throw new Error(`unexpected runner log: ${text}`);
     }
   };
@@ -446,6 +453,7 @@ async function openProcess(shared: Shared, process: ProcessOptions): Promise<Run
     events: (id) => jobs.events(id),
     verbs: () => world.slot.calls.map((args) => args[1] ?? ""),
     slept,
+    logs,
     advance: (ms): void => {
       clock.now += ms;
     },

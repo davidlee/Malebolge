@@ -1,9 +1,10 @@
-// Prompt composition (design §5.2, DEC-056): a pure function of (corpus
-// prompt text, resolved policy, job). The job block is ported from the elisp
+// Prompt composition (design §5.2, §4.4, DEC-056): a pure function of (corpus
+// prompt text, resolved policy, job, project instructions). The job block is ported from the elisp
 // `satan-patch-prompt-build-directive`, minus `## Checks` (the runner runs
 // none, DEC-059) and `Branch:` (now the base and job branches).
 
 import type { JsonRecord } from "../json.ts";
+import { type ContextSource, renderProjectContext } from "../project-context.ts";
 import type { ResolvedPolicy } from "./policy.ts";
 
 /** The job fields the prompt shows. */
@@ -13,6 +14,8 @@ export interface PromptJob {
   directive: string;
   allowedPaths: readonly string[];
   baseRef: string;
+  /** Where the agent works: the repo's guest path in the room. */
+  cwd: string;
   context: JsonRecord;
   source: JsonRecord;
 }
@@ -71,6 +74,7 @@ function jobBlock(job: PromptJob): string {
     `Mode: ${job.mode}`,
     `Base branch: ${job.baseRef}`,
     `Job branch: ${branch}`,
+    `Working directory: ${job.cwd}`,
     "",
     "## Directive",
     "",
@@ -98,7 +102,23 @@ function jobBlock(job: PromptJob): string {
   ].join("\n");
 }
 
-/** The job's prompt: corpus text, then the policy's fragments, then the job block. */
-export function composePrompt(promptText: string, policy: ResolvedPolicy, job: PromptJob): string {
-  return [promptText.trimEnd(), ...policy.promptFragments, jobBlock(job)].join("\n\n");
+/**
+ * The job's prompt: corpus text, the policy's fragments, the repo's own
+ * instructions, then the job block. The repo's text precedes the block and
+ * never alters it: the block stays a function of the job alone (DEC-073).
+ */
+export function composePrompt(
+  promptText: string,
+  policy: ResolvedPolicy,
+  job: PromptJob,
+  projectInstructions: readonly ContextSource[],
+): string {
+  return [
+    promptText.trimEnd(),
+    ...policy.promptFragments,
+    renderProjectContext(projectInstructions),
+    jobBlock(job),
+  ]
+    .filter((part) => part !== undefined)
+    .join("\n\n");
 }

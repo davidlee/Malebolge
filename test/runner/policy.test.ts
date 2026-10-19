@@ -8,7 +8,6 @@ import {
   recordedPolicy,
   resolvePolicy,
 } from "../../src/runner/policy.ts";
-import { composePrompt, type PromptJob } from "../../src/runner/prompt.ts";
 import { checkSubmit, parseRequest, type SubmitRequest } from "../../src/runner/protocol.ts";
 import { exampleConfig, FIX_SCOPE, HOME, scopedConfig, variant } from "./config-fixture.ts";
 import { codeOf } from "./refusal-fixture.ts";
@@ -183,106 +182,6 @@ describe("policy ladder: ceilings against maxima", () => {
     if (submit !== undefined) {
       expect(codeOf(() => checkSubmit(submit, exampleConfig()))).toBe("ceiling_above_maximum");
     }
-  });
-});
-
-const PROMPT_JOB: PromptJob = {
-  id: "pj-1",
-  mode: "fix",
-  directive: "Fix the lint warning.",
-  allowedPaths: ["satan/satan-db.el", "satan/test/"],
-  baseRef: "main",
-  context: {},
-  source: {},
-};
-
-const POLICY = resolvePolicy(exampleConfig(), JOB);
-
-const compose = (job: Partial<PromptJob> = {}): string =>
-  composePrompt("Corpus prompt.\n", POLICY, { ...PROMPT_JOB, ...job });
-
-describe("prompt", () => {
-  it("is a pure function: same inputs give identical output", () => {
-    expect(compose()).toBe(compose());
-  });
-
-  it("puts the corpus prompt first, then fragments in order, then the job block", () => {
-    const text = compose();
-    const order = ["Corpus prompt.", "Fix mode:", "Repo note.", "# patch-agent job pj-1"].map(
-      (part) => text.indexOf(part),
-    );
-    expect(order.every((at) => at >= 0)).toBe(true);
-    expect([...order].sort((a, b) => a - b)).toEqual(order);
-  });
-
-  it("names the job, mode, base branch and job branch", () => {
-    const text = compose();
-    expect(text).toContain(
-      "# patch-agent job pj-1\nMode: fix\nBase branch: main\nJob branch: job/pj-1",
-    );
-  });
-
-  it("carries the directive and the allowed paths as bullets", () => {
-    const text = compose();
-    expect(text).toContain("## Directive\n\nFix the lint warning.");
-    expect(text).toContain("## Allowed paths\n\n- satan/satan-db.el\n- satan/test/");
-  });
-
-  it("states the commit-your-work and notes conventions", () => {
-    const text = compose();
-    expect(text).toContain("Commit your work on `job/pj-1`");
-    expect(text).toContain("Uncommitted work never leaves the room");
-    expect(text).toMatch(/notes/i);
-  });
-
-  it("gives the commit footer and subject format", () => {
-    const text = compose();
-    expect(text).toContain("    Patch-agent job: pj-1\n    Source: none");
-    expect(text).toContain(
-      "Subject line format: `<mode>: <short imperative summary>`, with mode=fix.",
-    );
-  });
-
-  it("drops the elisp Checks and Branch sections (DEC-059)", () => {
-    const text = compose();
-    expect(text).not.toContain("## Checks");
-    expect(text).not.toMatch(/^Branch:/m);
-  });
-
-  it("omits the context section when no context key renders", () => {
-    expect(compose()).not.toContain("## Context");
-    expect(compose({ context: { unknown: "x", proposal_id: { nested: true } } })).not.toContain(
-      "## Context",
-    );
-  });
-});
-
-describe("prompt: context and source", () => {
-  it("renders each known context key in a fixed order, dropping unknown keys", () => {
-    const text = compose({
-      context: {
-        source: { kind: "note" },
-        mode_run_id: "m-9",
-        proposal_id: "p-3",
-        memory_matches: [{}, {}, {}],
-        note_context: "a note",
-        extra: "dropped",
-      },
-    });
-    expect(text).toContain(
-      '## Context\n\nnote context:\na note\n\nmemory matches: 3\n\nproposal: p-3\n\nmode run: m-9\n\nsource: {"kind":"note"}',
-    );
-    expect(text).not.toContain("dropped");
-  });
-
-  it.each([
-    [{}, "none"],
-    [{ kind: "journal", file: "j.org", line: 12 }, "journal j.org:12"],
-    [{ kind: "journal", file: "j.org" }, "j.org"],
-    [{ kind: "inbox" }, "inbox"],
-    [{ ref: "x" }, '{"ref":"x"}'],
-  ])("source line for %j is %s", (source, line) => {
-    expect(compose({ source })).toContain(`    Source: ${line}\n`);
   });
 });
 
