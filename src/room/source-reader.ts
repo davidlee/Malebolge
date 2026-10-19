@@ -19,7 +19,7 @@ import {
 /** Why a read failed, before it is pinned to a source. */
 export type ReadFailure =
   | { reason: "missing" | "timeout" | "overflow" }
-  | { reason: "exit" | "error"; code?: number | string; stderr?: string };
+  | { reason: "error"; code?: number | string; stderr?: string };
 
 /** The bounds of a fetch exec that prints little: `stat`, `test`, `git` (design §4.2). */
 export const FETCH_LIMITS = {

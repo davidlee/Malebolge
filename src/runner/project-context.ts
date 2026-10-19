@@ -32,7 +32,10 @@ export const DOCTRINE_LIMITS = {
 } as const satisfies ShellLimits;
 
 /** A failed step's answer, before it is pinned to a source: a read's, or doctrine's own. */
-type Failure = ReadFailure | { reason: "boot_not_ignored" | "empty" };
+type Failure =
+  | ReadFailure
+  | { reason: "exit"; code: number; stderr: string }
+  | { reason: "boot_not_ignored" | "empty" };
 
 /** A source the fetch could not read, and why; the job runs on without it. */
 export type Degradation = {
