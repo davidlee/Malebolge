@@ -1,84 +1,18 @@
 import { readFileSync } from "node:fs";
-import { writeFile } from "node:fs/promises";
+import { rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
-
 import { join } from "node:path";
-import type { ImageApi, ImageModel, Model } from "@earendil-works/pi-ai";
-import { fauxProvider } from "@earendil-works/pi-ai/providers/faux";
-import { afterEach, describe, expect, it, onTestFinished } from "vitest";
 import { createModels } from "@earendil-works/pi-ai/models";
+import { onTestFinished, describe, expect, it } from "vitest";
 import { isRecord, type JsonRecord } from "../src/json.ts";
 import {
-  createDaemonModels,
   GATEWAY_PROVIDER,
   gatewayProvider,
+  loadGatewayModels,
   parseGatewayCatalog,
-  readModelsStore,
-  withMissingModels,
 } from "../src/models.ts";
 import { tempDir } from "./fixtures.ts";
-
-/** A real (faux) catalog for provider "p", offering `ids`. */
-const catalog = (...ids: string[]): ReturnType<typeof fauxProvider> =>
-  fauxProvider({ provider: "p", models: ids.map((id) => ({ id })) });
-const provider = catalog("known").provider;
-const model = (id: string): Model<string> => catalog(id).getModel();
-const imageModel = (id: string): ImageModel<ImageApi> => ({
-  ...model(id),
-  api: "openrouter-images",
-  type: "image",
-  output: ["image"],
-});
-
-describe("withMissingModels", () => {
-  it("adds models the catalog lacks, keeping the catalog's own", () => {
-    const extended = withMissingModels(provider, [model("known"), model("new")]);
-    expect(extended.getModels().map((m) => m.id)).toEqual(["known", "new"]);
-    expect(extended.getAllModels?.().map((m) => m.id)).toEqual(["known", "new"]);
-  });
-
-  it("offers a missing non-chat model among all models only, not as a chat model", () => {
-    const extended = withMissingModels(provider, [imageModel("picture")]);
-    expect(extended.getModels().map((m) => m.id)).toEqual(["known"]);
-    expect(extended.getAllModels?.().map((m) => m.id)).toEqual(["known", "picture"]);
-  });
-
-  it("returns the provider itself when nothing is missing", () => {
-    expect(withMissingModels(provider, [model("known")])).toBe(provider);
-  });
-});
-
-describe("readModelsStore", () => {
-  let cleanup: (() => Promise<void>) | undefined;
-  afterEach(async () => {
-    await cleanup?.();
-  });
-
-  it("maps provider ids to their stored models", async () => {
-    const tmp = await tempDir();
-    cleanup = tmp.cleanup;
-    const path = join(tmp.dir, "models-store.json");
-    const stored = model("new");
-    await writeFile(path, JSON.stringify({ p: { models: [stored] }, q: {} }));
-    expect(readModelsStore(path)).toEqual({ p: [stored], q: [] });
-  });
-
-  it("is empty when the store does not exist", () => {
-    expect(readModelsStore("/nonexistent/models-store.json")).toEqual({});
-  });
-});
-
-describe("createDaemonModels", () => {
-  it("resolves a stored model the built-in catalog lacks", () => {
-    const stored = { deepseek: [{ ...model("deepseek-from-store"), provider: "deepseek" }] };
-    const models = createDaemonModels(stored);
-    expect(models.getModelOfType("chat", "deepseek", "deepseek-from-store")?.id).toBe(
-      "deepseek-from-store",
-    );
-    expect(models.getModelOfType("chat", "deepseek", "deepseek-v4-pro")).toBeDefined();
-  });
-});
 
 /** The catalog as `piGatewayConfig` renders it (see test/gateway-catalog.json). */
 const GATEWAY_CATALOG_TEXT = readFileSync(
@@ -178,34 +112,34 @@ describe("gateway provider (parseGatewayCatalog)", () => {
 const isAddressInfo = (value: string | AddressInfo | null): value is AddressInfo =>
   typeof value === "object" && value !== null;
 
-describe("gateway provider requests", () => {
-  /** A local server answering one chat completion; records each request's headers. */
-  async function fakeGateway(): Promise<{ baseUrl: string; authorizations: string[] }> {
-    const authorizations: string[] = [];
-    const server = createServer((request, response) => {
-      authorizations.push(
-        `${request.method ?? ""} ${request.url ?? ""} ${request.headers.authorization ?? ""}`,
-      );
-      request.resume();
-      response.writeHead(400, { "content-type": "application/json" });
-      response.end(JSON.stringify({ error: { message: "nope" } }));
-    });
-    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
-    onTestFinished(
-      () =>
-        new Promise<void>((resolve) => {
-          server.close(() => {
-            resolve();
-          });
-        }),
+/** A local server answering one chat completion; records each request's headers. */
+async function fakeGateway(): Promise<{ baseUrl: string; authorizations: string[] }> {
+  const authorizations: string[] = [];
+  const server = createServer((request, response) => {
+    authorizations.push(
+      `${request.method ?? ""} ${request.url ?? ""} ${request.headers.authorization ?? ""}`,
     );
-    const address = server.address();
-    if (!isAddressInfo(address)) {
-      throw new Error("fake gateway has no port");
-    }
-    return { baseUrl: `http://127.0.0.1:${address.port.toString()}/v1`, authorizations };
+    request.resume();
+    response.writeHead(400, { "content-type": "application/json" });
+    response.end(JSON.stringify({ error: { message: "nope" } }));
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  onTestFinished(
+    () =>
+      new Promise<void>((resolve) => {
+        server.close(() => {
+          resolve();
+        });
+      }),
+  );
+  const address = server.address();
+  if (!isAddressInfo(address)) {
+    throw new Error("fake gateway has no port");
   }
+  return { baseUrl: `http://127.0.0.1:${address.port.toString()}/v1`, authorizations };
+}
 
+describe("gateway provider requests", () => {
   async function request(key: string): Promise<string[]> {
     const { baseUrl, authorizations } = await fakeGateway();
     const catalog = parseGatewayCatalog(editedCatalog(setting("baseUrl", baseUrl)));
@@ -233,4 +167,74 @@ describe("gateway provider requests", () => {
     expect(apiKey).toBeDefined();
     expect(apiKey).not.toHaveProperty("login");
   });
+});
+
+describe("loadGatewayModels (the daemon's and the runner's shared loader)", () => {
+  /** A catalog file (the fixture, pointed at `baseUrl`) and a key file holding `key`, in a temp dir. */
+  async function files(
+    key: string,
+    baseUrl = "http://127.0.0.1:4000/v1",
+  ): Promise<{ catalogPath: string; keyPath: string }> {
+    const tmp = await tempDir();
+    onTestFinished(tmp.cleanup);
+    const catalogPath = join(tmp.dir, "gateway-models.json");
+    const keyPath = join(tmp.dir, "key");
+    await writeFile(catalogPath, editedCatalog(setting("baseUrl", baseUrl)));
+    await writeFile(keyPath, key);
+    return { catalogPath, keyPath };
+  }
+
+  it("holds the gateway provider alone, models carrying the catalog's baseUrl", async () => {
+    const { catalogPath, keyPath } = await files("k\n");
+    const models = await loadGatewayModels(catalogPath, keyPath);
+    expect(models.getProviders().map((p) => p.id)).toEqual(["gateway"]);
+    expect(models.getModel(GATEWAY_PROVIDER, "deepseek-flash")?.baseUrl).toBe(
+      "http://127.0.0.1:4000/v1",
+    );
+  });
+
+  it("authenticates with the key file's text, less one trailing newline, and leaves process.env alone", async () => {
+    const key = "sk-from-file-4711";
+    const gateway = await fakeGateway();
+    const { catalogPath, keyPath } = await files(`${key}\n`, gateway.baseUrl);
+    const models = await loadGatewayModels(catalogPath, keyPath);
+    const model = models.getModel(GATEWAY_PROVIDER, "deepseek-flash");
+    if (model === undefined) {
+      throw new Error("no model");
+    }
+    await models.complete(model, { messages: [{ role: "user", content: "hi", timestamp: 0 }] });
+    expect(gateway.authorizations).toEqual([`POST /v1/chat/completions Bearer ${key}`]);
+    expect(Object.values(process.env).some((value) => value?.includes(key) === true)).toBe(false);
+  });
+
+  type Files = Awaited<ReturnType<typeof files>>;
+  type Breakage = (f: Files) => Promise<void>;
+  const key = "sk-secret-never-in-a-message";
+  const cases: [string, Breakage, string][] = [
+    ["a missing key file", (f): Promise<void> => rm(f.keyPath), "gateway credential"],
+    ["an empty key file", (f): Promise<void> => writeFile(f.keyPath, "\n"), "file is empty"],
+    ["a missing catalog", (f): Promise<void> => rm(f.catalogPath), "gateway catalog"],
+    [
+      "a malformed catalog",
+      (f): Promise<void> => writeFile(f.catalogPath, '{"providers":{}}'),
+      "gateway catalog",
+    ],
+  ];
+  it.each(cases)(
+    "refuses %s, naming the path and never the key",
+    async (_label, breakage, where) => {
+      const f = await files(key);
+      await breakage(f);
+      const refusal = await loadGatewayModels(f.catalogPath, f.keyPath).then(
+        () => undefined,
+        (error: unknown) => error,
+      );
+      if (!(refusal instanceof Error)) {
+        throw new Error("expected a refusal");
+      }
+      expect(refusal.message).toContain(where);
+      expect(refusal.message).toMatch(/gateway-models\.json|\/key/);
+      expect(refusal.message).not.toContain(key);
+    },
+  );
 });

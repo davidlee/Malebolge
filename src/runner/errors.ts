@@ -25,9 +25,7 @@ export class RunnerError extends Error {
   }
 }
 
-/** What a caught value says: an Error's message, else its text. */
-export const messageOf = (error: unknown): string =>
-  error instanceof Error ? error.message : String(error);
+export { messageOf } from "../message-of.ts";
 
 export const isRunnerError = (value: unknown): value is RunnerError => value instanceof RunnerError;
 

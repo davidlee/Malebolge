@@ -8,7 +8,7 @@ import { CodingTools } from "@earendil-works/pi-durable/tools";
 import { resolveConfig } from "./config.ts";
 import { context } from "./context.ts";
 import { serve } from "./daemon.ts";
-import { createDaemonModels, readModelsStore } from "./models.ts";
+import { loadGatewayModels } from "./models.ts";
 import { personaExtension, personaFiles } from "./persona.ts";
 import { connectSatanTools } from "./satan-tools.ts";
 import { openSession } from "./session.ts";
@@ -16,7 +16,7 @@ import { openSession } from "./session.ts";
 const log = (text: string): boolean => process.stderr.write(`malebolge: ${text}\n`);
 
 const config = resolveConfig(process.env, process.cwd());
-const models = createDaemonModels(readModelsStore(config.modelsStorePath));
+const models = await loadGatewayModels(config.gatewayCatalog, config.gatewayKeyFile);
 const { provider, modelId } = config.model;
 if (models.getModelOfType("chat", provider, modelId) === undefined) {
   throw new Error(`unknown model ${provider}/${modelId}`);

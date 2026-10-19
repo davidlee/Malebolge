@@ -10,8 +10,9 @@ describe("resolveConfig", () => {
       storagePath: "/h/.local/state/satan/durable/session.sqlite",
       mcpSocket: "/run/u/satan/mcp/mcp.sock",
       daemonSocket: "/run/u/satan/durable.sock",
-      model: { provider: "deepseek", modelId: "deepseek-flash" },
-      modelsStorePath: "/h/.pi/agent/models-store.json",
+      model: { provider: "gateway", modelId: "deepseek-flash" },
+      gatewayCatalog: "/h/.config/malebolge/gateway-models.json",
+      gatewayKeyFile: "/h/.config/llm-gateway/keys/malebolge",
       cwd: "/cwd",
     });
   });
@@ -25,6 +26,8 @@ describe("resolveConfig", () => {
         SATAN_MCP_SOCKET: "/mcp.sock",
         MALEBOLGE_SOCKET: "/d.sock",
         MALEBOLGE_MODEL: "openai/gpt-6-sol",
+        MALEBOLGE_GATEWAY_CATALOG: "/etc/catalog.json",
+        MALEBOLGE_GATEWAY_KEY_FILE: "/run/key",
       },
       "/cwd",
     );
@@ -34,6 +37,8 @@ describe("resolveConfig", () => {
       mcpSocket: "/mcp.sock",
       daemonSocket: "/d.sock",
       model: { provider: "openai", modelId: "gpt-6-sol" },
+      gatewayCatalog: "/etc/catalog.json",
+      gatewayKeyFile: "/run/key",
     });
   });
 

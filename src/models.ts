@@ -1,11 +1,12 @@
-// Model catalog: pi-ai's built-in providers, plus models the coding agent has
-// learnt from its remote catalog (~/.pi/agent/models-store.json) that this
-// pi-ai release does not ship. The remote-catalog machinery lives in the coding
-// agent, not pi-ai, so reading its store is the cheap way to see the same models.
+// The gateway-routed provider both binaries use (design §5.1; user ruling
+// 2026-10-19). Model requests go host -> the LLM gateway, which holds the
+// upstream keys; this provider reads the catalog `~/flakes` renders for the
+// jails (`piGatewayConfig`, the coding agent's models.json shape) and carries a
+// gateway key issued to the binary. The key lives in a closure: never in
+// process.env, never on argv.
 
-import { readFileSync } from "node:fs";
+import { readFile } from "node:fs/promises";
 import type {
-  AnyModel,
   Model,
   ModelCost,
   ModelInputModality,
@@ -14,73 +15,10 @@ import type {
   ThinkingLevelMap,
 } from "@earendil-works/pi-ai";
 import { openAICompletionsApi } from "@earendil-works/pi-ai/api/openai-completions.lazy";
-import { createProvider, isModelType, type Models } from "@earendil-works/pi-ai/models";
-import { builtinModels, builtinProviders } from "@earendil-works/pi-ai/providers/all";
+import { createModels, createProvider, type Models } from "@earendil-works/pi-ai/models";
 import { optionalRecord, optionalString, required, requireString } from "./fields.ts";
 import { isRecord, type JsonRecord } from "./json.ts";
-
-export type StoredModels = Readonly<Record<string, readonly AnyModel[]>>;
-
-/** `provider`, offering also those of `candidates` its catalog lacks. */
-export function withMissingModels(provider: Provider, candidates: readonly AnyModel[]): Provider {
-  const known = new Set(provider.getModels().map((model) => model.id));
-  const missing = candidates.filter((model) => !known.has(model.id));
-  if (missing.length === 0) {
-    return provider;
-  }
-  const missingChat = missing.filter((model) => isModelType(model, "chat"));
-  return {
-    ...provider,
-    getModels: () => [...provider.getModels(), ...missingChat],
-    getAllModels: () => [...(provider.getAllModels?.() ?? provider.getModels()), ...missing],
-  };
-}
-
-/** The coding agent's model store, by provider id; empty when absent. */
-export function readModelsStore(path: string): StoredModels {
-  let text: string;
-  try {
-    text = readFileSync(path, "utf8");
-  } catch {
-    return {};
-  }
-  const store: unknown = JSON.parse(text);
-  if (!isRecord(store)) {
-    return {};
-  }
-  return Object.fromEntries(
-    Object.entries(store).map(([provider, entry]) => [provider, storedModelsOf(entry)]),
-  );
-}
-
-/** The models of one store entry. The store is the coding agent's, so only identity is checked. */
-function storedModelsOf(entry: unknown): AnyModel[] {
-  const models = isRecord(entry) ? entry["models"] : undefined;
-  return Array.isArray(models) ? models.filter(isStoredModel) : [];
-}
-
-function isStoredModel(value: unknown): value is AnyModel {
-  return (
-    isRecord(value) && typeof value["id"] === "string" && typeof value["provider"] === "string"
-  );
-}
-
-export function createDaemonModels(stored: StoredModels): Models {
-  const models = builtinModels();
-  for (const provider of builtinProviders()) {
-    const candidates = stored[provider.id];
-    if (candidates !== undefined) {
-      models.setProvider(withMissingModels(provider, candidates));
-    }
-  }
-  return models;
-}
-
-// The gateway-routed provider (design §5.1; user ruling 2026-10-19). Model
-// requests go host -> the LLM gateway, which holds the upstream keys; this
-// provider reads the catalog `~/flakes` renders for the jails (`piGatewayConfig`,
-// the coding agent's models.json shape) and carries a gateway key issued to
-// this binary. The key lives in a closure: never in process.env, never on argv.
+import { messageOf } from "./message-of.ts";
 
 /** The provider id catalog references use: `gateway/<model id>`. */
 export const GATEWAY_PROVIDER = "gateway";
@@ -222,4 +160,40 @@ export function gatewayProvider(catalog: GatewayCatalog, key: string): Provider 
     models: [...catalog.models],
     api: openAICompletionsApi(),
   });
+}
+
+/** The text of `path`, or an error naming `what` and the path. */
+async function readRequired(path: string, what: string): Promise<string> {
+  try {
+    return await readFile(path, "utf8");
+  } catch (error) {
+    throw new Error(`${what} ${path}: ${messageOf(error)}`, { cause: error });
+  }
+}
+
+/** The key in file `path`: its text less one trailing newline. */
+async function readKey(path: string): Promise<string> {
+  const key = (await readRequired(path, "gateway credential")).replace(/\n$/, "");
+  if (key === "") {
+    throw new Error(`gateway credential ${path}: file is empty`);
+  }
+  return key;
+}
+
+/**
+ * A catalog holding the gateway provider alone, from the catalog file and key
+ * file at the given paths. Every failure names a path; none carries the key.
+ */
+export async function loadGatewayModels(catalogPath: string, keyPath: string): Promise<Models> {
+  const key = await readKey(keyPath);
+  const text = await readRequired(catalogPath, "gateway catalog");
+  let provider: Provider;
+  try {
+    provider = gatewayProvider(parseGatewayCatalog(text), key);
+  } catch (error) {
+    throw new Error(`gateway catalog ${catalogPath}: ${messageOf(error)}`, { cause: error });
+  }
+  const models = createModels();
+  models.setProvider(provider);
+  return models;
 }

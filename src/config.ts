@@ -15,15 +15,17 @@ export interface Config {
   mcpSocket: string;
   daemonSocket: string;
   model: ModelRef;
-  /** The coding agent's cache of its remote model catalog (see models.ts). */
-  modelsStorePath: string;
+  /** The gateway model catalog file `~/flakes` renders (see models.ts). */
+  gatewayCatalog: string;
+  /** The file holding this daemon's gateway key; the key itself is never in the environment. */
+  gatewayKeyFile: string;
   /** Working directory of the agent's coding tools. */
   cwd: string;
 }
 
 type Env = Readonly<Record<string, string | undefined>>;
 
-export const DEFAULT_MODEL = "deepseek/deepseek-flash";
+export const DEFAULT_MODEL = "gateway/deepseek-flash";
 
 export function parseModel(ref: string): ModelRef {
   const slash = ref.indexOf("/");
@@ -45,10 +47,6 @@ function required(env: Env, name: string): string {
 export const daemonSocket = (env: Env): string =>
   env["MALEBOLGE_SOCKET"] ?? join(required(env, "XDG_RUNTIME_DIR"), "satan", "durable.sock");
 
-/** The coding agent's model catalog cache under `home`. */
-export const modelsStorePath = (home: string): string =>
-  join(home, ".pi", "agent", "models-store.json");
-
 export function resolveConfig(env: Env, cwd: string): Config {
   const home = required(env, "HOME");
   const stateRoot = join(env["XDG_STATE_HOME"] ?? join(home, ".local", "state"), "satan");
@@ -59,7 +57,11 @@ export function resolveConfig(env: Env, cwd: string): Config {
     mcpSocket: env["SATAN_MCP_SOCKET"] ?? join(runtime, "mcp", "mcp.sock"),
     daemonSocket: daemonSocket(env),
     model: parseModel(env["MALEBOLGE_MODEL"] ?? DEFAULT_MODEL),
-    modelsStorePath: modelsStorePath(home),
+    gatewayCatalog:
+      env["MALEBOLGE_GATEWAY_CATALOG"] ?? join(home, ".config", "malebolge", "gateway-models.json"),
+    gatewayKeyFile:
+      env["MALEBOLGE_GATEWAY_KEY_FILE"] ??
+      join(home, ".config", "llm-gateway", "keys", "malebolge"),
     cwd,
   };
 }
