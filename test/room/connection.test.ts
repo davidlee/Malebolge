@@ -213,6 +213,16 @@ describe("the daemon connection under an ObservedConnection (VT-5, EX-5)", () =>
   });
 });
 
+describe("an observed env refuses a nested wrapper (design §4.3, RV-035 F-4)", () => {
+  it("throws when the connection is already an ObservedConnection", () => {
+    const inner = new ObservedConnection(lostConnection(), ignoreLost);
+
+    expect(() => observedEnv(inner, ignoreLost, { id: "pi-env:t", cwd: "/" })).toThrow(
+      "ObservedConnection",
+    );
+  });
+});
+
 describe("the observed connection's reword (design §4.4)", () => {
   /** A reword that names the fault and keeps the error's fields. */
   const reword = (fault: RoomFault, error: RemoteError): RemoteError =>

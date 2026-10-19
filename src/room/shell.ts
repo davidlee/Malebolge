@@ -205,7 +205,8 @@ export function settle(
  * environment turns a lost connection into an exec failure; its connection
  * reports the loss by type first, which is what makes it ChannelUnavailable.
  * A loss whose start failed trust is ChannelFailed `host_key` instead: never
- * retried.
+ * retried. `connection` is the daemon connection itself, never an
+ * `ObservedConnection` (observedEnv refuses one).
  */
 export function roomShell(
   connection: Connection,

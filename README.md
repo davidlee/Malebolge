@@ -50,10 +50,10 @@ clients and a separate execution environment.
 ## The picture
 
 ```
- terminal / Emacs ── attach ──▶ malebolge (interactive daemon, host jail)
+ terminal / Emacs ── attach ──▶ malebolge (interactive daemon, jailed)
                                 ├─ one durable conversation
                                 ├─ live persona + skill listings
-                                ├─ coding tools in the host jail
+                                ├─ coding tools ─▶ the room (pi-env), or the host
                                 ├─ SATAN tools ──▶ satan-mcp (Emacs)
                                 └─ model ────────▶ LLM gateway
 
@@ -150,7 +150,7 @@ Set through environment variables:
 | `MALEBOLGE_PROFILE` | execution profile, `room` or `host` (above) | required |
 | `MALEBOLGE_DOOR` | the room's door file (room only) | required for `room` |
 | `MALEBOLGE_SSH_CONFIG` | the ssh config the room is reached through (room only) | required for `room` |
-| `MALEBOLGE_GATEWAY_SOCKET` | the LLM gateway's client socket; start is refused if it is set and missing | none |
+| `MALEBOLGE_GATEWAY_SOCKET` | the LLM gateway's client socket (room only); start is refused if it is set and missing | none |
 | `MALEBOLGE_MODEL` | model, as `provider/model` | `gateway/deepseek-flash` |
 | `MALEBOLGE_GATEWAY_CATALOG` | gateway model catalog (JSON file) | `~/.config/malebolge/gateway-models.json` |
 | `MALEBOLGE_GATEWAY_KEY_FILE` | file holding the daemon's gateway key (names a file; never carries the key) | `~/.config/llm-gateway/keys/malebolge` |

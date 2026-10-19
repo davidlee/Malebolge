@@ -171,19 +171,26 @@ export class ObservedConnection extends Connection {
  * pi-env's remote environment `id` in `cwd` over `connection`, observed by
  * `observer`, its lost failures through `reword` when given: the one way an
  * observed env is built. `connection` is the daemon connection itself, never
- * another `ObservedConnection`: the trust check reads the inner connection, so
- * a nested wrapper reports a host-key refusal as a loss (design §4.3).
+ * another `ObservedConnection` (refused): the trust check reads the inner
+ * connection, so a nested wrapper reports a host-key refusal as a loss
+ * (design §4.3, RV-035 F-4).
  */
-export const observedEnv = (
+export function observedEnv(
   connection: Connection,
   observer: ConnectionObserver,
   { id, cwd, reword }: { id: string; cwd: string; reword?: Reword },
-): RemoteExecutionEnv =>
-  new RemoteExecutionEnv({
+): RemoteExecutionEnv {
+  if (connection instanceof ObservedConnection) {
+    throw new Error(
+      `${id}: an ObservedConnection must wrap the daemon connection, not another ObservedConnection`,
+    );
+  }
+  return new RemoteExecutionEnv({
     connection: new ObservedConnection(connection, observer, reword),
     id,
     cwd,
   });
+}
 
 /** pi-env's ssh target for the room. */
 export const sshTarget = (room: RoomConnection): SshTarget =>

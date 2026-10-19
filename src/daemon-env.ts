@@ -5,7 +5,6 @@
 // life; its faults worded once, at the connection seam, for every tool.
 
 import { existsSync } from "node:fs";
-import type { ExecutionEnv } from "@earendil-works/pi-durable/env";
 import { NodeExecutionEnv } from "@earendil-works/pi-durable/env/node";
 import { RemoteError } from "@earendil-works/pi-env";
 import type { Execution } from "./config.ts";
@@ -26,11 +25,11 @@ import {
   type RoomFault,
 } from "./room/connection.ts";
 import { ChannelFailed, ChannelUnavailable, type RoomShell, roomShell } from "./room/shell.ts";
-import { roomSourceReader } from "./room/source-reader.ts";
+import { type ReadFailure, roomSourceReader } from "./room/source-reader.ts";
+import type { SessionOptions } from "./session.ts";
 
 export interface DaemonEnv {
-  /** pi-durable's per-call environment hook (`SessionOptions.env`). */
-  env: (state: { cwd?: string }) => ExecutionEnv;
+  env: SessionOptions["env"];
   /** The agent's cwd: the launch dir (host) or the room user's home (room). */
   cwd: string;
   /** Project context sources, read once at startup; [] when the room is unreadable. */
@@ -75,6 +74,16 @@ function faultOf(error: unknown): RoomFault | undefined {
   return undefined;
 }
 
+/** A read failure as a log reads it: the reason, then the exit code and stderr when known. */
+function describeFailure(failure: ReadFailure): string {
+  if (failure.reason !== "error") {
+    return failure.reason;
+  }
+  const code = failure.code === undefined ? "" : ` (exit ${String(failure.code)})`;
+  const stderr = failure.stderr?.trim() ?? "";
+  return `error${code}${stderr === "" ? "" : `: ${stderr}`}`;
+}
+
 /**
  * Project context from the room user's `home` only, over `shell` (DEC-080):
  * the home is not a git repo, so no root walk. A failed read is logged and
@@ -87,7 +96,7 @@ export async function readRoomContext(
   log: (text: string) => void,
 ): Promise<ContextSource[]> {
   const reader = roomSourceReader(shell, new AbortController().signal, (source, failure) => {
-    log(`project context: ${source}: ${failure.reason}`);
+    log(`project context: ${source}: ${describeFailure(failure)}`);
   });
   try {
     return await readSources(home, [home], reader);
@@ -128,8 +137,7 @@ function roomEnv(
         reword,
       }),
     cwd: home,
-    // The bare connection: roomShell observes it itself (an ObservedConnection
-    // always wraps a DaemonConnection directly, RV-035 F-4).
+    // The bare connection: roomShell observes it itself (RV-035 F-4).
     readContext: () =>
       readRoomContext(
         roomShell(connection, { id: "pi-env:daemon-room-context", cwd: home }),

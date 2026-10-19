@@ -9,7 +9,13 @@ import { fauxAssistantMessage, fauxText, fauxToolCall } from "@earendil-works/pi
 import { MemoryStorage } from "@earendil-works/pi-durable";
 import { NodeExecutionEnv } from "@earendil-works/pi-durable/env/node";
 import { CodingTools } from "@earendil-works/pi-durable/tools";
-import { HostKeyChangedError, localDaemon, RemoteExecutionEnv } from "@earendil-works/pi-env";
+import {
+  HostKeyChangedError,
+  isConnectionLost,
+  localDaemon,
+  RemoteError,
+  RemoteExecutionEnv,
+} from "@earendil-works/pi-env";
 import { afterEach, describe, expect, it } from "vitest";
 import type { Execution } from "../src/config.ts";
 import { context } from "../src/context.ts";
@@ -210,6 +216,20 @@ describe("room faults at the tool seam, the daemon's reword (design §4.4)", () 
     expect(lines.some((line) => line.startsWith("room unavailable: "))).toBe(true);
   });
 
+  it("the reworded error keeps its type and fields: still a lost connection", async () => {
+    environment = daemonEnv(roomExecution("/home/satan"), () => undefined, fakeHelpers("false"));
+    const env = environment.env({});
+
+    const error: unknown = await (env instanceof RemoteExecutionEnv
+      ? env.connection.info()
+      : never()
+    ).catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(RemoteError);
+    expect(isConnectionLost(error)).toBe(true);
+    expect(error instanceof RemoteError && error.message).toMatch(/^room unavailable: /);
+  });
+
   it("a host key the room fails: `room host key untrusted`, never unavailable, logged every call", async () => {
     const { lines, log } = recordingLog();
     const helpers = fakeHelpers("ssh", () => new HostKeyChangedError("changed"));
@@ -222,7 +242,7 @@ describe("room faults at the tool seam, the daemon's reword (design §4.4)", () 
       expect(text).not.toContain("room unavailable");
     }
     expect(lines.filter((line) => line.startsWith("room host key untrusted: ")).length).toBe(
-      helpers.deployed.length,
+      results.length,
     );
     expect(lines.some((line) => line.includes("room unavailable"))).toBe(false);
   });
@@ -292,7 +312,7 @@ describe("the room's startup context (design §4.5, DEC-080)", () => {
     const shell: RoomShell = () => Promise.resolve({ code: 2, stdout: "", stderr: "denied" });
 
     expect(await readRoomContext(shell, "/home/satan", log)).toEqual([]);
-    expect(lines.some((line) => line.startsWith("project context: /home/satan"))).toBe(true);
+    expect(lines).toContain("project context: /home/satan: error (exit 2): denied");
   });
 
   it("host: reads project context from the launch dir with the node reader", async () => {

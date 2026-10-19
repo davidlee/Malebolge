@@ -22,9 +22,6 @@ const config = resolveConfig(process.env, process.cwd(), (path) => readFileSync(
 const persona = personaFiles(config.corpusRoot, config.execution.profile);
 const skills = loadSkills(config.skillDirs, log);
 requireGatewaySocket(config.execution);
-const environment = daemonEnv(config.execution, log);
-// Read once: a context file edit takes a restart.
-const projectContext = renderProjectContext(await environment.readContext());
 const models = await loadGatewayModels(config.gatewayCatalog, config.gatewayKeyFile);
 const { provider, modelId } = config.model;
 if (models.getModelOfType("chat", provider, modelId) === undefined) {
@@ -36,6 +33,11 @@ const satan = await connectSatanTools(config.mcpSocket, log).catch((error: unkno
     `satan-mcp not reachable at ${config.mcpSocket} (satan-mcp-start?): ${String(error)}`,
   );
 });
+
+// Local configuration is checked before the room is reached.
+const environment = daemonEnv(config.execution, log);
+// Read once: a context file edit takes a restart.
+const projectContext = renderProjectContext(await environment.readContext());
 
 mkdirSync(dirname(config.storagePath), { recursive: true });
 mkdirSync(dirname(config.daemonSocket), { recursive: true });
