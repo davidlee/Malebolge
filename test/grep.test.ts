@@ -29,7 +29,7 @@ import { type BoundedLineSplitter, boundedLineSplitter } from "../src/ndjson.ts"
 import { jobEnv } from "../src/runner/env.ts";
 import { tempDir } from "./fixtures.ts";
 import { callThenAnswer, openFauxHarness, textOf, toolResults } from "./harness-fixture.ts";
-import { localConnection } from "./runner/env-fixture.ts";
+import { localConnection } from "./room/connection-fixture.ts";
 import { realBin } from "./runner/fake-bin.ts";
 import { closeHarness, within } from "./runner/runner-fixture.ts";
 

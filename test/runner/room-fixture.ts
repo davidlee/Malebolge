@@ -48,7 +48,7 @@ import {
   roomChannel,
   slotChannel,
 } from "../../src/runner/room.ts";
-import { localConnection } from "./env-fixture.ts";
+import { localConnection } from "../room/connection-fixture.ts";
 import {
   type BareRepo,
   gitIn,

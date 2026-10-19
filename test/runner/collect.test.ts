@@ -9,11 +9,12 @@ import { join } from "node:path";
 import { type Connection, HostKeyChangedError } from "@earendil-works/pi-env";
 import { describe, expect, it } from "vitest";
 import { collectJob } from "../../src/runner/collect.ts";
-import { daemonConnection } from "../../src/runner/env.ts";
+import { daemonConnection } from "../../src/room/connection.ts";
 import { cleanRoomClone } from "../../src/runner/room.ts";
 import { roomShell } from "../../src/runner/shell.ts";
+import { fakeHelpers, localConnection, lostConnection } from "../room/connection-fixture.ts";
 import { exampleConfig, roomConfig } from "./config-fixture.ts";
-import { doorFacts, fakeHelpers, localConnection, lostConnection } from "./env-fixture.ts";
+import { doorFacts } from "./env-fixture.ts";
 import { type CollectWorld, type RoomKindWorld, roomKindCollectWorld } from "./room-fixture.ts";
 import { T0 } from "./store-fixture.ts";
 

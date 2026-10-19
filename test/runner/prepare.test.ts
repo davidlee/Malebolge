@@ -32,8 +32,8 @@ import {
 import { fetchProjectContext } from "../../src/runner/project-context.ts";
 import { roomShell } from "../../src/runner/shell.ts";
 import type { Job, JobStore } from "../../src/runner/store.ts";
+import { localConnection } from "../room/connection-fixture.ts";
 import { exampleConfig } from "./config-fixture.ts";
-import { localConnection } from "./env-fixture.ts";
 import {
   readying,
   type RoomKindWorld,

@@ -9,6 +9,7 @@
 // and `roomConnection`.
 
 import { setDefined } from "../fields.ts";
+import { directLaunch, type Launch, type RoomConnection } from "../room/connection.ts";
 import type {
   DoorConfig,
   RepoConfig,
@@ -489,25 +490,6 @@ export function channelFromConfig(
   return door.kind === "slot" ? slotChannel(door, cli, reader) : roomChannel(door, cli, reader);
 }
 
-/** How the execution environment reaches the room's shell. */
-export interface RoomConnection {
-  /** The guest's address; a room's is its name, a placeholder the relay ignores. */
-  host: string;
-  user: string;
-  /** The fixed name the room's host keys are stored under in `knownHosts`. */
-  hostKeyAlias: string;
-  knownHosts: string;
-  /** An ssh config file (e.g. the relay's ProxyCommand) instead of `~/.ssh/config`. */
-  sshConfig?: string;
-  identity?: string;
-}
-
-/**
- * The words that start the daemon at path `daemon` in the guest; the
- * execution environment quotes them into ssh's remote command.
- */
-export type Launch = (daemon: string) => readonly string[];
-
 /**
  * How `repo`'s daemon is started: a slot's is the daemon itself; a room's
  * runs it through the room's session program in the repo's checkout
@@ -516,7 +498,7 @@ export type Launch = (daemon: string) => readonly string[];
 export function daemonLaunch(config: RunnerConfig, repo: RepoConfig): Launch {
   const door = doorOf(config);
   if (door.kind === "slot") {
-    return (daemon) => [daemon];
+    return directLaunch;
   }
   return (daemon) => [door.sessionPath, repo.name, "--", daemon];
 }

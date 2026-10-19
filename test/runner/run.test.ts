@@ -15,8 +15,8 @@ import { type RunDeps, runJob } from "../../src/runner/run.ts";
 import { RunControl } from "../../src/runner/scheduler.ts";
 import type { Job } from "../../src/runner/store.ts";
 import { textOf } from "../harness-fixture.ts";
+import { FailingConnection, lostError } from "../room/connection-fixture.ts";
 import { narrowedModes } from "./config-fixture.ts";
-import { FailingConnection, lostError } from "./env-fixture.ts";
 import {
   answer,
   call,

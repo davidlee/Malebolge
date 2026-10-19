@@ -30,7 +30,7 @@ import {
   HEAD_LIMITS,
 } from "../../src/runner/project-context.ts";
 import { ChannelFailed, PREPARE_LIMITS, type ShellLimits } from "../../src/runner/room.ts";
-import { localConnection, pathWith } from "./env-fixture.ts";
+import { localConnection, pathWith } from "../room/connection-fixture.ts";
 import { fakeBin, pathWithout, realBin } from "./fake-bin.ts";
 import { tempDir, type TestRepo } from "./git-fixture.ts";
 import { type RoomKindWorld, readying, roomKindWorld } from "./room-fixture.ts";

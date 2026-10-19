@@ -23,7 +23,7 @@ import { retryPendingCollection } from "../../src/runner/collect.ts";
 import type { Ceilings, RunnerConfig } from "../../src/runner/config.ts";
 import { harnessConversations, jobConversation } from "../../src/runner/conversations.ts";
 import { gitQuarantineReader } from "../../src/runner/git.ts";
-import { DaemonConnection } from "../../src/runner/env.ts";
+import { DaemonConnection } from "../../src/room/connection.ts";
 import { jobGuard } from "../../src/runner/guard.ts";
 import type { JsonRecord } from "../../src/json.ts";
 import {
@@ -51,8 +51,13 @@ import type { EventKind } from "../../src/runner/vocab.ts";
 import { roomTenancy } from "../../src/runner/tenancy.ts";
 import { JobTools } from "../../src/runner/tools.ts";
 import { openFauxHarness, toolResults } from "../harness-fixture.ts";
+import {
+  FailingConnection,
+  localConnection,
+  lostError,
+  RebuiltRoom,
+} from "../room/connection-fixture.ts";
 import { exampleConfig } from "./config-fixture.ts";
-import { FailingConnection, localConnection, lostError, RebuiltRoom } from "./env-fixture.ts";
 import { type RoomWorld, roomWorld } from "./room-fixture.ts";
 import { blockingTool, type BlockingTool, closeHarness, within } from "./runner-fixture.ts";
 import { NEW_JOB, sequentialIds, T0 } from "./store-fixture.ts";

@@ -6,6 +6,7 @@
 import type { ThinkingLevel } from "@earendil-works/pi-ai";
 import { parse } from "smol-toml";
 import {
+  expandHome,
   onlyKeys,
   optionalBoolean,
   optionalPositiveInt,
@@ -168,14 +169,6 @@ const THINKING_LEVELS: readonly ThinkingLevel[] = [
 
 export const isThinkingLevel = (value: string): value is ThinkingLevel =>
   THINKING_LEVELS.some((level) => level === value);
-
-/** `~` and `~/x` against `home`. */
-function expandHome(path: string, home: string): string {
-  if (path === "~") {
-    return home;
-  }
-  return path.startsWith("~/") ? `${home}/${path.slice(2)}` : path;
-}
 
 /** Runs `read`, prefixing any Error with the table it was reading. */
 function within<T>(where: string, read: () => T): T {

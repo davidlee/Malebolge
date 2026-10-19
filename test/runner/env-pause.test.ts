@@ -1,6 +1,6 @@
 // PHASE-01 spike (DEC-055, RV-025 F-2/F-17), offline half: pi-env's
 // lost-connection failure on a real local daemon killed mid-exec, recognised by
-// type at the runner's JobConnection, marked durably on the shared SQLite adapter
+// type at the runner's ObservedConnection, marked durably on the shared SQLite adapter
 // outside any pi transaction, and visible to `afterTool`; the same text without
 // the type is not recognised. The live half (a VM stop) is room-stop.live.test.ts.
 
@@ -11,7 +11,8 @@ import { CodingTools } from "@earendil-works/pi-durable/tools";
 import { type Connection, isConnectionLost, RemoteError } from "@earendil-works/pi-env";
 import { afterEach, describe, expect, it } from "vitest";
 import { context } from "../../src/context.ts";
-import { type ConnectionObserver, jobEnv, type LostFailure } from "../../src/runner/env.ts";
+import { type ConnectionObserver, type LostFailure } from "../../src/room/connection.ts";
+import { jobEnv } from "../../src/runner/env.ts";
 import { tempDir } from "../fixtures.ts";
 import { callThenAnswer, openFauxHarness, textOf, toolResults } from "../harness-fixture.ts";
 import {
@@ -19,10 +20,8 @@ import {
   LOST_TEXT,
   localConnection,
   lostConnection,
-  markPause,
-  PAUSE_SCHEMA,
-  pauseRequested,
-} from "./env-fixture.ts";
+} from "../room/connection-fixture.ts";
+import { markPause, PAUSE_SCHEMA, pauseRequested } from "./env-fixture.ts";
 import { closeHarness, openSharedStore, within } from "./runner-fixture.ts";
 
 const JOB = "job-1";

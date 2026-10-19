@@ -15,7 +15,7 @@ import {
   type RequestOptions,
 } from "@earendil-works/pi-env";
 import { describe, expect, it } from "vitest";
-import { daemonConnection } from "../../src/runner/env.ts";
+import { daemonConnection } from "../../src/room/connection.ts";
 import { preparingFailure } from "../../src/runner/prepare.ts";
 import {
   ChannelFailed,
@@ -31,14 +31,14 @@ import {
   roomShell,
   settle,
 } from "../../src/runner/shell.ts";
-import { exampleConfig, roomConfig } from "./config-fixture.ts";
 import {
-  doorFacts,
   FailingConnection,
   fakeHelpers,
   localConnection,
   lostConnection,
-} from "./env-fixture.ts";
+} from "../room/connection-fixture.ts";
+import { exampleConfig, roomConfig } from "./config-fixture.ts";
+import { doorFacts } from "./env-fixture.ts";
 import { never, rejection, shellKit } from "./shell-fixture.ts";
 
 const JOB_ID = "pj-1";

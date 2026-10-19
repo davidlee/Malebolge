@@ -623,8 +623,8 @@ const knowing = (words: RegExp): string[] =>
     .sort();
 
 describe("door knowledge (EX-10)", () => {
-  it("the door is named only in room.ts, config.ts and env.ts's connection factory", () => {
-    const owners = ["runner/config.ts", "runner/env.ts", "runner/room.ts"];
+  it("the door is named only in room.ts, config.ts and the room tier's connection", () => {
+    const owners = ["room/connection.ts", "runner/config.ts", "runner/room.ts"];
     expect(knowing(DOOR_WORDS).filter((file) => !owners.includes(file))).toEqual([]);
     expect(knowing(DOOR_WORDS)).toEqual(
       expect.arrayContaining(["runner/config.ts", "runner/room.ts"]),

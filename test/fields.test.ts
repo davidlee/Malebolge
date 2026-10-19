@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  expandHome,
   onlyKeys,
   optionalBoolean,
   optionalPositiveInt,
@@ -128,5 +129,14 @@ describe("setDefined", () => {
       a: 1,
       b: "x",
     });
+  });
+});
+
+describe("expandHome", () => {
+  it("expands ~ and ~/x against home, and leaves every other path alone", () => {
+    expect(expandHome("~", "/home/u")).toBe("/home/u");
+    expect(expandHome("~/a/b", "/home/u")).toBe("/home/u/a/b");
+    expect(expandHome("/abs/~/x", "/home/u")).toBe("/abs/~/x");
+    expect(expandHome("~other/x", "/home/u")).toBe("~other/x");
   });
 });

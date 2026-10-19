@@ -37,6 +37,7 @@ import {
 import type { Job, JobEvent } from "../../src/runner/store.ts";
 import { WARNING_TEXT } from "../../src/runner/warning.ts";
 import { textOf } from "../harness-fixture.ts";
+import { FailingConnection } from "../room/connection-fixture.ts";
 import { narrowedModes } from "./config-fixture.ts";
 import {
   answer,
@@ -62,7 +63,6 @@ import {
   warningEvents,
   writeAndCommit,
 } from "./run-fixture.ts";
-import { FailingConnection } from "./env-fixture.ts";
 import { within } from "./runner-fixture.ts";
 import { NEW_JOB, T0 } from "./store-fixture.ts";
 

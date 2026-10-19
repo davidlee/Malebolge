@@ -19,7 +19,7 @@ import { openRunnerStore, type RunnerStore } from "../../src/runner/store.ts";
 import { JobTools } from "../../src/runner/tools.ts";
 import { tempDir } from "../fixtures.ts";
 import { callThenAnswer, openFauxHarness, textOf, toolResults } from "../harness-fixture.ts";
-import { LOST_TEXT } from "./env-fixture.ts";
+import { LOST_TEXT } from "../room/connection-fixture.ts";
 import { closeHarness, within } from "./runner-fixture.ts";
 import { NEW_JOB, sequentialIds, T0 } from "./store-fixture.ts";
 

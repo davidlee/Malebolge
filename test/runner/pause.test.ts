@@ -17,7 +17,7 @@ import { describe, expect, it, onTestFinished } from "vitest";
 import { context } from "../../src/context.ts";
 import type { JsonRecord } from "../../src/json.ts";
 import { collectJob, retryPendingCollection } from "../../src/runner/collect.ts";
-import { JobConnection } from "../../src/runner/env.ts";
+import { ObservedConnection } from "../../src/room/connection.ts";
 import { configEntry } from "../../src/runner/policy.ts";
 import { PAUSED_RESULT_TEXT } from "../../src/runner/guard.ts";
 import {
@@ -33,8 +33,13 @@ import type { RunDeps } from "../../src/runner/run.ts";
 import type { Job, JobEvent, JobStore } from "../../src/runner/store.ts";
 import { WARNING_TEXT, warningOwed } from "../../src/runner/warning.ts";
 import { openFauxHarness, textOf } from "../harness-fixture.ts";
+import {
+  FailingConnection,
+  type FailWhen,
+  LOST_TEXT,
+  lostError,
+} from "../room/connection-fixture.ts";
 import { exampleConfig } from "./config-fixture.ts";
-import { FailingConnection, type FailWhen, LOST_TEXT, lostError } from "./env-fixture.ts";
 import {
   answer,
   type ArmedTimer,
@@ -65,14 +70,14 @@ import { NEW_JOB, openTestStore, T0 } from "./store-fixture.ts";
 async function runningConnection(failWhen: FailWhen): Promise<{
   jobs: JobStore;
   job: Job;
-  connection: JobConnection;
+  connection: ObservedConnection;
 }> {
   const { jobs } = await openTestStore();
   const { job: queued } = await jobs.submit(NEW_JOB, T0);
   await jobs.transition(queued.id, "preparing", T0 + 1);
   const job = await jobs.transition(queued.id, "running", T0 + 2);
   let clock = T0 + 10;
-  const connection = new JobConnection(
+  const connection = new ObservedConnection(
     new FailingConnection(failWhen),
     pausingObserver({ jobs, now: () => ++clock }, job.id, () => {
       throw new Error("no trust failure here");
@@ -85,7 +90,7 @@ const pauseEvents = async (jobs: JobStore, id: string): Promise<unknown[]> =>
   (await jobs.events(id)).filter((event) => event.kind === "pause").map((event) => event.payload);
 
 describe("the pausing observer: a lost Connection marks the job (VT-2, EX-5)", () => {
-  const calls: [string, (connection: JobConnection) => Promise<unknown>][] = [
+  const calls: [string, (connection: ObservedConnection) => Promise<unknown>][] = [
     ["info", (connection): Promise<unknown> => connection.info()],
     ["session", (connection): Promise<unknown> => connection.session()],
     ["exec", (connection): Promise<unknown> => connection.request("exec", { command: "true" })],

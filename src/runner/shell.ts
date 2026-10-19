@@ -14,7 +14,8 @@ import type { ExecutionError, Result, ShellExecResult } from "@earendil-works/pi
 import type { Connection } from "@earendil-works/pi-env";
 import { context } from "../context.ts";
 import { headKeeper } from "../truncate.ts";
-import { type HostKeyFailure, jobEnv } from "./env.ts";
+import { type HostKeyFailure } from "../room/connection.ts";
+import { jobEnv } from "./env.ts";
 import {
   ChannelFailed,
   ChannelUnavailable,

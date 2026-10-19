@@ -115,3 +115,11 @@ export function onlyKeys(fields: JsonRecord, allowed: readonly string[], where: 
     throw new Error(`${where}: unknown key ${unknown}`);
   }
 }
+
+/** `~` and `~/x` against `home`. */
+export function expandHome(path: string, home: string): string {
+  if (path === "~") {
+    return home;
+  }
+  return path.startsWith("~/") ? `${home}/${path.slice(2)}` : path;
+}
