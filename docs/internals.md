@@ -50,10 +50,13 @@ One JSON message per line on the daemon socket.
   retried. The tool list is the one satan-mcp offered at daemon start.
 - **Persona is live.** The section re-reads the corpus files on each request;
   the harness resends only changed sections, so prompt caching survives.
-- **Skills are read once.** `$MALEBOLGE_SKILLS` directories are loaded and
+- **Skills are listed once.** `$MALEBOLGE_SKILLS` directories are loaded and
   parsed at daemon start (DEC-067); the section then renders a constant. Bad
   or missing entries are logged `skill <dir>: <reason>` and dropped, never
-  fatal. Editing a skill needs a daemon restart. Wording and rules follow
+  fatal. The model reads a skill's body with the `read` tool when it uses
+  it, so body edits take effect at once; changes to the listing (adding or
+  removing a skill, or a frontmatter `name`, `description` or
+  `disable-model-invocation`) need a daemon restart. Wording and rules follow
   pi 1.3.0's `formatSkillsForPrompt`.
 - **Model catalog.** pi-ai 1.3.0's built-in catalog lags the coding agent's
   remote one; `src/models.ts` adds the models found in

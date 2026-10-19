@@ -155,7 +155,12 @@ export const renderSkills = (skills: readonly Skill[]): string | undefined => {
   ].join("\n");
 };
 
-/** Read once at startup, so the section closes over a constant. */
+/**
+ * Read once at startup, so the section closes over a constant.
+ * Idea: a fingerprint of the listing, recorded per session, would let a
+ * resumed session notice that the skills it saw have since changed (as
+ * Cloudflare's agents/skills sources carry).
+ */
 export const skillsExtension = (skills: readonly Skill[]): Extension => {
   const text = renderSkills(skills);
   return defineExtension({

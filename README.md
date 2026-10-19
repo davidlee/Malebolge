@@ -93,7 +93,7 @@ Set through environment variables:
 | `MALEBOLGE_MODEL` | model, as `provider/model` | `gateway/deepseek-flash` |
 | `MALEBOLGE_GATEWAY_CATALOG` | gateway model catalog (JSON file) | `~/.config/malebolge/gateway-models.json` |
 | `MALEBOLGE_GATEWAY_KEY_FILE` | file holding the daemon's gateway key (names a file; never carries the key) | `~/.config/llm-gateway/keys/malebolge` |
-| `MALEBOLGE_SKILLS` | Agent Skill directories, `:`-separated, each holding a `SKILL.md`; use absolute paths; read once at start | none |
+| `MALEBOLGE_SKILLS` | Agent Skill directories, `:`-separated, each holding a `SKILL.md`; use absolute paths; listed once at start, bodies read on use | none |
 | `MALEBOLGE_SOCKET` | where clients attach | `$XDG_RUNTIME_DIR/satan/durable.sock` |
 | `SATAN_MCP_SOCKET` | where SATAN's tools are | `$XDG_RUNTIME_DIR/satan/mcp/mcp.sock` |
 | `SATAN_CORPUS_ROOT` | SATAN's persona files | `~/satan-corpus` |

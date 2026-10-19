@@ -1,0 +1,47 @@
+memory_uid = "mem_01a152eef67d75d19037d81ee93a6731"
+memory_key = "mem.fact.deps.cloudflare-agents-not-node"
+schema_version = 1
+lifespan = "semantic"
+memory_type = "fact"
+status = "active"
+title = "Cloudflare agents package is Workers-only; not reusable from the Node daemon"
+summary = "Cloudflare's agents package (incl. its pi-durable skills extension) cannot be imported in plain Node: static cloudflare:workers imports"
+created = "2026-10-19"
+updated = "2026-10-19"
+
+[scope]
+paths = ["src/skills.ts"]
+globs = ["src/**"]
+commands = []
+tags = ["dependencies", "skills"]
+workspace = "default"
+repo = "github.com/davidlee/Malebolge"
+repo_id_kind = "remote"
+repo_id_confidence = "high"
+
+[git]
+anchor_kind = "commit"
+commit = "226b27cb222e5936c9dca13928bf2528436954b2"
+tree = "83704fc22766630650975be112c7d40274b5a69e"
+ref_name = "refs/heads/main"
+checkout_state_id = ""
+base_commit = "226b27cb222e5936c9dca13928bf2528436954b2"
+verified_sha = ""
+normalizer = ""
+
+[review]
+verification_state = "unverified"
+reviewed = ""
+review_by = ""
+
+[trust]
+trust_level = "medium"
+
+[ranking]
+severity = "low"
+weight = 0
+
+[[source]]
+kind = "url"
+ref = "https://developers.cloudflare.com/agents/harnesses/pi/extensions/"
+
