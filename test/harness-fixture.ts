@@ -22,6 +22,7 @@ import {
   ToolResultEntry,
 } from "@earendil-works/pi-durable";
 import { context } from "../src/context.ts";
+import { isRecord } from "../src/json.ts";
 import { openSession, registryOf } from "../src/session.ts";
 
 export const FAUX_MODEL = { provider: "faux", modelId: "faux-1" } as const;
@@ -122,3 +123,17 @@ export async function toolResults(
 
 export const textOf = (message: ToolResultMessage): string =>
   message.content.map((block) => (block.type === "text" ? block.text : "")).join("");
+
+/** Run one turn, close the harness, and return the sections of each system prompt it recorded. */
+export async function systemPromptSections(test: TestHarness): Promise<unknown[]> {
+  test.faux.setResponses([fauxAssistantMessage([fauxText("ok")])]);
+  await (await test.root.submit({ type: "input", content: "hi" }, context)).wait(context);
+  const page = await test.root.entries({}, 50, undefined, context);
+  await test.harness.close(context);
+  // The prompt is recorded as a system entry whose message is outside pi-ai's Message type.
+  return page.items
+    .flatMap((entry): unknown[] => [...(entry.model ?? [])])
+    .filter(isRecord)
+    .filter((message) => message["role"] === "system")
+    .map((message) => message["sections"]);
+}
