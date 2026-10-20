@@ -17,9 +17,10 @@ test:
 format:
   npx biome format --write .
 
-# Run the daemon (owns the durable session).
+# Run the daemon (owns the durable session). satan-mcp is optional: without
+# it the daemon starts with no SATAN tools.
 daemon:
-  emacsclient -e "(satan-mcp-start)"
+  -emacsclient -e "(satan-mcp-start)"
   node src/daemon-main.ts
 
 # Run the patch-job runner (config path from $SATAN_RUNNER_CONFIG).

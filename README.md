@@ -74,24 +74,16 @@ daemon's SATAN MCP tools or skills listing.
 
 ## Interactive conversation
 
-You need Node 24 or later and a working SATAN setup (Emacs with `satan-mcp`,
-and a corpus).
+You need Node 24 or later, Emacs, and a SATAN corpus. `satan-mcp` is
+optional: without it the daemon runs with no SATAN tools and picks them up on
+the next input once satan-mcp is up.
 
-**Start the daemon** (it starts satan-mcp in Emacs first):
-
-```sh
-cd ~/notes && just hello-durable
-```
-
-**Attach**, from another terminal or from Emacs:
-
-```sh
-cd ~/notes && just attach-durable
-```
-
-```
-M-x malebolge-attach      ; load emacs/malebolge.el first
-```
+**Start** with `M-x malebolge-start` (load `emacs/malebolge.el` first). It
+starts satan-mcp if satan is loaded, starts the `malebolge-room` systemd user
+unit, and attaches in a comint buffer. `M-x malebolge-attach` re-attaches to a
+running daemon. The unit is on demand — nothing starts it at login — and is
+defined in ~/flakes (unit facts: `~/flakes/SATAN.md`). Logs:
+`journalctl --user -u malebolge-room`.
 
 **In a client:**
 
@@ -102,8 +94,14 @@ M-x malebolge-attach      ; load emacs/malebolge.el first
 | `/compact [instructions]` | summarise older history to free up the model's context |
 | `/quit` | detach; the conversation keeps going |
 
-**Stop the daemon** with Ctrl-C. Starting it again reopens the same
-conversation.
+**Stop** with `M-x malebolge-stop`. Starting again reopens the same
+conversation. `M-x malebolge-start` on a running unit just attaches. Only one
+daemon per profile runs: another one (say `just daemon` while the unit runs)
+exits with `refusing to start: …`.
+
+For development, `just daemon` and `just attach` in this repo run the daemon
+and a terminal client from the working tree. The attach client waits up to
+10 s for the daemon to start listening.
 
 To run the daemon on the host, outside the jail:
 `MALEBOLGE_PROFILE=host node src/daemon-main.ts`. It reaches models through

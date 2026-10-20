@@ -61,13 +61,22 @@ room:  env(state) ─▶ RemoteExecutionEnv "pi-env:daemon-room", cwd = state.cw
 ## Jail
 
 The daemon runs in `jailed-malebolge` (`~/dev/satan/flake.nix`), started by
-`just hello-durable` in `~/notes`. The jail sees this repo read-only,
-`~/satan-corpus` read-only (its `goad/` read-write), the session store, and
-`$XDG_RUNTIME_DIR/satan/`. Its only secret is the gateway key file, bound
-read-only with the catalog; `MALEBOLGE_GATEWAY_KEY_FILE` and
-`MALEBOLGE_GATEWAY_CATALOG` point at them. No provider keys, no `op run`.
-It sets no `MALEBOLGE_PROFILE` yet, so it refuses to start until it becomes
-the room profile (satan SL-027 PHASE-05).
+the `malebolge-room` systemd user unit (`M-x malebolge-start`; unit facts in
+`~/flakes/SATAN.md`). Its stop sends SIGTERM; the daemon's stop handler runs.
+The jail sees this repo read-only, `~/satan-corpus` read-only (its `goad/`
+read-write), the session store, and `$XDG_RUNTIME_DIR/satan/`. Its only secret
+is the gateway key file, bound read-only with the catalog;
+`MALEBOLGE_GATEWAY_KEY_FILE` and `MALEBOLGE_GATEWAY_CATALOG` point at them. No
+provider keys, no `op run`. It sets `MALEBOLGE_PROFILE=room`.
+
+Startup order: the instance lock (`daemon.lock` beside the store; a second
+daemon of the profile is refused before it opens the store), then the socket
+claim (a live server there refuses the start; a stale socket — listener died —
+is replaced), then the first SATAN tool refresh, then the session opens, so a
+turn resumed after a restart has the tools. Clients that connect during startup
+wait for the session. Residual race: the stale-socket replace is safe only
+because the lock holder alone reaches the socket; a daemon build without the
+lock is not excluded.
 
 ## Protocol
 
@@ -89,7 +98,11 @@ One JSON message per line on the daemon socket.
   `interrupted` error result instead of rerunning a side-effecting tool.
 - **satan-mcp may restart under the daemon** (Emacs restarts it). The next
   SATAN tool call reconnects; a call made while it is down fails and is not
-  retried. The tool list is the one satan-mcp offered at daemon start.
+  retried. The SATAN tool list is refreshed before each input and on
+  reconnect, so tools satan-mcp adds or drops show up on the next input
+  without a restart; a call to a tool that has gone settles as
+  `tool_unavailable`. satan-mcp absent at start: the daemon starts with zero
+  SATAN tools.
 - **Persona is live.** The section re-reads the corpus files on each request;
   the harness resends only changed sections, so prompt caching survives.
 - **Skills are listed once.** `$MALEBOLGE_SKILLS` directories are loaded and
