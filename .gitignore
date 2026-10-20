@@ -3,6 +3,10 @@ node_modules/
 spike-results/
 coverage/
 # >>> doctrine managed — rewritten by `doctrine install`; edit outside this block
+# Customised a skill? Replace its link with a real dir; the next install drops
+# it from this block. Until then, un-ignore it BELOW the block, e.g.
+#   !/.agents/skills/<id>
+# (git cannot re-include a path whose parent dir is itself ignored.)
 .doctrine/state/
 .doctrine/slice/*/phases
 .doctrine/**/handover.md
@@ -56,5 +60,4 @@ coverage/
 /.claude/skills/walkthrough
 /.claude/skills/worktree
 /.pi/agents/dispatch-worker.md
-/.agents/skills
 # <<< doctrine managed
