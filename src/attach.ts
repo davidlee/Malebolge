@@ -42,9 +42,7 @@ export async function attach(
 ): Promise<void> {
   const socket = await connectUnixWaiting(socketPath, wait).catch((error: unknown) => {
     const cause = String(codeOf(error) ?? error);
-    output.write(
-      `[no daemon at ${socketPath} (${cause}); see journalctl --user -u malebolge-room]\n`,
-    );
+    output.write(`[cannot connect to ${socketPath}: ${cause}]\n`);
     throw error;
   });
   output.write("[attached]\n");
