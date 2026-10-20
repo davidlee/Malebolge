@@ -163,8 +163,10 @@ Set through environment variables:
 The gateway key is read from its file at start and held only in the provider;
 it is never in the environment or on a command line.
 
-The jailed launcher does not yet set `MALEBOLGE_PROFILE`, so it refuses to
-start until it becomes the room profile (satan SL-027 PHASE-05).
+The jailed launcher (`jailed-malebolge`, from satan's flake) runs the room
+profile: no network, the room reached through its door socket and the gateway
+through its client socket, and writes only under `durable/room/`. The host
+profile has no jailed launcher.
 
 ## Patch jobs
 
