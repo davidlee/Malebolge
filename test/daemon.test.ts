@@ -317,11 +317,7 @@ describe("daemon", () => {
     await client.closed();
     expect(client.received().some(isType("snapshot"))).toBe(false);
     expect(test.faux.state.callCount).toBe(0);
-    const page = await test.harness.commit(
-      (tx) => tx.scanConversations({}, 50, undefined),
-      context,
-    );
-    expect(page.items.map((record) => record.id)).toEqual([test.root.id]);
+    expect(await conversationIds()).toEqual([test.root.id]);
   });
 
   it("refuses an attach frame naming an unknown conversation (V-1)", async () => {
@@ -333,11 +329,7 @@ describe("daemon", () => {
     expect(error.message).toBe("no conversation 999999");
     await client.closed();
     expect(client.received().some(isType("snapshot"))).toBe(false);
-    const page = await test.harness.commit(
-      (tx) => tx.scanConversations({}, 50, undefined),
-      context,
-    );
-    expect(page.items.map((record) => record.id)).toEqual([test.root.id]);
+    expect(await conversationIds()).toEqual([test.root.id]);
   });
 
   it("refuses an attach frame naming a task-owned conversation (V-1)", async () => {
@@ -357,11 +349,7 @@ describe("daemon", () => {
     expect(error.message).toBe(`conversation ${String(owned)} belongs to a task`);
     await client.closed();
     expect(client.received().some(isType("snapshot"))).toBe(false);
-    const page = await test.harness.commit(
-      (tx) => tx.scanConversations({}, 50, undefined),
-      context,
-    );
-    expect(page.items.map((record) => record.id)).toEqual([test.root.id, owned]);
+    expect(await conversationIds()).toEqual([test.root.id, owned]);
   });
 
   it("attaches a created conversation, then resolves it by id (V-1, V-3)", async () => {
@@ -446,12 +434,19 @@ describe("daemon", () => {
   it("answers a second attach with already attached and keeps the binding (V-6)", async () => {
     await start();
     test.faux.setResponses([fauxAssistantMessage([fauxText("hello")])]);
+    // A conversation this connection is not bound to: a re-bind would be visible.
+    const other = await conversations(test, DEFAULTS).open({ kind: "new" });
     const client = await attach();
-    client.send({ type: "attach", conversation: test.root.id });
+    client.send({ type: "attach", conversation: other.id });
     const error = await client.next(isType("error"));
     expect(error.message).toBe("already attached to conversation 1");
+    expect(watched.streams).toHaveLength(1);
     client.send({ type: "input", content: "hi" });
     await client.next(isType("run_end"));
+    expect((await test.root.entries({}, 50, undefined, context)).items).toEqual(
+      expect.arrayContaining([expect.objectContaining({ kind: "pi.user" })]),
+    );
+    expect((await other.entries({}, 50, undefined, context)).items).toHaveLength(0);
   });
 
   it("answers a malformed second attach with already attached (V-6)", async () => {
@@ -465,6 +460,14 @@ describe("daemon", () => {
       (e): e is EventOf<"error"> => isType("error")(e) && e.message.includes("nonsense"),
     );
     expect(garbage.message).toMatch(/nonsense/);
+  });
+
+  it("stops watching a bound conversation when its client leaves (EX-3)", async () => {
+    await start();
+    const client = await attach();
+    const stream = await watched.next();
+    client.close();
+    expect(await stream.closed).toEqual({ reason: "stopped" });
   });
 
   it("drops a root attach that departs before the session is ready (V-11)", async () => {
