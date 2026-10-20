@@ -30,7 +30,8 @@ export class SocketInUse extends Error {
   }
 }
 
-const codeOf = (error: unknown): unknown =>
+/** A system error's `code` (`ENOENT`, …); `undefined` for anything else. */
+export const codeOf = (error: unknown): unknown =>
   error instanceof Error && "code" in error ? error.code : undefined;
 
 /** How long to wait for a daemon that has not started listening yet. */

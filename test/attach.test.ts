@@ -176,6 +176,15 @@ describe("attach: waits for the daemon (design §4.2)", () => {
     expect(await rejection(attempt(path, wait))).toMatchObject({ code: "ECONNREFUSED" });
   });
 
+  it("says why when it gives up, naming the socket and where to look", async () => {
+    const path = await socketPath();
+    const s = session(path, { intervalMs: 20, timeoutMs: 100 });
+    expect(await rejection(s.done)).toMatchObject({ code: "ENOENT" });
+    expect(s.printed()).toBe(
+      `[no daemon at ${path} (ENOENT); see journalctl --user -u malebolge-room]\n`,
+    );
+  });
+
   it("fails at once on an error other than ENOENT/ECONNREFUSED", async () => {
     const path = await socketPath();
     const server = await serveUnix(path, () => undefined);

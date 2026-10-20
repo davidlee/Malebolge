@@ -96,12 +96,13 @@ defined in ~/flakes (unit facts: `~/flakes/SATAN.md`). Logs:
 
 **Stop** with `M-x malebolge-stop`. Starting again reopens the same
 conversation. `M-x malebolge-start` on a running unit just attaches. Only one
-daemon per profile runs: another one (say `just daemon` while the unit runs)
-exits with `refusing to start: …`.
+daemon per profile runs: a second daemon of the same profile exits with
+`refusing to start: …`.
 
 For development, `just daemon` and `just attach` in this repo run the daemon
-and a terminal client from the working tree. The attach client waits up to
-10 s for the daemon to start listening.
+and a terminal client from the working tree, with the environment described
+under [Configuration](#configuration) (at least `MALEBOLGE_PROFILE`). The
+attach client waits up to 10 s for the daemon to start listening.
 
 To run the daemon on the host, outside the jail:
 `MALEBOLGE_PROFILE=host node src/daemon-main.ts`. It reaches models through
