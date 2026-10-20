@@ -11,7 +11,7 @@ import type { Socket } from "node:net";
 import { dirname } from "node:path";
 import type { JsonRecord } from "../json.ts";
 import { encodeLine, lineSplitter } from "../ndjson.ts";
-import { connectUnix, serveUnix, type UnixServer } from "../unix-socket.ts";
+import { SocketInUse, serveUnix, type UnixServer } from "../unix-socket.ts";
 import type { RunnerConfig } from "./config.ts";
 import { type Conversations, ensureConversation } from "./conversations.ts";
 import { isRunnerError, messageOf, RunnerError, StartRefused } from "./errors.ts";
@@ -322,20 +322,6 @@ async function prepareDirectory(dir: string): Promise<void> {
   }
 }
 
-/** One consumer: refuses when a server already answers at `path`. */
-async function refuseIfLive(path: string): Promise<void> {
-  const live = await connectUnix(path).then(
-    (socket) => {
-      socket.destroy();
-      return true;
-    },
-    () => false,
-  );
-  if (live) {
-    throw new StartRefused(`a runner already serves ${path}`);
-  }
-}
-
 /**
  * Serves the control socket at `socketPath`. Refuses (StartRefused) when its
  * directory is open to others or another server answers there; a stale
@@ -343,10 +329,17 @@ async function refuseIfLive(path: string): Promise<void> {
  */
 export async function serveControl(deps: ControlDeps, socketPath: string): Promise<UnixServer> {
   await prepareDirectory(dirname(socketPath));
-  await refuseIfLive(socketPath);
-  const server = await serveUnix(socketPath, (socket) => {
-    serveConnection(deps, socket);
-  });
+  let server: UnixServer;
+  try {
+    server = await serveUnix(socketPath, (socket) => {
+      serveConnection(deps, socket);
+    });
+  } catch (error) {
+    if (error instanceof SocketInUse) {
+      throw new StartRefused(`a runner already serves ${socketPath}`, { cause: error });
+    }
+    throw error;
+  }
   try {
     await chmod(socketPath, 0o600);
   } catch (error) {

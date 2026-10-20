@@ -56,7 +56,10 @@ async function attach(harness: Harness, conversation: Conversation, socket: Sock
   );
 }
 
-/** Serve `conversation` on a unix socket at `socketPath`, replacing a stale one. */
+/**
+ * Serve `conversation` on a unix socket at `socketPath`: SocketInUse if a
+ * server answers there, a stale socket replaced (serveUnix).
+ */
 export function serve(
   harness: Harness,
   conversation: Conversation,

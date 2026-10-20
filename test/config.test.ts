@@ -51,6 +51,7 @@ describe("resolveConfig", () => {
     expect(resolve(host)).toEqual({
       corpusRoot: "/h/satan-corpus",
       storagePath: "/h/.local/state/satan/durable/host/session.sqlite",
+      lockPath: "/h/.local/state/satan/durable/host/daemon.lock",
       mcpSocket: "/run/u/satan/mcp/mcp.sock",
       daemonSocket: "/run/u/satan/durable/host/durable.sock",
       model: { provider: "gateway", modelId: "deepseek-flash" },
@@ -86,6 +87,7 @@ describe("resolveConfig", () => {
     expect(config).toMatchObject({
       corpusRoot: "/corpus",
       storagePath: "/state/satan/durable/host/session.sqlite",
+      lockPath: "/state/satan/durable/host/daemon.lock",
       mcpSocket: "/mcp.sock",
       daemonSocket: "/d/host/d.sock",
       model: { provider: "openai", modelId: "gpt-6-sol" },
@@ -111,6 +113,7 @@ describe("the execution profile (design §4.2)", () => {
     const config = resolve({ ...room, MALEBOLGE_GATEWAY_SOCKET: "/run/gateway.sock" });
     expect(config).toMatchObject({
       storagePath: "/h/.local/state/satan/durable/room/session.sqlite",
+      lockPath: "/h/.local/state/satan/durable/room/daemon.lock",
       daemonSocket: "/run/u/satan/durable/room/durable.sock",
     });
     expect(config.execution).toEqual({

@@ -36,6 +36,8 @@ export interface Config {
   corpusRoot: string;
   /** `<state>/satan/durable/<profile>/session.sqlite` */
   storagePath: string;
+  /** `daemon.lock` beside the store: one daemon per profile (DEC-087). */
+  lockPath: string;
   mcpSocket: string;
   /** `$MALEBOLGE_SOCKET` or `<runtime>/satan/durable/<profile>/durable.sock` */
   daemonSocket: string;
@@ -137,9 +139,11 @@ export function resolveConfig(env: Env, cwd: string, readFile: (path: string) =>
   const { profile } = execution;
   const stateRoot = join(env["XDG_STATE_HOME"] ?? join(home, ".local", "state"), "satan");
   const runtime = join(requireEnv(env, "XDG_RUNTIME_DIR"), "satan");
+  const profileState = join(stateRoot, "durable", profile);
   return {
     corpusRoot: env["SATAN_CORPUS_ROOT"] ?? join(home, "satan-corpus"),
-    storagePath: join(stateRoot, "durable", profile, "session.sqlite"),
+    storagePath: join(profileState, "session.sqlite"),
+    lockPath: join(profileState, "daemon.lock"),
     mcpSocket: env["SATAN_MCP_SOCKET"] ?? join(runtime, "mcp", "mcp.sock"),
     daemonSocket: inProfileDir("daemonSocket", daemonSocket(env, profile), profile),
     model: parseModel(env["MALEBOLGE_MODEL"] ?? DEFAULT_MODEL),

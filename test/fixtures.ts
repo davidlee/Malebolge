@@ -1,6 +1,8 @@
 // Shared test fixtures: temp socket paths and a minimal MCP server over a unix
 // socket, speaking the same NDJSON framing as satan-mcp.
 
+import { spawn } from "node:child_process";
+import { once } from "node:events";
 import { mkdtemp, rm } from "node:fs/promises";
 import { createServer, type Server, type Socket } from "node:net";
 import { tmpdir } from "node:os";
@@ -26,6 +28,38 @@ export async function tempDir(): Promise<{ dir: string; cleanup: () => Promise<v
   const dir = await mkdtemp(join(tmpdir(), "malebolge-"));
   return { dir, cleanup: () => rm(dir, { recursive: true, force: true }) };
 }
+
+/** A child node process, killed by `kill` (SIGKILL: no handler runs); idempotent. */
+export interface Child {
+  kill: () => Promise<void>;
+}
+
+/**
+ * Runs ES module `source` in a child node process and resolves once it prints
+ * a line; its imports are absolute. For holders that must die without cleanup.
+ */
+export async function childProcess(source: string): Promise<Child> {
+  const child = spawn(process.execPath, ["--input-type=module", "-e", source], {
+    stdio: ["ignore", "pipe", "inherit"],
+  });
+  const exited = once(child, "exit");
+  await Promise.race([
+    once(child.stdout, "data"),
+    exited.then(() => {
+      throw new Error("child exited before it was ready");
+    }),
+  ]);
+  return {
+    kill: async (): Promise<void> => {
+      child.kill("SIGKILL");
+      await exited;
+    },
+  };
+}
+
+/** `file` (relative to test/) as an import specifier a child process can use. */
+export const sourceUrl = (file: string): string =>
+  JSON.stringify(new URL(file, import.meta.url).href);
 
 export async function closeServer(server: Server, sockets: Set<Socket>): Promise<void> {
   for (const socket of sockets) {
