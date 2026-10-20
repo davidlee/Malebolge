@@ -1,0 +1,24 @@
+schema = "doctrine.rfc"
+version = 1
+
+id = 1
+slug = "shared-room-kernel"
+title = "A shared kernel tier for the room session: advice to SL-027 inq-2"
+status = "open"
+created = "2026-10-19"
+updated = "2026-10-19"
+tags = ["structure", "coupling", "room", "malebolge", "advice"]
+
+[relationships]
+# RFCs participate in the tier-1 `related` relation (AnyNumbered — links to any entity).
+# Author with `doctrine link RFC-NNN related <target>`. `doctrine inspect RFC-NNN` renders them.
+superseded_by = []   # reverse link is derived (REV→RFC originates_from)
+
+[[relation]]
+label = "related"
+target = "RV-001"
+
+[[relation]]
+label = "related"
+target = "IMP-002"
+

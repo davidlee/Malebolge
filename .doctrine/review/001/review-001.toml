@@ -1,0 +1,323 @@
+id    = 1
+slug  = "structural-review-coupling-cohesion-and-file-level-shape-of-the-two-programs"
+title = "Structural review: coupling, cohesion and file-level shape of the two programs"
+# no status — a review's status is DERIVED from its findings, so
+# it is never stored (the storage rule forbids derived data in authored files).
+
+[review]
+facet     = "code-review"     # scope|design|plan|phase-plan|implementation|code-review|reconciliation
+raiser    = "reviewer"
+responder = "implementer"
+rounds_base = 0
+contests_base = 0
+concluded = true
+
+[[review.turn]]
+act = "conclude"
+role = "raiser"
+note = """
+Read all 26 modules of src/ (10.4k lines) and the test tree's shape, not just the diff: the import census (fan-in/fan-out per module, computed), a TS-AST census of every function's length and branch count (879 functions; none over 82 lines or 12 branches), each module's exported vocabulary, the runner's dependency-injection shapes, docs/ and .doctrine/ for the design record the comments cite, and the structural tests (test/runner/room.test.ts "door knowledge (EX-10)"). Contract, coupling direction and the two programs' seams were verified by computation rather than reading alone; every line reference was re-read before raising.
+"""
+
+[target]                   # the outbound `reviews` edge: RV-NNN ──reviews──▶ <ref>
+ref   = "IMP-002"
+
+[[finding]]
+id = "F-1"
+status = "verified"
+severity = "major"
+title = "The shared kernel is real but unnamed: src/ mixes the runner's contract with the daemon's private modules"
+detail = """
+Expected: a module that a second program may import is identifiable from the tree, and one that only the first program uses is too — so a move, a rename or a new import cannot cross the seam unseen.
+
+Observed: `src/` holds 26 non-entry modules for two programs with no directory to say which is which. The dependency is clean and one-way — no root module imports `src/runner/*` except the `runner-main.ts` entry point — but the runner's contract set is emergent:
+
+  runner imports (count of runner modules):
+    src/json.ts           12
+    src/fields.ts         11
+    src/context.ts        10
+    src/config.ts          2   (parseModel only: run.ts:34, model-gate.ts:38)
+    src/project-context.ts 2
+    src/session.ts         1   (registryOf only: start.ts:26)
+    src/grep.ts            1
+    src/message-of.ts      1   (via runner/errors.ts:37)
+    src/models.ts          1   (via runner/gateway.ts:8)
+    src/ndjson.ts          1
+    src/truncate.ts        1
+    src/unix-socket.ts     1
+
+  runner never imports (14): attach-main, attach, cwd, daemon-extensions, daemon-main, daemon, persona, protocol, render, runner-main (entry), satan-tools, skills, unix-socket-transport, xml (transitively shared via project-context).
+
+So twelve modules are contract and fourteen are private, distinguished only by an unwritten convention. The cost is asymmetric: an author tidying `session.ts` into a daemon directory, or moving `parseModel` into `runner/config.ts`, silently inverts an arrow or breaks a dependency the code relies on, and nothing fails until a runner test does.
+
+The repo already knows how to express this. `src/project-context.ts` is the reference shape for a shared module (policy in one place, the acquisition injected: daemon reads node fs, runner reads the room shell). `test/runner/room.test.ts:624` "door knowledge (EX-10)" is the reference shape for enforcing a boundary structurally — it asserts which files may name the door, and fails if a new one does. `test/` itself already encodes the very seam `src/` lacks: `test/*.test.ts` is the daemon's, `test/runner/*` the runner's.
+
+Fix shape is IMP-002 steps 1-2; the structural test in step 1 is the durable part.
+"""
+disposition = "follow-up"
+response = """
+Accepted. The seam is real and one-way; what is missing is its expression, not its integrity, so the fix is a move plus a test rather than a redesign. Deferred to IMP-002 steps 1-2: the shared directory and split of `config.ts`/`session.ts` first, then the structural test that mirrors EX-10 ("only `runner-main.ts` imports `runner/*`; `runner/` imports no root module outside the shared allowlist"). That test is the part worth keeping — a directory is a suggestion, the test is the boundary. Nothing changed in this pass.
+"""
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "follow-up"
+response = """
+Accepted. The seam is real and one-way; what is missing is its expression, not its integrity, so the fix is a move plus a test rather than a redesign. Deferred to IMP-002 steps 1-2: the shared directory and split of `config.ts`/`session.ts` first, then the structural test that mirrors EX-10 ("only `runner-main.ts` imports `runner/*`; `runner/` imports no root module outside the shared allowlist"). That test is the part worth keeping — a directory is a suggestion, the test is the boundary. Nothing changed in this pass.
+"""
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = """
+Deferral accepted as the adjudication: the finding stands as raised, the named vehicle is IMP-002, and no code change is claimed by this verify. Raise again if the evidence moves.
+"""
+
+[[finding]]
+id = "F-2"
+status = "verified"
+severity = "major"
+title = "The runner has no in-repo mechanism record; its invariants are cited by label against a foreign corpus"
+detail = """
+Expected: this repo accounts for the mechanism half its source implements — the state machine, the recovery split, the ceiling/warning rules, the port/adapter seam — so a change here can be checked against intent here.
+
+Observed: 8.2k of `src`'s 10.4k lines (45 files) are the patch runner, and the repo has no account of it. `docs/internals.md` is 118 lines and covers the daemon only (its opening line: "Notes for working on Malebolge. The README covers what it is"). The README's runner section is good product copy — queue, scopes, ceilings, quarantine, promotion — but says nothing about how the runner is built.
+
+The code's own comments are dense with rationale and cite it by label: ~150 occurrences of ~35 distinct labels across `src` (I13 x13, DEC-057 x15, DEC-065/DEC-060 x10, DEC-054 x9, EX-8 x7, AS-4 x5, EVD-008 x7, R1 x4, PHASE-09 x5, plus SL-006/SL-026/PHASE-01..15/OQ-A..C). `grep -rE 'I16|EX-8|DEC-055' docs .doctrine` returns nothing: none of the labels is defined in this repository. `.doctrine/` holds no slices, one backlog item and an unedited `project-orientation.md`. The design they name lives in the SATAN repo (README:176 names it; SPEC-004, SL-023..SL-026).
+
+This is not merely missing prose. The comments assert rules the reader cannot verify: `run.ts:1-34` justifies the entire ordering of a run by DEC-055/057/054 and I16; `rejoin.ts:1-12` justifies the two-phase recovery split by I14/I15/R1/R2; `guard.ts:1-16` justifies which hook may write the audit by EVD-008. A reviewer here cannot tell whether a change preserves I15, and cannot tell why `shell.ts` exists between `room.ts` and `pause.ts`. Since the review's own purpose is deciding what moves where, the reasons for the present boundaries are the thing most needed and the thing least available.
+
+Fix shape is IMP-002 step 3. A `docs/runner.md` carrying the state machine, the phase A/B split, the one-warning/ceiling rules and the seat/tenancy invariant would do; it need not restate SATAN's slice record, only be sufficient to judge a diff locally.
+"""
+disposition = "follow-up"
+response = """
+Accepted, and it is the finding I would fix first. Deferred to IMP-002 step 3: a `docs/runner.md` (or a technical spec once SATAN's SL-023..SL-026 settle) covering the state machine and legal moves, the phase A/B recovery split with its I14/I15 rationale, the one-warning and ceiling rules, the room/slot port seam, and the seat/tenancy invariant. It should carry the labels it uses rather than cite them by number alone, so the next reader can judge a diff here. Out of scope for this pass: rewriting the existing comment citations, which are accurate today. Nothing changed.
+"""
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "follow-up"
+response = """
+Accepted, and it is the finding I would fix first. Deferred to IMP-002 step 3: a `docs/runner.md` (or a technical spec once SATAN's SL-023..SL-026 settle) covering the state machine and legal moves, the phase A/B recovery split with its I14/I15 rationale, the one-warning and ceiling rules, the room/slot port seam, and the seat/tenancy invariant. It should carry the labels it uses rather than cite them by number alone, so the next reader can judge a diff here. Out of scope for this pass: rewriting the existing comment citations, which are accurate today. Nothing changed.
+"""
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = """
+Deferral accepted as the adjudication: the finding stands as raised, the named vehicle is IMP-002, and no code change is claimed by this verify. Raise again if the evidence moves.
+"""
+
+[[finding]]
+id = "F-3"
+status = "verified"
+severity = "minor"
+title = "run.ts aggregates seven concerns in 660 lines; the natural units are already marked by its own section comments"
+detail = """
+Expected: one use case per module, or a stated reason for the aggregation.
+
+Observed: `src/runner/run.ts` is 660 lines with 24 module imports (the runner's highest efferent coupling; the next is start.ts's 22, which is a composition root and earns it). It holds seven concerns, and its own section comments already draw most of the lines:
+
+  - the pre-run ending: endUnrun, startPreparing            (~85-140)
+  - run construction and seat composition: openRun, meterOf, runStops, seat, armed, unarmed  (~200-330)
+  - admission: admit (room ready + project context + recordDegradations + configure + prompt + submit + `running`)  (~331-390)
+  - settlement: settleSubmission, settle, endStrayWarning, settleSegment  (~395-470)
+  - the segment loop: runSegments, afterSegment, toCollecting, recordCancel  (~470-560)
+  - the waiting episode: awaitResume, owesWarning  (~560-620)
+  - the entry points: superviseRun, prepareAndAdmit, runJob  (~620-660)
+
+To be clear about what is *not* wrong: there is no god function here. The longest function in `src` is 82 lines (`startRunner`), and run.ts's own are all under 60. The problem is aggregation, not complexity.
+
+Two consequences worth weighing. First, no unit-level test can reach any of these concerns: `test/runner/run.test.ts` (496 lines) and `ceilings-harness.test.ts` (548) drive run.ts through `run-fixture.ts`, which stands up a faux provider, a real SQLite handle, a local pi-env daemon and a fake slot — so a change to settlement is tested by booting a world. Second, `admit()` is where the layering blurs most: one function knows the room shell, the project-context fetch, the prompt composition, the conversation's model/extension configuration, and the `running` transition. Every other runner module is a narrow, injected dependency; admit is the one place that reaches across all of them.
+
+The extraction is mechanical (the section comments are the cuts). *Where* admission belongs — with `prepare.ts` and `prompt.ts`, or with the run — is the decision that needs F-2's record first.
+"""
+disposition = "follow-up"
+response = """
+Accepted with a caveat on ordering. The aggregation is real and the cuts are already drawn, but choosing where admission belongs (with `prepare`/`prompt`, or with the run) is a design decision, and the design it would have to respect is F-2's missing record. So: deferred to IMP-002 step 4, strictly after step 3. The sub-finding worth acting on independently is admission's testability — once F-2 is written, extracting `admit` to a module with its own deps would give the settlement and segment-loop units their first harness-free tests. Nothing changed.
+"""
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "follow-up"
+response = """
+Accepted with a caveat on ordering. The aggregation is real and the cuts are already drawn, but choosing where admission belongs (with `prepare`/`prompt`, or with the run) is a design decision, and the design it would have to respect is F-2's missing record. So: deferred to IMP-002 step 4, strictly after step 3. The sub-finding worth acting on independently is admission's testability — once F-2 is written, extracting `admit` to a module with its own deps would give the settlement and segment-loop units their first harness-free tests. Nothing changed.
+"""
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = """
+Deferral accepted as the adjudication: the finding stands as raised, the named vehicle is IMP-002, and no code change is claimed by this verify. Raise again if the evidence moves.
+"""
+
+[[finding]]
+id = "F-4"
+status = "verified"
+severity = "minor"
+title = "Two config.ts and two protocol.ts modules; parseModel and ModelRef sit in the daemon's config"
+detail = """
+Expected: one meaning per name for the concepts that carry the wire and the port types.
+
+Observed: `config` names two unrelated things in sibling modules — `src/config.ts` (process environment to paths, for the daemon: `Config`, `resolveConfig`, `daemonSocket`) and `src/runner/config.ts` (TOML text to typed config: `RunnerConfig`, `parseRunnerConfig`, 454 lines, 16 importers). Same for `protocol`: `src/protocol.ts` is the client↔daemon message set, `src/runner/protocol.ts` the control socket's request set. The second of each pair is correctly the runner's; the collision only costs the reader a disambiguation on every mention, and it will cost more if either moves into a shared directory.
+
+The sharper half of this finding is `parseModel`. `ModelRef`, `DEFAULT_MODEL` and `parseModel` (src/config.ts:7-38) are shared vocabulary — `runner/run.ts:34` and `runner/model-gate.ts:38` import them — sitting in the daemon's environment-resolution module. That is a genuine misplacement today, not just a naming clash: the runner depends on a daemon-named file for a pure string parser.
+
+Also: `Env` is spelled twice for the same thing (`src/config.ts:28` local, `src/runner/errors.ts:42` exported), as is "a required environment variable" — `required` (src/config.ts:40, throws Error) and `requiredEnv` (runner/errors.ts:47, throws StartRefused). Two failure types is defensible (startup refusal vs daemon throw); two `Env` types is not.
+
+Fix shape: IMP-002 step 1's split of `src/config.ts` (parseModel to the shared module, `Config` stays with the daemon), and one `Env` type.
+"""
+disposition = "follow-up"
+response = """
+Accepted. Two halves with different urgency: `parseModel`/`ModelRef`/`DEFAULT_MODEL` sitting in the daemon's environment-resolution module is a real misplacement (the runner imports it from a daemon-named file), fixed by IMP-002 step 1's split of `src/config.ts`; the `config`/`protocol` name collisions are disambiguation cost only, and resolving them in the same move is cheap. One `Env` type, either in the shared kernel or per program, but not both. Deferred to IMP-002 step 1. Nothing changed.
+"""
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "follow-up"
+response = """
+Accepted. Two halves with different urgency: `parseModel`/`ModelRef`/`DEFAULT_MODEL` sitting in the daemon's environment-resolution module is a real misplacement (the runner imports it from a daemon-named file), fixed by IMP-002 step 1's split of `src/config.ts`; the `config`/`protocol` name collisions are disambiguation cost only, and resolving them in the same move is cheap. One `Env` type, either in the shared kernel or per program, but not both. Deferred to IMP-002 step 1. Nothing changed.
+"""
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = """
+Deferral accepted as the adjudication: the finding stands as raised, the named vehicle is IMP-002, and no code change is claimed by this verify. Raise again if the evidence moves.
+"""
+
+[[finding]]
+id = "F-5"
+status = "verified"
+severity = "nit"
+title = "messageOf is reimplemented at three sites though it is its own module with twenty users"
+detail = """
+Expected: one spelling of "what a caught value says".
+
+Observed: `src/message-of.ts` exists for exactly this — three lines, and it is used in 20 files (directly, or via `runner/errors.ts:37` re-exporting it for the runner). Yet the same expression is written out three more times:
+
+  src/daemon.ts:13-16   const errorMessage = (error: unknown): ErrorMessage => ({ ..., message: error instanceof Error ? error.message : String(error) });
+  src/skills.ts:41      return error instanceof Error ? error.message : String(error);
+  src/skills.ts:79      return error instanceof Error ? error.message : String(error);
+
+Low cost, low risk, and a fair signal of whether a new module will find the shared leaf. The two `skills.ts` sites sit inside functions documented "never throws", which is precisely the case `messageOf` was factored out for.
+"""
+disposition = "follow-up"
+response = """
+Accepted. Trivial fix, deliberately not made in this pass: two call-site rewrites in `skills.ts` and one in `daemon.ts` to `messageOf`, which is already the convention in 20 files. Deferred to IMP-002 step 1 so it lands with the kernel move and one `just check` proves it, rather than as an unasked edit during a review.
+"""
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "follow-up"
+response = """
+Accepted. Trivial fix, deliberately not made in this pass: two call-site rewrites in `skills.ts` and one in `daemon.ts` to `messageOf`, which is already the convention in 20 files. Deferred to IMP-002 step 1 so it lands with the kernel move and one `just check` proves it, rather than as an unasked edit during a review.
+"""
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = """
+Deferral accepted as the adjudication: the finding stands as raised, the named vehicle is IMP-002, and no code change is claimed by this verify. Raise again if the evidence moves.
+"""
+
+[[finding]]
+id = "F-6"
+status = "verified"
+severity = "nit"
+title = "Two exported types named Collected, with unrelated shapes"
+detail = """
+Expected: a name exported from two sibling modules means two distinguishable things.
+
+Observed: `Collected` is exported twice with unrelated shapes — `src/runner/room.ts:26` is the port's return type (`{ quarantine, ref, oid }`: where a collected job branch landed) and is imported by `runner/collect.ts:21`; `src/runner/shell.ts:32` is an exec's captured output (`{ stdout, stderr, overflowed }`) and is imported by nobody outside shell.ts. Today no importer is ambiguous, so this is a name to fix rather than a bug: unexport shell.ts's (or name it for what it is, e.g. `ExecOutput`), and the port's `Collected` stays the one meaning of the word — which is the sense that appears in the audit vocabulary too (`collected` event, `recordCollected`).
+"""
+disposition = "follow-up"
+response = """
+Accepted as a name to fix, not a defect. `shell.ts`'s `Collected` is imported by nobody outside its own module, so no importer is ambiguous today; renaming it (`ExecOutput`) or unexporting it is one line. Deferred to IMP-002 step 1, with the kernel move, for the same reason as F-5.
+"""
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "follow-up"
+response = """
+Accepted as a name to fix, not a defect. `shell.ts`'s `Collected` is imported by nobody outside its own module, so no importer is ambiguous today; renaming it (`ExecOutput`) or unexporting it is one line. Deferred to IMP-002 step 1, with the kernel move, for the same reason as F-5.
+"""
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = """
+Deferral accepted as the adjudication: the finding stands as raised, the named vehicle is IMP-002, and no code change is claimed by this verify. Raise again if the evidence moves.
+"""
+
+[[finding]]
+id = "F-7"
+status = "verified"
+severity = "nit"
+title = "Two import doors onto one vocabulary: jobs.ts re-exports vocab.ts, store.ts re-exports rows.ts"
+detail = """
+Expected: a concept has one import site, so the canonical home is where a reader looks.
+
+Observed: two modules re-export another module's vocabulary, giving each concept two doors:
+
+  src/runner/jobs.ts:10-16   re-exports END_REASONS, isJobState, JOB_STATES, EndReason, JobState from ./vocab.ts (whose own header states it is "data only; the rules over them live in jobs.ts and classify.ts")
+  src/runner/store.ts:35     re-exports Job, JobEvent, NewJob from ./rows.ts
+
+Both doors are in use — vocab.ts has 13 importers and jobs.ts 6; rows.ts 3 and store.ts 15 — so neither is dead. The effect is mild but real: an author asking "where is JobState defined?" gets two answers, and the answer that is a re-export looks like ownership. It also makes the dependency graph read as if `jobs.ts` owned states it merely passes through.
+"""
+disposition = "follow-up"
+response = """
+Accepted, low priority, and the remedy is a judgement call rather than a fix: both doors are load-bearing (vocab 13 importers, jobs 6; rows 3, store 15), so removing the re-exports means touching call sites in both directions. The smaller version — keeping `jobs.ts`'s re-export but stating in its header that `vocab.ts` owns the data — buys most of the clarity for one comment. Deferred; no vehicle yet, worth folding into whichever slice next touches the runner's vocabulary.
+"""
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "follow-up"
+response = """
+Accepted, low priority, and the remedy is a judgement call rather than a fix: both doors are load-bearing (vocab 13 importers, jobs 6; rows 3, store 15), so removing the re-exports means touching call sites in both directions. The smaller version — keeping `jobs.ts`'s re-export but stating in its header that `vocab.ts` owns the data — buys most of the clarity for one comment. Deferred; no vehicle yet, worth folding into whichever slice next touches the runner's vocabulary.
+"""
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = """
+Deferral accepted as the adjudication: the finding stands as raised, the named vehicle is IMP-002, and no code change is claimed by this verify. Raise again if the evidence moves.
+"""
+
+# Findings are append-only `[[finding]]` tables, added by `review raise`.
+# Empty here at creation — a fresh review is Active, awaiting the raiser.

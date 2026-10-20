@@ -1,0 +1,46 @@
+memory_uid = "mem_01a1543d115578b0a8bcb42c61aa4e30"
+memory_key = "mem.fact.malebolge.src-seam"
+schema_version = 1
+memory_type = "fact"
+status = "active"
+title = "src/ seam: the runner's shared contract set is emergent, not declared"
+summary = "12 of 26 src/*.ts modules are the runner's contract and 14 are daemon-private; the one-way arrow and the contract set are computed, not expressed in the tree."
+created = "2026-10-19"
+updated = "2026-10-19"
+
+[scope]
+paths = ["src/"]
+globs = []
+commands = []
+tags = ["structure", "coupling"]
+workspace = "default"
+repo = "github.com/davidlee/Malebolge"
+repo_id_kind = "remote"
+repo_id_confidence = "high"
+
+[git]
+anchor_kind = "checkout_state"
+commit = ""
+tree = "64a0f153c516847a5c989505d9e8b951b91106b4"
+ref_name = "refs/heads/main"
+checkout_state_id = "8e21d9b70e655960e1a145117ce1a361e628aa071b637e56f90011420b262cf7"
+base_commit = "55f4a68eb69a8114ba24365c60a3666f8d5e65ce"
+verified_sha = ""
+normalizer = "forget.checkout.v1"
+
+[review]
+verification_state = "unverified"
+reviewed = ""
+review_by = ""
+
+[trust]
+trust_level = "medium"
+
+[ranking]
+severity = "none"
+weight = 0
+
+[[source]]
+kind = "review"
+ref = "RV-001"
+
