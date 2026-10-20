@@ -131,13 +131,17 @@ export const textOf = (message: ToolResultMessage): string =>
   message.content.map((block) => (block.type === "text" ? block.text : "")).join("");
 
 /**
- * Run one turn, close the harness, and return the sections of each system
- * prompt it recorded, newest first (the order `entries` pages in).
+ * Run one turn on `conversation` (default: the harness's root), close the
+ * harness, and return the sections of each system prompt it recorded, newest
+ * first (the order `entries` pages in).
  */
-export async function systemPromptSections(test: TestHarness): Promise<unknown[]> {
+export async function systemPromptSections(
+  test: TestHarness,
+  conversation: Conversation = test.root,
+): Promise<unknown[]> {
   test.faux.setResponses([fauxAssistantMessage([fauxText("ok")])]);
-  await (await test.root.submit({ type: "input", content: "hi" }, context)).wait(context);
-  const page = await test.root.entries({}, 50, undefined, context);
+  await (await conversation.submit({ type: "input", content: "hi" }, context)).wait(context);
+  const page = await conversation.entries({}, 50, undefined, context);
   await test.harness.close(context);
   // The prompt is recorded as a system entry whose message is outside pi-ai's Message type.
   return page.items

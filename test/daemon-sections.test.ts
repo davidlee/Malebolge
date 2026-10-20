@@ -3,6 +3,8 @@ import { join } from "node:path";
 import { MemoryStorage } from "@earendil-works/pi-durable";
 import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite/node";
 import { afterEach, describe, expect, it } from "vitest";
+import { context } from "../src/context.ts";
+import { conversations } from "../src/conversations.ts";
 import { cwdExtension } from "../src/cwd.ts";
 import { isRecord } from "../src/json.ts";
 import { daemonExtensions } from "../src/daemon-extensions.ts";
@@ -15,7 +17,12 @@ import {
 } from "../src/project-context.ts";
 import { type Skill, skillsExtension } from "../src/skills.ts";
 import { tempDir } from "./fixtures.ts";
-import { openFauxHarness, openTestHarness, systemPromptSections } from "./harness-fixture.ts";
+import {
+  FAUX_MODEL,
+  openFauxHarness,
+  openTestHarness,
+  systemPromptSections,
+} from "./harness-fixture.ts";
 
 const skill: Skill = {
   name: "alpha",
@@ -28,10 +35,16 @@ const keysOf = (entry: unknown): string[] => (isRecord(entry) ? Object.keys(entr
 
 describe("cwdExtension", () => {
   it("is one untagged section, worded as pi states it", async () => {
-    const sections = cwdExtension("/work").sections ?? [];
+    const sections = cwdExtension.sections ?? [];
     expect(sections.map(({ key, tag }) => [key, tag])).toEqual([["cwd", false]]);
-    const test = await openTestHarness([cwdExtension("/work")]);
+    const test = await openTestHarness([cwdExtension]);
+    await test.root.configure({ cwd: "/work" }, context);
     expect(await systemPromptSections(test)).toEqual([{ cwd: "Current working directory: /work" }]);
+  });
+
+  it("renders no section when the conversation has no cwd", async () => {
+    const test = await openTestHarness([cwdExtension]);
+    expect(await systemPromptSections(test)).toEqual([]);
   });
 });
 
@@ -66,9 +79,9 @@ describe("daemon system prompt sections", () => {
         personaFiles: [persona],
         projectContext,
         skills: [skill],
-        cwd,
       }),
     });
+    await test.root.configure({ cwd }, context);
     const entries = await systemPromptSections(test);
     expect(entries).toHaveLength(1);
     expect(keysOf(entries[0])).toEqual(["persona", "project_context", "skills", "cwd"]);
@@ -79,6 +92,17 @@ describe("daemon system prompt sections", () => {
     });
   });
 
+  it("states a created conversation's own cwd, not the daemon default", async () => {
+    const test = await openTestHarness(
+      daemonExtensions({ personaFiles: [], projectContext: undefined, skills: [] }),
+    );
+    const api = conversations(test, { model: FAUX_MODEL, cwd: "/daemon-default" });
+    const created = await api.open({ kind: "new", cwd: "/own" });
+    expect(await systemPromptSections(test, created)).toEqual([
+      { persona: "", cwd: "Current working directory: /own" },
+    ]);
+  });
+
   it("omits project_context when there is none", async () => {
     const { persona, cwd } = await setup();
     const test = await openFauxHarness(new MemoryStorage(), {
@@ -86,9 +110,9 @@ describe("daemon system prompt sections", () => {
         personaFiles: [persona],
         projectContext: undefined,
         skills: [skill],
-        cwd,
       }),
     });
+    await test.root.configure({ cwd }, context);
     const entries = await systemPromptSections(test);
     expect(entries.map(keysOf)).toEqual([["persona", "skills", "cwd"]]);
   });
@@ -108,9 +132,9 @@ describe("daemon system prompt sections", () => {
         personaFiles: [persona],
         projectContext,
         skills: [skill],
-        cwd,
       }),
     });
+    await after.root.configure({ cwd }, context);
     // Oldest first: the fixture lists them newest first.
     const entries = (await systemPromptSections(after)).reverse();
     expect(entries.map(keysOf)).toEqual([

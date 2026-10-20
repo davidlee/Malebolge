@@ -72,7 +72,6 @@ export async function startDaemon(config: Config, deps: StartDeps): Promise<Daem
       personaFiles: persona,
       projectContext,
       skills,
-      cwd: environment.cwd,
     }),
   );
 
