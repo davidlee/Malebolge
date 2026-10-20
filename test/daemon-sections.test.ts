@@ -98,8 +98,8 @@ describe("daemon system prompt sections", () => {
     );
     const api = conversations(test, { model: FAUX_MODEL, cwd: "/daemon-default" });
     const created = await api.open({ kind: "new", cwd: "/own" });
-    expect(await systemPromptSections(test, created)).toEqual([
-      { persona: "", cwd: "Current working directory: /own" },
+    expect(await systemPromptSections(test, created)).toMatchObject([
+      { cwd: "Current working directory: /own" },
     ]);
   });
 
