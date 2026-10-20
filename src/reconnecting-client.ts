@@ -30,25 +30,29 @@ export interface ReconnectingClient {
 
 /** Which closes of a client are worth reporting: the ones this handle did not cause. */
 interface Drops {
-  /** Watches `client`, now in service: its close is reported unless retired first. */
+  /** Watches `client`, now in service: its close is reported, and counts as a loss. */
   watch: (client: McpClient) => void;
-  /** Stops watching `client`: this handle is closing it itself. */
-  retire: (client: McpClient) => void;
+  /** Closes `client` on this handle's behalf: retired first, so its close is not reported. */
+  close: (client: McpClient) => Promise<void>;
 }
 
-function dropsOf(log: (text: string) => void): Drops {
+function dropsOf(log: (text: string) => void, onLoss: () => void): Drops {
   const inService = new WeakSet<McpClient>();
   return {
     watch: (client): void => {
       inService.add(client);
       client.onClose(() => {
-        if (inService.has(client)) {
-          log("satan-mcp connection closed; reconnecting on next SATAN tool call");
+        if (!inService.has(client)) {
+          return;
         }
+        inService.delete(client);
+        log("satan-mcp connection closed; reconnecting on next SATAN tool call");
+        onLoss();
       });
     },
-    retire: (client): void => {
+    close: (client): Promise<void> => {
       inService.delete(client);
+      return client.close().catch(() => undefined);
     },
   };
 }
@@ -89,30 +93,29 @@ function begin(open: () => Promise<McpClient>): Attempt {
 
 /**
  * A client at `socketPath` that reconnects on demand. `onReconnect` runs once a
- * replacement connection has connected: the tools satan-mcp serves may have
- * changed with it.
+ * connection the handle had is lost and another stands in for it: the tools
+ * satan-mcp serves may have changed with it.
  */
 export function reconnectingClient(
   socketPath: string,
   log: (text: string) => void,
   onReconnect: () => void,
 ): ReconnectingClient {
-  const drops = dropsOf(log);
+  /** Whether a client has been lost since the last announcement: the tools may have changed. */
+  let lost = false;
+  const drops = dropsOf(log, () => {
+    lost = true;
+  });
   const open = (): Promise<McpClient> => connect(socketPath, drops);
-  /** Closes a client this handle is done with, retired so its close is not reported. */
-  const closeNow = (client: McpClient): Promise<void> => {
-    drops.retire(client);
-    return client.close().catch(() => undefined);
-  };
   /** Closes the attempt's client now if it has one, else as soon as it arrives. */
   const closeAttempt = async (attempt: Attempt): Promise<void> => {
     const client = attempt.client;
     if (client === undefined) {
       // Never waited for: an attempt may not settle, so a late client is closed on arrival.
-      void attempt.opening.then(closeNow, () => undefined);
+      void attempt.opening.then(drops.close, () => undefined);
       return;
     }
-    await closeNow(client);
+    await drops.close(client);
   };
   let current: Attempt | undefined;
   /** Set by `close`: the handle is finished, so no attempt is ever begun again. */
@@ -126,28 +129,31 @@ export function reconnectingClient(
     }
   };
   /**
+   * Reports a connection that stands in for a lost one, once: the tools satan-mcp
+   * serves may have changed. Silent if the handle closed meanwhile, or if the
+   * connection was itself closed on arrival.
+   */
+  const reconnected = (client: McpClient): void => {
+    if (!lost || closed() || client.connectionState !== "connected") {
+      return;
+    }
+    lost = false;
+    log("satan-mcp reconnected");
+    onReconnect();
+  };
+  /**
    * Records `attempt` as the current one, forgetting it again if it never connects: a
-   * failed attempt must not become what later callers wait on.
+   * failed attempt must not become what later callers wait on. A connection that does
+   * stand in for a lost one is offered to `reconnected`.
    */
   const record = (attempt: Attempt): Attempt => {
     current = attempt;
-    void attempt.opening.catch(() => {
+    void attempt.opening.then(reconnected, () => {
       if (current === attempt) {
         current = undefined;
       }
     });
     return attempt;
-  };
-  /**
-   * Reports a replacement connection, which the tools may have changed with — unless
-   * the handle closed meanwhile, or the connection was itself closed on arrival.
-   */
-  const reconnected = (client: McpClient): void => {
-    if (closed() || client.connectionState !== "connected") {
-      return;
-    }
-    log("satan-mcp reconnected");
-    onReconnect();
   };
   const get = async (): Promise<McpClient> => {
     assertOpen();
@@ -164,11 +170,9 @@ export function reconnectingClient(
       return outcome.client;
     }
     // A client that connected and then closed is being replaced: the tools may have
-    // changed with it, so the replacement is announced.
+    // changed with it, so its replacement is offered to `reconnected`.
     if (current === attempt) {
-      const replacement = record(begin(open));
-      // A failure reaches the caller through `current`; only success is reported here.
-      void replacement.opening.then(reconnected, () => undefined);
+      record(begin(open));
     }
     // An attempt discarded while we waited (reset) falls forward to a fresh one.
     current ??= record(begin(open));

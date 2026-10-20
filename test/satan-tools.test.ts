@@ -379,6 +379,24 @@ describe("satanTools", () => {
     expect(logs.items.filter((line) => line.includes("reconnected"))).toEqual([]);
   });
 
+  it("announces the connection that recovers satan-mcp after a lost client", async () => {
+    await start();
+    await stopServer();
+    // The call made while it is down replaces the lost client, and that replacement fails.
+    expect((await callTool("notes_read", { id: "1" })).isError).toBe(true);
+    await restartServer(restartedTools);
+    const lists = recorder<string[]>();
+    registry.subscribe(() => {
+      lists.push(toolNames());
+    });
+    // A tool both sets have: calling it is what finds satan-mcp back.
+    expect(textOf(await callTool("notes_read", { id: "2" }))).toBe("note 2");
+    expect(await lists.next((names) => names.includes("notes_archive"))).toEqual([
+      "notes_read",
+      "notes_archive",
+    ]);
+  });
+
   it("refreshes by itself when a call reconnects, over one connection", async () => {
     await start();
     await stopServer();
