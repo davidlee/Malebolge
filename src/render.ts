@@ -4,9 +4,9 @@
 import type { Message } from "@earendil-works/pi-ai";
 import type { AgentEvent, EntryRecord, MessageChange } from "@earendil-works/pi-durable";
 import { isRecord } from "./json.ts";
-import type { ErrorMessage } from "./protocol.ts";
+import type { AttachedMessage, ErrorMessage } from "./protocol.ts";
 
-export type Printable = AgentEvent | ErrorMessage;
+export type Printable = AgentEvent | ErrorMessage | AttachedMessage;
 
 /** Each printable event type, keyed to its event. */
 type PrintableMap = { [E in Printable as E["type"]]: E };
@@ -110,6 +110,7 @@ const notices: Omit<Handlers, "snapshot" | "message_start" | "message_update" | 
     ),
   task_failed: (event) => note(`${event.kind} failed: ${event.message}`),
   error: (event) => note(`error: ${event.message}`),
+  attached: (event) => note(`attached to conversation ${String(event.conversation)}`),
   agent_changed: silent,
   auto_retry_end: silent,
   deferred_poll: silent,

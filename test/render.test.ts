@@ -206,12 +206,24 @@ describe("renderer", () => {
     );
   });
 
+  it("announces the conversation it attached to", () => {
+    expect(renderAll([{ type: "attached", conversation: 3 }])).toBe(
+      "[attached to conversation 3]\n",
+    );
+  });
+
   it("ignores bookkeeping events", () => {
     expect(renderAll([{ type: "usage_changed", usage: {} }, { type: "turn_start" }])).toBe("");
   });
 });
 
 describe("toPrintable", () => {
+  it("accepts the attached reply", () => {
+    expect(toPrintable({ type: "attached", conversation: 3 })).toEqual({
+      type: "attached",
+      conversation: 3,
+    });
+  });
   it.each([[null], [[]], ["text"], [{}], [{ type: 1 }]])("rejects %j as not an event", (value) => {
     expect(() => toPrintable(value)).toThrow(/not an event/);
   });

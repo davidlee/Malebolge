@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseClientMessage } from "../src/protocol.ts";
+import { AttachRefused, parseClientMessage, parseConnectionMessage } from "../src/protocol.ts";
 
 describe("parseClientMessage", () => {
   it.each([
@@ -21,5 +21,102 @@ describe("parseClientMessage", () => {
     ["[]", /object/],
   ])("rejects %s", (line, reason) => {
     expect(() => parseClientMessage(line)).toThrow(reason);
+  });
+});
+
+/** The message `read` throws; "" when it throws nothing. */
+function errorOf(read: () => unknown): string {
+  try {
+    read();
+  } catch (error) {
+    return error instanceof Error ? error.message : String(error);
+  }
+  return "";
+}
+
+describe("parseConnectionMessage", () => {
+  it.each([
+    [{ type: "attach" }, { kind: "root" }],
+    [
+      { type: "attach", conversation: 3 },
+      { kind: "existing", id: 3 },
+    ],
+    [{ type: "attach", new: true }, { kind: "new" }],
+    [
+      { type: "attach", new: true, cwd: "/tmp/work" },
+      { kind: "new", cwd: "/tmp/work" },
+    ],
+    [
+      { type: "attach", new: true, cwd: "" },
+      { kind: "new", cwd: "" },
+    ],
+    [
+      { type: "attach", new: true, cwd: "  /tmp/work  " },
+      { kind: "new", cwd: "  /tmp/work  " },
+    ],
+  ])("accepts %j", (message, target) => {
+    expect(parseConnectionMessage(JSON.stringify(message))).toEqual({ type: "attach", target });
+  });
+
+  it.each([
+    [{ type: "attach", conversation: 1, new: true }],
+    [{ type: "attach", cwd: "/tmp" }],
+    [{ type: "attach", conversation: 1, cwd: "/tmp" }],
+    [{ type: "attach", new: false }],
+    [{ type: "attach", new: 1 }],
+    [{ type: "attach", new: "true" }],
+    [{ type: "attach", new: null }],
+    [{ type: "attach", conversation: 0 }],
+    [{ type: "attach", conversation: -1 }],
+    [{ type: "attach", conversation: 1.5 }],
+    [{ type: "attach", conversation: 2 ** 53 }],
+    [{ type: "attach", conversation: "3" }],
+    [{ type: "attach", conversation: null }],
+    [{ type: "attach", new: true, cwd: 1 }],
+    [{ type: "attach", new: true, cwd: null }],
+    [{ type: "attach", new: true, cwd: true }],
+    [{ type: "attach", topic: "x" }],
+    [{ type: "attach", conversation: 1, topic: "x" }],
+    [{ type: "attach", new: true, cwd: "/tmp", topic: "x" }],
+  ])("refuses %j", (message) => {
+    expect(() => parseConnectionMessage(JSON.stringify(message))).toThrow(AttachRefused);
+  });
+
+  it.each([
+    [{ type: "input", content: "hi" }],
+    [{ type: "input", content: "hi", requestId: "r1" }],
+    [{ type: "abort" }],
+    [{ type: "compact" }],
+    [{ type: "compact", instructions: "keep test names" }],
+  ])("parses %j as parseClientMessage does", (message) => {
+    const line = JSON.stringify(message);
+    expect(parseConnectionMessage(line)).toEqual(parseClientMessage(line));
+  });
+
+  it.each([
+    "not json",
+    "[]",
+    '{"type":"input"}',
+    '{"type":"input","content":3}',
+    '{"type":"warp"}',
+  ])("keeps parseClientMessage's error for %s", (line) => {
+    expect(errorOf(() => parseConnectionMessage(line))).toBe(
+      errorOf(() => parseClientMessage(line)),
+    );
+  });
+
+  it("reports a non-attach parse error, not an AttachRefused", () => {
+    let thrown: unknown;
+    try {
+      parseConnectionMessage('{"type":"warp"}');
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toBeInstanceOf(Error);
+    expect(thrown).not.toBeInstanceOf(AttachRefused);
+  });
+
+  it("leaves parseClientMessage unaware of attach", () => {
+    expect(() => parseClientMessage('{"type":"attach"}')).toThrow('unknown message type "attach"');
   });
 });
