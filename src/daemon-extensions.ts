@@ -15,8 +15,6 @@ export interface DaemonParts {
   projectContext: string | undefined;
   skills: readonly Skill[];
   cwd: string;
-  /** SATAN's tools (needs the live MCP socket, so supplied by the caller). */
-  satan: Extension;
 }
 
 export const daemonExtensions = (parts: DaemonParts): Extension[] => [
@@ -26,5 +24,4 @@ export const daemonExtensions = (parts: DaemonParts): Extension[] => [
   cwdExtension(parts.cwd),
   CodingTools,
   grepExtension,
-  parts.satan,
 ];

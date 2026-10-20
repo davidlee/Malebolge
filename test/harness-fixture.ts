@@ -57,7 +57,7 @@ export async function openTestHarness(
   const { faux, models } = fauxModels(fauxOptions);
   const session = await openSession(new MemoryStorage(), {
     models,
-    extensions,
+    registry: registryOf(extensions),
     agent: { model: FAUX_MODEL },
     env: ({ cwd }) => new NodeExecutionEnv({ cwd: cwd ?? process.cwd() }),
   });

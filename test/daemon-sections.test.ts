@@ -1,6 +1,6 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { defineExtension, MemoryStorage } from "@earendil-works/pi-durable";
+import { MemoryStorage } from "@earendil-works/pi-durable";
 import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite/node";
 import { afterEach, describe, expect, it } from "vitest";
 import { cwdExtension } from "../src/cwd.ts";
@@ -23,7 +23,6 @@ const skill: Skill = {
   file: "/s/SKILL.md",
   hidden: false,
 };
-const satan = defineExtension({ name: "satan" });
 
 const keysOf = (entry: unknown): string[] => (isRecord(entry) ? Object.keys(entry) : []);
 
@@ -68,7 +67,6 @@ describe("daemon system prompt sections", () => {
         projectContext,
         skills: [skill],
         cwd,
-        satan,
       }),
     });
     const entries = await systemPromptSections(test);
@@ -89,7 +87,6 @@ describe("daemon system prompt sections", () => {
         projectContext: undefined,
         skills: [skill],
         cwd,
-        satan,
       }),
     });
     const entries = await systemPromptSections(test);
@@ -112,7 +109,6 @@ describe("daemon system prompt sections", () => {
         projectContext,
         skills: [skill],
         cwd,
-        satan,
       }),
     });
     // Oldest first: the fixture lists them newest first.

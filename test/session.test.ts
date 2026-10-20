@@ -1,12 +1,25 @@
 import { join } from "node:path";
+import { Type } from "@earendil-works/pi-ai";
 import { createModels, type Models } from "@earendil-works/pi-ai/models";
-import { fauxAssistantMessage, fauxProvider, fauxText } from "@earendil-works/pi-ai/providers/faux";
-import { MemoryStorage } from "@earendil-works/pi-durable";
+import {
+  fauxAssistantMessage,
+  type FauxResponseFactory,
+  fauxProvider,
+  fauxText,
+} from "@earendil-works/pi-ai/providers/faux";
+import {
+  defineExtension,
+  defineTool,
+  MemoryStorage,
+  type Registry,
+  type ToolRegistration,
+} from "@earendil-works/pi-durable";
 import { NodeExecutionEnv } from "@earendil-works/pi-durable/env/node";
 import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite/node";
 import { CodingTools } from "@earendil-works/pi-durable/tools";
 import { afterEach, describe, expect, it } from "vitest";
 import { context } from "../src/context.ts";
+import { registryOf } from "../src/registry.ts";
 import { openSession, type Session } from "../src/session.ts";
 import { tempDir } from "./fixtures.ts";
 import {
@@ -28,6 +41,37 @@ const fauxModels = (answers: string[]): Models => {
 const nodeEnv = ({ cwd }: { cwd?: string }): NodeExecutionEnv =>
   new NodeExecutionEnv({ cwd: cwd ?? process.cwd() });
 
+/** A model request held open until it is aborted (so its turn stays in flight). */
+function heldCall(): { step: FauxResponseFactory; started: Promise<void> } {
+  let start = (): void => undefined;
+  const started = new Promise<void>((resolve) => {
+    start = resolve;
+  });
+  const step: FauxResponseFactory = (_context, options) =>
+    new Promise((resolve) => {
+      start();
+      const end = (): void => {
+        resolve(fauxAssistantMessage([fauxText("aborted")]));
+      };
+      if (options?.signal?.aborted === true) {
+        end();
+      }
+      options?.signal?.addEventListener("abort", end);
+    });
+  return { step, started };
+}
+
+const alpha = (text: string): ToolRegistration =>
+  defineTool({
+    name: "alpha",
+    description: "Answers alpha.",
+    parameters: Type.Object({}),
+    execute: () => Promise.resolve({ output: [{ type: "text", text }] }),
+  });
+
+const satanWith = (text: string): Registry =>
+  registryOf([defineExtension({ name: "satan", tools: [alpha(text)] })]);
+
 describe("openSession", () => {
   let cleanup: (() => Promise<void>) | undefined;
   afterEach(() => cleanup?.());
@@ -39,7 +83,7 @@ describe("openSession", () => {
     const open = async (answers: string[]): Promise<Session> =>
       openSession(await openNodeSqliteStorage(path), {
         models: fauxModels(answers),
-        extensions: [],
+        registry: registryOf([]),
         agent: { model: FAUX_MODEL, cwd: tmp.dir },
         env: nodeEnv,
       });
@@ -66,7 +110,7 @@ describe("openSession", () => {
     const open = async (cwd: string): Promise<Session> =>
       openSession(await openNodeSqliteStorage(path), {
         models: fauxModels([]),
-        extensions: [],
+        registry: registryOf([]),
         agent: { model: FAUX_MODEL, cwd },
         env: nodeEnv,
       });
@@ -84,7 +128,7 @@ describe("openSession", () => {
     const asked: (string | undefined)[] = [];
     const session = await openSession(new MemoryStorage(), {
       models,
-      extensions: [CodingTools],
+      registry: registryOf([CodingTools]),
       agent: { model: FAUX_MODEL, cwd: tmp.dir },
       env: (state) => {
         asked.push(state.cwd);
@@ -98,5 +142,59 @@ describe("openSession", () => {
 
     expect(asked).toContain(tmp.dir);
     expect(result === undefined ? "" : textOf(result)).toContain(tmp.dir);
+  });
+
+  /**
+   * Leave a turn in flight after `alpha` was pinned, then reopen it against
+   * `reopen` and return the tool results of the resumed call.
+   */
+  async function resumePinnedAlpha(reopen: Registry): Promise<string[]> {
+    const tmp = await tempDir();
+    try {
+      const path = join(tmp.dir, "session.sqlite");
+      const held = heldCall();
+      const scripted = scriptedModels();
+      scripted.faux.setResponses([held.step]);
+      const first = await openSession(await openNodeSqliteStorage(path), {
+        models: scripted.models,
+        registry: satanWith("first"),
+        agent: { model: FAUX_MODEL, cwd: tmp.dir },
+        env: nodeEnv,
+      });
+      // The first provider step blocks, so the close leaves the turn in `request`.
+      try {
+        await first.root.submit({ type: "input", content: "go" }, context);
+        await held.started;
+      } finally {
+        await first.harness.close(context);
+      }
+
+      const again = scriptedModels();
+      again.faux.setResponses(callThenAnswer("alpha", {}, "done"));
+      const second = await openSession(await openNodeSqliteStorage(path), {
+        models: again.models,
+        registry: reopen,
+        agent: { model: FAUX_MODEL, cwd: tmp.dir },
+        env: nodeEnv,
+      });
+      try {
+        await second.harness.waitForIdle(context);
+        return (await toolResults(second.harness)).map(textOf);
+      } finally {
+        await second.harness.close(context);
+      }
+    } finally {
+      await tmp.cleanup();
+    }
+  }
+
+  it("resumes a turn whose pinned tool call executes against the registry given at reopen", async () => {
+    expect(await resumePinnedAlpha(satanWith("second"))).toEqual(["second"]);
+  });
+
+  it("settles the resumed call as tool_unavailable when the reopen registry lacks the tool", async () => {
+    const results = await resumePinnedAlpha(registryOf([]));
+    expect(results).toHaveLength(1);
+    expect(results[0]).toContain("Tool alpha is not available");
   });
 });

@@ -12,6 +12,7 @@ import { serve } from "./daemon.ts";
 import { loadGatewayModels } from "./models.ts";
 import { personaFiles } from "./persona.ts";
 import { renderProjectContext } from "./project-context.ts";
+import { registryOf } from "./registry.ts";
 import { connectSatanTools } from "./satan-tools.ts";
 import { openSession } from "./session.ts";
 import { loadSkills } from "./skills.ts";
@@ -41,15 +42,18 @@ const projectContext = renderProjectContext(await environment.readContext());
 
 mkdirSync(dirname(config.storagePath), { recursive: true });
 mkdirSync(dirname(config.daemonSocket), { recursive: true });
-const session = await openSession(await openNodeSqliteStorage(config.storagePath), {
-  models,
-  extensions: daemonExtensions({
+const registry = registryOf(
+  daemonExtensions({
     personaFiles: persona,
     projectContext,
     skills,
     cwd: environment.cwd,
-    satan: satan.extension,
   }),
+);
+registry.install(satan.extension);
+const session = await openSession(await openNodeSqliteStorage(config.storagePath), {
+  models,
+  registry,
   agent: { model: config.model, cwd: environment.cwd },
   env: environment.env,
 });

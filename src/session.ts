@@ -5,13 +5,12 @@ import type { Models } from "@earendil-works/pi-ai/models";
 import {
   type AgentChange,
   type Conversation,
-  type Extension,
   Harness,
+  type Registry,
   type Storage,
 } from "@earendil-works/pi-durable";
 import type { ExecutionEnv } from "@earendil-works/pi-durable/env";
 import { context } from "./context.ts";
-import { registryOf } from "./registry.ts";
 
 export interface Session {
   harness: Harness;
@@ -20,7 +19,8 @@ export interface Session {
 
 export interface SessionOptions {
   models: Models;
-  extensions: readonly Extension[];
+  /** The tools and prompt sections this session reads; used as given. */
+  registry: Registry;
   /** Applied on every open, so a changed model or cwd takes effect on restart. */
   agent: AgentChange;
   /** pi-durable's per-call environment hook: where the agent's tools run (daemon-env.ts). */
@@ -32,7 +32,7 @@ export async function openSession(storage: Storage, options: SessionOptions): Pr
     storage,
     {
       models: options.models,
-      registry: registryOf(options.extensions),
+      registry: options.registry,
       env: options.env,
     },
     context,

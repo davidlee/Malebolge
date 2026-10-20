@@ -34,6 +34,7 @@ import {
   type ShellLimits,
 } from "../src/room/shell.ts";
 import { FETCH_LIMITS, HEAD_LIMITS } from "../src/room/source-reader.ts";
+import { registryOf } from "../src/registry.ts";
 import { openSession } from "../src/session.ts";
 import { tempDir } from "./fixtures.ts";
 import { FAUX_MODEL, fauxModels, textOf, toolResults } from "./harness-fixture.ts";
@@ -187,7 +188,7 @@ describe("room faults at the tool seam, the daemon's reword (design §4.4)", () 
     ]);
     const session = await openSession(new MemoryStorage(), {
       models,
-      extensions: [CodingTools, grepExtension],
+      registry: registryOf([CodingTools, grepExtension]),
       agent: { model: FAUX_MODEL, cwd: env.cwd },
       env: env.env,
     });
