@@ -130,6 +130,10 @@ describe("satanTools", () => {
     await logs.next((line) => line.includes("closed"));
   };
 
+  /** How many requests of `method` the server has received. */
+  const received = (fixture: Fixture, method: string): number =>
+    fixture.requests.items.filter((name) => name === method).length;
+
   it("installs every MCP tool, with the server's description", async () => {
     await start();
     expect(satanExtension()?.tools?.map((tool) => [tool.name, tool.description])).toEqual([
@@ -221,6 +225,71 @@ describe("satanTools", () => {
     expect(satanExtension()?.tools).toEqual([]);
     expect(logs.items.filter((line) => line.includes("SATAN tools"))).toEqual([]);
     expect(hung.connections()).toBe(1);
+  });
+
+  it("coalesces refreshes made during a read into one more read", async () => {
+    const held = await restartServer(tools, { silent: ["tools/list"] });
+    const handle = await openHandle();
+    let installs = 0;
+    registry.subscribe(() => {
+      installs += 1;
+    });
+    const seen: number[] = [];
+    const refresh = (): Promise<void> =>
+      handle.refresh().then(() => {
+        seen.push(installs);
+      });
+    const all = Promise.all([refresh(), refresh(), refresh()]);
+    await held.release();
+    await all;
+    // The first call had its own read; the other two shared the read that followed it.
+    expect(seen).toEqual([1, 2, 2]);
+    expect(received(held, "tools/list")).toBe(2);
+    expect(satanExtension()?.tools?.map((tool) => tool.name)).toEqual(["notes_read", "fails"]);
+  });
+
+  it("gives a caller the list satan-mcp has when its own read runs", async () => {
+    const held = await restartServer(tools, { silent: ["tools/list"] });
+    const handle = await openHandle();
+    const names = (): string[] => (satanExtension()?.tools ?? []).map((tool) => tool.name);
+    const installs: string[][] = [];
+    registry.subscribe(() => {
+      installs.push(names());
+    });
+    const first = handle.refresh();
+    let seenBySecond: string[] = [];
+    const second = handle.refresh().then(() => {
+      seenBySecond = names();
+    });
+    // Read 1 is at the server, which will answer it with the tools it has now.
+    await held.requests.next((method) => method === "tools/list");
+    held.serve(changedTools);
+    await held.release();
+    await first;
+    await second;
+    expect(installs).toEqual([["notes_read", "fails"], ["notes_archive"]]);
+    expect(seenBySecond).toEqual(["notes_archive"]);
+  });
+
+  it("does not keep a timed-out read in flight", async () => {
+    const held = await restartServer(tools, { silent: ["tools/list"] });
+    const handle = await openHandle({ deadlineMs: DEADLINE_MS });
+    await Promise.all([handle.refresh(), handle.refresh()]);
+    expect(received(held, "tools/list")).toBe(2);
+    expect(satanExtension()?.tools).toEqual([]);
+  });
+
+  it("closes without waiting for an attempt still trying to connect", async () => {
+    const stalled = await restartServer(tools, { silent: ["initialize"] });
+    const handle = await openHandle();
+    const refresh = handle.refresh();
+    await stalled.requests.next((method) => method === "initialize");
+    await handle.close();
+    // The attempt connects after the handle is closed, and is closed on arrival.
+    await stalled.release();
+    await stalled.ended;
+    await refresh;
+    expect(stalled.connections()).toBe(1);
   });
 
   it("installs the changed tool set once satan-mcp restarts with different tools", async () => {

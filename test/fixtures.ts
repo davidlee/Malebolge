@@ -25,6 +25,12 @@ export interface Fixture {
   release: () => Promise<void>;
   /** Connections accepted so far: a second one means the client opened a fresh connection. */
   connections: () => number;
+  /** Resolves when the first accepted connection ends: a client hung up. */
+  ended: Promise<void>;
+  /** Methods of the requests received so far, and a wait for one that matches. */
+  requests: Recorder<string>;
+  /** Answer later requests with `tools` in place of the ones the server was made with. */
+  serve: (tools: readonly FakeTool[]) => void;
 }
 
 export interface FakeServerOptions {
@@ -237,12 +243,22 @@ export async function fakeMcpServer(
 ): Promise<Fixture> {
   const silent = new Set(options.silent ?? []);
   const withheld: (() => Promise<void>)[] = [];
+  const requests = recorder<string>();
   const sockets = new Set<Socket>();
+  let served = tools;
   let connections = 0;
+  /** Resolves when the first accepted connection ends. */
+  let hungUp = (): void => undefined;
+  const ended = new Promise<void>((resolve) => {
+    hungUp = resolve;
+  });
   const server = createServer((socket) => {
     connections += 1;
     sockets.add(socket);
-    socket.on("close", () => sockets.delete(socket));
+    socket.on("close", () => {
+      sockets.delete(socket);
+      hungUp();
+    });
     // A client that gave up before the answer arrived closes its end; that is not our failure.
     socket.on("error", () => undefined);
     socket.on(
@@ -252,11 +268,11 @@ export async function fakeMcpServer(
         if (request === undefined) {
           return;
         }
+        requests.push(request.method);
+        // Answered as of the request, so a withheld answer is the one the server had then.
+        const result = answer(served, request);
         const send = (): Promise<void> =>
-          writeLine(
-            socket,
-            encodeLine({ jsonrpc: "2.0", id: request.id, result: answer(tools, request) }),
-          );
+          writeLine(socket, encodeLine({ jsonrpc: "2.0", id: request.id, result }));
         if (silent.has(request.method)) {
           withheld.push(send);
         } else {
@@ -274,5 +290,10 @@ export async function fakeMcpServer(
       await Promise.all(withheld.splice(0).map((send) => send()));
     },
     connections: () => connections,
+    ended,
+    requests,
+    serve: (next): void => {
+      served = next;
+    },
   };
 }
