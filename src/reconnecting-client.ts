@@ -13,6 +13,8 @@ interface Attempt {
   readonly opening: Promise<McpClient>;
   /** The client, once connected: a later `reset` or `close` closes it on arrival. */
   client?: McpClient;
+  /** Set when this handle gives up on it: a client that arrives then is no longer news. */
+  abandoned?: boolean;
 }
 
 /**
@@ -92,6 +94,20 @@ function begin(open: () => Promise<McpClient>): Attempt {
 }
 
 /**
+ * Closes the attempt's client now if it has one, else as soon as it arrives. Only the
+ * former is awaited: an attempt may never settle.
+ */
+async function closeAttempt(attempt: Attempt, drops: Drops): Promise<void> {
+  const client = attempt.client;
+  if (client === undefined) {
+    // Never waited for: an attempt may not settle, so a late client is closed on arrival.
+    void attempt.opening.then(drops.close, () => undefined);
+    return;
+  }
+  await drops.close(client);
+}
+
+/**
  * A client at `socketPath` that reconnects on demand. `onReconnect` runs once a
  * connection the handle had is lost and another stands in for it: the tools
  * satan-mcp serves may have changed with it.
@@ -107,16 +123,6 @@ export function reconnectingClient(
     lost = true;
   });
   const open = (): Promise<McpClient> => connect(socketPath, drops);
-  /** Closes the attempt's client now if it has one, else as soon as it arrives. */
-  const closeAttempt = async (attempt: Attempt): Promise<void> => {
-    const client = attempt.client;
-    if (client === undefined) {
-      // Never waited for: an attempt may not settle, so a late client is closed on arrival.
-      void attempt.opening.then(drops.close, () => undefined);
-      return;
-    }
-    await drops.close(client);
-  };
   let current: Attempt | undefined;
   /** Set by `close`: the handle is finished, so no attempt is ever begun again. */
   let shut = false;
@@ -130,11 +136,11 @@ export function reconnectingClient(
   };
   /**
    * Reports a connection that stands in for a lost one, once: the tools satan-mcp
-   * serves may have changed. Silent if the handle closed meanwhile, or if the
-   * connection was itself closed on arrival.
+   * serves may have changed. Silent if the handle closed meanwhile, or if the attempt
+   * was abandoned — `lost` then stays armed for the next connection.
    */
-  const reconnected = (client: McpClient): void => {
-    if (!lost || closed() || client.connectionState !== "connected") {
+  const reconnected = (attempt: Attempt): void => {
+    if (!lost || closed() || attempt.abandoned === true) {
       return;
     }
     lost = false;
@@ -148,11 +154,16 @@ export function reconnectingClient(
    */
   const record = (attempt: Attempt): Attempt => {
     current = attempt;
-    void attempt.opening.then(reconnected, () => {
-      if (current === attempt) {
-        current = undefined;
-      }
-    });
+    void attempt.opening.then(
+      () => {
+        reconnected(attempt);
+      },
+      () => {
+        if (current === attempt) {
+          current = undefined;
+        }
+      },
+    );
     return attempt;
   };
   const get = async (): Promise<McpClient> => {
@@ -178,12 +189,13 @@ export function reconnectingClient(
     current ??= record(begin(open));
     return current.opening;
   };
-  /** Drops the current attempt: its client is closed now, or on arrival if it has none yet. */
+  /** Drops the current attempt, abandoned: its client is closed now, or on arrival. */
   const discard = async (): Promise<void> => {
-    const abandoned = current;
+    const attempt = current;
     current = undefined;
-    if (abandoned !== undefined) {
-      await closeAttempt(abandoned);
+    if (attempt !== undefined) {
+      attempt.abandoned = true;
+      await closeAttempt(attempt, drops);
     }
   };
   const reset = (): void => {

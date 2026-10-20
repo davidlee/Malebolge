@@ -442,6 +442,20 @@ describe("satanTools", () => {
     expect(logs.items.filter((line) => line.includes("satan-mcp unreachable"))).toHaveLength(1);
   });
 
+  it("does not announce a stand-in that a timeout discarded", async () => {
+    const handle = await start();
+    await stopServer();
+    const stalled = await restartServer(tools, { silent: ["initialize"] });
+    await handle.refresh(); // times out, discarding the stand-in it began
+    await stalled.release(); // the stand-in connects after all...
+    await stalled.ended; // ...and is closed on arrival
+    expect(logs.items.filter((line) => line.includes("reconnected"))).toEqual([]);
+    // The loss is still armed: the next connection standing in for it is announced.
+    await handle.refresh();
+    expect(logs.items.filter((line) => line.includes("reconnected"))).toHaveLength(1);
+    expect(toolNames()).toEqual(["notes_read", "fails"]);
+  });
+
   it("installs the changed tool set once satan-mcp restarts with different tools", async () => {
     await start();
     await stopServer();
