@@ -2,7 +2,7 @@
 // may submit to it. The Harness and its storage stay with this one process.
 
 import type { Socket } from "node:net";
-import { type Conversation, watchEvents } from "@earendil-works/pi-durable";
+import { type AgentEventStream, type Conversation, watchEvents } from "@earendil-works/pi-durable";
 import { context } from "./context.ts";
 import { encodeLine, lineSplitter } from "./ndjson.ts";
 import { type ClientMessage, type ErrorMessage, parseClientMessage } from "./protocol.ts";
@@ -40,6 +40,9 @@ async function attach(
   socket: Socket,
   beforeInput: () => Promise<void>,
 ): Promise<void> {
+  const watch: { stream?: AgentEventStream } = {};
+  // Registered before the awaits: a close emitted while the session opens is not replayed.
+  socket.on("close", () => void watch.stream?.stop());
   const { harness, root: conversation } = await session;
   const write = (value: unknown): void => {
     if (socket.writable) {
@@ -47,6 +50,12 @@ async function attach(
     }
   };
   const stream = await watchEvents(harness, conversation.id, context);
+  watch.stream = stream;
+  if (socket.destroyed) {
+    // The client left while the session opened: nothing will stop this stream later.
+    void stream.stop();
+    return;
+  }
   write(stream.snapshot);
   stream.start((events) => {
     for (const event of events) {
@@ -54,7 +63,6 @@ async function attach(
     }
     return Promise.resolve();
   });
-  socket.on("close", () => void stream.stop());
   socket.on(
     "data",
     lineSplitter((line) => {

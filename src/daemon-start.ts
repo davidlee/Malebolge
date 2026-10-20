@@ -7,7 +7,7 @@ import type { Models } from "@earendil-works/pi-ai/models";
 import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite/node";
 import type { Config, Profile } from "./config.ts";
 import { context } from "./context.ts";
-import { type DaemonEnv, daemonEnv, requireGatewaySocket } from "./daemon-env.ts";
+import { daemonEnv, requireGatewaySocket } from "./daemon-env.ts";
 import { daemonExtensions } from "./daemon-extensions.ts";
 import { type Daemon, serve } from "./daemon.ts";
 import { acquireInstanceLock } from "./instance-lock.ts";
@@ -25,6 +25,15 @@ export interface StartDeps {
   models?: Models;
 }
 
+/** `models`, or an error naming the model the catalog lacks. */
+function requireKnownModel(models: Models, model: ModelRef): Models {
+  const { provider, modelId } = model;
+  if (models.getModelOfType("chat", provider, modelId) === undefined) {
+    throw new Error(`unknown model ${provider}/${modelId}`);
+  }
+  return models;
+}
+
 /** A started daemon and the facts its entry script reports. */
 export interface DaemonHandle {
   /** Terminal; a second call returns the same promise. */
@@ -39,16 +48,6 @@ export interface DaemonHandle {
   daemonSocket: string;
 }
 
-/** The lock, or the environment it was holding closed and the refusal rethrown. */
-function lockOf(path: string, environment: DaemonEnv): { release: () => void } {
-  try {
-    return acquireInstanceLock(path);
-  } catch (error) {
-    environment.close();
-    throw error;
-  }
-}
-
 /**
  * Start the profile's daemon: lock, claim the socket, refresh SATAN's tools,
  * then open and resume the session. A failure undoes what preceded it in
@@ -59,12 +58,10 @@ export async function startDaemon(config: Config, deps: StartDeps): Promise<Daem
   const persona = personaFiles(config.corpusRoot, config.execution.profile);
   const skills = loadSkills(config.skillDirs, log);
   requireGatewaySocket(config.execution);
-  const models =
-    deps.models ?? (await loadGatewayModels(config.gatewayCatalog, config.gatewayKeyFile));
-  const { provider, modelId } = config.model;
-  if (models.getModelOfType("chat", provider, modelId) === undefined) {
-    throw new Error(`unknown model ${provider}/${modelId}`);
-  }
+  const models = requireKnownModel(
+    deps.models ?? (await loadGatewayModels(config.gatewayCatalog, config.gatewayKeyFile)),
+    config.model,
+  );
 
   // Local configuration is checked before the room is reached.
   const environment = daemonEnv(config.execution, log);
@@ -79,7 +76,13 @@ export async function startDaemon(config: Config, deps: StartDeps): Promise<Daem
     }),
   );
 
-  const lock = lockOf(config.lockPath, environment);
+  let lock: { release: () => void };
+  try {
+    lock = acquireInstanceLock(config.lockPath);
+  } catch (error) {
+    environment.close();
+    throw error;
+  }
   // Construction never connects, so nothing here can fail before the `try`.
   const satan = satanTools(config.mcpSocket, registry, log);
   let daemon: Daemon | undefined;
@@ -100,9 +103,7 @@ export async function startDaemon(config: Config, deps: StartDeps): Promise<Daem
     sessionReady.resolve(session);
   } catch (error) {
     // In reverse, the lock last.
-    if (daemon !== undefined) {
-      await daemon.close();
-    }
+    await daemon?.close();
     await satan.close();
     environment.close();
     lock.release();

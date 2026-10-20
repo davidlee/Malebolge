@@ -5,8 +5,8 @@ import {
   fauxText,
 } from "@earendil-works/pi-ai/providers/faux";
 import { getCurrentTools } from "@earendil-works/pi-ai/utils/transcript";
-import { MemoryStorage } from "@earendil-works/pi-durable";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { type AgentEventStream, MemoryStorage } from "@earendil-works/pi-durable";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { context } from "../src/context.ts";
 import { type Daemon, serve } from "../src/daemon.ts";
 import { type Printable, toPrintable } from "../src/render.ts";
@@ -21,6 +21,38 @@ import {
   tempDir,
 } from "./fixtures.ts";
 import { openFauxHarness, openTestHarness, type TestHarness } from "./harness-fixture.ts";
+
+/** The event streams the daemon watches, so a test can read their `closed` promise. */
+const watched = vi.hoisted(() => {
+  const streams: AgentEventStream[] = [];
+  let next = Promise.withResolvers<AgentEventStream>();
+  return {
+    streams,
+    next: (): Promise<AgentEventStream> => next.promise,
+    push: (stream: AgentEventStream): void => {
+      streams.push(stream);
+      next.resolve(stream);
+    },
+    reset: (): void => {
+      streams.length = 0;
+      next = Promise.withResolvers<AgentEventStream>();
+    },
+  };
+});
+
+vi.mock("@earendil-works/pi-durable", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@earendil-works/pi-durable")>();
+  return {
+    ...actual,
+    watchEvents: async (
+      ...args: Parameters<typeof actual.watchEvents>
+    ): Promise<AgentEventStream> => {
+      const stream = await actual.watchEvents(...args);
+      watched.push(stream);
+      return stream;
+    },
+  };
+});
 
 type EventOf<K extends Printable["type"]> = Extract<Printable, { type: K }>;
 
@@ -148,6 +180,20 @@ describe("daemon", () => {
     expect(client.received().some(isType("snapshot"))).toBe(false);
     pending.resolve(test);
     await client.next(isType("snapshot"));
+  });
+
+  it("stops watching when a client leaves before the session resolves", async () => {
+    const pending = Promise.withResolvers<TestHarness>();
+    test = await openTestHarness([]);
+    watched.reset();
+    daemon = await serve(pending.promise, socketPath, noGate);
+    const client = await lineClient(socketPath, toPrintable);
+    client.close();
+    // One macrotask lets the server read the hang-up; no fixed wait is involved.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    pending.resolve(test);
+    const stream = await watched.next();
+    expect(await stream.closed).toEqual({ reason: "stopped" });
   });
 
   it("holds an input until beforeInput resolves", async () => {
