@@ -39,6 +39,8 @@ export type Log = (text: string) => void;
  */
 interface ReconnectingClient {
   get: () => Promise<McpClient>;
+  /** Abandon the current client, or a pending attempt: the next `get()` opens a fresh one. */
+  reset: () => void;
   close: () => Promise<void>;
 }
 
@@ -83,7 +85,18 @@ function reconnectingClient(socketPath: string, log: Log): ReconnectingClient {
     const client = await current?.catch(() => undefined);
     await client?.close();
   };
-  return { get, close };
+  const reset = (): void => {
+    const pending = current;
+    current = undefined;
+    // Never wait on an attempt that may never settle; a client that arrives is closed on arrival.
+    pending
+      ?.then(
+        (client) => client.close(),
+        () => undefined,
+      )
+      .catch(() => undefined);
+  };
+  return { get, reset, close };
 }
 
 const toDurableTool = (
@@ -108,6 +121,33 @@ const toDurableTool = (
 /** satan-mcp's answer: its tool list, or the reason there is none. */
 type Listing = { readonly tools: readonly Tool[] } | { readonly failure: string };
 
+/**
+ * `work`, or a rejection as soon as `signal` aborts. A late failure of `work`
+ * is handled here, so an abandoned attempt cannot surface as an unhandled rejection.
+ */
+function within<T>(work: Promise<T>, signal: AbortSignal): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = (): void => {
+      reject(new Error("the deadline passed"));
+    };
+    if (signal.aborted) {
+      onAbort();
+      return;
+    }
+    signal.addEventListener("abort", onAbort, { once: true });
+    work.then(
+      (value) => {
+        signal.removeEventListener("abort", onAbort);
+        resolve(value);
+      },
+      (error: unknown) => {
+        signal.removeEventListener("abort", onAbort);
+        reject(error instanceof Error ? error : new Error(String(error)));
+      },
+    );
+  });
+}
+
 export interface SatanTools {
   /** Re-list satan-mcp's tools and install them as the `satan` extension. */
   refresh: () => Promise<void>;
@@ -115,12 +155,26 @@ export interface SatanTools {
   close: () => Promise<void>;
 }
 
+export interface SatanToolsOptions {
+  /** How long one refresh may take, its connection attempt and tool listing together. */
+  deadlineMs?: number;
+}
+
+const DEFAULT_DEADLINE_MS = 2000;
+
 /**
  * A handle on satan-mcp's tools, installed into `registry` as the `satan`
  * extension. Construction never connects, so a missing satan-mcp costs a
- * `refresh` and leaves the extension empty rather than failing the daemon.
+ * `refresh` and leaves the extension empty rather than failing the daemon. A
+ * refresh that outlives its deadline discards the connection it was using.
  */
-export function satanTools(socketPath: string, registry: Registry, log: Log): SatanTools {
+export function satanTools(
+  socketPath: string,
+  registry: Registry,
+  log: Log,
+  options: SatanToolsOptions = {},
+): SatanTools {
+  const deadlineMs = options.deadlineMs ?? DEFAULT_DEADLINE_MS;
   const connection = reconnectingClient(socketPath, log);
   /** What the last log said: a tool count, `null` for unreachable, `undefined` for nothing yet. */
   let reported: number | null | undefined;
@@ -131,11 +185,13 @@ export function satanTools(socketPath: string, registry: Registry, log: Log): Sa
       tools: tools.map((tool) => toDurableTool(connection.get, tool)),
     });
 
-  const listing = async (): Promise<Listing> => {
+  const listing = async (deadline: AbortSignal): Promise<Listing> => {
     try {
-      return { tools: await (await connection.get()).listTools() };
+      const client = await within(connection.get(), deadline);
+      return { tools: await client.listTools({ signal: deadline }) };
     } catch (error) {
-      return { failure: messageOf(error) };
+      const timedOut = deadline.aborted;
+      return { failure: timedOut ? `timed out after ${String(deadlineMs)} ms` : messageOf(error) };
     }
   };
 
@@ -155,7 +211,13 @@ export function satanTools(socketPath: string, registry: Registry, log: Log): Sa
   };
 
   const refresh = async (): Promise<void> => {
-    const listed = await listing();
+    const deadline = AbortSignal.timeout(deadlineMs);
+    const listed = await listing(deadline);
+    if (deadline.aborted) {
+      // A hung connect or a wedged server must not become the `current` every later call
+      // awaits: a timed-out refresh discards the connection (RV-040 F-3).
+      connection.reset();
+    }
     // The list is satan-mcp's last answer or nothing: a failed read leaves no stale tools.
     registry.install(extensionOf("tools" in listed ? listed.tools : []));
     report(listed);

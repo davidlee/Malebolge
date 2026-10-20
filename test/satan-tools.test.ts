@@ -12,10 +12,18 @@ import { registryOf } from "../src/registry.ts";
 import {
   SATAN_EXTENSION,
   type SatanTools,
+  type SatanToolsOptions,
   connectSatanTools,
   satanTools,
 } from "../src/satan-tools.ts";
-import { type FakeTool, type Fixture, fakeMcpServer, recorder, tempDir } from "./fixtures.ts";
+import {
+  type FakeServerOptions,
+  type FakeTool,
+  type Fixture,
+  fakeMcpServer,
+  recorder,
+  tempDir,
+} from "./fixtures.ts";
 import {
   callThenAnswer,
   openFauxHarness,
@@ -44,6 +52,7 @@ const changedTools: FakeTool[] = [
 ];
 
 describe("satanTools", () => {
+  const DEADLINE_MS = 100;
   let cleanup: () => Promise<void>;
   let dir: string;
   let socketPath: string;
@@ -74,11 +83,27 @@ describe("satanTools", () => {
   const satanExtension = (): Extension | undefined =>
     registry.snapshot().extension(SATAN_EXTENSION);
 
+  /** A harness over the shared registry and a handle on the socket; no refresh yet. */
+  const openHandle = async (options?: SatanToolsOptions): Promise<SatanTools> => {
+    test = await openFauxHarness(new MemoryStorage(), { registry });
+    const handle = satanTools(socketPath, registry, logs.push, options);
+    satan = handle;
+    return handle;
+  };
+
   /** A harness over the shared registry, then the handle's first refresh. */
   const start = async (): Promise<void> => {
-    test = await openFauxHarness(new MemoryStorage(), { registry });
-    satan = satanTools(socketPath, registry, logs.push);
-    await satan.refresh();
+    await (await openHandle({ deadlineMs: DEADLINE_MS })).refresh();
+  };
+
+  /** Replace the running server with one serving `tools` under `options`. */
+  const restartServer = async (
+    served: readonly FakeTool[],
+    options?: FakeServerOptions,
+  ): Promise<Fixture> => {
+    await server?.close();
+    server = await fakeMcpServer(socketPath, served, options);
+    return server;
   };
 
   /** Drive one model turn that calls `call`; returns that call's result. */
@@ -111,13 +136,6 @@ describe("satanTools", () => {
       ["notes_read", "Read a note"],
       ["fails", "SATAN tool: fails"],
     ]);
-  });
-
-  it("makes a tool installed after the harness opened callable on the next turn", async () => {
-    test = await openFauxHarness(new MemoryStorage(), { registry });
-    satan = satanTools(socketPath, registry, logs.push);
-    await satan.refresh();
-    expect(textOf(await callTool("notes_read", { id: "42" }))).toBe("note 42");
   });
 
   it("forwards a model's call to the MCP server and returns its content", async () => {
@@ -158,13 +176,51 @@ describe("satanTools", () => {
   });
 
   it("installs no tools and reports unreachable once while satan-mcp is absent", async () => {
-    test = await openFauxHarness(new MemoryStorage(), { registry });
-    satan = satanTools(join(dir, "absent.sock"), registry, logs.push);
-    await satan.refresh();
-    await satan.refresh();
+    await server?.close();
+    server = undefined;
+    const handle = await openHandle();
+    await handle.refresh();
+    await handle.refresh();
     expect(satanExtension()?.tools).toEqual([]);
     expect(logs.items.filter((line) => line.includes("satan-mcp unreachable"))).toHaveLength(1);
     expect(logs.items.filter((line) => line.includes("SATAN tools"))).toEqual([]);
+  });
+
+  it("times out a hung tools/list, then lists over a fresh connection", async () => {
+    const hung = await restartServer(tools, { silent: ["tools/list"] });
+    const handle = await openHandle({ deadlineMs: DEADLINE_MS });
+    await handle.refresh();
+    expect(satanExtension()?.tools).toEqual([]);
+    expect(logs.items).toContain(
+      `satan-mcp unreachable: timed out after ${String(DEADLINE_MS)} ms`,
+    );
+    await hung.release();
+    await handle.refresh();
+    expect(satanExtension()?.tools?.map((tool) => tool.name)).toEqual(["notes_read", "fails"]);
+    expect(hung.connections()).toBe(2);
+  });
+
+  it("times out a stalled connect, then connects again once satan-mcp answers", async () => {
+    const stalled = await restartServer(tools, { silent: ["initialize"] });
+    const handle = await openHandle({ deadlineMs: DEADLINE_MS });
+    await handle.refresh();
+    expect(satanExtension()?.tools).toEqual([]);
+    await stalled.release();
+    await handle.refresh();
+    expect(satanExtension()?.tools?.map((tool) => tool.name)).toEqual(["notes_read", "fails"]);
+    expect(stalled.connections()).toBe(2);
+  });
+
+  it("installs nothing when a hung tools/list answers after the deadline", async () => {
+    const hung = await restartServer(tools, { silent: ["tools/list"] });
+    const handle = await openHandle({ deadlineMs: DEADLINE_MS });
+    await handle.refresh();
+    await hung.release();
+    // Let the late answer arrive on the connection the timeout discarded.
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(satanExtension()?.tools).toEqual([]);
+    expect(logs.items.filter((line) => line.includes("SATAN tools"))).toEqual([]);
+    expect(hung.connections()).toBe(1);
   });
 
   it("installs the changed tool set once satan-mcp restarts with different tools", async () => {

@@ -21,6 +21,15 @@ export interface FakeTool {
 export interface Fixture {
   socketPath: string;
   close: () => Promise<void>;
+  /** Answer every withheld request and stop withholding: a later request is answered at once. */
+  release: () => Promise<void>;
+  /** Connections accepted so far: a second one means the client opened a fresh connection. */
+  connections: () => number;
+}
+
+export interface FakeServerOptions {
+  /** Methods whose answer is withheld until `release` (a stalled connect, a hung list). */
+  silent?: readonly string[];
 }
 
 /** A fresh directory for sockets; removed by the returned `cleanup`. */
@@ -207,15 +216,35 @@ function answer(tools: readonly FakeTool[], request: Request): JsonRecord {
   }
 }
 
+/** Resolves once `socket` has handed `line` on, or could not write it at all. */
+function writeLine(socket: Socket, line: string): Promise<void> {
+  return new Promise<void>((resolve) => {
+    if (socket.destroyed) {
+      resolve();
+      return;
+    }
+    socket.write(line, () => {
+      resolve();
+    });
+  });
+}
+
 /** An MCP server on `socketPath` exposing `tools`; ignores notifications. */
 export async function fakeMcpServer(
   socketPath: string,
   tools: readonly FakeTool[],
+  options: FakeServerOptions = {},
 ): Promise<Fixture> {
+  const silent = new Set(options.silent ?? []);
+  const withheld: (() => Promise<void>)[] = [];
   const sockets = new Set<Socket>();
+  let connections = 0;
   const server = createServer((socket) => {
+    connections += 1;
     sockets.add(socket);
     socket.on("close", () => sockets.delete(socket));
+    // A client that gave up before the answer arrived closes its end; that is not our failure.
+    socket.on("error", () => undefined);
     socket.on(
       "data",
       lineSplitter((line) => {
@@ -223,12 +252,27 @@ export async function fakeMcpServer(
         if (request === undefined) {
           return;
         }
-        socket.write(
-          encodeLine({ jsonrpc: "2.0", id: request.id, result: answer(tools, request) }),
-        );
+        const send = (): Promise<void> =>
+          writeLine(
+            socket,
+            encodeLine({ jsonrpc: "2.0", id: request.id, result: answer(tools, request) }),
+          );
+        if (silent.has(request.method)) {
+          withheld.push(send);
+        } else {
+          void send();
+        }
       }),
     );
   });
   await listenUnix(server, socketPath);
-  return { socketPath, close: () => closeServer(server, sockets) };
+  return {
+    socketPath,
+    close: () => closeServer(server, sockets),
+    release: async (): Promise<void> => {
+      silent.clear();
+      await Promise.all(withheld.splice(0).map((send) => send()));
+    },
+    connections: () => connections,
+  };
 }
