@@ -7,6 +7,7 @@ import type { Models } from "@earendil-works/pi-ai/models";
 import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite/node";
 import type { Config, Profile } from "./config.ts";
 import { context } from "./context.ts";
+import { type Conversations, type ConversationDefaults, conversations } from "./conversations.ts";
 import { daemonEnv, requireGatewaySocket } from "./daemon-env.ts";
 import { daemonExtensions } from "./daemon-extensions.ts";
 import { type Daemon, serve } from "./daemon.ts";
@@ -65,6 +66,8 @@ export async function startDaemon(config: Config, deps: StartDeps): Promise<Daem
 
   // Local configuration is checked before the room is reached.
   const environment = daemonEnv(config.execution, log);
+  // One defaults object: root's on every open, every other conversation's at creation.
+  const defaults: ConversationDefaults = { model: config.model, cwd: environment.cwd };
   // Read once: a context file edit takes a restart.
   const projectContext = renderProjectContext(await environment.readContext());
   const registry = registryOf(
@@ -89,14 +92,22 @@ export async function startDaemon(config: Config, deps: StartDeps): Promise<Daem
   try {
     mkdirSync(dirname(config.daemonSocket), { recursive: true });
     const sessionReady = Promise.withResolvers<Session>();
-    daemon = await serve(sessionReady.promise, config.daemonSocket, satan.refresh);
+    // Resolved after `openSession`, hence after `resume()`: no client outruns it.
+    const conversationsReady: Promise<Conversations> = sessionReady.promise.then((ready) =>
+      conversations(ready, defaults),
+    );
+    daemon = await serve({
+      socketPath: config.daemonSocket,
+      conversations: conversationsReady,
+      beforeInput: satan.refresh,
+    });
     // Before the session resumes, so a turn's SATAN call runs, not `tool_unavailable`.
     await satan.refresh();
     mkdirSync(dirname(config.storagePath), { recursive: true });
     session = await openSession(await openNodeSqliteStorage(config.storagePath), {
       models,
       registry,
-      agent: { model: config.model, cwd: environment.cwd },
+      agent: defaults,
       env: environment.env,
     });
     sessionReady.resolve(session);

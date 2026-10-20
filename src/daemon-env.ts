@@ -2,7 +2,10 @@
 // an execution profile becomes where the agent's tools run, their cwd, and the
 // project context read at startup. Host: this machine, as before. Room: one
 // lazy pi-env daemon connection into the room user's home for the daemon's
-// life; its faults worded once, at the connection seam, for every tool.
+// life, shared by every conversation, its faults worded once at the connection
+// seam. A fault or trust decision belongs to that one connection, never to a
+// conversation (DEC-106): a fault one conversation's tool call sees is the
+// daemon's, logged once.
 
 import { existsSync } from "node:fs";
 import { NodeExecutionEnv } from "@earendil-works/pi-durable/env/node";

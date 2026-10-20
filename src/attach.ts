@@ -45,6 +45,8 @@ export async function attach(
     output.write(`[cannot connect to ${socketPath}: ${cause}]\n`);
     throw error;
   });
+  // The daemon binds this connection by its first line: root, until flags name another.
+  socket.write(encodeLine({ type: "attach" }));
   output.write("[attached]\n");
   // A reset after connecting ends the session like a close does.
   socket.on("error", () => socket.destroy());

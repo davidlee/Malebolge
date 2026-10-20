@@ -5,10 +5,11 @@ import { fauxAssistantMessage, fauxText } from "@earendil-works/pi-ai/providers/
 import { afterEach, beforeEach, describe, expect, it, onTestFinished } from "vitest";
 import { attach, commandOf } from "../src/attach.ts";
 import { context } from "../src/context.ts";
+import { conversations } from "../src/conversations.ts";
 import { type Daemon, serve } from "../src/daemon.ts";
 import { type ConnectWait, serveUnix } from "../src/unix-socket.ts";
 import { rejection, socketPath, staleSocket, tempDir } from "./fixtures.ts";
-import { openTestHarness, type TestHarness } from "./harness-fixture.ts";
+import { FAUX_MODEL, openTestHarness, type TestHarness } from "./harness-fixture.ts";
 
 describe("commandOf", () => {
   it.each([
@@ -30,6 +31,14 @@ interface Session {
   until: (text: string) => Promise<void>;
   printed: () => string;
 }
+
+/** The daemon over `test`, on `path`, with the tests' creation defaults. */
+const serveTest = (test: TestHarness, path: string): Promise<Daemon> =>
+  serve({
+    socketPath: path,
+    conversations: Promise.resolve(conversations(test, { model: FAUX_MODEL, cwd: process.cwd() })),
+    beforeInput: () => Promise.resolve(),
+  });
 
 /** An attach client of `path`, collecting what it prints. */
 const session = (path: string, wait?: ConnectWait): Session => {
@@ -64,7 +73,7 @@ describe("attach", () => {
     cleanup = tmp.cleanup;
     path = join(tmp.dir, "durable.sock");
     test = await openTestHarness([]);
-    daemon = await serve(Promise.resolve(test), path, () => Promise.resolve());
+    daemon = await serveTest(test, path);
   });
 
   afterEach(async () => {
@@ -110,7 +119,7 @@ describe("attach", () => {
       await test.harness.close(context);
       test = await openTestHarness([], { tokensPerSecond: 40, tokenSize: { min: 1, max: 1 } });
       test.faux.setResponses([fauxAssistantMessage([fauxText(answer)])]);
-      daemon = await serve(Promise.resolve(test), path, () => Promise.resolve());
+      daemon = await serveTest(test, path);
     });
 
     it("prints the answer once, with nothing else", async () => {
@@ -118,7 +127,9 @@ describe("attach", () => {
       await s.until("[attached]\n");
       s.input.write("go\n");
       await s.until(`${answer}\n`);
-      expect(s.printed()).toBe(`[attached]\n${answer}\n`);
+      expect(s.printed()).toBe(
+        `[attached]\n[attached to conversation ${String(test.root.id)}]\n${answer}\n`,
+      );
       s.input.end();
       await s.done;
     });
@@ -128,7 +139,9 @@ describe("attach", () => {
       await new Promise((resolve) => setTimeout(resolve, 150));
       const s = session(path);
       await s.until(`${answer}\n`);
-      expect(s.printed()).toBe(`[attached]\n» go\n${answer}\n`);
+      expect(s.printed()).toBe(
+        `[attached]\n[attached to conversation ${String(test.root.id)}]\n» go\n${answer}\n`,
+      );
       s.input.end();
       await s.done;
     });
@@ -139,7 +152,7 @@ describe("attach: waits for the daemon (design §4.2)", () => {
   const harnessAt = async (path: string): Promise<void> => {
     const test = await openTestHarness([]);
     onTestFinished(() => test.harness.close(context));
-    const daemon = await serve(Promise.resolve(test), path, () => Promise.resolve());
+    const daemon = await serveTest(test, path);
     onTestFinished(daemon.close);
   };
 

@@ -118,10 +118,14 @@ export async function closeServer(server: Server, sockets: Set<Socket>): Promise
 
 export interface LineClient<T> {
   send: (value: unknown) => void;
+  /** Writes `raw` as it stands; resolves once the socket has handed it on. */
+  write: (raw: string) => Promise<void>;
   /** Resolves with the first message, received or still to come, that matches. */
   next: Recorder<T>["next"];
   received: () => readonly T[];
   close: () => void;
+  /** Resolves once the socket has closed, even if it closed before this was awaited. */
+  closed: () => Promise<void>;
 }
 
 export interface Recorder<T> {
@@ -173,6 +177,8 @@ export async function lineClient<T>(
 ): Promise<LineClient<T>> {
   const socket = await connectUnix(socketPath);
   const messages = recorder<T>();
+  // Armed here, not when awaited: the close this reports may already have happened.
+  const closed = new Promise<void>((resolve) => socket.once("close", resolve));
   socket.on(
     "data",
     lineSplitter((line) => {
@@ -183,11 +189,13 @@ export async function lineClient<T>(
     send: (value): void => {
       socket.write(encodeLine(value));
     },
+    write: (raw): Promise<void> => writeLine(socket, raw),
     next: messages.next,
     received: () => messages.items,
     close: (): void => {
       socket.destroy();
     },
+    closed: () => closed,
   };
 }
 

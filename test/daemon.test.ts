@@ -1,3 +1,5 @@
+import { once } from "node:events";
+import type { Socket } from "node:net";
 import { join } from "node:path";
 import {
   fauxAssistantMessage,
@@ -5,10 +7,12 @@ import {
   fauxText,
 } from "@earendil-works/pi-ai/providers/faux";
 import { getCurrentTools } from "@earendil-works/pi-ai/utils/transcript";
-import { type AgentEventStream, MemoryStorage } from "@earendil-works/pi-durable";
+import { type AgentEventStream, defineTask, MemoryStorage } from "@earendil-works/pi-durable";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { context } from "../src/context.ts";
+import { type ConversationDefaults, conversations } from "../src/conversations.ts";
 import { type Daemon, serve } from "../src/daemon.ts";
+import { encodeLine } from "../src/ndjson.ts";
 import { type Printable, toPrintable } from "../src/render.ts";
 import { registryOf } from "../src/registry.ts";
 import { satanTools } from "../src/satan-tools.ts";
@@ -17,10 +21,16 @@ import {
   fakeMcpServer,
   type LineClient,
   lineClient,
+  type Recorder,
   recorder,
   tempDir,
 } from "./fixtures.ts";
-import { openFauxHarness, openTestHarness, type TestHarness } from "./harness-fixture.ts";
+import {
+  FAUX_MODEL,
+  openFauxHarness,
+  openTestHarness,
+  type TestHarness,
+} from "./harness-fixture.ts";
 
 /** The event streams the daemon watches, so a test can read their `closed` promise. */
 const watched = vi.hoisted(() => {
@@ -40,6 +50,21 @@ const watched = vi.hoisted(() => {
   };
 });
 
+/** Every socket the daemon accepted, so a test can await its server-side close. */
+const accepted = vi.hoisted(() => {
+  let current: Recorder<Socket> | undefined;
+  return {
+    set: (value: Recorder<Socket>): void => {
+      current = value;
+    },
+    push: (value: Socket): void => {
+      current?.push(value);
+    },
+    next: (match: (value: Socket) => boolean): Promise<Socket> =>
+      current?.next(match) ?? Promise.reject(new Error("accepted recorder is not set")),
+  };
+});
+
 vi.mock("@earendil-works/pi-durable", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@earendil-works/pi-durable")>();
   return {
@@ -54,6 +79,29 @@ vi.mock("@earendil-works/pi-durable", async (importOriginal) => {
   };
 });
 
+vi.mock("../src/unix-socket.ts", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../src/unix-socket.ts")>();
+  return {
+    ...actual, // connectUnix/listenUnix stay real for test/fixtures.ts.
+    serveUnix: (
+      ...args: Parameters<typeof actual.serveUnix>
+    ): ReturnType<typeof actual.serveUnix> => {
+      const [path, onConnection] = args;
+      return actual.serveUnix(path, (socket) => {
+        accepted.push(socket);
+        onConnection(socket);
+      });
+    },
+  };
+});
+
+/** One write holding the attach frame and the input behind it. */
+const attachAndInput = (): string =>
+  encodeLine({ type: "attach" }) + encodeLine({ type: "input", content: "hi" });
+
+/** The daemon's creation defaults for the tests' conversations. */
+const DEFAULTS: ConversationDefaults = { model: FAUX_MODEL, cwd: process.cwd() };
+
 type EventOf<K extends Printable["type"]> = Extract<Printable, { type: K }>;
 
 const isType =
@@ -67,6 +115,15 @@ const noteTool: FakeTool = {
   call: () => ({ text: "note" }),
 };
 
+/** A task whose only phase waits: a stub, never run on a passive harness. */
+const stubTask = defineTask({
+  name: "stub",
+  version: 1,
+  initial: () => ({ phase: "waiting" as const }),
+  phases: { waiting: () => Promise.resolve() },
+  abort: () => Promise.resolve(),
+});
+
 const noGate = (): Promise<void> => Promise.resolve();
 const noLog = (): void => undefined;
 
@@ -79,30 +136,86 @@ describe("daemon", () => {
   const clients: LineClient<Printable>[] = [];
   const extraStops: (() => Promise<void>)[] = [];
 
+  /** The daemon on this test's socket, over a session that may not be ready yet. */
+  const serveSession = (
+    session: Promise<TestHarness>,
+    beforeInput: () => Promise<void>,
+  ): Promise<Daemon> =>
+    serve({
+      socketPath,
+      conversations: session.then((harness) => conversations(harness, DEFAULTS)),
+      beforeInput,
+    });
+
   const start = async (
     session: Promise<TestHarness> = openTestHarness([]),
     beforeInput: () => Promise<void> = noGate,
   ): Promise<TestHarness> => {
     test = await session;
-    daemon = await serve(session, socketPath, beforeInput);
+    daemon = await serveSession(session, beforeInput);
     return test;
   };
 
   const attach = async (): Promise<LineClient<Printable>> => {
     const client = await lineClient(socketPath, toPrintable);
     clients.push(client);
+    client.send({ type: "attach" });
+    await client.next(isType("attached"));
     await client.next(isType("snapshot"));
     return client;
   };
 
+  /**
+   * A raw client writes `frame` and leaves before the session is ready. Resolves
+   * once the daemon's own socket has seen the hang-up (a receipt, not a timer).
+   */
+  const depart = async (frame: unknown): Promise<void> => {
+    const pending = Promise.withResolvers<TestHarness>();
+    test = await openTestHarness([]);
+    daemon = await serveSession(pending.promise, noGate);
+    const client = await lineClient(socketPath, toPrintable);
+    clients.push(client);
+    const serverSocket = await accepted.next(() => true);
+    await client.write(encodeLine(frame));
+    // Armed before the hang-up, so this close is the departing connection's own.
+    const closed = once(serverSocket, "close");
+    client.close();
+    await closed;
+    pending.resolve(test);
+  };
+
+  /** The control connection's one completed input: the settle point for a negative assertion. */
+  const settle = async (control: LineClient<Printable>): Promise<void> => {
+    test.faux.setResponses([fauxAssistantMessage([fauxText("hello")])]);
+    control.send({ type: "input", content: "control" });
+    await control.next(isType("run_end"));
+    expect(watched.streams).toHaveLength(1);
+    expect(test.faux.state.callCount).toBe(1);
+  };
+
+  /** The conversations the daemon's store holds, oldest first. */
+  const conversationIds = async (): Promise<readonly number[]> => {
+    const page = await test.harness.commit(
+      (tx) => tx.scanConversations({}, 50, undefined),
+      context,
+    );
+    return page.items.map((record) => record.id);
+  };
+
   const runEnds = (client: LineClient<Printable>): number =>
     client.received().filter(isType("run_end")).length;
+
+  /** Where in the received order the first event of `type` arrived; -1 if never. */
+  const at = (client: LineClient<Printable>, type: Printable["type"]): number =>
+    client.received().findIndex((event) => event.type === type);
 
   beforeEach(async () => {
     const tmp = await tempDir();
     cleanup = tmp.cleanup;
     dir = tmp.dir;
     socketPath = join(tmp.dir, "durable.sock");
+    watched.reset();
+    accepted.set(recorder<Socket>());
   });
 
   afterEach(async () => {
@@ -138,6 +251,8 @@ describe("daemon", () => {
     await first.next(isType("run_end"));
     const late = await lineClient(socketPath, toPrintable);
     clients.push(late);
+    late.send({ type: "attach" });
+    await late.next(isType("attached"));
     const snapshot = await late.next(isType("snapshot"));
     expect(snapshot.entries.map((e) => e.kind)).toEqual(
       expect.arrayContaining(["pi.user", "pi.assistant"]),
@@ -171,29 +286,202 @@ describe("daemon", () => {
     expect(existsSync(socketPath)).toBe(false);
   });
 
-  it("waits for the session before sending a connection its snapshot", async () => {
+  it("binds a connection silently and in order once ready (V-13)", async () => {
     const pending = Promise.withResolvers<TestHarness>();
     test = await openTestHarness([]);
-    daemon = await serve(pending.promise, socketPath, noGate);
+    daemon = await serveSession(pending.promise, noGate);
     const client = await lineClient(socketPath, toPrintable);
     clients.push(client);
-    expect(client.received().some(isType("snapshot"))).toBe(false);
+    // One write: the attach frame and the input behind it arrive together.
+    await client.write(attachAndInput());
+    expect(client.received()).toEqual([]);
+    test.faux.setResponses([fauxAssistantMessage([fauxText("hello")])]);
     pending.resolve(test);
+    await client.next(isType("attached"));
     await client.next(isType("snapshot"));
+    await client.next(isType("run_end"));
+    expect(at(client, "attached")).toBeLessThan(at(client, "snapshot"));
+    expect(at(client, "snapshot")).toBeLessThan(at(client, "run_end"));
   });
 
-  it("stops watching when a client leaves before the session resolves", async () => {
-    const pending = Promise.withResolvers<TestHarness>();
-    test = await openTestHarness([]);
-    watched.reset();
-    daemon = await serve(pending.promise, socketPath, noGate);
+  it("refuses an attach frame that names both a conversation and a new one (V-1)", async () => {
+    await start();
     const client = await lineClient(socketPath, toPrintable);
-    client.close();
-    // One macrotask lets the server read the hang-up; no fixed wait is involved.
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    pending.resolve(test);
-    const stream = await watched.next();
-    expect(await stream.closed).toEqual({ reason: "stopped" });
+    clients.push(client);
+    await client.write(
+      encodeLine({ type: "attach", conversation: 1, new: true }) +
+        encodeLine({ type: "input", content: "dropped" }),
+    );
+    const error = await client.next(isType("error"));
+    expect(error.message).toMatch(/^attach: /);
+    await client.closed();
+    expect(client.received().some(isType("snapshot"))).toBe(false);
+    expect(test.faux.state.callCount).toBe(0);
+    const page = await test.harness.commit(
+      (tx) => tx.scanConversations({}, 50, undefined),
+      context,
+    );
+    expect(page.items.map((record) => record.id)).toEqual([test.root.id]);
+  });
+
+  it("refuses an attach frame naming an unknown conversation (V-1)", async () => {
+    await start();
+    const client = await lineClient(socketPath, toPrintable);
+    clients.push(client);
+    client.send({ type: "attach", conversation: 999999 });
+    const error = await client.next(isType("error"));
+    expect(error.message).toBe("no conversation 999999");
+    await client.closed();
+    expect(client.received().some(isType("snapshot"))).toBe(false);
+    const page = await test.harness.commit(
+      (tx) => tx.scanConversations({}, 50, undefined),
+      context,
+    );
+    expect(page.items.map((record) => record.id)).toEqual([test.root.id]);
+  });
+
+  it("refuses an attach frame naming a task-owned conversation (V-1)", async () => {
+    await start(openFauxHarness(new MemoryStorage(), { resume: false }));
+    const owned = await test.harness.commit(async (tx) => {
+      const taskId = await tx.createTask(
+        stubTask,
+        {},
+        { ownership: { kind: "conversation" }, conversationId: test.root.id },
+      );
+      return (await tx.createConversation({ ownership: { kind: "task", taskId } })).id;
+    }, context);
+    const client = await lineClient(socketPath, toPrintable);
+    clients.push(client);
+    client.send({ type: "attach", conversation: owned });
+    const error = await client.next(isType("error"));
+    expect(error.message).toBe(`conversation ${String(owned)} belongs to a task`);
+    await client.closed();
+    expect(client.received().some(isType("snapshot"))).toBe(false);
+    const page = await test.harness.commit(
+      (tx) => tx.scanConversations({}, 50, undefined),
+      context,
+    );
+    expect(page.items.map((record) => record.id)).toEqual([test.root.id, owned]);
+  });
+
+  it("attaches a created conversation, then resolves it by id (V-1, V-3)", async () => {
+    await start();
+    const creator = await lineClient(socketPath, toPrintable);
+    clients.push(creator);
+    creator.send({ type: "attach", new: true, cwd: "/own" });
+    const attached = await creator.next(isType("attached"));
+    const snapshot = await creator.next(isType("snapshot"));
+    expect(creator.received().filter(isType("attached"))).toHaveLength(1);
+    expect(at(creator, "attached")).toBeLessThan(at(creator, "snapshot"));
+    expect(snapshot.agent.cwd).toBe("/own");
+    const api = conversations(test, DEFAULTS);
+    const created = await api.open({ kind: "existing", id: attached.conversation });
+    expect((await created.agent(context)).cwd).toBe("/own");
+    const second = await lineClient(socketPath, toPrintable);
+    clients.push(second);
+    second.send({ type: "attach", conversation: attached.conversation });
+    const again = await second.next(isType("attached"));
+    expect(again.conversation).toBe(attached.conversation);
+    expect((await second.next(isType("snapshot"))).agent.cwd).toBe("/own");
+    const plain = await lineClient(socketPath, toPrintable);
+    clients.push(plain);
+    plain.send({ type: "attach" });
+    expect((await plain.next(isType("attached"))).conversation).toBe(test.root.id);
+  });
+
+  it("binds root for a first line that is a command, with no attached (V-2)", async () => {
+    await start();
+    test.faux.setResponses([fauxAssistantMessage([fauxText("hello")])]);
+    const client = await lineClient(socketPath, toPrintable);
+    clients.push(client);
+    client.send({ type: "input", content: "hi" });
+    await client.next(isType("snapshot"));
+    await client.next(isType("run_end"));
+    expect(client.received().some(isType("attached"))).toBe(false);
+  });
+
+  it.each(["not json", '{"type":"warp"}'])(
+    "binds root, reports the bad first line and stays open: %j (V-2)",
+    async (raw) => {
+      await start();
+      test.faux.setResponses([fauxAssistantMessage([fauxText("hello")])]);
+      const client = await lineClient(socketPath, toPrintable);
+      clients.push(client);
+      await client.write(`${raw}\n`);
+      await client.next(isType("snapshot"));
+      await client.next(isType("error"));
+      expect(at(client, "snapshot")).toBeLessThan(at(client, "error"));
+      client.send({ type: "input", content: "hi" });
+      await client.next(isType("run_end"));
+    },
+  );
+
+  it("handles attach and input written in one write, in order (V-5)", async () => {
+    await start();
+    test.faux.setResponses([fauxAssistantMessage([fauxText("hello")])]);
+    const client = await lineClient(socketPath, toPrintable);
+    clients.push(client);
+    await client.write(attachAndInput());
+    await client.next(isType("attached"));
+    await client.next(isType("snapshot"));
+    await client.next(isType("run_end"));
+    expect(at(client, "attached")).toBeLessThan(at(client, "snapshot"));
+    expect(at(client, "snapshot")).toBeLessThan(at(client, "run_end"));
+  });
+
+  it("handles one frame split across two writes, in order (V-5)", async () => {
+    await start();
+    test.faux.setResponses([fauxAssistantMessage([fauxText("hello")])]);
+    const client = await lineClient(socketPath, toPrintable);
+    clients.push(client);
+    await client.write('{"type":"attach"}\n{"type":"inp');
+    await client.write('ut","content":"hi"}\n');
+    await client.next(isType("attached"));
+    await client.next(isType("snapshot"));
+    await client.next(isType("run_end"));
+    expect(at(client, "attached")).toBeLessThan(at(client, "snapshot"));
+    expect(at(client, "snapshot")).toBeLessThan(at(client, "run_end"));
+  });
+
+  it("answers a second attach with already attached and keeps the binding (V-6)", async () => {
+    await start();
+    test.faux.setResponses([fauxAssistantMessage([fauxText("hello")])]);
+    const client = await attach();
+    client.send({ type: "attach", conversation: test.root.id });
+    const error = await client.next(isType("error"));
+    expect(error.message).toBe("already attached to conversation 1");
+    client.send({ type: "input", content: "hi" });
+    await client.next(isType("run_end"));
+  });
+
+  it("answers a malformed second attach with already attached (V-6)", async () => {
+    await start();
+    const client = await attach();
+    client.send({ type: "attach", conversation: 0 });
+    const error = await client.next(isType("error"));
+    expect(error.message).toBe("already attached to conversation 1");
+    client.send({ type: "nonsense" });
+    const garbage = await client.next(
+      (e): e is EventOf<"error"> => isType("error")(e) && e.message.includes("nonsense"),
+    );
+    expect(garbage.message).toMatch(/nonsense/);
+  });
+
+  it("drops a root attach that departs before the session is ready (V-11)", async () => {
+    await depart({ type: "attach" });
+    await settle(await attach());
+    expect(await conversationIds()).toEqual([test.root.id]);
+  });
+
+  it("drops a new attach that departs before ready, creating nothing (V-11)", async () => {
+    await depart({ type: "attach", new: true, cwd: "/departed" });
+    await settle(await attach());
+    expect(await conversationIds()).toEqual([test.root.id]);
+  });
+
+  it("drops an input from a client that departs before the session is ready (V-14)", async () => {
+    await depart({ type: "input", content: "departed" });
+    await settle(await attach());
   });
 
   it("holds an input until beforeInput resolves", async () => {
