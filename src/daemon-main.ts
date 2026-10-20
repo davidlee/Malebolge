@@ -57,7 +57,7 @@ const session = await openSession(await openNodeSqliteStorage(config.storagePath
   agent: { model: config.model, cwd: environment.cwd },
   env: environment.env,
 });
-const daemon = await serve(session.harness, session.root, config.daemonSocket);
+const daemon = await serve(Promise.resolve(session), config.daemonSocket, () => Promise.resolve());
 log(
   `${provider}/${modelId} · ${String(satan.extension.tools?.length ?? 0)} SATAN tools · ${String(skills.length)} skills · ${projectContext === undefined ? "no " : ""}project context`,
 );

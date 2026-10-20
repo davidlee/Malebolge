@@ -2,10 +2,11 @@
 // may submit to it. The Harness and its storage stay with this one process.
 
 import type { Socket } from "node:net";
-import { type Conversation, type Harness, watchEvents } from "@earendil-works/pi-durable";
+import { type Conversation, watchEvents } from "@earendil-works/pi-durable";
 import { context } from "./context.ts";
 import { encodeLine, lineSplitter } from "./ndjson.ts";
 import { type ClientMessage, type ErrorMessage, parseClientMessage } from "./protocol.ts";
+import type { Session } from "./session.ts";
 import { serveUnix, type UnixServer } from "./unix-socket.ts";
 
 export type Daemon = UnixServer;
@@ -15,9 +16,14 @@ const errorMessage = (error: unknown): ErrorMessage => ({
   message: error instanceof Error ? error.message : String(error),
 });
 
-async function act(conversation: Conversation, message: ClientMessage): Promise<void> {
+async function act(
+  conversation: Conversation,
+  message: ClientMessage,
+  beforeInput: () => Promise<void>,
+): Promise<void> {
   switch (message.type) {
     case "input":
+      await beforeInput();
       await conversation.submit(message, context);
       return;
     case "abort":
@@ -29,7 +35,12 @@ async function act(conversation: Conversation, message: ClientMessage): Promise<
   }
 }
 
-async function attach(harness: Harness, conversation: Conversation, socket: Socket): Promise<void> {
+async function attach(
+  session: Promise<Session>,
+  socket: Socket,
+  beforeInput: () => Promise<void>,
+): Promise<void> {
+  const { harness, root: conversation } = await session;
   const write = (value: unknown): void => {
     if (socket.writable) {
       socket.write(encodeLine(value));
@@ -48,7 +59,7 @@ async function attach(harness: Harness, conversation: Conversation, socket: Sock
     "data",
     lineSplitter((line) => {
       Promise.resolve()
-        .then(() => act(conversation, parseClientMessage(line)))
+        .then(() => act(conversation, parseClientMessage(line), beforeInput))
         .catch((error: unknown) => {
           write(errorMessage(error));
         });
@@ -57,16 +68,17 @@ async function attach(harness: Harness, conversation: Conversation, socket: Sock
 }
 
 /**
- * Serve `conversation` on a unix socket at `socketPath`: SocketInUse if a
- * server answers there, a stale socket replaced (serveUnix).
+ * Serve `session` on a unix socket at `socketPath`: SocketInUse if a server
+ * answers there, a stale socket replaced (serveUnix). Each connection waits for
+ * the session; every input runs `beforeInput` first.
  */
 export function serve(
-  harness: Harness,
-  conversation: Conversation,
+  session: Promise<Session>,
   socketPath: string,
+  beforeInput: () => Promise<void>,
 ): Promise<Daemon> {
   return serveUnix(socketPath, (socket) => {
-    attach(harness, conversation, socket).catch((error: unknown) => {
+    attach(session, socket, beforeInput).catch((error: unknown) => {
       socket.end(encodeLine(errorMessage(error)));
     });
   });

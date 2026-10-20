@@ -32,7 +32,7 @@ describe("attach", () => {
     cleanup = tmp.cleanup;
     socketPath = join(tmp.dir, "durable.sock");
     test = await openTestHarness([]);
-    daemon = await serve(test.harness, test.root, socketPath);
+    daemon = await serve(Promise.resolve(test), socketPath, () => Promise.resolve());
   });
 
   afterEach(async () => {
@@ -107,7 +107,7 @@ describe("attach", () => {
       await test.harness.close(context);
       test = await openTestHarness([], { tokensPerSecond: 40, tokenSize: { min: 1, max: 1 } });
       test.faux.setResponses([fauxAssistantMessage([fauxText(answer)])]);
-      daemon = await serve(test.harness, test.root, socketPath);
+      daemon = await serve(Promise.resolve(test), socketPath, () => Promise.resolve());
     });
 
     it("prints the answer once, with nothing else", async () => {
