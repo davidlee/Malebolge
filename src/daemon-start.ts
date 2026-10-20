@@ -7,7 +7,7 @@ import type { Models } from "@earendil-works/pi-ai/models";
 import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite/node";
 import type { Config, Profile } from "./config.ts";
 import { context } from "./context.ts";
-import { daemonEnv, requireGatewaySocket } from "./daemon-env.ts";
+import { type DaemonEnv, daemonEnv, requireGatewaySocket } from "./daemon-env.ts";
 import { daemonExtensions } from "./daemon-extensions.ts";
 import { type Daemon, serve } from "./daemon.ts";
 import { acquireInstanceLock } from "./instance-lock.ts";
@@ -39,6 +39,16 @@ export interface DaemonHandle {
   daemonSocket: string;
 }
 
+/** The lock, or the environment it was holding closed and the refusal rethrown. */
+function lockOf(path: string, environment: DaemonEnv): { release: () => void } {
+  try {
+    return acquireInstanceLock(path);
+  } catch (error) {
+    environment.close();
+    throw error;
+  }
+}
+
 /**
  * Start the profile's daemon: lock, claim the socket, refresh SATAN's tools,
  * then open and resume the session. A failure undoes what preceded it in
@@ -68,9 +78,10 @@ export async function startDaemon(config: Config, deps: StartDeps): Promise<Daem
       cwd: environment.cwd,
     }),
   );
-  const satan = satanTools(config.mcpSocket, registry, log);
 
-  const lock = acquireInstanceLock(config.lockPath);
+  const lock = lockOf(config.lockPath, environment);
+  // Construction never connects, so nothing here can fail before the `try`.
+  const satan = satanTools(config.mcpSocket, registry, log);
   let daemon: Daemon | undefined;
   let session: Session | undefined;
   try {
@@ -88,6 +99,7 @@ export async function startDaemon(config: Config, deps: StartDeps): Promise<Daem
     });
     sessionReady.resolve(session);
   } catch (error) {
+    // In reverse, the lock last.
     if (daemon !== undefined) {
       await daemon.close();
     }

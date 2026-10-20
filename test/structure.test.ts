@@ -112,6 +112,12 @@ describe("violations: the allowlist checker", () => {
     ]);
   });
 
+  it("rejects a runner module importing the daemon's startup path", () => {
+    expect(rejects("runner/run.ts", 'import { startDaemon } from "../daemon-start.ts";')).toEqual([
+      "runner/run.ts -> daemon-start.ts",
+    ]);
+  });
+
   it("rejects a runner module importing a root module not yet listed", () => {
     expect(rejects("runner/run.ts", 'import type { X } from "../brand-new.ts";')).toEqual([
       "runner/run.ts -> brand-new.ts",

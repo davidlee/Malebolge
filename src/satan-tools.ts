@@ -16,7 +16,6 @@ import { McpClient, type Tool, toLlmContent } from "@earendil-works/pi-mcp";
 import { coalesce } from "./coalesce.ts";
 import { messageOf } from "./message-of.ts";
 import { reconnectingClient } from "./reconnecting-client.ts";
-import { registryOf } from "./registry.ts";
 
 export const SATAN_EXTENSION = "satan";
 
@@ -183,25 +182,4 @@ export function satanTools(
   const refresh = coalesce(read);
 
   return { refresh, close: connection.close };
-}
-
-/** A handle's extension in a private registry: what `connectSatanTools` gives its caller. */
-export interface SatanExtension {
-  extension: Extension;
-  close: () => Promise<void>;
-}
-
-/**
- * A private registry holding SATAN's extension, refreshed once. Kept until the
- * daemon builds the registry once and installs the handle into it.
- */
-export async function connectSatanTools(socketPath: string, log: Log): Promise<SatanExtension> {
-  const registry = registryOf([]);
-  const satan = satanTools(socketPath, registry, log);
-  await satan.refresh();
-  const extension = registry.snapshot().extension(SATAN_EXTENSION);
-  if (extension === undefined) {
-    throw new Error(`the ${SATAN_EXTENSION} extension was not installed`);
-  }
-  return { extension, close: satan.close };
 }

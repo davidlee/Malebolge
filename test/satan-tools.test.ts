@@ -13,7 +13,6 @@ import {
   SATAN_EXTENSION,
   type SatanTools,
   type SatanToolsOptions,
-  connectSatanTools,
   satanTools,
 } from "../src/satan-tools.ts";
 import {
@@ -467,14 +466,5 @@ describe("satanTools", () => {
       "1 SATAN tools",
     ]);
     expect(textOf(await callTool("notes_archive", {}))).toBe("archived");
-  });
-
-  it("gives connectSatanTools an empty extension while satan-mcp is absent", async () => {
-    const connected = await connectSatanTools(join(dir, "absent.sock"), logs.push);
-    try {
-      expect(connected.extension.tools).toEqual([]);
-    } finally {
-      await connected.close();
-    }
   });
 });
