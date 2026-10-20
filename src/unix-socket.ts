@@ -3,6 +3,7 @@
 
 import { rm } from "node:fs/promises";
 import { connect, createServer, type Server, type Socket } from "node:net";
+import { setTimeout as sleep } from "node:timers/promises";
 
 /** Connect to `path`; rejects if nothing accepts there. */
 export async function connectUnix(path: string): Promise<Socket> {
@@ -31,6 +32,37 @@ export class SocketInUse extends Error {
 
 const codeOf = (error: unknown): unknown =>
   error instanceof Error && "code" in error ? error.code : undefined;
+
+/** How long to wait for a daemon that has not started listening yet. */
+export interface ConnectWait {
+  /** Time between connection attempts. */
+  intervalMs: number;
+  /** Upper bound on the wait, measured from the first attempt. */
+  timeoutMs: number;
+}
+
+/**
+ * Connect to `path`, waiting for a daemon that has not started yet: ENOENT and
+ * ECONNREFUSED are retried every `intervalMs` until `timeoutMs` is spent, then
+ * the last error is thrown; any other error throws at once.
+ */
+export async function connectUnixWaiting(path: string, wait: ConnectWait): Promise<Socket> {
+  const started = Date.now();
+  for (;;) {
+    try {
+      return await connectUnix(path);
+    } catch (error) {
+      const code = codeOf(error);
+      if (code !== "ENOENT" && code !== "ECONNREFUSED") {
+        throw error;
+      }
+      if (Date.now() - started >= wait.timeoutMs) {
+        throw error;
+      }
+      await sleep(wait.intervalMs);
+    }
+  }
+}
 
 /** What answers at `path`: a server, nothing (a stale socket), or no file; other errors propagate. */
 async function probeUnix(path: string): Promise<"live" | "stale" | "gone"> {

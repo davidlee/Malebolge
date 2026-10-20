@@ -2,13 +2,7 @@ import { chmod, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it, onTestFinished } from "vitest";
 import { connectUnix, SocketInUse, serveUnix, type UnixServer } from "../src/unix-socket.ts";
-import { childProcess, tempDir } from "./fixtures.ts";
-
-async function socketPath(): Promise<string> {
-  const { dir, cleanup } = await tempDir();
-  onTestFinished(cleanup);
-  return join(dir, "s.sock");
-}
+import { rejection, socketPath, staleSocket } from "./fixtures.ts";
 
 /** Serves `path`, writing "hi" to each connection; closed when the test ends. */
 async function serve(path: string): Promise<UnixServer> {
@@ -25,25 +19,6 @@ async function greeting(path: string): Promise<string> {
     text += String(chunk);
   }
   return text;
-}
-
-/** What `run` rejects with; fails the test if it resolves. */
-async function rejection(run: Promise<unknown>): Promise<unknown> {
-  return run.then(
-    () => {
-      throw new Error("resolved");
-    },
-    (error: unknown) => error,
-  );
-}
-
-/** A socket file left by a listener killed with SIGKILL (nothing unlinked it). */
-async function staleSocket(path: string): Promise<void> {
-  const child = await childProcess(`
-    import { createServer } from "node:net";
-    createServer().listen(${JSON.stringify(path)}, () => console.log("listening"));
-  `);
-  await child.kill();
 }
 
 describe("serveUnix: listening is the claim (design §4.4)", () => {

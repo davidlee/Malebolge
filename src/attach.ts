@@ -6,7 +6,7 @@ import type { Readable, Writable } from "node:stream";
 import { encodeLine, lineSplitter } from "./ndjson.ts";
 import type { ClientMessage } from "./protocol.ts";
 import { createRenderer, toPrintable } from "./render.ts";
-import { connectUnix } from "./unix-socket.ts";
+import { type ConnectWait, connectUnixWaiting } from "./unix-socket.ts";
 
 /** What a typed line asks for; `undefined` for a blank line. */
 export function commandOf(typed: string): ClientMessage | "quit" | undefined {
@@ -29,9 +29,17 @@ export function commandOf(typed: string): ClientMessage | "quit" | undefined {
   return { type: "input", content: typed };
 }
 
-/** Attach until `input` ends, `/quit`, or the daemon closes the connection. */
-export async function attach(socketPath: string, input: Readable, output: Writable): Promise<void> {
-  const socket = await connectUnix(socketPath);
+/**
+ * Attach until `input` ends, `/quit`, or the daemon closes the connection.
+ * Waits for the daemon to start listening (design §4.2), for `wait`'s bound.
+ */
+export async function attach(
+  socketPath: string,
+  input: Readable,
+  output: Writable,
+  wait: ConnectWait = { intervalMs: 200, timeoutMs: 10_000 },
+): Promise<void> {
+  const socket = await connectUnixWaiting(socketPath, wait);
   output.write("[attached]\n");
   // A reset after connecting ends the session like a close does.
   socket.on("error", () => socket.destroy());

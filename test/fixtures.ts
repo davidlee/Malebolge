@@ -7,6 +7,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { createServer, type Server, type Socket } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { onTestFinished } from "vitest";
 import { isRecord, type JsonRecord } from "../src/json.ts";
 import { encodeLine, lineSplitter } from "../src/ndjson.ts";
 import { connectUnix, listenUnix } from "../src/unix-socket.ts";
@@ -46,6 +47,13 @@ export async function tempDir(): Promise<{ dir: string; cleanup: () => Promise<v
   return { dir, cleanup: () => rm(dir, { recursive: true, force: true }) };
 }
 
+/** A socket path in a fresh directory, removed when the test ends. */
+export async function socketPath(): Promise<string> {
+  const { dir, cleanup } = await tempDir();
+  onTestFinished(cleanup);
+  return join(dir, "s.sock");
+}
+
 /** A child node process, killed by `kill` (SIGKILL: no handler runs); idempotent. */
 export interface Child {
   kill: () => Promise<void>;
@@ -72,6 +80,25 @@ export async function childProcess(source: string): Promise<Child> {
       await exited;
     },
   };
+}
+
+/** What `run` rejects with; fails the test if it resolves. */
+export async function rejection(run: Promise<unknown>): Promise<unknown> {
+  return run.then(
+    () => {
+      throw new Error("resolved");
+    },
+    (error: unknown) => error,
+  );
+}
+
+/** A socket file left by a listener killed with SIGKILL (nothing unlinked it). */
+export async function staleSocket(path: string): Promise<void> {
+  const child = await childProcess(`
+    import { createServer } from "node:net";
+    createServer().listen(${JSON.stringify(path)}, () => console.log("listening"));
+  `);
+  await child.kill();
 }
 
 /** `file` (relative to test/) as an import specifier a child process can use. */

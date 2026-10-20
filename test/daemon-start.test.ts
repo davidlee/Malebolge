@@ -7,7 +7,7 @@ import type { Config } from "../src/config.ts";
 import { type DaemonHandle, startDaemon } from "../src/daemon-start.ts";
 import { acquireInstanceLock, InstanceLocked } from "../src/instance-lock.ts";
 import { serveUnix, SocketInUse } from "../src/unix-socket.ts";
-import { childProcess, type FakeTool, fakeMcpServer, tempDir } from "./fixtures.ts";
+import { type FakeTool, fakeMcpServer, rejection, staleSocket, tempDir } from "./fixtures.ts";
 import { FAUX_MODEL, fauxModels } from "./harness-fixture.ts";
 
 interface World {
@@ -72,25 +72,6 @@ const trackAll = (started: readonly Promise<DaemonHandle>[]): void => {
 const lockFree = (config: Config): void => {
   acquireInstanceLock(config.lockPath).release();
 };
-
-/** What `run` rejects with; fails the test if it resolves. */
-async function rejection(run: Promise<DaemonHandle>): Promise<unknown> {
-  return run.then(
-    () => {
-      throw new Error("resolved");
-    },
-    (error: unknown) => error,
-  );
-}
-
-/** A socket file its listener left behind: SIGKILL runs no cleanup, so the path stays. */
-async function staleSocket(path: string): Promise<void> {
-  const child = await childProcess(`
-    import { createServer } from "node:net";
-    createServer().listen(${JSON.stringify(path)}, () => console.log("listening"));
-  `);
-  await child.kill();
-}
 
 const note: FakeTool = {
   name: "notes_read",
