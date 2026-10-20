@@ -56,6 +56,9 @@ const restartedTools: FakeTool[] = [notesRead, notesArchive];
 /** satan-mcp after a restart with nothing in common. */
 const changedTools: FakeTool[] = [notesArchive];
 
+/** satan-mcp listing one tool twice: pi-durable refuses an extension with two tools of a name. */
+const duplicatedTools: FakeTool[] = [notesRead, notesRead];
+
 describe("satanTools", () => {
   const DEADLINE_MS = 100;
   let cleanup: () => Promise<void>;
@@ -100,8 +103,10 @@ describe("satanTools", () => {
   };
 
   /** A harness over the shared registry, then the handle's first refresh. */
-  const start = async (): Promise<void> => {
-    await (await openHandle({ deadlineMs: DEADLINE_MS })).refresh();
+  const start = async (): Promise<SatanTools> => {
+    const handle = await openHandle({ deadlineMs: DEADLINE_MS });
+    await handle.refresh();
+    return handle;
   };
 
   /** Replace the running server with one serving `tools` under `options`. */
@@ -198,6 +203,24 @@ describe("satanTools", () => {
     expect(logs.items.filter((line) => line.includes("SATAN tools"))).toEqual([]);
   });
 
+  it("logs one line for a wedged list, not a drop per refresh", async () => {
+    const wedged = await restartServer(tools, { silent: ["tools/list"] });
+    const handle = await openHandle({ deadlineMs: DEADLINE_MS });
+    await handle.refresh();
+    await handle.refresh();
+    await handle.refresh();
+    expect(logs.items).toEqual([
+      `satan-mcp unreachable: timed out after ${String(DEADLINE_MS)} ms`,
+    ]);
+    expect(wedged.connections()).toBe(3);
+  });
+
+  it("does not report the connection it closed itself", async () => {
+    const handle = await start();
+    await handle.close();
+    expect(logs.items).toEqual(["2 SATAN tools"]);
+  });
+
   it("times out a hung tools/list, then lists over a fresh connection", async () => {
     const hung = await restartServer(tools, { silent: ["tools/list"] });
     const handle = await openHandle({ deadlineMs: DEADLINE_MS });
@@ -221,18 +244,6 @@ describe("satanTools", () => {
     await handle.refresh();
     expect(satanExtension()?.tools?.map((tool) => tool.name)).toEqual(["notes_read", "fails"]);
     expect(stalled.connections()).toBe(2);
-  });
-
-  it("installs nothing when a hung tools/list answers after the deadline", async () => {
-    const hung = await restartServer(tools, { silent: ["tools/list"] });
-    const handle = await openHandle({ deadlineMs: DEADLINE_MS });
-    await handle.refresh();
-    await hung.release();
-    // Let the late answer arrive on the connection the timeout discarded.
-    await new Promise((resolve) => setImmediate(resolve));
-    expect(satanExtension()?.tools).toEqual([]);
-    expect(logs.items.filter((line) => line.includes("SATAN tools"))).toEqual([]);
-    expect(hung.connections()).toBe(1);
   });
 
   it("coalesces refreshes made during a read into one more read", async () => {
@@ -295,8 +306,34 @@ describe("satanTools", () => {
     // The attempt connects after the handle is closed, and is closed on arrival.
     await stalled.release();
     await stalled.ended;
+    // The read that waited on the discarded attempt falls forward to a fresh one.
     await refresh;
-    expect(stalled.connections()).toBe(1);
+    expect(toolNames()).toEqual(["notes_read", "fails"]);
+    expect(stalled.connections()).toBe(2);
+  });
+
+  it("starts a fresh attempt for a caller whose attempt was discarded", async () => {
+    // The default deadline: this test must not race the read's own timeout.
+    const handle = await openHandle();
+    await handle.refresh();
+    await stopServer();
+    const stalled = await restartServer(tools, { silent: ["initialize"] });
+    // A call begins the stalled attempt and adopts it.
+    const call = callTool("notes_read", { id: "5" });
+    await stalled.requests.next((method) => method === "initialize");
+    // A read then waits on that same attempt, and the attempt is discarded under it.
+    const read = handle.refresh();
+    await handle.close();
+    await stalled.close();
+    await read;
+    expect(logs.items.join("\n")).not.toMatch(/opening/);
+    const result = await call;
+    expect(result.isError).toBe(true);
+    expect(textOf(result)).not.toMatch(/opening/);
+    // The handle falls forward: a server that is back serves the next turn.
+    await restartServer(tools);
+    await handle.refresh();
+    expect(textOf(await callTool("notes_read", { id: "6" }))).toBe("note 6");
   });
 
   it("refreshes by itself when a call reconnects, over one connection", async () => {
@@ -326,6 +363,22 @@ describe("satanTools", () => {
     const result = await callTool("fails", {});
     expect(result.isError).toBe(true);
     expect(textOf(result)).toMatch(/not available/);
+  });
+
+  it("installs nothing and reports once when satan-mcp lists a tool twice", async () => {
+    await start();
+    await stopServer();
+    await restartServer(duplicatedTools);
+    // This refresh lists the duplicates, and the one its reconnect starts shares the state.
+    await satan?.refresh();
+    expect(toolNames()).toEqual([]);
+    expect(logs.items.filter((line) => line.includes("tools rejected"))).toEqual([
+      "satan-mcp tools rejected: Extension satan has two tools named notes_read",
+    ]);
+    // A different reason for the same empty state is worth its own line.
+    await stopServer();
+    await satan?.refresh();
+    expect(logs.items.filter((line) => line.includes("satan-mcp unreachable"))).toHaveLength(1);
   });
 
   it("installs the changed tool set once satan-mcp restarts with different tools", async () => {

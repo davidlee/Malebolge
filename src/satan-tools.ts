@@ -15,8 +15,8 @@ import {
 import { McpClient, type Tool, toLlmContent } from "@earendil-works/pi-mcp";
 import { coalesce } from "./coalesce.ts";
 import { messageOf } from "./message-of.ts";
+import { reconnectingClient } from "./reconnecting-client.ts";
 import { registryOf } from "./registry.ts";
-import { UnixSocketTransport } from "./unix-socket-transport.ts";
 
 export const SATAN_EXTENSION = "satan";
 
@@ -32,113 +32,6 @@ const objectSchema = (schema: Tool["inputSchema"]): ObjectSchema =>
 
 /** Logs one line of daemon diagnostics. */
 export type Log = (text: string) => void;
-
-/**
- * One live MCP client at a time, opened on first use. A client that has closed
- * (satan-mcp restarted with Emacs) is replaced on the next use; concurrent
- * callers share the attempt. `onReconnect` runs once such a replacement has
- * connected: the tools satan-mcp serves may have changed with it.
- */
-interface ReconnectingClient {
-  get: () => Promise<McpClient>;
-  /** Abandon the current client, or a pending attempt: the next `get()` opens a fresh one. */
-  reset: () => void;
-  /** Abandon like `reset`, waiting only for a client that has already connected to close. */
-  close: () => Promise<void>;
-}
-
-/** An attempt at a client: the connection being opened, and the client once it has one. */
-interface Attempt {
-  /** Resolves with the client once satan-mcp has connected; rejects if it cannot. */
-  readonly opening: Promise<McpClient>;
-  /** The client, once connected: a later `reset` or `close` closes it on arrival. */
-  client?: McpClient;
-}
-
-function reconnectingClient(
-  socketPath: string,
-  log: Log,
-  onReconnect: () => void,
-): ReconnectingClient {
-  const open = async (): Promise<McpClient> => {
-    const client = new McpClient({ name: "malebolge", version: "0.0.0" });
-    // A client that never connected has no connection to lose, only an attempt.
-    let live = false;
-    client.onClose(() => {
-      if (live) {
-        log("satan-mcp connection closed; reconnecting on next SATAN tool call");
-      }
-    });
-    await client.connect(new UnixSocketTransport(socketPath));
-    live = true;
-    return client;
-  };
-  /** A fresh attempt, whose client is recorded when it arrives. */
-  const begin = (): Attempt => {
-    const opening = open();
-    const attempt: Attempt = { opening };
-    opening.then(
-      (client) => {
-        attempt.client = client;
-      },
-      () => undefined,
-    );
-    return attempt;
-  };
-  /**
-   * Closes the attempt's client now if it has one, else as soon as it arrives.
-   * Only the former is awaited: an attempt may never settle.
-   */
-  const closeAttempt = async (attempt: Attempt): Promise<void> => {
-    const client = attempt.client;
-    if (client !== undefined) {
-      await client.close().catch(() => undefined);
-      return;
-    }
-    attempt.opening
-      .then(
-        (client) => client.close(),
-        () => undefined,
-      )
-      .catch(() => undefined);
-  };
-  let current: Attempt | undefined;
-  const get = async (): Promise<McpClient> => {
-    if (current === undefined) {
-      current = begin();
-      return current.opening;
-    }
-    const attempt = current;
-    const client = await attempt.opening.catch(() => undefined);
-    if (client?.connectionState === "connected") {
-      return client;
-    }
-    if (current === attempt) {
-      current = begin();
-      // A failure reaches the caller through `current`; only success is logged here.
-      current.opening.then(
-        () => {
-          log("satan-mcp reconnected");
-          onReconnect();
-        },
-        () => undefined,
-      );
-    }
-    return current.opening;
-  };
-  /** Drops the current attempt: its client is closed now, or on arrival if it has none yet. */
-  const discard = async (): Promise<void> => {
-    const abandoned = current;
-    current = undefined;
-    if (abandoned !== undefined) {
-      await closeAttempt(abandoned);
-    }
-  };
-  const reset = (): void => {
-    void discard();
-  };
-  return { get, reset, close: discard };
-}
 
 const toDurableTool = (
   client: () => Promise<McpClient>,
@@ -159,8 +52,10 @@ const toDurableTool = (
     },
   });
 
-/** satan-mcp's answer: its tool list, or the reason there is none. */
-type Listing = { readonly tools: readonly Tool[] } | { readonly failure: string };
+/** satan-mcp's answer: its tool list, or no tools with the state and message to log. */
+type Listing =
+  | { readonly tools: readonly Tool[] }
+  | { readonly state: "unreachable" | "rejected"; readonly message: string };
 
 /**
  * `work`, or a rejection as soon as `signal` aborts. A late failure of `work`
@@ -188,6 +83,13 @@ function within<T>(work: Promise<T>, signal: AbortSignal): Promise<T> {
     );
   });
 }
+
+/** `tools` wired to `client`, as the `satan` extension. */
+const extensionOf = (client: () => Promise<McpClient>, tools: readonly Tool[]): Extension =>
+  defineExtension({
+    name: SATAN_EXTENSION,
+    tools: tools.map((tool) => toDurableTool(client, tool)),
+  });
 
 export interface SatanTools {
   /**
@@ -227,37 +129,41 @@ export function satanTools(
   const connection = reconnectingClient(socketPath, log, () => {
     void refresh();
   });
-  /** What the last log said: a tool count, `null` for unreachable, `undefined` for nothing yet. */
-  let reported: number | null | undefined;
-
-  const extensionOf = (tools: readonly Tool[]): Extension =>
-    defineExtension({
-      name: SATAN_EXTENSION,
-      tools: tools.map((tool) => toDurableTool(connection.get, tool)),
-    });
+  /** What the last log said: a tool count, why there are none, or nothing yet. */
+  let reported: number | "unreachable" | "rejected" | undefined;
 
   const listing = async (deadline: AbortSignal): Promise<Listing> => {
     try {
       const client = await within(connection.get(), deadline);
       return { tools: await client.listTools({ signal: deadline }) };
     } catch (error) {
-      const timedOut = deadline.aborted;
-      return { failure: timedOut ? `timed out after ${String(deadlineMs)} ms` : messageOf(error) };
+      const why = deadline.aborted ? `timed out after ${String(deadlineMs)} ms` : messageOf(error);
+      return { state: "unreachable", message: `satan-mcp unreachable: ${why}` };
     }
   };
 
-  /** Logs a change of state: the tool count, or once that satan-mcp is unreachable. */
+  /** Logs a change of state: the tool count, or why there are none. */
   const report = (listed: Listing): void => {
-    if ("tools" in listed) {
-      if (reported !== listed.tools.length) {
-        reported = listed.tools.length;
-        log(`${String(listed.tools.length)} SATAN tools`);
-      }
+    const state = "tools" in listed ? listed.tools.length : listed.state;
+    if (state === reported) {
       return;
     }
-    if (reported !== null) {
-      reported = null;
-      log(`satan-mcp unreachable: ${listed.failure}`);
+    reported = state;
+    log("tools" in listed ? `${String(listed.tools.length)} SATAN tools` : listed.message);
+  };
+
+  /**
+   * Installs `listed` as the extension, or the empty one when it cannot be installed
+   * (satan-mcp listing one tool twice, say): a refresh never throws.
+   */
+  const install = (listed: Listing): Listing => {
+    try {
+      registry.install(extensionOf(connection.get, "tools" in listed ? listed.tools : []));
+      return listed;
+    } catch (error) {
+      // The empty extension admits no duplicates, so installing it cannot fail.
+      registry.install(extensionOf(connection.get, []));
+      return { state: "rejected", message: `satan-mcp tools rejected: ${messageOf(error)}` };
     }
   };
 
@@ -271,8 +177,7 @@ export function satanTools(
       connection.reset();
     }
     // The list is satan-mcp's last answer or nothing: a failed read leaves no stale tools.
-    registry.install(extensionOf("tools" in listed ? listed.tools : []));
-    report(listed);
+    report(install(listed));
   };
 
   const refresh = coalesce(read);
