@@ -303,30 +303,39 @@ describe("satanTools", () => {
     const refresh = handle.refresh();
     await stalled.requests.next((method) => method === "initialize");
     await handle.close();
-    // The attempt connects after the handle is closed, and is closed on arrival.
+    // The attempt connects after the handle is closed, and is closed on arrival:
+    // nothing reconnects, and the read that waited on it gives up.
     await stalled.release();
     await stalled.ended;
-    // The read that waited on the discarded attempt falls forward to a fresh one.
     await refresh;
-    expect(toolNames()).toEqual(["notes_read", "fails"]);
-    expect(stalled.connections()).toBe(2);
+    expect(stalled.connections()).toBe(1);
+    expect(toolNames()).toEqual([]);
+  });
+
+  it("refuses a call, and installs nothing on a refresh, once closed", async () => {
+    const handle = await start();
+    await handle.close();
+    const result = await callTool("notes_read", { id: "1" });
+    expect(result.isError).toBe(true);
+    expect(textOf(result)).toMatch(/satan-mcp client is closed/);
+    await handle.refresh();
+    expect(toolNames()).toEqual([]);
+    expect(logs.items.filter((line) => line.includes("satan-mcp client is closed"))).toHaveLength(
+      1,
+    );
   });
 
   it("starts a fresh attempt for a caller whose attempt was discarded", async () => {
-    // The default deadline: this test must not race the read's own timeout.
-    const handle = await openHandle();
+    // Long enough for a call to join the attempt the read begins.
+    const handle = await openHandle({ deadlineMs: 300 });
     await handle.refresh();
     await stopServer();
     const stalled = await restartServer(tools, { silent: ["initialize"] });
-    // A call begins the stalled attempt and adopts it.
-    const call = callTool("notes_read", { id: "5" });
+    const read = handle.refresh(); // begins the stalled attempt, and times out at 300 ms
     await stalled.requests.next((method) => method === "initialize");
-    // A read then waits on that same attempt, and the attempt is discarded under it.
-    const read = handle.refresh();
-    await handle.close();
-    await stalled.close();
-    await read;
-    expect(logs.items.join("\n")).not.toMatch(/opening/);
+    const call = callTool("notes_read", { id: "5" }); // waits on that same attempt
+    await read; // the deadline discards the attempt under both of them
+    await stalled.close(); // and it then fails to connect
     const result = await call;
     expect(result.isError).toBe(true);
     expect(textOf(result)).not.toMatch(/opening/);

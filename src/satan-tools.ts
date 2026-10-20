@@ -99,8 +99,8 @@ export interface SatanTools {
    */
   refresh: () => Promise<void>;
   /**
-   * Drop the MCP connection: closed now if it has connected, and on arrival if it
-   * is still connecting — which is never waited on.
+   * Close for good: the connection goes now if it has connected, or on arrival if it
+   * is still connecting (never waited on). Later calls and refreshes are refused.
    */
   close: () => Promise<void>;
 }
