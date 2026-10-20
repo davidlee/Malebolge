@@ -32,24 +32,29 @@ import {
   toolResults,
 } from "./harness-fixture.ts";
 
+const notesRead: FakeTool = {
+  name: "notes_read",
+  description: "Read a note",
+  inputSchema: { type: "object", properties: { id: { type: "string" } }, required: ["id"] },
+  call: (args: Record<string, unknown>) => ({ text: `note ${String(args["id"])}` }),
+};
+
+const notesArchive: FakeTool = {
+  name: "notes_archive",
+  description: "Archive a note",
+  call: () => ({ text: "archived" }),
+};
+
 const tools: FakeTool[] = [
-  {
-    name: "notes_read",
-    description: "Read a note",
-    inputSchema: { type: "object", properties: { id: { type: "string" } }, required: ["id"] },
-    call: (args: Record<string, unknown>) => ({ text: `note ${String(args["id"])}` }),
-  },
+  notesRead,
   { name: "fails", call: () => ({ text: "boom", isError: true }) },
 ];
 
-/** satan-mcp after a restart: one of the old tools gone, one new tool. */
-const changedTools: FakeTool[] = [
-  {
-    name: "notes_archive",
-    description: "Archive a note",
-    call: () => ({ text: "archived" }),
-  },
-];
+/** satan-mcp after a restart: `notes_read` kept, `fails` gone, `notes_archive` new. */
+const restartedTools: FakeTool[] = [notesRead, notesArchive];
+
+/** satan-mcp after a restart with nothing in common. */
+const changedTools: FakeTool[] = [notesArchive];
 
 describe("satanTools", () => {
   const DEADLINE_MS = 100;
@@ -82,6 +87,9 @@ describe("satanTools", () => {
   /** The `satan` extension as installed in the shared registry, if any. */
   const satanExtension = (): Extension | undefined =>
     registry.snapshot().extension(SATAN_EXTENSION);
+
+  /** The tool names installed as the `satan` extension, in order. */
+  const toolNames = (): string[] => (satanExtension()?.tools ?? []).map((tool) => tool.name);
 
   /** A harness over the shared registry and a handle on the socket; no refresh yet. */
   const openHandle = async (options?: SatanToolsOptions): Promise<SatanTools> => {
@@ -251,15 +259,14 @@ describe("satanTools", () => {
   it("gives a caller the list satan-mcp has when its own read runs", async () => {
     const held = await restartServer(tools, { silent: ["tools/list"] });
     const handle = await openHandle();
-    const names = (): string[] => (satanExtension()?.tools ?? []).map((tool) => tool.name);
     const installs: string[][] = [];
     registry.subscribe(() => {
-      installs.push(names());
+      installs.push(toolNames());
     });
     const first = handle.refresh();
     let seenBySecond: string[] = [];
     const second = handle.refresh().then(() => {
-      seenBySecond = names();
+      seenBySecond = toolNames();
     });
     // Read 1 is at the server, which will answer it with the tools it has now.
     await held.requests.next((method) => method === "tools/list");
@@ -290,6 +297,35 @@ describe("satanTools", () => {
     await stalled.ended;
     await refresh;
     expect(stalled.connections()).toBe(1);
+  });
+
+  it("refreshes by itself when a call reconnects, over one connection", async () => {
+    await start();
+    await stopServer();
+    const restarted = await restartServer(restartedTools);
+    const lists = recorder<string[]>();
+    registry.subscribe(() => {
+      lists.push(toolNames());
+    });
+    // A tool both sets have: calling it is what finds satan-mcp back.
+    expect(textOf(await callTool("notes_read", { id: "9" }))).toBe("note 9");
+    expect(await lists.next((names) => names.includes("notes_archive"))).toEqual([
+      "notes_read",
+      "notes_archive",
+    ]);
+    expect(restarted.connections()).toBe(1);
+    expect(textOf(await callTool("notes_archive", {}))).toBe("archived");
+  });
+
+  it("fails a call to a tool the refreshed list no longer has", async () => {
+    await start();
+    await stopServer();
+    await restartServer([notesRead]);
+    await satan?.refresh();
+    expect(toolNames()).toEqual(["notes_read"]);
+    const result = await callTool("fails", {});
+    expect(result.isError).toBe(true);
+    expect(textOf(result)).toMatch(/not available/);
   });
 
   it("installs the changed tool set once satan-mcp restarts with different tools", async () => {

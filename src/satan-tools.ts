@@ -36,7 +36,8 @@ export type Log = (text: string) => void;
 /**
  * One live MCP client at a time, opened on first use. A client that has closed
  * (satan-mcp restarted with Emacs) is replaced on the next use; concurrent
- * callers share the attempt.
+ * callers share the attempt. `onReconnect` runs once such a replacement has
+ * connected: the tools satan-mcp serves may have changed with it.
  */
 interface ReconnectingClient {
   get: () => Promise<McpClient>;
@@ -54,7 +55,11 @@ interface Attempt {
   client?: McpClient;
 }
 
-function reconnectingClient(socketPath: string, log: Log): ReconnectingClient {
+function reconnectingClient(
+  socketPath: string,
+  log: Log,
+  onReconnect: () => void,
+): ReconnectingClient {
   const open = async (): Promise<McpClient> => {
     const client = new McpClient({ name: "malebolge", version: "0.0.0" });
     // A client that never connected has no connection to lose, only an attempt.
@@ -114,6 +119,7 @@ function reconnectingClient(socketPath: string, log: Log): ReconnectingClient {
       current.opening.then(
         () => {
           log("satan-mcp reconnected");
+          onReconnect();
         },
         () => undefined,
       );
@@ -217,7 +223,10 @@ export function satanTools(
   options: SatanToolsOptions = {},
 ): SatanTools {
   const deadlineMs = options.deadlineMs ?? DEFAULT_DEADLINE_MS;
-  const connection = reconnectingClient(socketPath, log);
+  // A connection is first wanted by a read, so `refresh` exists before any reconnect can.
+  const connection = reconnectingClient(socketPath, log, () => {
+    void refresh();
+  });
   /** What the last log said: a tool count, `null` for unreachable, `undefined` for nothing yet. */
   let reported: number | null | undefined;
 
@@ -266,7 +275,9 @@ export function satanTools(
     report(listed);
   };
 
-  return { refresh: coalesce(read), close: connection.close };
+  const refresh = coalesce(read);
+
+  return { refresh, close: connection.close };
 }
 
 /** A handle's extension in a private registry: what `connectSatanTools` gives its caller. */
