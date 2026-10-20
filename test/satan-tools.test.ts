@@ -325,7 +325,7 @@ describe("satanTools", () => {
     );
   });
 
-  it("starts a fresh attempt for a caller whose attempt was discarded", async () => {
+  it("fails a call normally when the attempt it waited on was discarded", async () => {
     // Long enough for a call to join the attempt the read begins.
     const handle = await openHandle({ deadlineMs: 300 });
     await handle.refresh();
@@ -343,6 +343,40 @@ describe("satanTools", () => {
     await restartServer(tools);
     await handle.refresh();
     expect(textOf(await callTool("notes_read", { id: "6" }))).toBe("note 6");
+  });
+
+  it("tries one connection per refresh while satan-mcp hangs up", async () => {
+    const failing = await restartServer(tools, { hangUp: true });
+    const handle = await openHandle({ deadlineMs: DEADLINE_MS });
+    await handle.refresh();
+    expect(failing.connections()).toBe(1);
+    await handle.refresh();
+    expect(failing.connections()).toBe(2);
+    expect(toolNames()).toEqual([]);
+  });
+
+  it("does not announce the first connection after an absence", async () => {
+    await restartServer(tools, { hangUp: true });
+    const handle = await openHandle({ deadlineMs: DEADLINE_MS });
+    await handle.refresh();
+    const back = await restartServer(tools);
+    await handle.refresh();
+    expect(toolNames()).toEqual(["notes_read", "fails"]);
+    expect(logs.items.filter((line) => line.includes("reconnected"))).toEqual([]);
+    expect(received(back, "tools/list")).toBe(1);
+  });
+
+  it("does not announce a replacement that close() cuts short", async () => {
+    const handle = await start();
+    await stopServer();
+    const back = await restartServer(tools, { silent: ["initialize"] });
+    const read = handle.refresh(); // notices the closed client, and begins the replacement
+    await back.requests.next((method) => method === "initialize");
+    await handle.close();
+    await back.release(); // the replacement connects after all, and is closed on arrival
+    await back.ended;
+    await read;
+    expect(logs.items.filter((line) => line.includes("reconnected"))).toEqual([]);
   });
 
   it("refreshes by itself when a call reconnects, over one connection", async () => {

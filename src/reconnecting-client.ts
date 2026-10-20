@@ -62,6 +62,18 @@ async function connect(socketPath: string, drops: Drops): Promise<McpClient> {
   return client;
 }
 
+/** What an attempt came to: the client it connected, or what stopped it. */
+type Outcome = { readonly client: McpClient } | { readonly error: Error };
+
+/** The outcome of `opening`, with a rejection that is not an `Error` normalised. */
+async function outcomeOf(opening: Promise<McpClient>): Promise<Outcome> {
+  try {
+    return { client: await opening };
+  } catch (error) {
+    return { error: error instanceof Error ? error : new Error(String(error)) };
+  }
+}
+
 /** An attempt of `open`, whose client is recorded when it arrives. */
 function begin(open: () => Promise<McpClient>): Attempt {
   const opening = open();
@@ -97,10 +109,7 @@ export function reconnectingClient(
     const client = attempt.client;
     if (client === undefined) {
       // Never waited for: an attempt may not settle, so a late client is closed on arrival.
-      void attempt.opening.then(
-        (late) => closeNow(late),
-        () => undefined,
-      );
+      void attempt.opening.then(closeNow, () => undefined);
       return;
     }
     await closeNow(client);
@@ -110,31 +119,59 @@ export function reconnectingClient(
   let shut = false;
   /** Whether `close` has run; read through a call so it is not narrowed across awaits. */
   const closed = (): boolean => shut;
-  /** Reports a replacement connection, which the tools may have changed with. */
-  const reconnected = (): void => {
+  /** Throws once `close` has run: nothing is begun, and a waiter gives up. */
+  const assertOpen = (): void => {
+    if (closed()) {
+      throw new Error(CLOSED);
+    }
+  };
+  /**
+   * Records `attempt` as the current one, forgetting it again if it never connects: a
+   * failed attempt must not become what later callers wait on.
+   */
+  const record = (attempt: Attempt): Attempt => {
+    current = attempt;
+    void attempt.opening.catch(() => {
+      if (current === attempt) {
+        current = undefined;
+      }
+    });
+    return attempt;
+  };
+  /**
+   * Reports a replacement connection, which the tools may have changed with — unless
+   * the handle closed meanwhile, or the connection was itself closed on arrival.
+   */
+  const reconnected = (client: McpClient): void => {
+    if (closed() || client.connectionState !== "connected") {
+      return;
+    }
     log("satan-mcp reconnected");
     onReconnect();
   };
   const get = async (): Promise<McpClient> => {
-    if (closed()) {
-      throw new Error(CLOSED);
+    assertOpen();
+    const attempt = (current ??= record(begin(open)));
+    const outcome = await outcomeOf(attempt.opening);
+    // close() may have run while we waited: that attempt is discarded, and nothing reconnects.
+    assertOpen();
+    if ("error" in outcome) {
+      // It never connected, so no client is being replaced and no second attempt is made:
+      // the next caller opens the one connection it needs.
+      throw outcome.error;
     }
-    const attempt = (current ??= begin(open));
-    const client = await attempt.opening.catch(() => undefined);
-    // close() may have run while we waited: its attempt is discarded, and nothing reconnects.
-    if (closed()) {
-      throw new Error(CLOSED);
+    if (outcome.client.connectionState === "connected") {
+      return outcome.client;
     }
-    if (client?.connectionState === "connected") {
-      return client;
-    }
+    // A client that connected and then closed is being replaced: the tools may have
+    // changed with it, so the replacement is announced.
     if (current === attempt) {
-      current = begin(open);
+      const replacement = record(begin(open));
       // A failure reaches the caller through `current`; only success is reported here.
-      void current.opening.then(reconnected, () => undefined);
+      void replacement.opening.then(reconnected, () => undefined);
     }
     // An attempt discarded while we waited (reset) falls forward to a fresh one.
-    current ??= begin(open);
+    current ??= record(begin(open));
     return current.opening;
   };
   /** Drops the current attempt: its client is closed now, or on arrival if it has none yet. */

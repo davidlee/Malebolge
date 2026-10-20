@@ -153,15 +153,15 @@ export function satanTools(
   };
 
   /**
-   * Installs `listed` as the extension, or the empty one when it cannot be installed
-   * (satan-mcp listing one tool twice, say): a refresh never throws.
+   * Installs `listed` as the extension, or the empty one when pi-durable refuses the
+   * list (satan-mcp listing one tool twice, say): that failure cannot escape a refresh.
    */
   const install = (listed: Listing): Listing => {
     try {
       registry.install(extensionOf(connection.get, "tools" in listed ? listed.tools : []));
       return listed;
     } catch (error) {
-      // The empty extension admits no duplicates, so installing it cannot fail.
+      // The empty extension has nothing pi-durable can refuse.
       registry.install(extensionOf(connection.get, []));
       return { state: "rejected", message: `satan-mcp tools rejected: ${messageOf(error)}` };
     }

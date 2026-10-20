@@ -36,6 +36,8 @@ export interface Fixture {
 export interface FakeServerOptions {
   /** Methods whose answer is withheld until `release` (a stalled connect, a hung list). */
   silent?: readonly string[];
+  /** Hang up on every accepted connection at once: a connect that always fails. */
+  hangUp?: boolean;
 }
 
 /** A fresh directory for sockets; removed by the returned `cleanup`. */
@@ -254,6 +256,11 @@ export async function fakeMcpServer(
   });
   const server = createServer((socket) => {
     connections += 1;
+    if (options.hangUp === true) {
+      // Accepted and dropped at once: the client's connect fails, as with a dead satan-mcp.
+      socket.destroy();
+      return;
+    }
     sockets.add(socket);
     socket.on("close", () => {
       sockets.delete(socket);
