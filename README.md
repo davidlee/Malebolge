@@ -165,8 +165,8 @@ it is never in the environment or on a command line.
 
 The jailed launcher (`jailed-malebolge`, from satan's flake) runs the room
 profile: no network, the room reached through its door socket and the gateway
-through its client socket, and writes only under `durable/room/`. The host
-profile has no jailed launcher.
+through its client socket. It can write only under `durable/room/`, its own
+persisted jail home and `/tmp`. The host profile has no jailed launcher.
 
 ## Patch jobs
 
