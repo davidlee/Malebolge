@@ -1,0 +1,46 @@
+memory_uid = "mem_01a157ee003f7482b19ed2bb2d9861ef"
+memory_key = "mem.fact.malebolge.eslint-ignores-doctrine-state"
+schema_version = 1
+memory_type = "fact"
+status = "active"
+title = "malebolge eslint must ignore .doctrine: doctrine install writes TS there"
+summary = "doctrine install writes pi extension .ts under .doctrine/state/; typed eslint fails on them unless .doctrine is in eslint ignores"
+created = "2026-10-20"
+updated = "2026-10-20"
+
+[scope]
+paths = []
+globs = []
+commands = ["just check"]
+tags = ["malebolge", "eslint", "doctrine"]
+workspace = "default"
+repo = "github.com/davidlee/Malebolge"
+repo_id_kind = "remote"
+repo_id_confidence = "high"
+
+[git]
+anchor_kind = "checkout_state"
+commit = ""
+tree = "2e87408a4b6c7bf9c658d1d3b5238b047b8cac17"
+ref_name = "refs/heads/main"
+checkout_state_id = "a0842c9e2b7b98b084164bf4e8fbd82f18e25b252d243c23465628d2969f738c"
+base_commit = "3a39d16d938a65f7f53d16e62a3d6eb608e5709b"
+verified_sha = ""
+normalizer = "forget.checkout.v1"
+
+[review]
+verification_state = "unverified"
+reviewed = ""
+review_by = ""
+
+[trust]
+trust_level = "medium"
+
+[ranking]
+severity = "none"
+weight = 0
+
+[[source]]
+kind = "commit"
+ref = "7b9294a"
+
