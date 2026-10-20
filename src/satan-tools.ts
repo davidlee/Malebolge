@@ -9,9 +9,12 @@ import {
   defineExtension,
   defineTool,
   type Extension,
+  type Registry,
   type ToolRegistration,
 } from "@earendil-works/pi-durable";
 import { McpClient, type Tool, toLlmContent } from "@earendil-works/pi-mcp";
+import { messageOf } from "./message-of.ts";
+import { registryOf } from "./registry.ts";
 import { UnixSocketTransport } from "./unix-socket-transport.ts";
 
 export const SATAN_EXTENSION = "satan";
@@ -30,11 +33,11 @@ const objectSchema = (schema: Tool["inputSchema"]): ObjectSchema =>
 export type Log = (text: string) => void;
 
 /**
- * One live MCP client at a time. A client that has closed (satan-mcp restarted
- * with Emacs) is replaced on the next use; concurrent callers share the attempt.
+ * One live MCP client at a time, opened on first use. A client that has closed
+ * (satan-mcp restarted with Emacs) is replaced on the next use; concurrent
+ * callers share the attempt.
  */
 interface ReconnectingClient {
-  first: Promise<McpClient>;
   get: () => Promise<McpClient>;
   close: () => Promise<void>;
 }
@@ -42,14 +45,23 @@ interface ReconnectingClient {
 function reconnectingClient(socketPath: string, log: Log): ReconnectingClient {
   const open = async (): Promise<McpClient> => {
     const client = new McpClient({ name: "malebolge", version: "0.0.0" });
+    // A client that never connected has no connection to lose, only an attempt.
+    let live = false;
     client.onClose(() => {
-      log("satan-mcp connection closed; reconnecting on next SATAN tool call");
+      if (live) {
+        log("satan-mcp connection closed; reconnecting on next SATAN tool call");
+      }
     });
     await client.connect(new UnixSocketTransport(socketPath));
+    live = true;
     return client;
   };
-  let current = open();
+  let current: Promise<McpClient> | undefined;
   const get = async (): Promise<McpClient> => {
+    if (current === undefined) {
+      current = open();
+      return current;
+    }
     const pending = current;
     const client = await pending.catch(() => undefined);
     if (client?.connectionState === "connected") {
@@ -68,10 +80,10 @@ function reconnectingClient(socketPath: string, log: Log): ReconnectingClient {
     return current;
   };
   const close = async (): Promise<void> => {
-    const client = await current.catch(() => undefined);
+    const client = await current?.catch(() => undefined);
     await client?.close();
   };
-  return { first: current, get, close };
+  return { get, close };
 }
 
 const toDurableTool = (
@@ -93,23 +105,82 @@ const toDurableTool = (
     },
   });
 
+/** satan-mcp's answer: its tool list, or the reason there is none. */
+type Listing = { readonly tools: readonly Tool[] } | { readonly failure: string };
+
 export interface SatanTools {
+  /** Re-list satan-mcp's tools and install them as the `satan` extension. */
+  refresh: () => Promise<void>;
+  /** Drop the MCP connection; the next refresh or call opens a new one. */
+  close: () => Promise<void>;
+}
+
+/**
+ * A handle on satan-mcp's tools, installed into `registry` as the `satan`
+ * extension. Construction never connects, so a missing satan-mcp costs a
+ * `refresh` and leaves the extension empty rather than failing the daemon.
+ */
+export function satanTools(socketPath: string, registry: Registry, log: Log): SatanTools {
+  const connection = reconnectingClient(socketPath, log);
+  /** What the last log said: a tool count, `null` for unreachable, `undefined` for nothing yet. */
+  let reported: number | null | undefined;
+
+  const extensionOf = (tools: readonly Tool[]): Extension =>
+    defineExtension({
+      name: SATAN_EXTENSION,
+      tools: tools.map((tool) => toDurableTool(connection.get, tool)),
+    });
+
+  const listing = async (): Promise<Listing> => {
+    try {
+      return { tools: await (await connection.get()).listTools() };
+    } catch (error) {
+      return { failure: messageOf(error) };
+    }
+  };
+
+  /** Logs a change of state: the tool count, or once that satan-mcp is unreachable. */
+  const report = (listed: Listing): void => {
+    if ("tools" in listed) {
+      if (reported !== listed.tools.length) {
+        reported = listed.tools.length;
+        log(`${String(listed.tools.length)} SATAN tools`);
+      }
+      return;
+    }
+    if (reported !== null) {
+      reported = null;
+      log(`satan-mcp unreachable: ${listed.failure}`);
+    }
+  };
+
+  const refresh = async (): Promise<void> => {
+    const listed = await listing();
+    // The list is satan-mcp's last answer or nothing: a failed read leaves no stale tools.
+    registry.install(extensionOf("tools" in listed ? listed.tools : []));
+    report(listed);
+  };
+
+  return { refresh, close: connection.close };
+}
+
+/** A handle's extension in a private registry: what `connectSatanTools` gives its caller. */
+export interface SatanExtension {
   extension: Extension;
   close: () => Promise<void>;
 }
 
 /**
- * Connect to satan-mcp at `socketPath` and wrap the tools it lists. The tool
- * list is fixed here; a call made while satan-mcp is down fails, and is never
- * retried, since SATAN tools have side effects.
+ * A private registry holding SATAN's extension, refreshed once. Kept until the
+ * daemon builds the registry once and installs the handle into it.
  */
-export async function connectSatanTools(socketPath: string, log: Log): Promise<SatanTools> {
-  const connection = reconnectingClient(socketPath, log);
-  const tools = (await (await connection.first).listTools()).map((tool) =>
-    toDurableTool(connection.get, tool),
-  );
-  return {
-    extension: defineExtension({ name: SATAN_EXTENSION, tools }),
-    close: connection.close,
-  };
+export async function connectSatanTools(socketPath: string, log: Log): Promise<SatanExtension> {
+  const registry = registryOf([]);
+  const satan = satanTools(socketPath, registry, log);
+  await satan.refresh();
+  const extension = registry.snapshot().extension(SATAN_EXTENSION);
+  if (extension === undefined) {
+    throw new Error(`the ${SATAN_EXTENSION} extension was not installed`);
+  }
+  return { extension, close: satan.close };
 }

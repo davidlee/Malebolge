@@ -18,6 +18,7 @@ import {
   type HarnessOptions,
   type HarnessSettings,
   MemoryStorage,
+  type Registry,
   type Storage,
   ToolResultEntry,
 } from "@earendil-works/pi-durable";
@@ -65,6 +66,8 @@ export async function openTestHarness(
 
 export interface FauxHarnessOptions {
   extensions?: readonly Extension[];
+  /** The registry the harness reads, in place of one built from `extensions`. */
+  registry?: Registry;
   fauxOptions?: FauxOptions;
   /** What the harness sees in place of the faux catalog, e.g. a gated view of it. */
   models?: (models: Models) => Models;
@@ -77,7 +80,7 @@ export interface FauxHarnessOptions {
 function harnessOptionsOf(options: FauxHarnessOptions, models: Models): HarnessOptions {
   return {
     models: options.models?.(models) ?? models,
-    registry: registryOf(options.extensions ?? []),
+    registry: options.registry ?? registryOf(options.extensions ?? []),
     ...(options.settings === undefined ? {} : { settings: options.settings }),
     ...(options.env === undefined ? {} : { env: options.env }),
   };

@@ -1,13 +1,24 @@
 import { join } from "node:path";
 import type { ToolResultMessage } from "@earendil-works/pi-ai";
-import type { JsonObject } from "@earendil-works/pi-durable";
+import {
+  type Extension,
+  type JsonObject,
+  MemoryStorage,
+  type Registry,
+} from "@earendil-works/pi-durable";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { context } from "../src/context.ts";
-import { connectSatanTools, type SatanTools } from "../src/satan-tools.ts";
+import { registryOf } from "../src/registry.ts";
+import {
+  SATAN_EXTENSION,
+  type SatanTools,
+  connectSatanTools,
+  satanTools,
+} from "../src/satan-tools.ts";
 import { type FakeTool, type Fixture, fakeMcpServer, recorder, tempDir } from "./fixtures.ts";
 import {
   callThenAnswer,
-  openTestHarness,
+  openFauxHarness,
   type TestHarness,
   textOf,
   toolResults,
@@ -23,20 +34,33 @@ const tools: FakeTool[] = [
   { name: "fails", call: () => ({ text: "boom", isError: true }) },
 ];
 
-describe("connectSatanTools", () => {
+/** satan-mcp after a restart: one of the old tools gone, one new tool. */
+const changedTools: FakeTool[] = [
+  {
+    name: "notes_archive",
+    description: "Archive a note",
+    call: () => ({ text: "archived" }),
+  },
+];
+
+describe("satanTools", () => {
   let cleanup: () => Promise<void>;
+  let dir: string;
   let socketPath: string;
   let server: Fixture | undefined;
   let satan: SatanTools | undefined;
   let test: TestHarness | undefined;
   let logs: ReturnType<typeof recorder<string>>;
+  let registry: Registry;
 
   beforeEach(async () => {
     const tmp = await tempDir();
     cleanup = tmp.cleanup;
-    socketPath = join(tmp.dir, "mcp.sock");
+    dir = tmp.dir;
+    socketPath = join(dir, "mcp.sock");
     server = await fakeMcpServer(socketPath, tools);
     logs = recorder<string>();
+    registry = registryOf([]);
   });
 
   afterEach(async () => {
@@ -46,15 +70,21 @@ describe("connectSatanTools", () => {
     await cleanup();
   });
 
-  const connect = async (): Promise<void> => {
-    satan = await connectSatanTools(socketPath, logs.push);
-    test = await openTestHarness([satan.extension]);
+  /** The `satan` extension as installed in the shared registry, if any. */
+  const satanExtension = (): Extension | undefined =>
+    registry.snapshot().extension(SATAN_EXTENSION);
+
+  /** A harness over the shared registry, then the handle's first refresh. */
+  const start = async (): Promise<void> => {
+    test = await openFauxHarness(new MemoryStorage(), { registry });
+    satan = satanTools(socketPath, registry, logs.push);
+    await satan.refresh();
   };
 
   /** Drive one model turn that calls `call`; returns that call's result. */
   const callTool = async (call: string, args: JsonObject): Promise<ToolResultMessage> => {
     if (test === undefined) {
-      throw new Error("connect first");
+      throw new Error("start first");
     }
     test.faux.setResponses(callThenAnswer(call, args, "done"));
     const settled = await (await test.root.submit({ type: "input", content: "go" }, context)).wait(
@@ -75,36 +105,43 @@ describe("connectSatanTools", () => {
     await logs.next((line) => line.includes("closed"));
   };
 
-  it("offers every MCP tool, with the server's description", async () => {
-    satan = await connectSatanTools(socketPath, logs.push);
-    expect(satan.extension.tools?.map((t) => [t.name, t.description])).toEqual([
+  it("installs every MCP tool, with the server's description", async () => {
+    await start();
+    expect(satanExtension()?.tools?.map((tool) => [tool.name, tool.description])).toEqual([
       ["notes_read", "Read a note"],
       ["fails", "SATAN tool: fails"],
     ]);
   });
 
+  it("makes a tool installed after the harness opened callable on the next turn", async () => {
+    test = await openFauxHarness(new MemoryStorage(), { registry });
+    satan = satanTools(socketPath, registry, logs.push);
+    await satan.refresh();
+    expect(textOf(await callTool("notes_read", { id: "42" }))).toBe("note 42");
+  });
+
   it("forwards a model's call to the MCP server and returns its content", async () => {
-    await connect();
+    await start();
     const result = await callTool("notes_read", { id: "42" });
     expect(textOf(result)).toBe("note 42");
     expect(result.isError).toBe(false);
   });
 
   it("surfaces an MCP tool error as an error result", async () => {
-    await connect();
+    await start();
     const result = await callTool("fails", {});
     expect(result.isError).toBe(true);
     expect(textOf(result)).toBe("boom");
   });
 
   it("rejects arguments that violate the tool's input schema before calling it", async () => {
-    await connect();
+    await start();
     const result = await callTool("notes_read", {});
     expect(result.isError).toBe(true);
   });
 
   it("reconnects on the next call after the MCP server restarts", async () => {
-    await connect();
+    await start();
     await stopServer();
     server = await fakeMcpServer(socketPath, tools);
     const result = await callTool("notes_read", { id: "7" });
@@ -113,10 +150,42 @@ describe("connectSatanTools", () => {
   });
 
   it("fails a call while the MCP server is down, then recovers once it is back", async () => {
-    await connect();
+    await start();
     await stopServer();
     expect((await callTool("notes_read", { id: "1" })).isError).toBe(true);
     server = await fakeMcpServer(socketPath, tools);
     expect(textOf(await callTool("notes_read", { id: "2" }))).toBe("note 2");
+  });
+
+  it("installs no tools and reports unreachable once while satan-mcp is absent", async () => {
+    test = await openFauxHarness(new MemoryStorage(), { registry });
+    satan = satanTools(join(dir, "absent.sock"), registry, logs.push);
+    await satan.refresh();
+    await satan.refresh();
+    expect(satanExtension()?.tools).toEqual([]);
+    expect(logs.items.filter((line) => line.includes("satan-mcp unreachable"))).toHaveLength(1);
+    expect(logs.items.filter((line) => line.includes("SATAN tools"))).toEqual([]);
+  });
+
+  it("installs the changed tool set once satan-mcp restarts with different tools", async () => {
+    await start();
+    await stopServer();
+    server = await fakeMcpServer(socketPath, changedTools);
+    await satan?.refresh();
+    expect(satanExtension()?.tools?.map((tool) => tool.name)).toEqual(["notes_archive"]);
+    expect(logs.items.filter((line) => line.includes("SATAN tools"))).toEqual([
+      "2 SATAN tools",
+      "1 SATAN tools",
+    ]);
+    expect(textOf(await callTool("notes_archive", {}))).toBe("archived");
+  });
+
+  it("gives connectSatanTools an empty extension while satan-mcp is absent", async () => {
+    const connected = await connectSatanTools(join(dir, "absent.sock"), logs.push);
+    try {
+      expect(connected.extension.tools).toEqual([]);
+    } finally {
+      await connected.close();
+    }
   });
 });
