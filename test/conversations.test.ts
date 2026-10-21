@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { defineTask, MemoryStorage } from "@earendil-works/pi-durable";
 import { NodeExecutionEnv } from "@earendil-works/pi-durable/env/node";
 import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite/node";
+import { CodingTools } from "@earendil-works/pi-durable/tools";
 import { afterEach, describe, expect, it } from "vitest";
 import { context } from "../src/context.ts";
 import {
@@ -16,7 +17,16 @@ import {
 import { registryOf } from "../src/registry.ts";
 import { openSession, type Session } from "../src/session.ts";
 import { tempDir } from "./fixtures.ts";
-import { FAUX_MODEL, fauxModels, openFauxHarness, type TestHarness } from "./harness-fixture.ts";
+import {
+  callThenAnswer,
+  FAUX_MODEL,
+  fauxModels,
+  type FauxHarnessOptions,
+  openFauxHarness,
+  textOf,
+  toolResults,
+  type TestHarness,
+} from "./harness-fixture.ts";
 
 const DEFAULTS: ConversationDefaults = { model: FAUX_MODEL, cwd: "/daemon-default" };
 
@@ -43,8 +53,8 @@ describe("conversations", () => {
   });
 
   /** A passive harness on memory storage: it only reads and creates, so nothing is scheduled. */
-  const passive = async (): Promise<TestHarness> => {
-    test = await openFauxHarness(new MemoryStorage(), { resume: false });
+  const passive = async (options: FauxHarnessOptions = {}): Promise<TestHarness> => {
+    test = await openFauxHarness(new MemoryStorage(), { resume: false, ...options });
     return test;
   };
 
@@ -103,6 +113,34 @@ describe("conversations", () => {
     const api = conversations(session, DEFAULTS);
     expect((await (await api.open({ kind: "new", cwd: "/own" })).agent(context)).cwd).toBe("/own");
     expect((await (await api.open({ kind: "new", cwd: "" })).agent(context)).cwd).toBe("");
+  });
+
+  it("runs a created conversation's tools in its own cwd, not the daemon's default", async () => {
+    const tmp = await tempDir();
+    try {
+      const asked: (string | undefined)[] = [];
+      const session = await passive({
+        extensions: [CodingTools],
+        env: (state) => {
+          asked.push(state.cwd);
+          return nodeEnv(state);
+        },
+      });
+      session.faux.setResponses(callThenAnswer("bash", { command: "pwd" }, "done"));
+      const created = await conversations(session, DEFAULTS).open({
+        kind: "new",
+        cwd: tmp.dir,
+      });
+      await (await created.submit({ type: "input", content: "go" }, context)).wait(context);
+      const [result] = await toolResults(session.harness, created);
+      const text = result === undefined ? "" : textOf(result);
+      expect(asked).toContain(tmp.dir);
+      expect(asked).not.toContain(DEFAULTS.cwd);
+      expect(text).toContain(tmp.dir);
+      expect(text).not.toContain(DEFAULTS.cwd);
+    } finally {
+      await tmp.cleanup();
+    }
   });
 
   it("leaves a created conversation's agent unchanged when the session reopens", async () => {

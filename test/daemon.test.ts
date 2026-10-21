@@ -439,6 +439,18 @@ describe("daemon", () => {
     expect(existsSync(socketPath)).toBe(false);
   });
 
+  it("a connection that never sends is never bound and receives nothing (DEC-108)", async () => {
+    await start();
+    const passive = await lineClient(socketPath, toPrintable);
+    clients.push(passive);
+    // The control attaches and gets its snapshot: the session is ready, so silence means something.
+    const control = await attach();
+    expect(passive.received()).toEqual([]);
+    await settle(control);
+    expect(watched.streams).toHaveLength(1);
+    expect(await conversationIds()).toEqual([test.root.id]);
+  });
+
   it("binds a connection silently and in order once ready (V-13)", async () => {
     const pending = Promise.withResolvers<TestHarness>();
     test = await openTestHarness([]);
@@ -457,14 +469,21 @@ describe("daemon", () => {
     expect(at(client, "snapshot")).toBeLessThan(at(client, "run_end"));
   });
 
-  it("refuses an attach frame that names both a conversation and a new one (V-1)", async () => {
+  it.each([
+    { type: "attach", conversation: 1, new: true },
+    { type: "attach", cwd: "/x" },
+    { type: "attach", new: 1 },
+    { type: "attach", new: "true" },
+    { type: "attach", conversation: 0 },
+    { type: "attach", conversation: "3" },
+    { type: "attach", conversation: 1.5 },
+    { type: "attach", new: true, cwd: 3 },
+    { type: "attach", extra: 1 },
+  ])("refuses the attach shape %j, creating nothing (V-1)", async (frame) => {
     await start();
     const client = await lineClient(socketPath, toPrintable);
     clients.push(client);
-    await client.write(
-      encodeLine({ type: "attach", conversation: 1, new: true }) +
-        encodeLine({ type: "input", content: "dropped" }),
-    );
+    await client.write(encodeLine(frame) + encodeLine({ type: "input", content: "dropped" }));
     const error = await client.next(isType("error"));
     expect(error.message).toMatch(/^attach: /);
     await client.closed();

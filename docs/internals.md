@@ -109,9 +109,10 @@ The first line's outcome:
   queued behind it.
 - a first line that is a command: root is bound, the line is acted on, and
   no `attached` is sent.
-- on a bound connection, a second `attach` — well-formed or not — answers
-  `already attached to conversation N` and the connection stays open with its
-  binding unchanged; any other bad line gets its own error.
+- on a bound connection, any line that parses as an `attach` frame, valid or
+  refused, answers `already attached to conversation N` and the connection
+  stays open with its binding unchanged; a line that is not JSON or not an
+  object, or any other bad line, gets its ordinary error.
 - a line that is not JSON, or neither `attach` nor a valid command, binds
   root, answers the error, and stays open.
 

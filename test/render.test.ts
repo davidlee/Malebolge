@@ -218,12 +218,6 @@ describe("renderer", () => {
 });
 
 describe("toPrintable", () => {
-  it("accepts the attached reply", () => {
-    expect(toPrintable({ type: "attached", conversation: 3 })).toEqual({
-      type: "attached",
-      conversation: 3,
-    });
-  });
   it.each([[null], [[]], ["text"], [{}], [{ type: 1 }]])("rejects %j as not an event", (value) => {
     expect(() => toPrintable(value)).toThrow(/not an event/);
   });

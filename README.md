@@ -112,12 +112,12 @@ the conversation's working directory: this profile's tools run there, so a
 host path given to the `room` profile points inside the room. It overrides the
 profile's default working directory (see
 [Execution profiles](#execution-profiles)). A refused combination —
-`--conversation` with `--new`, `--cwd` without `--new`, `--conversation` not a
-positive integer, an unknown flag — prints one line and the usage, and exits 2
-before connecting. A refused attach — an unknown id, a conversation a task
-owns — prints one error line and exits 1, and so does a daemon that closes
-before attaching. An id names a conversation only inside one profile's store
-and socket: keep the profile with any id you keep.
+`--conversation` with `--new`, `--cwd` without `--new`, a `--conversation`
+that is not a positive integer written without leading zeros, an unknown flag —
+prints one line and the usage, and exits 2 before connecting. A refused attach — an unknown id, a
+conversation a task owns — prints one error line and exits 1, and so does a
+daemon that closes before attaching. An id names a conversation only inside
+one profile's store and socket: keep the profile with any id you keep.
 
 **Stop** with `M-x malebolge-stop`. Starting again reopens root; the profile's
 other conversations stay in its store. `M-x malebolge-start` on a running unit
