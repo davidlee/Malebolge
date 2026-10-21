@@ -73,7 +73,7 @@ keeps enforcing job limits with Emacs absent; Emacs remains the approval
 surface. Patch jobs currently have coding tools, without the interactive
 daemon's SATAN MCP tools or skills listing.
 
-## Interactive conversation
+## Interactive conversations
 
 You need Node 24 or later, Emacs, and a SATAN corpus. `satan-mcp` is
 optional: without it the daemon runs with no SATAN tools and picks them up on
@@ -107,13 +107,17 @@ node src/attach-main.ts --new              # a new one, in the daemon's cwd
 node src/attach-main.ts --new --cwd DIR    # a new one whose cwd is DIR
 ```
 
-`DIR` reaches the daemon uninterpreted, the empty string included. A refused
-combination — `--conversation` with `--new`, `--cwd` without `--new`,
-`--conversation` not a positive integer, an unknown flag — prints one line and
-the usage, and exits 2 before connecting. A refused attach — an unknown id, a
-conversation a task owns — prints one error line and exits 1, and so does a
-daemon that closes before attaching. An id names a conversation only inside
-one profile's store and socket: keep the profile with any id you keep.
+`DIR` reaches the daemon uninterpreted, the empty string included, and becomes
+the conversation's working directory: this profile's tools run there, so a
+host path given to the `room` profile points inside the room. It overrides the
+profile's default working directory (see
+[Execution profiles](#execution-profiles)). A refused combination —
+`--conversation` with `--new`, `--cwd` without `--new`, `--conversation` not a
+positive integer, an unknown flag — prints one line and the usage, and exits 2
+before connecting. A refused attach — an unknown id, a conversation a task
+owns — prints one error line and exits 1, and so does a daemon that closes
+before attaching. An id names a conversation only inside one profile's store
+and socket: keep the profile with any id you keep.
 
 **Stop** with `M-x malebolge-stop`. Starting again reopens root; the profile's
 other conversations stay in its store. `M-x malebolge-start` on a running unit
@@ -130,9 +134,10 @@ to start listening.
 **After an upgrade, restart the daemon.** It is a long-lived user unit and
 `malebolge-start` does not restart a running one, so a fresh client can meet
 a daemon older than its attach frame. That daemon answers `unknown message
-type "attach"` and the client prints `the daemon predates attach: restart it
-(malebolge-stop, then malebolge-start)`. Restart the daemon (`M-x
-malebolge-stop`, then `M-x malebolge-start`) to attach again.
+type "attach"` and the client prints
+`[the daemon predates attach: restart it (malebolge-stop, then malebolge-start)]`.
+Restart the daemon (`M-x malebolge-stop`, then `M-x malebolge-start`) to
+attach again.
 
 To run the daemon on the host, outside the jail:
 `MALEBOLGE_PROFILE=host node src/daemon-main.ts`. It reaches models through
@@ -143,7 +148,7 @@ the LLM gateway, with a key read from a file.
 The launcher picks where the agent's coding tools run, with
 `MALEBOLGE_PROFILE`; there is no default.
 
-| Profile | Tools run | Working directory | Project context from |
+| Profile | Tools run | Default working directory | Project context from |
 |---|---|---|---|
 | `room` | in the room VM, as the room user, over one pi-env connection the daemon holds | the room user's home | the home (no git walk) |
 | `host` | on this machine | the launch directory | the launch directory up to its git root |
@@ -187,7 +192,7 @@ Set through environment variables:
 | `MALEBOLGE_SOCKET` | where clients attach (clients default to the room's) | `$XDG_RUNTIME_DIR/satan/durable/<profile>/durable.sock` |
 | `SATAN_MCP_SOCKET` | where SATAN's tools are | `$XDG_RUNTIME_DIR/satan/mcp/mcp.sock` |
 | `SATAN_CORPUS_ROOT` | SATAN's persona files | `~/satan-corpus` |
-| `XDG_STATE_HOME` | saved conversation lives at `satan/durable/<profile>/session.sqlite` under this | `~/.local/state` |
+| `XDG_STATE_HOME` | saved conversations live at `satan/durable/<profile>/session.sqlite` under this | `~/.local/state` |
 
 The gateway key is read from its file at start and held only in the provider;
 it is never in the environment or on a command line.
@@ -258,15 +263,16 @@ both remain open, and some of their original sketches have since changed:
 
 Today's split is the diagram above: interactive coding tools still run on
 the host, while patch coding tools run in the room. Broker-driven tick and
-morning runs have not become events in the interactive conversation, and
+morning runs have not become events in interactive conversations, and
 patch jobs do not yet have SATAN's host-reading tools.
 
 Recent slices supplied the runner and room integration (SL-023), skill
-listings (SL-024), and mode scopes (SL-025). SL-026 has designed the next coding
-layer: project instructions read from the execution environment, explicit
-working-directory context, and a ripgrep-backed `grep` tool. Those additions
-are not implemented in this checkout yet. Tool filtering, operation without
-Emacs, and a coding-agent evaluation remain part of the wider RFC-019 work.
+listings (SL-024), mode scopes (SL-025), and the coding layer (SL-026): project
+instructions read from the execution environment, explicit working-directory
+context, and a ripgrep-backed `grep` tool. SL-030 made the interactive daemon
+hold many conversations, root by default, with the working directory per
+conversation. Tool filtering, operation without Emacs, and a coding-agent
+evaluation remain part of the wider RFC-019 work.
 
 ## Develop
 

@@ -88,11 +88,12 @@ on that binding.
 - client → daemon, the `attach` frame, valid only as the first line:
   `{"type":"attach"}` (root), `{"type":"attach","conversation":N}`,
   `{"type":"attach","new":true}`, `{"type":"attach","new":true,"cwd":S}`.
-  Strict: `conversation` with `new`, `cwd` without `new`, a `conversation`
-  that is not a safe positive integer, a non-string `cwd`, or an unknown key
-  is refused before anything is created (`src/protocol.ts`). `cwd` is handed
-  to pi uninterpreted; a new conversation is ownerless and carries the
-  daemon's model and cwd as its defaults (`src/conversations.ts`).
+  Strict: `conversation` with `new`, `cwd` without `new`, `new` other than
+  `true`, a `conversation` that is not a safe positive integer, a non-string
+  `cwd`, or an unknown key is refused before anything is created
+  (`src/protocol.ts`). `cwd` is handed to pi uninterpreted; a new conversation
+  is ownerless and carries the daemon's model and cwd as its defaults
+  (`src/conversations.ts`).
 - client → daemon, later lines:
   `{"type":"input","content":…,"requestId"?:…}`, `{"type":"abort"}`,
   `{"type":"compact","instructions"?:…}`
@@ -106,7 +107,7 @@ The first line's outcome:
 - a refused `attach`, an unknown id or a task-owned conversation: one
   `{"type":"error"}` and the daemon ends the connection, dropping the lines
   queued behind it.
-- a first line that is not `attach`: root is bound, the line is acted on, and
+- a first line that is a command: root is bound, the line is acted on, and
   no `attached` is sent.
 - on a bound connection, a second `attach` — well-formed or not — answers
   `already attached to conversation N` and the connection stays open with its
