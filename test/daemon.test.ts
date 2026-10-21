@@ -1,13 +1,20 @@
 import { once } from "node:events";
 import type { Socket } from "node:net";
 import { join } from "node:path";
+import type { Message } from "@earendil-works/pi-ai";
 import {
   fauxAssistantMessage,
   type FauxResponseFactory,
   fauxText,
 } from "@earendil-works/pi-ai/providers/faux";
 import { getCurrentTools } from "@earendil-works/pi-ai/utils/transcript";
-import { type AgentEventStream, defineTask, MemoryStorage } from "@earendil-works/pi-durable";
+import {
+  type AgentEventStream,
+  type Conversation,
+  defineTask,
+  type EntryRecord,
+  MemoryStorage,
+} from "@earendil-works/pi-durable";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { context } from "../src/context.ts";
 import { type ConversationDefaults, conversations } from "../src/conversations.ts";
@@ -281,6 +288,75 @@ describe("daemon", () => {
   /** Where in the received order the first event of `type` arrived; -1 if never. */
   const at = (client: LineClient<Printable>, type: Printable["type"]): number =>
     client.received().findIndex((event) => event.type === type);
+
+  /** The visible text of `message`: string content, or its text blocks joined. */
+  const textOf = (message: Message): string =>
+    typeof message.content === "string"
+      ? message.content
+      : message.content.map((block) => (block.type === "text" ? block.text : "")).join("");
+
+  /** The visible text of `entry`'s one message; `""` for an entry with none. */
+  const entryText = (entry: EntryRecord): string => {
+    const message = entry.model?.[0];
+    return message === undefined ? "" : textOf(message);
+  };
+
+  /** The last user message's text: which conversation called the faux factory. */
+  const lastUserText = (messages: readonly Message[]): string => {
+    for (let index = messages.length - 1; index >= 0; index--) {
+      const message = messages[index];
+      if (message?.role === "user") {
+        return textOf(message);
+      }
+    }
+    return "";
+  };
+
+  /** Every message entry `conversation` holds, joined. */
+  const entriesText = async (conversation: Conversation): Promise<string> => {
+    const page = await conversation.entries({}, 50, undefined, context);
+    return page.items.map(entryText).join("\n");
+  };
+
+  /**
+   * A faux factory that reads which conversation called it from the transcript it
+   * receives: the `alpha` turn is held until `release`, every other turn answers.
+   */
+  const heldTurn =
+    (entered: () => void, release: Promise<undefined>): FauxResponseFactory =>
+    async (transcript) => {
+      const text = lastUserText(transcript.messages);
+      if (text !== "alpha") {
+        return fauxAssistantMessage([fauxText(`${text} answer`)]);
+      }
+      entered();
+      await release;
+      return fauxAssistantMessage([fauxText("alpha answer")]);
+    };
+
+  /** Every entry `client` was sent as a completed message, joined. */
+  const streamText = (client: LineClient<Printable>): string =>
+    client
+      .received()
+      .filter(isType("message_end"))
+      .map((event) => entryText(event.entry))
+      .join("\n");
+
+  /** A client bound with `frame`, once its attached reply and snapshot have arrived. */
+  const attachTo = async (
+    frame: unknown,
+  ): Promise<{
+    client: LineClient<Printable>;
+    attached: EventOf<"attached">;
+    snapshot: EventOf<"snapshot">;
+  }> => {
+    const client = await lineClient(socketPath, toPrintable);
+    clients.push(client);
+    client.send(frame);
+    const attached = await client.next(isType("attached"));
+    const snapshot = await client.next(isType("snapshot"));
+    return { client, attached, snapshot };
+  };
 
   beforeEach(async () => {
     const tmp = await tempDir();
@@ -659,6 +735,126 @@ describe("daemon", () => {
     const lists = mcp.requests.items.filter((method) => method === "tools/list");
     expect(lists.length).toBeGreaterThanOrEqual(1);
     expect(lists.length).toBeLessThanOrEqual(2);
+  });
+
+  it("overlap: concurrent conversations stay isolated (V-4)", async () => {
+    await start();
+    const entered = Promise.withResolvers<undefined>();
+    const release = Promise.withResolvers<undefined>();
+    // Chosen from each call's own transcript, never from call order.
+    test.faux.setResponses(
+      Array.from({ length: 4 }, () =>
+        heldTurn(() => {
+          entered.resolve(undefined);
+        }, release.promise),
+      ),
+    );
+    const a = await attach();
+    a.send({ type: "input", content: "alpha" });
+    await entered.promise; // A is mid-turn: its factory is held.
+    const b = await attachTo({ type: "attach", new: true, cwd: "/bravo" });
+    b.client.send({ type: "input", content: "bravo" });
+    await b.client.next(isType("run_end"));
+    // B completed while A was still held: the two conversations overlap.
+    expect(runEnds(a)).toBe(0);
+    expect(runEnds(b.client)).toBe(1);
+    release.resolve(undefined);
+    await a.next(isType("run_end"));
+    // Each stream holds only its own conversation's input and answer.
+    expect(streamText(a)).toContain("alpha answer");
+    expect(streamText(a)).not.toContain("bravo answer");
+    expect(streamText(b.client)).toContain("bravo answer");
+    expect(streamText(b.client)).not.toContain("alpha answer");
+    // Root is A; the conversation B attached to is read by the id it was given.
+    expect(await entriesText(test.root)).toContain("alpha answer");
+    expect(await entriesText(test.root)).not.toContain("bravo answer");
+    const created = await conversations(test, DEFAULTS).open({
+      kind: "existing",
+      id: b.attached.conversation,
+    });
+    expect(await entriesText(created)).toContain("bravo answer");
+    expect(await entriesText(created)).not.toContain("alpha answer");
+  });
+
+  it("aborts A while overlapping B, leaving B intact and A aborted (V-4)", async () => {
+    await start();
+    const entered = Promise.withResolvers<undefined>();
+    const release = Promise.withResolvers<undefined>();
+    test.faux.setResponses(
+      Array.from({ length: 4 }, () =>
+        heldTurn(() => {
+          entered.resolve(undefined);
+        }, release.promise),
+      ),
+    );
+    // A receipt that the daemon called abort; it does not await abort's resolution.
+    const abortEntered = Promise.withResolvers<undefined>();
+    const originalAbort = test.root.abort.bind(test.root);
+    const spy = vi.spyOn(test.root, "abort").mockImplementation((ctx, options) => {
+      abortEntered.resolve(undefined);
+      return originalAbort(ctx, options);
+    });
+    const a = await attach();
+    a.send({ type: "input", content: "alpha", requestId: "alpha-turn" });
+    await entered.promise; // A is mid-turn: its factory is held.
+    await a.write(encodeLine({ type: "abort" }));
+    await abortEntered.promise; // Abort is waiting for A's scope, which the barrier holds.
+    const b = await attachTo({ type: "attach", new: true, cwd: "/bravo" });
+    b.client.send({ type: "input", content: "bravo" });
+    await b.client.next(isType("run_end"));
+    // B ran to its end while A was held: abort on A did not serialise B.
+    expect(runEnds(b.client)).toBe(1);
+    expect(runEnds(a)).toBe(0);
+    release.resolve(undefined);
+    await a.next(isType("run_end"));
+    // A's held answer was never delivered; pi settled A's input as aborted.
+    expect(streamText(a)).not.toContain("alpha answer");
+    const entries = await test.root.entries({}, 50, undefined, context);
+    // No committed partial, so nothing stronger is recorded than the settlement below.
+    expect(entries.items.some((entry) => entry.kind === "pi.assistant")).toBe(false);
+    expect(entries.items.some((entry) => entry.kind === "pi.user")).toBe(true);
+    expect(await entriesText(test.root)).not.toContain("alpha answer");
+    const submission = await test.harness.commit(
+      (tx) => tx.submissionByRequest(test.root.id, "alpha-turn"),
+      context,
+    );
+    expect(submission?.status).toBe("unanswered");
+    const reason = submission?.status === "unanswered" ? submission.reason : undefined;
+    expect(reason).toBe("aborted");
+    // B's run and transcript are untouched by A's abort.
+    expect(runEnds(b.client)).toBe(1);
+    expect(streamText(b.client)).toContain("bravo answer");
+    expect(streamText(b.client)).not.toContain("alpha answer");
+    const created = await conversations(test, DEFAULTS).open({
+      kind: "existing",
+      id: b.attached.conversation,
+    });
+    expect(await entriesText(created)).not.toContain("alpha");
+    spy.mockRestore();
+  });
+
+  it("reattach: A by id streams only A's history (V-4)", async () => {
+    await start();
+    // Every answer echoes the transcript's last user text: chosen per call, not per order.
+    const answer: FauxResponseFactory = (transcript) =>
+      fauxAssistantMessage([fauxText(`${lastUserText(transcript.messages)} answer`)]);
+    test.faux.setResponses(Array.from({ length: 6 }, () => answer));
+    const a = await attach();
+    a.send({ type: "input", content: "alpha" });
+    await a.next(isType("run_end"));
+    const b = await attachTo({ type: "attach", new: true, cwd: "/bravo" });
+    b.client.send({ type: "input", content: "bravo" });
+    await b.client.next(isType("run_end"));
+    const again = await attachTo({ type: "attach", conversation: test.root.id });
+    const history = again.snapshot.entries.map(entryText).join("\n");
+    expect(history).toContain("alpha answer");
+    expect(history).not.toContain("bravo");
+    // The reattached client's next run lands on A, and B hears none of it.
+    again.client.send({ type: "input", content: "alpha-two" });
+    await again.client.next(isType("run_end"));
+    expect(runEnds(b.client)).toBe(1);
+    expect(streamText(b.client)).not.toContain("alpha-two");
+    expect(await entriesText(test.root)).toContain("alpha-two answer");
   });
 
   it("offers SATAN tools at the next input once the server appears (VT-2/VT-3)", async () => {
