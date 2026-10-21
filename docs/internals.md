@@ -11,6 +11,7 @@ harness").
 ```
 malebolge (daemon, owns the session)                     clients
  ├─ Harness on SQLite  ~/.local/state/satan/durable/<profile>/   malebolge-attach (terminal)
+ ├─ conversations.ts   attach target ─▶ root, an existing or a new one
  ├─ persona section    ~/satan-corpus scaffold + interactive  M-x malebolge-attach (comint)
  │                     + prompts/env/<profile>.txt
  ├─ project_context section   AGENTS.md chain, .pi/APPEND_SYSTEM.md (read once)
@@ -80,12 +81,43 @@ lock is not excluded.
 
 ## Protocol
 
-One JSON message per line on the daemon socket.
+One JSON message per line on the daemon socket. The first line a connection
+sends binds it to one conversation (`src/daemon.ts`); every later line acts
+on that binding.
 
-- client → daemon: `{"type":"input","content":…,"requestId"?:…}`,
-  `{"type":"abort"}`, `{"type":"compact","instructions"?:…}`
-- daemon → client: pi-durable `watchEvents` agent events, first a `snapshot`;
-  `{"type":"error","message":…}` for a line it could not act on.
+- client → daemon, the `attach` frame, valid only as the first line:
+  `{"type":"attach"}` (root), `{"type":"attach","conversation":N}`,
+  `{"type":"attach","new":true}`, `{"type":"attach","new":true,"cwd":S}`.
+  Strict: `conversation` with `new`, `cwd` without `new`, a `conversation`
+  that is not a safe positive integer, a non-string `cwd`, or an unknown key
+  is refused before anything is created (`src/protocol.ts`). `cwd` is handed
+  to pi uninterpreted; a new conversation is ownerless and carries the
+  daemon's model and cwd as its defaults (`src/conversations.ts`).
+- client → daemon, later lines:
+  `{"type":"input","content":…,"requestId"?:…}`, `{"type":"abort"}`,
+  `{"type":"compact","instructions"?:…}`
+- daemon → client: `{"type":"attached","conversation":N}` once, after a
+  successful attach and before the snapshot; then pi-durable `watchEvents`
+  agent events, first a `snapshot`; `{"type":"error","message":…}` for a line
+  it could not act on.
+
+The first line's outcome:
+
+- a refused `attach`, an unknown id or a task-owned conversation: one
+  `{"type":"error"}` and the daemon ends the connection, dropping the lines
+  queued behind it.
+- a first line that is not `attach`: root is bound, the line is acted on, and
+  no `attached` is sent.
+- on a bound connection, a second `attach` — well-formed or not — answers
+  `already attached to conversation N` and the connection stays open with its
+  binding unchanged; any other bad line gets its own error.
+- a line that is not JSON, or neither `attach` nor a valid command, binds
+  root, answers the error, and stays open.
+
+A connection that sends nothing is never bound and receives nothing
+(`probeUnix` connects and leaves). An id names a conversation only within
+this profile's store and socket; a client that persists one persists the
+profile with it.
 
 ## Design notes
 
@@ -115,9 +147,12 @@ One JSON message per line on the daemon socket.
   pi 1.3.0's `formatSkillsForPrompt`.
 - **Sections.** The daemon's order is persona, project_context, skills, cwd,
   then the tools (CodingTools, grep, satan), set once in
-  `src/daemon-extensions.ts`. Persona is live; project_context, skills and cwd
-  are constants. pi-durable re-sends all sections once, in the desired order,
-  when a new key would otherwise land out of place.
+  `src/daemon-extensions.ts`. Persona is live; project_context and skills are
+  per profile, cwd per conversation: each conversation's agent carries its
+  directory, so a conversation created elsewhere states that directory, while
+  its project context still came from the daemon's. pi-durable re-sends all
+  sections once, in the desired order, when a new key would otherwise land
+  out of place.
 - **Project context (sources).** Project instructions follow pi's coding
   agent: per directory the first of `AGENTS.override.md`, `AGENTS.md`,
   `AGENTS.MD`, `CLAUDE.md`, `CLAUDE.MD` (`CONTEXT_FILE_NAMES`) that is a

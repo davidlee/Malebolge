@@ -14,9 +14,10 @@ propose changes to its [own code](https://github.com/davidlee/satan), persona, a
 its agent conversations independently of Emacs. This repository currently
 ships two programs:
 
-- **`malebolge`**, the interactive daemon. It holds one ongoing conversation;
-  terminal and Emacs clients attach, talk and detach. Several clients can
-  share it, and a new client sees the conversation so far.
+- **`malebolge`**, the interactive daemon. It holds its profile's
+  conversations; terminal and Emacs clients attach to one — root by
+  default — talk and detach. Several clients can be attached at once, and a
+  client sees its conversation's history once attached.
 - **`satan-runner`**, the patch-job daemon. It owns a durable queue and runs
   one job at a time, each with its own conversation. The model loop runs on
   the host; coding tools execute in an
@@ -33,7 +34,7 @@ harness and, for jobs, scheduling, policy enforcement and recovery.
   harness resumes interrupted turns; unsafe tool calls interrupted by a crash
   return an error rather than silently running again.
 - **Attach from anywhere.** Several terminals and Emacs buffers can be
-  attached at once, all in the same conversation.
+  attached at once, each to its own conversation or all to the same one.
 - **The persona stays live.** The interactive daemon re-reads SATAN's persona
   on each request. Skills are listed at startup and their bodies read on use.
 - **Jobs have bounds.** The runner checks mode scopes at admission, enforces
@@ -51,7 +52,7 @@ clients and a separate execution environment.
 
 ```
  terminal / Emacs ── attach ──▶ malebolge (interactive daemon, jailed)
-                                ├─ one durable conversation
+                                ├─ many conversations (root by default)
                                 ├─ live persona + skill listings
                                 ├─ coding tools ─▶ the room (pi-env), or the host
                                 ├─ SATAN tools ──▶ satan-mcp (Emacs)
@@ -67,7 +68,7 @@ clients and a separate execution environment.
 ```
 
 Each daemon owns its store; clients use sockets rather than opening it.
-Detaching an interactive client leaves the conversation running. The runner
+Detaching an interactive client leaves its conversation running. The runner
 keeps enforcing job limits with Emacs absent; Emacs remains the approval
 surface. Patch jobs currently have coding tools, without the interactive
 daemon's SATAN MCP tools or skills listing.
@@ -80,9 +81,9 @@ the next input once satan-mcp is up.
 
 **Start** with `M-x malebolge-start` (load `emacs/malebolge.el` first). It
 starts satan-mcp if satan is loaded, starts the `malebolge-room` systemd user
-unit, and attaches in a comint buffer. `M-x malebolge-attach` re-attaches to a
-running daemon. The unit is on demand — nothing starts it at login — and is
-defined in ~/flakes (unit facts: `~/flakes/SATAN.md`). Logs:
+unit, and attaches in a comint buffer. `M-x malebolge-attach` re-attaches to
+root on a running daemon. The unit is on demand — nothing starts it at
+login — and is defined in ~/flakes (unit facts: `~/flakes/SATAN.md`). Logs:
 `journalctl --user -u malebolge-room`.
 
 **In a client:**
@@ -92,17 +93,46 @@ defined in ~/flakes (unit facts: `~/flakes/SATAN.md`). Logs:
 | any text | talk to SATAN |
 | `/abort` | stop the answer in progress |
 | `/compact [instructions]` | summarise older history to free up the model's context |
-| `/quit` | detach; the conversation keeps going |
+| `/quit` | detach; its conversation keeps going |
 
-**Stop** with `M-x malebolge-stop`. Starting again reopens the same
-conversation. `M-x malebolge-start` on a running unit just attaches. Only one
-daemon per profile runs: a second daemon of the same profile exits with
-`refusing to start: …`.
+**Which conversation.** The client sends its choice when it connects, and
+prints `[attached to conversation N]` once the daemon accepts it; that `N` is
+what `--conversation` takes. With no flag the client attaches to root. The
+flags go to the program directly — `just attach` and `M-x malebolge-attach`
+accept none, so both stay on root:
+
+```sh
+node src/attach-main.ts --conversation N   # conversation N
+node src/attach-main.ts --new              # a new one, in the daemon's cwd
+node src/attach-main.ts --new --cwd DIR    # a new one whose cwd is DIR
+```
+
+`DIR` reaches the daemon uninterpreted, the empty string included. A refused
+combination — `--conversation` with `--new`, `--cwd` without `--new`,
+`--conversation` not a positive integer, an unknown flag — prints one line and
+the usage, and exits 2 before connecting. A refused attach — an unknown id, a
+conversation a task owns — prints one error line and exits 1, and so does a
+daemon that closes before attaching. An id names a conversation only inside
+one profile's store and socket: keep the profile with any id you keep.
+
+**Stop** with `M-x malebolge-stop`. Starting again reopens root; the profile's
+other conversations stay in its store. `M-x malebolge-start` on a running unit
+just attaches. Only one daemon per profile runs: a second daemon of the same
+profile exits with `refusing to start: …`.
 
 For development, `just daemon` and `just attach` in this repo run the daemon
 and a terminal client from the working tree, with the environment described
-under [Configuration](#configuration) (at least `MALEBOLGE_PROFILE`). The
-attach client waits up to 10 s for the daemon to start listening.
+under [Configuration](#configuration) (at least `MALEBOLGE_PROFILE`).
+`just attach` stays on root; the flags above go through
+`node src/attach-main.ts`. The attach client waits up to 10 s for the daemon
+to start listening.
+
+**After an upgrade, restart the daemon.** It is a long-lived user unit and
+`malebolge-start` does not restart a running one, so a fresh client can meet
+a daemon older than its attach frame. That daemon answers `unknown message
+type "attach"` and the client prints `the daemon predates attach: restart it
+(malebolge-stop, then malebolge-start)`. Restart the daemon (`M-x
+malebolge-stop`, then `M-x malebolge-start`) to attach again.
 
 To run the daemon on the host, outside the jail:
 `MALEBOLGE_PROFILE=host node src/daemon-main.ts`. It reaches models through
@@ -118,8 +148,8 @@ The launcher picks where the agent's coding tools run, with
 | `room` | in the room VM, as the room user, over one pi-env connection the daemon holds | the room user's home | the home (no git walk) |
 | `host` | on this machine | the launch directory | the launch directory up to its git root |
 
-Each profile keeps its own conversation and socket, under
-`durable/<profile>/`: the room's and the host's conversations never mix. A
+Each profile keeps its own store and socket, under `durable/<profile>/`,
+holding that profile's conversations: the room's and the host's never mix. A
 store or socket path in another profile's directory is refused at start.
 
 The room profile reads its room from the **door file** (`MALEBOLGE_DOOR`), a
