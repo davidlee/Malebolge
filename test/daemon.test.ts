@@ -17,7 +17,11 @@ import {
 } from "@earendil-works/pi-durable";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { context } from "../src/context.ts";
-import { type ConversationDefaults, conversations } from "../src/conversations.ts";
+import {
+  type ConversationDefaults,
+  type Conversations,
+  conversations,
+} from "../src/conversations.ts";
 import { type Daemon, serve } from "../src/daemon.ts";
 import { encodeLine } from "../src/ndjson.ts";
 import { type Printable, toPrintable } from "../src/render.ts";
@@ -776,8 +780,28 @@ describe("daemon", () => {
     expect(await entriesText(created)).not.toContain("alpha answer");
   });
 
-  it("aborts A while overlapping B, leaving B intact and A aborted (V-4)", async () => {
-    await start();
+  it("aborts a created A while overlapping root B, leaving B intact and A aborted (V-4)", async () => {
+    test = await openTestHarness([]);
+    const api = conversations(test, DEFAULTS);
+    // The daemon opens A through this seam, so the spy below holds the very instance
+    // it binds and aborts; only the one created target resolves `opened`.
+    const opened = Promise.withResolvers<Conversation>();
+    const seam: Conversations = {
+      root: api.root,
+      open: async (target) => {
+        const conversation = await api.open(target);
+        if (target.kind === "new") {
+          opened.resolve(conversation);
+        }
+        return conversation;
+      },
+      watch: (conversation) => api.watch(conversation),
+    };
+    daemon = await serve({
+      socketPath,
+      conversations: Promise.resolve(seam),
+      beforeInput: noGate,
+    });
     const entered = Promise.withResolvers<undefined>();
     const release = Promise.withResolvers<undefined>();
     test.faux.setResponses(
@@ -787,50 +811,59 @@ describe("daemon", () => {
         }, release.promise),
       ),
     );
-    // A receipt that the daemon called abort; it does not await abort's resolution.
+    const a = await attachTo({ type: "attach", new: true, cwd: "/alpha" });
+    a.client.send({ type: "input", content: "alpha", requestId: "alpha-turn" });
+    await entered.promise; // A is mid-turn: its factory is held.
+    // B is root, attached and idle before the abort, so a mis-scoped abort would hit it.
+    const b = await attach();
+    const bound = await opened.promise;
+    expect(bound.id).not.toBe(test.root.id); // A is created; root is B.
+    expect(a.attached.conversation).toBe(bound.id); // The spy holds the bound one.
+    // A receipt that the daemon called abort on the bound conversation; it does not
+    // await abort's resolution.
     const abortEntered = Promise.withResolvers<undefined>();
-    const originalAbort = test.root.abort.bind(test.root);
-    const spy = vi.spyOn(test.root, "abort").mockImplementation((ctx, options) => {
+    const originalAbort = bound.abort.bind(bound);
+    const spy = vi.spyOn(bound, "abort").mockImplementation((ctx, options) => {
       abortEntered.resolve(undefined);
       return originalAbort(ctx, options);
     });
-    const a = await attach();
-    a.send({ type: "input", content: "alpha", requestId: "alpha-turn" });
-    await entered.promise; // A is mid-turn: its factory is held.
-    await a.write(encodeLine({ type: "abort" }));
-    await abortEntered.promise; // Abort is waiting for A's scope, which the barrier holds.
-    const b = await attachTo({ type: "attach", new: true, cwd: "/bravo" });
-    b.client.send({ type: "input", content: "bravo" });
-    await b.client.next(isType("run_end"));
-    // B ran to its end while A was held: abort on A did not serialise B.
-    expect(runEnds(b.client)).toBe(1);
-    expect(runEnds(a)).toBe(0);
-    release.resolve(undefined);
-    await a.next(isType("run_end"));
-    // A's held answer was never delivered; pi settled A's input as aborted.
-    expect(streamText(a)).not.toContain("alpha answer");
-    const entries = await test.root.entries({}, 50, undefined, context);
-    // No committed partial, so nothing stronger is recorded than the settlement below.
-    expect(entries.items.some((entry) => entry.kind === "pi.assistant")).toBe(false);
-    expect(entries.items.some((entry) => entry.kind === "pi.user")).toBe(true);
-    expect(await entriesText(test.root)).not.toContain("alpha answer");
-    const submission = await test.harness.commit(
-      (tx) => tx.submissionByRequest(test.root.id, "alpha-turn"),
-      context,
-    );
-    expect(submission?.status).toBe("unanswered");
-    const reason = submission?.status === "unanswered" ? submission.reason : undefined;
-    expect(reason).toBe("aborted");
-    // B's run and transcript are untouched by A's abort.
-    expect(runEnds(b.client)).toBe(1);
-    expect(streamText(b.client)).toContain("bravo answer");
-    expect(streamText(b.client)).not.toContain("alpha answer");
-    const created = await conversations(test, DEFAULTS).open({
-      kind: "existing",
-      id: b.attached.conversation,
-    });
-    expect(await entriesText(created)).not.toContain("alpha");
-    spy.mockRestore();
+    try {
+      await a.client.write(encodeLine({ type: "abort" }));
+      await abortEntered.promise; // Abort waits for A's scope, which the barrier holds.
+      b.send({ type: "input", content: "bravo" });
+      await b.next(isType("run_end"));
+      // B ran to its end while A was held: abort on A did not serialise B.
+      expect(runEnds(b)).toBe(1);
+      expect(runEnds(a.client)).toBe(0);
+      release.resolve(undefined);
+      await a.client.next(isType("run_end"));
+      // A's held answer was never delivered; pi settled A's input as aborted.
+      expect(streamText(a.client)).not.toContain("alpha answer");
+      const entries = await bound.entries({}, 50, undefined, context);
+      // Any assistant entry A did commit carries the abort; no partial lands here.
+      const assistants = entries.items
+        .filter((entry) => entry.kind === "pi.assistant")
+        .flatMap((entry) => [...(entry.model ?? [])])
+        .filter((message) => message.role === "assistant");
+      expect(assistants.every((message) => message.stopReason === "aborted")).toBe(true);
+      expect(entries.items.some((entry) => entry.kind === "pi.user")).toBe(true);
+      expect(await entriesText(bound)).not.toContain("alpha answer");
+      const submission = await test.harness.commit(
+        (tx) => tx.submissionByRequest(bound.id, "alpha-turn"),
+        context,
+      );
+      expect(submission?.status).toBe("unanswered");
+      const reason = submission?.status === "unanswered" ? submission.reason : undefined;
+      expect(reason).toBe("aborted");
+      // B's run and transcript are untouched by A's abort.
+      expect(runEnds(b)).toBe(1);
+      expect(streamText(b)).toContain("bravo answer");
+      expect(streamText(b)).not.toContain("alpha answer");
+      expect(await entriesText(test.root)).not.toContain("alpha");
+    } finally {
+      release.resolve(undefined);
+      spy.mockRestore();
+    }
   });
 
   it("reattach: A by id streams only A's history (V-4)", async () => {
