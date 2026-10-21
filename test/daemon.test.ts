@@ -42,7 +42,19 @@ const watched = vi.hoisted(() => {
   let next = Promise.withResolvers<AgentEventStream>();
   let entered = Promise.withResolvers<undefined>();
   let gate = Promise.withResolvers<undefined>();
-  gate.resolve(undefined); // Open by default: only a holding test sees a pause.
+  /**
+   * A fresh entered/gate pair, the outgoing gate settled first, so re-arming never
+   * orphans a call already waiting; `opened` false holds the next call instead.
+   */
+  const rearm = (opened: boolean): void => {
+    gate.resolve(undefined);
+    entered = Promise.withResolvers<undefined>();
+    gate = Promise.withResolvers<undefined>();
+    if (opened) {
+      gate.resolve(undefined);
+    }
+  };
+  rearm(true); // Open by default: only a holding test sees a pause.
   return {
     streams,
     started,
@@ -53,8 +65,7 @@ const watched = vi.hoisted(() => {
     },
     /** Hold the next `watchEvents` call, just before it returns its stream. */
     hold: (): void => {
-      entered = Promise.withResolvers<undefined>();
-      gate = Promise.withResolvers<undefined>();
+      rearm(false);
     },
     entered: (): Promise<undefined> => entered.promise,
     enter: (): void => {
@@ -68,9 +79,7 @@ const watched = vi.hoisted(() => {
       streams.length = 0;
       started.length = 0;
       next = Promise.withResolvers<AgentEventStream>();
-      entered = Promise.withResolvers<undefined>();
-      gate = Promise.withResolvers<undefined>();
-      gate.resolve(undefined);
+      rearm(true);
     },
   };
 });
@@ -199,6 +208,19 @@ describe("daemon", () => {
   };
 
   /**
+   * `client` leaves and resolves once the daemon's own socket has seen the hang-up
+   * (a receipt, not a timer). Armed before the close, so this is its own close.
+   */
+  const departReceipt = async (
+    client: LineClient<Printable>,
+    serverSocket: Socket,
+  ): Promise<void> => {
+    const closed = once(serverSocket, "close");
+    client.close();
+    await closed;
+  };
+
+  /**
    * A raw client writes `frame` and leaves before the session is ready. Resolves
    * once the daemon's own socket has seen the hang-up (a receipt, not a timer).
    */
@@ -210,10 +232,7 @@ describe("daemon", () => {
     clients.push(client);
     const serverSocket = await accepted.next(() => true);
     await client.write(encodeLine(frame));
-    // Armed before the hang-up, so this close is the departing connection's own.
-    const closed = once(serverSocket, "close");
-    client.close();
-    await closed;
+    await departReceipt(client, serverSocket);
     pending.resolve(test);
   };
 
@@ -231,10 +250,7 @@ describe("daemon", () => {
     try {
       await client.write(encodeLine(frame));
       await watched.entered(); // the turn has started: bind is held inside `watch`
-      // Armed before the hang-up, so this close is the departing connection's own.
-      const closed = once(serverSocket, "close");
-      client.close();
-      await closed;
+      await departReceipt(client, serverSocket);
     } finally {
       watched.release();
     }
