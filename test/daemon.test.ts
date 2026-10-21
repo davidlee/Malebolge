@@ -32,20 +32,45 @@ import {
   type TestHarness,
 } from "./harness-fixture.ts";
 
-/** The event streams the daemon watches, so a test can read their `closed` promise. */
+/**
+ * The event streams the daemon watches, so a test can read their `closed` promise,
+ * which streams had `start` called, and a barrier that can hold `watch` pending.
+ */
 const watched = vi.hoisted(() => {
   const streams: AgentEventStream[] = [];
+  const started: AgentEventStream[] = [];
   let next = Promise.withResolvers<AgentEventStream>();
+  let entered = Promise.withResolvers<undefined>();
+  let gate = Promise.withResolvers<undefined>();
+  gate.resolve(undefined); // Open by default: only a holding test sees a pause.
   return {
     streams,
+    started,
     next: (): Promise<AgentEventStream> => next.promise,
     push: (stream: AgentEventStream): void => {
       streams.push(stream);
       next.resolve(stream);
     },
+    /** Hold the next `watchEvents` call, just before it returns its stream. */
+    hold: (): void => {
+      entered = Promise.withResolvers<undefined>();
+      gate = Promise.withResolvers<undefined>();
+    },
+    entered: (): Promise<undefined> => entered.promise,
+    enter: (): void => {
+      entered.resolve(undefined);
+    },
+    gate: (): Promise<undefined> => gate.promise,
+    release: (): void => {
+      gate.resolve(undefined);
+    },
     reset: (): void => {
       streams.length = 0;
+      started.length = 0;
       next = Promise.withResolvers<AgentEventStream>();
+      entered = Promise.withResolvers<undefined>();
+      gate = Promise.withResolvers<undefined>();
+      gate.resolve(undefined);
     },
   };
 });
@@ -73,6 +98,14 @@ vi.mock("@earendil-works/pi-durable", async (importOriginal) => {
       ...args: Parameters<typeof actual.watchEvents>
     ): Promise<AgentEventStream> => {
       const stream = await actual.watchEvents(...args);
+      const start = stream.start.bind(stream);
+      stream.start = (...startArgs: Parameters<typeof start>): void => {
+        watched.started.push(stream);
+        start(...startArgs);
+      };
+      // The stream exists (bind has reached `watch`): signal, then hold until released.
+      watched.enter();
+      await watched.gate();
       watched.push(stream);
       return stream;
     },
@@ -182,6 +215,30 @@ describe("daemon", () => {
     client.close();
     await closed;
     pending.resolve(test);
+  };
+
+  /**
+   * A raw client attaches, its turn reaches `watch` (the barrier holds it there),
+   * then it leaves; the gate is released only once the daemon's own socket has
+   * seen the hang-up. Returns the one stream the bind acquired.
+   */
+  const midBindDepart = async (frame: unknown): Promise<AgentEventStream> => {
+    await start();
+    watched.hold();
+    const client = await lineClient(socketPath, toPrintable);
+    clients.push(client);
+    const serverSocket = await accepted.next(() => true);
+    try {
+      await client.write(encodeLine(frame));
+      await watched.entered(); // the turn has started: bind is held inside `watch`
+      // Armed before the hang-up, so this close is the departing connection's own.
+      const closed = once(serverSocket, "close");
+      client.close();
+      await closed;
+    } finally {
+      watched.release();
+    }
+    return watched.next();
   };
 
   /** The control connection's one completed input: the settle point for a negative assertion. */
@@ -485,6 +542,30 @@ describe("daemon", () => {
   it("drops an input from a client that departs before the session is ready (V-14)", async () => {
     await depart({ type: "input", content: "departed" });
     await settle(await attach());
+  });
+
+  it("stops the stream of a root attach that departs mid-bind (V-15)", async () => {
+    const stream = await midBindDepart({ type: "attach" });
+    // Bind finished: the destroyed branch stopped the stream, so this resolves.
+    expect(await stream.closed).toEqual({ reason: "stopped" });
+    expect(watched.streams).toHaveLength(1);
+    // `start` never ran: the destroyed branch stopped it, not the close handler.
+    expect(watched.started).toHaveLength(0);
+  });
+
+  it("leaves the created conversation when a new attach departs mid-bind (V-15)", async () => {
+    const stream = await midBindDepart({ type: "attach", new: true, cwd: "/own" });
+    expect(await stream.closed).toEqual({ reason: "stopped" });
+    expect(watched.streams).toHaveLength(1);
+    expect(watched.started).toHaveLength(0);
+    // The accepted DEC-108 strand: created before `watch`, still there, ownerless.
+    const page = await test.harness.commit(
+      (tx) => tx.scanConversations({}, 50, undefined),
+      context,
+    );
+    const created = page.items.filter((record) => record.id !== test.root.id);
+    expect(created).toHaveLength(1);
+    expect(created[0]?.owner).toBeUndefined();
   });
 
   it("holds an input until beforeInput resolves", async () => {
