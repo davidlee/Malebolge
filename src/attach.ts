@@ -273,6 +273,8 @@ function startTyping(state: AttachState, input: Readable): Interface {
  * Attach until `input` ends, `/quit`, or the daemon closes the connection.
  * Waits for the daemon to start listening (design §4.2), for `wait`'s bound;
  * if none answers, says so on `output` and rejects with the connect error.
+ * Until the daemon confirms with `attached`, a refusal or a close rejects with
+ * a `code: "NOT_ATTACHED"` error after it has printed why.
  */
 export async function attach(
   socketPath: string,

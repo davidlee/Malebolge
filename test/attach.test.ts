@@ -165,8 +165,11 @@ describe("attach: failures before attached", () => {
     s.input.write("held\n");
     fake.send({ type: "error", message: "attach: conversation and new are exclusive" });
     await s.until("[error: attach: conversation and new are exclusive]\n");
+    // A late attached must not flush the discarded line.
+    fake.send({ type: "attached", conversation: 7 });
     s.input.end();
     expect(await rejection(s.done)).toMatchObject({ code: "NOT_ATTACHED" });
+    await fake.closed;
     expect(s.printed()).not.toContain("[detached]");
     expect(fake.lines.items).toHaveLength(1);
   });
@@ -272,6 +275,42 @@ describe("attach: holds typed lines until attached", () => {
     ]);
     s.input.end();
     await s.done;
+  });
+});
+
+describe("attach: after attached", () => {
+  it("sends typed lines directly once attached", async () => {
+    const path = await socketPath();
+    const fake = await fakeDaemon(path);
+    const s = session(path);
+    await s.until("[connected]\n");
+    await fake.lines.next((line) => line.includes('"attach"'));
+    fake.send({ type: "attached", conversation: 7 });
+    await s.until("[attached to conversation 7]\n");
+    s.input.write("after\n");
+    await fake.lines.next((line) => line.includes('"after"'));
+    expect(fake.lines.items.slice(1)).toEqual([
+      JSON.stringify({ type: "input", content: "after" }),
+    ]);
+    s.input.end();
+    await s.done;
+  });
+
+  it("prints an error after attached and stays attached", async () => {
+    const path = await socketPath();
+    const fake = await fakeDaemon(path);
+    const s = session(path);
+    await s.until("[connected]\n");
+    await fake.lines.next((line) => line.includes('"attach"'));
+    fake.send({ type: "attached", conversation: 7 });
+    await s.until("[attached to conversation 7]\n");
+    fake.send({ type: "error", message: "boom" });
+    await s.until("[error: boom]\n");
+    s.input.write("still here\n");
+    await fake.lines.next((line) => line.includes("still here"));
+    s.input.write("/quit\n");
+    await s.done;
+    expect(s.printed()).toContain("[detached]");
   });
 });
 
@@ -437,7 +476,7 @@ interface FakeDaemon {
   lines: Recorder<string>;
   send: (value: unknown) => void;
   destroy: () => void;
-  close: () => Promise<void>;
+  closed: Promise<void>;
 }
 
 const skewOf = (): string => {
@@ -456,8 +495,15 @@ const fakeDaemon = async (
 ): Promise<FakeDaemon> => {
   const lines = recorder<string>();
   let accepted: Socket | undefined;
+  let markClosed = (): void => undefined;
+  const closed = new Promise<void>((resolve) => {
+    markClosed = resolve;
+  });
   const server = await serveUnix(path, (socket) => {
     accepted = socket;
+    socket.on("close", () => {
+      markClosed();
+    });
     socket.on(
       "data",
       lineSplitter((line) => {
@@ -475,6 +521,6 @@ const fakeDaemon = async (
     destroy: (): void => {
       accepted?.destroy();
     },
-    close: server.close,
+    closed,
   };
 };
