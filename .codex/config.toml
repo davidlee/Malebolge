@@ -2,3 +2,11 @@
 command = "sh"
 args = ["-c", 'exec "${DOCTRINE_BIN:-doctrine}" serve --mcp']
 env_vars = ["DOCTRINE_BIN"]
+
+# pi delegation via quotient. cwd is the launch dir, where ./.quotient/profiles
+# is found: satan's, so writes rooted here are not view-overlaps-protected.
+# Pass cwd = "/home/david/dev/malebolge" on each call to run in this repo.
+[mcp_servers.quotient]
+command = "/home/david/.local/state/quotient/bin/quotient"
+cwd = "/home/david/dev/satan"
+tool_timeout_sec = 360     # policy maxima.wall_clock_s + 60
