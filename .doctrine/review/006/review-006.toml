@@ -1,0 +1,96 @@
+id    = 6
+slug  = "sl-002-design-verification-pass-over-the-rv-005-amendments"
+title = "SL-002 design — verification pass over the RV-005 amendments"
+# no status — a review's status is DERIVED from its findings, so
+# it is never stored (the storage rule forbids derived data in authored files).
+
+[review]
+facet     = "design"     # scope|design|plan|phase-plan|implementation|code-review|reconciliation
+raiser    = "raiser"
+responder = "responder"
+rounds_base = 0
+contests_base = 0
+concluded = true
+
+[[review.turn]]
+act = "conclude"
+role = "raiser"
+note = "A narrow verification pass over the ten RV-005 amendments: all ten landed, and it produced three residuals — the bound-connection mechanism's blind spot for a well-formed list frame (major), the picker's stderr merge (minor) and two off-by-one citations (nit). All three fixed in sec-2, sec-4 and sec-5 and re-materialised at revision 32; RV-005's ten findings remain verified."
+
+[target]                   # the outbound `reviews` edge: RV-NNN ──reviews──▶ <ref>
+ref   = "SL-002"
+
+[[finding]]
+id = "F-1"
+status = "verified"
+severity = "major"
+title = "A well-formed `list` on a bound connection would have written nothing"
+detail = """Sec-2's bound-connection paragraph covered only frame lines that *fail to parse as a command*. A well-formed `{"type":"list"}` parses cleanly, so it raises no FrameRefused and reaches `act`'s input/abort/compact switch (src/daemon.ts:120-135), which has no `list` case: the daemon would answer nothing and the connection would stay silently bound."""
+disposition = "fix-now"
+response = "Sec-2 now names both branches: `laterLine` refuses a well-formed `list` beside a well-formed `attach`, and maps any `FrameRefused` to `alreadyAttached(conversation)`. Its lead-in is reworded from lines that fail to parse to lines that are not an actionable command for the bound conversation. Sec-6's criterion already required the refusal; the mechanism now exists."
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+response = "Sec-2 now names both branches: `laterLine` refuses a well-formed `list` beside a well-formed `attach`, and maps any `FrameRefused` to `alreadyAttached(conversation)`. Its lead-in is reworded from lines that fail to parse to lines that are not an actionable command for the bound conversation. Sec-6's criterion already required the refusal; the mechanism now exists."
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "Verified in design.md's current sections: the statement the disposition claimed is present, and the fingerprint it belongs to is the one materialised at revision 32."
+
+[[finding]]
+id = "F-2"
+status = "verified"
+severity = "minor"
+title = "The picker merged stderr, so the truncation line could become a candidate"
+detail = "Sec-5 had the picker run `--list` with stderr merged into one buffer while sec-2 required a truncation line on stderr; merged, that prose line would be offered by completing-read as if it were an id, and its presence could not be distinguished from a candidate."
+disposition = "fix-now"
+response = "Sec-5 step 1 keeps stderr in its own buffer, step 2 takes candidates only from stdout's numeric lines and treats stderr as the truncation signal shown as a message."
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+response = "Sec-5 step 1 keeps stderr in its own buffer, step 2 takes candidates only from stdout's numeric lines and treats stderr as the truncation signal shown as a message."
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "Verified in design.md's current sections: the statement the disposition claimed is present, and the fingerprint it belongs to is the one materialised at revision 32."
+
+[[finding]]
+id = "F-3"
+status = "verified"
+severity = "nit"
+title = "Two citations were one line off"
+detail = "`AttachInvocation` is at src/attach.ts:98, not :91-95; `no conversation N` is defined at src/conversations.ts:40, not :44. Both would have become plan touch points."
+disposition = "fix-now"
+response = "Both re-anchored in sec-4 and sec-5."
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+response = "Both re-anchored in sec-4 and sec-5."
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "Verified in design.md's current sections: the statement the disposition claimed is present, and the fingerprint it belongs to is the one materialised at revision 32."
+
+# Findings are append-only `[[finding]]` tables, added by `review raise`.
+# Empty here at creation — a fresh review is Active, awaiting the raiser.

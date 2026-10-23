@@ -1,0 +1,341 @@
+id    = 5
+slug  = "design-review-of-sl-002"
+title = "design review of SL-002"
+# no status — a review's status is DERIVED from its findings, so
+# it is never stored (the storage rule forbids derived data in authored files).
+
+[review]
+facet     = "design"     # scope|design|plan|phase-plan|implementation|code-review|reconciliation
+raiser    = "raiser"
+responder = "responder"
+rounds_base = 0
+contests_base = 0
+concluded = true
+
+[[review.turn]]
+act = "conclude"
+role = "raiser"
+note = "The pass reviewed design.md sec-1..sec-6 as materialised at revision 20 and amended through revision 27: the frame and its reply, the bound-connection rule, the daemon listing and clean close, the --list mode and its failure contract, the Emacs target and switch order, and the verification and documentation duties. Ten findings, all fix-now and verified."
+
+[[review.turn]]
+act = "conclude"
+role = "raiser"
+note = "Second round on this pass: a narrow verification pass over the ten amendments (also recorded separately as RV-006 before it was clear that this run keeps one ledger) raised three residuals — a well-formed `list` on a bound connection answered nothing, the picker merged the truncation line into its candidates, and two citations were one line off. All three fixed in sec-2, sec-4 and sec-5 and re-materialised at revision 32. Thirteen findings, all fix-now and verified."
+
+[target]                   # the outbound `reviews` edge: RV-NNN ──reviews──▶ <ref>
+ref   = "SL-002"
+
+[[finding]]
+id = "F-1"
+status = "verified"
+severity = "major"
+title = "Bound-connection refusal text contradicted DEC-007 and left laterLine unspecified"
+detail = "Sec-3 and sec-6 fixed the text as `list: already attached to conversation N`, while DEC-007's Choice says the *existing* (unprefixed) message and `docs/internals.md:112-114` documents it. `alreadyAttached` (src/daemon.ts:51-54) takes no frame, so a prefixed variant has no signature. Sec-2 replaced AttachRefused with FrameRefused but never said what laterLine's `error instanceof AttachRefused ? alreadyAttached(...) : errorMessage(...)` branch (src/daemon.ts:197-219) becomes; a mechanical rename would ship `attach: conversation must be a positive integer` where test/daemon.test.ts:624-629 requires `already attached to conversation 1`."
+disposition = "fix-now"
+response = "Sec-2 gained a bound-connection paragraph: the rule is about the connection, not the frame. Any frame line that fails to parse as a command -- valid or malformed `attach`, valid or malformed `list` -- answers the *unprefixed* `already attached to conversation N`, the connection stays open and the binding unchanged, so `laterLine` maps any `FrameRefused` to `alreadyAttached(conversation)`. Sec-3 and sec-6 now use the unprefixed message. DEC-007's Choice needed no change; the design was wrong, not the decision."
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+response = "Sec-2 gained a bound-connection paragraph: the rule is about the connection, not the frame. Any frame line that fails to parse as a command -- valid or malformed `attach`, valid or malformed `list` -- answers the *unprefixed* `already attached to conversation N`, the connection stays open and the binding unchanged, so `laterLine` maps any `FrameRefused` to `alreadyAttached(conversation)`. Sec-3 and sec-6 now use the unprefixed message. DEC-007's Choice needed no change; the design was wrong, not the decision."
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "Amendment verified in the current design.md and the affected decision: the section now states what the finding required, and the citation it depends on was re-read at that site."
+
+[[finding]]
+id = "F-2"
+status = "verified"
+severity = "major"
+title = "`truncated` had no consumer, and the docs duty it licensed could not be supported"
+detail = "Sec-6 required `--list` to print ids and no notices, and the picker read ids only, so nothing read the wire key. Worse, ids ascend while the scan descends (pi-durable dist/types.d.ts:867-870), so a full page trims the oldest conversation -- possibly root, the client's default target -- while the docs claimed older conversations stay attachable by id."
+disposition = "fix-now"
+response = "`truncated` now has two consumers: `--list` writes one truncation line to **stderr** (stdout stays ids-only, and the criterion says so) and the Emacs picker adds a minibuffer message. Sec-2 and sec-6 also say what happens to root when the page fills: a plain `malebolge-attach` always binds it, and `ROOT_CONVERSATION_ID` (pi-durable index.d.ts:29) names it explicitly."
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+response = "`truncated` now has two consumers: `--list` writes one truncation line to **stderr** (stdout stays ids-only, and the criterion says so) and the Emacs picker adds a minibuffer message. Sec-2 and sec-6 also say what happens to root when the page fills: a plain `malebolge-attach` always binds it, and `ROOT_CONVERSATION_ID` (pi-durable index.d.ts:29) names it explicitly."
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "Amendment verified in the current design.md and the affected decision: the section now states what the finding required, and the citation it depends on was re-read at that site."
+
+[[finding]]
+id = "F-3"
+status = "verified"
+severity = "major"
+title = "DEC-009's smoke obligation had no home and the gate could not reach it"
+detail = "DEC-009 Consequences requires test/emacs-attach-smoke.ts to gain a targeted attach, but sec-5 never mentioned it and sec-6's gate was `just check` and `just ert` only, while the smoke is `just smoke` (justfile:23-25). Its fake daemon answers only an attach frame (test/emacs-attach-smoke.ts:129-140), so a targeted attach needs a `list` reply there too."
+disposition = "fix-now"
+response = "Sec-5 names the smoke and what it gains (a `list` reply in the fake, an assertion that a targeted attach sends the argv the picker chose); sec-6 adds `just smoke` to the gate and says it is the only end-to-end evidence that the argv reaches a daemon."
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+response = "Sec-5 names the smoke and what it gains (a `list` reply in the fake, an assertion that a targeted attach sends the argv the picker chose); sec-6 adds `just smoke` to the gate and says it is the only end-to-end evidence that the argv reaches a daemon."
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "Amendment verified in the current design.md and the affected decision: the section now states what the finding required, and the citation it depends on was re-read at that site."
+
+[[finding]]
+id = "F-4"
+status = "verified"
+severity = "major"
+title = "The list client's failure contract was unstated, so 'exits 1 with one message' had no implementation"
+detail = "src/attach-main.ts:28-32 exits 1 only for an error carrying a `code` and rethrows everything else. The design named no rejection type, no dispatch from attach-main to the list mode, and no owner for ending the socket against an old daemon that binds root and stays open (src/daemon.ts:176-185)."
+disposition = "fix-now"
+response = 'Sec-4 now names it: `NotListedError` with `readonly code = "NOT_LISTED"`, mirroring `NotAttachedError` (src/attach.ts:35); `AttachInvocation` becomes a union of a `mode: "attach"` arm and a `mode: "list"` arm, which gives attach-main one dispatch; and the reader owns its socket, ending it on an error frame, a refusal or a skew (`failBeforeAttach` is the precedent, src/attach.ts:271-281) instead of waiting for a close that will not come.'
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+response = 'Sec-4 now names it: `NotListedError` with `readonly code = "NOT_LISTED"`, mirroring `NotAttachedError` (src/attach.ts:35); `AttachInvocation` becomes a union of a `mode: "attach"` arm and a `mode: "list"` arm, which gives attach-main one dispatch; and the reader owns its socket, ending it on an error frame, a refusal or a skew (`failBeforeAttach` is the precedent, src/attach.ts:271-281) instead of waiting for a close that will not come.'
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "Amendment verified in the current design.md and the affected decision: the section now states what the finding required, and the citation it depends on was re-read at that site."
+
+[[finding]]
+id = "F-5"
+status = "verified"
+severity = "major"
+title = "The Emacs switch order was unspecified, and a failed second attach could strand the user"
+detail = "Sec-5 put the detach before the draft refusal without saying the listing, prompt and draft check settle first, so one implementer would refuse with the client intact and another detach then refuse. It also did not say what happens when the second attach fails after a successful detach -- `open` rejects `no conversation N` (src/conversations.ts:44) because an id is a snapshot of the store."
+disposition = "fix-now"
+response = "Sec-5 fixes the order in one clause -- list, prompt, draft check, detach, attach -- with the draft refusal at step 3, holding the client attached, and says a failed second attach reports the failure and leaves the transcript empty rather than falling back to root."
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+response = "Sec-5 fixes the order in one clause -- list, prompt, draft check, detach, attach -- with the draft refusal at step 3, holding the client attached, and says a failed second attach reports the failure and leaves the transcript empty rather than falling back to root."
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "Amendment verified in the current design.md and the affected decision: the section now states what the finding required, and the citation it depends on was re-read at that site."
+
+[[finding]]
+id = "F-6"
+status = "verified"
+severity = "minor"
+title = "Three governing texts still gave the listing ten seconds"
+detail = "DEC-008's Choice ('the same waiting budget as an attach (10 s)') and DEC-009's Choice ('bounded by the client's own 10 s connect wait') survived unamended while only their amendments said about a second; sec-4 asserted the short wait without saying which text governs or naming the constant, and DEFAULT_WAIT (src/attach.ts:203) is precisely what is not used."
+disposition = "fix-now"
+response = "Sec-4 names `LIST_WAIT = { intervalMs: 200, timeoutMs: 1_000 }` and states that DEC-008's amendment supersedes its Choice where they differ."
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+response = "Sec-4 names `LIST_WAIT = { intervalMs: 200, timeoutMs: 1_000 }` and states that DEC-008's amendment supersedes its Choice where they differ."
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "Amendment verified in the current design.md and the affected decision: the section now states what the finding required, and the citation it depends on was re-read at that site."
+
+[[finding]]
+id = "F-7"
+status = "verified"
+severity = "minor"
+title = "Sec-6's following case could not distinguish the fix it claimed to test"
+detail = "Comint follows a *window* whose point is at the process mark (emacs/malebolge.el:161-163), so an assertion on buffer point at point-max passes with the remedy deleted; and goto-char (point-max) on a freshly erased buffer is a no-op, so the cited lines (:218-222) do not establish the stated cause."
+disposition = "fix-now"
+response = "Sec-5 and sec-6 restate the remedy per window (every window showing the transcript goes to the end) and the test asserts `window-point` at `point-max` for a window that was scrolled back before the switch, dropping the false causal claim."
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+response = "Sec-5 and sec-6 restate the remedy per window (every window showing the transcript goes to the end) and the test asserts `window-point` at `point-max` for a window that was scrolled back before the switch, dropping the false causal claim."
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "Amendment verified in the current design.md and the affected decision: the section now states what the finding required, and the citation it depends on was re-read at that site."
+
+[[finding]]
+id = "F-8"
+status = "verified"
+severity = "minor"
+title = "Sec-4's signature could not call the seam it named, and the renderer's presentation was undecided"
+detail = "`listConversations(socketPath, output, wait)` was said to connect through connectOrExplain, which is (socketPath, output, render, wait) (src/attach.ts:247-262) and needs a renderer whose presentation was never chosen in a mode that refuses --emacs. The hosting module and the shape AttachInvocation (src/attach.ts:91-95) grows were likewise unnamed."
+disposition = "fix-now"
+response = """Sec-4 gives the signature its renderer parameter (`presentation = "terminal"`), places the function in src/attach.ts, and names `AttachInvocation`'s union as the shape it grows into."""
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+response = """Sec-4 gives the signature its renderer parameter (`presentation = "terminal"`), places the function in src/attach.ts, and names `AttachInvocation`'s union as the shape it grows into."""
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "Amendment verified in the current design.md and the affected decision: the section now states what the finding required, and the citation it depends on was re-read at that site."
+
+[[finding]]
+id = "F-9"
+status = "verified"
+severity = "minor"
+title = "Two shipped README claims would have been left false"
+detail = "README.md:123-124 says 'just attach and M-x malebolge-attach accept none, so both stay on root', which the prefix-argument prompt falsifies; README.md:165-172 documents the skew hint for attach alone with the literal message, which the generalised rule makes incomplete. Sec-6's doc duty required neither correction."
+disposition = "fix-now"
+response = "Sec-6's doc duty now names both corrections explicitly: the prompt falsifies README.md:123-124, and the generalised skew makes README.md:165-172 incomplete, so both are amended in the same commit as the new documentation."
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+response = "Sec-6's doc duty now names both corrections explicitly: the prompt falsifies README.md:123-124, and the generalised skew makes README.md:165-172 incomplete, so both are amended in the same commit as the new documentation."
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "Amendment verified in the current design.md and the affected decision: the section now states what the finding required, and the citation it depends on was re-read at that site."
+
+[[finding]]
+id = "F-10"
+status = "verified"
+severity = "nit"
+title = "Three stale citations would have become plan touch points"
+detail = "Sec-3 cited fail at src/daemon.ts:96-110 (it is :67-74); sec-4 cited SKEW at src/attach.ts:220-232 (SKEW/SKEW_HINT are :205-206, failBeforeAttach :271-281) and connectOrExplain at :280-300 (it is :247-262); DEC-007 and research/research.md:57 repeat the first."
+disposition = "fix-now"
+response = "All three re-anchored in sec-3, sec-4 and sec-5; DEC-007 and the research artefact keep their original citations (they are historical records), and the plan takes its touch points from the re-anchored sections."
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+response = "All three re-anchored in sec-3, sec-4 and sec-5; DEC-007 and the research artefact keep their original citations (they are historical records), and the plan takes its touch points from the re-anchored sections."
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "Amendment verified in the current design.md and the affected decision: the section now states what the finding required, and the citation it depends on was re-read at that site."
+
+[[finding]]
+id = "F-11"
+status = "verified"
+severity = "major"
+title = "A well-formed `list` on a bound connection would have written nothing (RV-006 F-1, re-raised on the run's pass)"
+detail = """Sec-2's bound-connection paragraph covered only frame lines that fail to parse as a command. A well-formed `{"type":"list"}` parses cleanly, raises no FrameRefused and reaches `act`'s input/abort/compact switch (src/daemon.ts:120-135), which has no `list` case: the daemon would answer nothing and the connection would stay silently bound."""
+disposition = "fix-now"
+response = "Sec-2 now names both branches: `laterLine` refuses a well-formed `list` beside a well-formed `attach`, and maps any `FrameRefused` to `alreadyAttached(conversation)`; its lead-in is reworded to lines that are not an actionable command for the bound conversation."
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+response = "Sec-2 now names both branches: `laterLine` refuses a well-formed `list` beside a well-formed `attach`, and maps any `FrameRefused` to `alreadyAttached(conversation)`; its lead-in is reworded to lines that are not an actionable command for the bound conversation."
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "Verified against design.md as materialised at revision 32."
+
+[[finding]]
+id = "F-12"
+status = "verified"
+severity = "minor"
+title = "The picker merged stderr, so the truncation line could become a candidate (RV-006 F-2)"
+detail = "Sec-5 had the picker run `--list` with stderr merged while sec-2 required a truncation line on stderr; merged, that prose line would be offered by completing-read as if it were an id."
+disposition = "fix-now"
+response = "Sec-5 step 1 keeps stderr in its own buffer; step 2 takes candidates only from stdout's numeric lines and treats stderr as the truncation signal shown as a message."
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+response = "Sec-5 step 1 keeps stderr in its own buffer; step 2 takes candidates only from stdout's numeric lines and treats stderr as the truncation signal shown as a message."
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "Verified against design.md as materialised at revision 32."
+
+[[finding]]
+id = "F-13"
+status = "verified"
+severity = "nit"
+title = "Two citations were one line off (RV-006 F-3)"
+detail = "`AttachInvocation` is at src/attach.ts:98, not :91-95; `no conversation N` is defined at src/conversations.ts:40, not :44."
+disposition = "fix-now"
+response = "Both re-anchored in sec-4 and sec-5."
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+response = "Both re-anchored in sec-4 and sec-5."
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "Verified against design.md as materialised at revision 32."
+
+# Findings are append-only `[[finding]]` tables, added by `review raise`.
+# Empty here at creation — a fresh review is Active, awaiting the raiser.

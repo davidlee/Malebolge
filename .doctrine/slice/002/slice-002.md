@@ -89,14 +89,15 @@ omission here: SL-002 has neither a title (no index yet) nor an intent entry
 Done when:
 
 - `malebolge-attach --list` against a daemon holding root plus two created
-  conversations prints exactly those three ids, newest first, one per line, with
-  no transcript or other output, and exits 0 — and the same command against a
-  daemon with root only prints one id.
+  conversations writes exactly those three ids, newest first, one per line, to
+  **stdout** — no transcript, no notices — and exits 0 — and the same command
+  against a daemon with root only prints one id.
 - A task-owned conversation is absent from the listing, while the same store's
   ownerless conversations are present (the fixture that creates one exists at
   `test/daemon.test.ts:507-525`; `conversationIds()` is the oracle).
 - With `LIST_PAGE + 1` ownerless conversations, exactly `LIST_PAGE` ids come back,
-  newest first, and the reply says the page was cut.
+  newest first, the reply carries `truncated: true`, and `--list` writes one
+  truncation line to stderr.
 - A listing that fails answers one error and the connection closes (tested with a
   `list()` that rejects) — not an error on a connection left open and silent.
 - A malformed `list` frame — `{"type":"list","topic":"x"}`, the shape RFC-002
@@ -104,21 +105,31 @@ Done when:
   nothing.
 - `--list` with any other flag is one usage line plus the usage, exit 2, and no
   connection is made.
-- A `list` frame sent on a bound connection is answered with an error, the
-  connection stays open, and the binding is unchanged (proven with a control:
-  the same connection still accepts an input for its bound conversation).
-- A daemon that predates `list` produces the restart hint, not a printed error
-  line or a silent empty list.
+- A `list` frame sent on a bound connection is refused with the unprefixed
+  `already attached to conversation N` — the same message a malformed second
+  `attach` gets, as shipped — the connection stays open, and the binding is
+  unchanged (proven with a control: the same connection still accepts an input
+  for its bound conversation).
+- A daemon that predates `list` produces the restart hint naming `list`, exits 1
+  with one message (not a stack trace), and prints no snapshot.
 - `M-x malebolge-attach` with a target attaches to that conversation and the
-  transcript names it; `M-x malebolge-attach` without one still attaches to root;
-  `C-c C-q` still detaches with the conversation left running.
-- `just check` (format, lint, typecheck, vitest with coverage) and `just ert` are
-  green; `test/structure.test.ts` is unchanged unless a seam genuinely moves, and
-  a moved seam updates it in the same commit.
+  transcript names it; without one it still attaches to root; `C-c C-q` still
+  detaches with the conversation left running. A switch with a non-whitespace
+  draft is refused **before** anything is detached and the draft survives; a
+  second attach that fails leaves the transcript empty rather than falling back
+  to root; after a switch, a window that was scrolled back sits at `point-max`
+  and follows output.
+- `just check` (format, lint, typecheck, vitest with coverage), `just ert` and
+  `just smoke` are green; `test/structure.test.ts` is unchanged unless a seam
+  genuinely moves, and a moved seam updates it in the same commit.
 - README's "Which conversation" section and `docs/internals.md` §Protocol name
-  the `list` frame and the `--list` flag, state the page limit and that older
-  conversations stay attachable by id, and state that an id names a conversation
-  only inside one profile's store and socket.
+  the `list` frame and the `--list` flag, state the page limit (and that a
+  conversation beyond it is reachable by a kept id or, for root, by a plain
+  attach or `ROOT_CONVERSATION_ID`), and state that an id names a conversation
+  only inside one profile's store and socket. Two existing README claims are
+  corrected with them: that `M-x malebolge-attach` takes no arguments
+  (`README.md:123-124`) and the skew paragraph's `attach`-only wording
+  (`README.md:165-172`).
 
 Risks:
 

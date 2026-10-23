@@ -73,3 +73,19 @@ turn.
 `.agents/` (doctrine-installed skills) is deliberately left untracked.
 
 ## Harvest
+
+## Review round lessons (2026-10-23)
+
+- **The doctrine MCP tools are rooted at the session's cwd, not the repo under
+  work.** Ten design findings were first raised on *satan's* RV-005 (SL-015's
+  reconciliation audit) because this session runs from `/workspace/satan`. They
+  were withdrawn there with a note and re-raised through malebolge's own CLI. Any
+  cross-repo slice driven from a satan session must use the target repo's
+  `doctrine` binary for ledger writes.
+- **One ledger per design run's pass.** The run names its pass once (RV-005); a
+  second, narrower verification round belongs on *that* ledger (raise → dispose →
+  verify → conclude again), not on a fresh RV. RV-006 was created before that was
+  clear; it stands as an accurate record, and its three residuals were re-raised
+  on RV-005 so the run's own pass carries them.
+- **Section attestations are `att-` nodes** (`attests: sec-N`, `reviewer`), not a
+  single `section-reviewed` act; the act reconciles coverage, it does not create it.
