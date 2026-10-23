@@ -266,7 +266,7 @@ failed — all 11 under `test/runner/` (the container set), `just ert` 38/38,
 
 ## Harvest
 <!-- single-copy: updated in place each harvest; ids only, never restated content -->
-fresh-as-of: 2026-10-24 · PHASE-03 complete · code pending, doctrine pending
+fresh-as-of: 2026-10-24 · PHASE-03 complete · code `613c718`, doctrine `d97f24e`
 
 ### Produced
 - PHASE-03 done — the Emacs target picker: `malebolge-attach` under a prefix
