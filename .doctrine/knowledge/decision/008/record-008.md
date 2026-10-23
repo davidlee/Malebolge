@@ -46,3 +46,19 @@ path stays single, and the skew rule stops growing a literal per frame.
   covers both frames.
 - `render.ts` learns one frame and its terminal rendering.
 - A pre-`list` daemon produces the restart hint, not a printed error line.
+
+## Amendments (2026-10-23, after the informal critical pass)
+
+- **The list mode is its own reader, not `attach()`.** It accepts exactly two
+  frames — `conversations` and `error` — and ignores everything else, because an
+  old daemon's first frame is root's `snapshot` (DEC-007 amendment). It also
+  prints neither `[connected]` (`src/attach.ts:401`) nor `[detached]` (`:409`),
+  since the criterion forbids any output but ids.
+- **One vocabulary, one renderer — for its own frames.** The `conversations` frame
+  still joins `Printable` and renders one id per line (`src/render.ts:15`), so the
+  terminal and a future Emacs list buffer read the same text; the list mode simply
+  does not hand unrelated frames to it.
+- **Its own wait.** A short wait (one retry, about a second) rather than attach's
+  ten-second `DEFAULT_WAIT` (`src/attach.ts:203`): a listing runs against a daemon
+  that is already up, and Emacs runs it synchronously (DEC-009), where ten seconds
+  of frozen UI is the difference between a message and a mystery.

@@ -63,3 +63,34 @@ connection meaning one conversation.
 - Listing is one page of 50; older conversations remain attachable by id, and the
   docs must say so.
 - `docs/internals.md` §Protocol documents the frame and its reply.
+
+## Amendments (2026-10-23, after the informal critical pass)
+
+Findings accepted on evidence; each cites the site that decided it.
+
+- **The skew is a snapshot *then* an error.** A daemon older than the client binds
+  root for the unknown `list` line, which writes root's `snapshot`
+  (`src/daemon.ts:115-147`) before `writeError` (`:176-185`); asserted at
+  `test/daemon.test.ts:563-574`, and reproduced by the attach skew fake at
+  `test/attach.test.ts:195-205`. So any client that lists must ignore every frame
+  except its reply and an error, and must never print a snapshot.
+- **A refused `list` frame needs its own refusal.** `AttachRefused` is
+  attach-shaped — `attachRefused` prefixes every message with `attach: `
+  (`src/protocol.ts`), and only `AttachRefused` ends a connection
+  (`src/daemon.ts:176-181`); any other throw binds root and stays open. RFC-002
+  step 2 will send `{"type":"list","topic":"name"}`, which must be answered
+  `list: unknown key topic`, error-then-close, binding nothing. Replace both with
+  one frame-named refusal (`FrameRefused`, `frameRefused(frame, problem)`).
+- **A failed listing closes the connection.** `actOn` writes a turn's error and
+  keeps the chain (`src/daemon.ts:242-249`), and an unbound connection thereafter
+  receives nothing, so a rejected `list()` would strand `--list` forever: route it
+  through `fail`.
+- **Truncation is reported.** The reply carries `truncated: boolean`, from
+  `Page.next !== undefined` (pi-durable `dist/types.d.ts:563-566`), so a caller can
+  tell a complete listing from a cut page. This is what lets the docs say "older
+  conversations stay attachable by id" without guessing.
+- **The element type is not additively widenable.** New *keys* widen additively; a
+  new *element type* does not. Step 4's per-conversation labels make elements
+  objects, which an older `--list` would print as `[object Object]`. Recorded, not
+  papered over: the element type changes at step 4, and client and daemon ship
+  together until satan ISS-055's handshake exists.

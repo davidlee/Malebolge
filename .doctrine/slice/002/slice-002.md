@@ -43,7 +43,9 @@ omission here: SL-002 has neither a title (no index yet) nor an intent entry
 1. **Store enumeration.** `src/conversations.ts` gains `list()`: one
    `harness.commit` reading `tx.scanConversations` once, keeping ownerless
    conversations only (a task-owned conversation is refused at attach, so listing
-   one is noise), ordered by id ascending, bounded by an explicit page size.
+   one is noise), **newest first** (id descending, so a page limit trims the
+   oldest), bounded by an explicit page size, and reporting whether the page was
+   cut (DEC-007).
 2. **Wire verb.** `src/protocol.ts` gains a first-line `list` frame — the second
    frame that is valid only as a connection's first line — answered with the ids
    and then the connection closes. It neither binds nor creates. On a bound
@@ -87,9 +89,19 @@ omission here: SL-002 has neither a title (no index yet) nor an intent entry
 Done when:
 
 - `malebolge-attach --list` against a daemon holding root plus two created
-  conversations prints exactly those three ids, ascending, one per line, with no
-  transcript or other output, and exits 0 — and the same command against a daemon
-  with root only prints one id.
+  conversations prints exactly those three ids, newest first, one per line, with
+  no transcript or other output, and exits 0 — and the same command against a
+  daemon with root only prints one id.
+- A task-owned conversation is absent from the listing, while the same store's
+  ownerless conversations are present (the fixture that creates one exists at
+  `test/daemon.test.ts:507-525`; `conversationIds()` is the oracle).
+- With `LIST_PAGE + 1` ownerless conversations, exactly `LIST_PAGE` ids come back,
+  newest first, and the reply says the page was cut.
+- A listing that fails answers one error and the connection closes (tested with a
+  `list()` that rejects) — not an error on a connection left open and silent.
+- A malformed `list` frame — `{"type":"list","topic":"x"}`, the shape RFC-002
+  step 2 will send — answers one error naming the frame, closes, and binds
+  nothing.
 - `--list` with any other flag is one usage line plus the usage, exit 2, and no
   connection is made.
 - A `list` frame sent on a bound connection is answered with an error, the
@@ -104,7 +116,9 @@ Done when:
   green; `test/structure.test.ts` is unchanged unless a seam genuinely moves, and
   a moved seam updates it in the same commit.
 - README's "Which conversation" section and `docs/internals.md` §Protocol name
-  the `list` frame and the `--list` flag.
+  the `list` frame and the `--list` flag, state the page limit and that older
+  conversations stay attachable by id, and state that an id names a conversation
+  only inside one profile's store and socket.
 
 Risks:
 
@@ -142,8 +156,9 @@ Open questions:
   is this slice's and buffers are step 4's. The observation stands: the
   draft/submit plumbing is single-buffered today (`malebolge.el:177-181`), which
   is exactly why buffers belong with the topics work.
-- **OQ-3.** Does the Emacs target prompt query the daemon each time (a fresh
-  `--list`), and what does it show when the daemon is down or predates `list`?
+- **OQ-3.** *Answered by DEC-009:* a fresh `--list` each time, on its own short
+  wait (not the attach wait), and a failure aborts the attach with the client's
+  own message rather than falling back to root.
 
 ## Follow-Ups
 

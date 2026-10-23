@@ -58,3 +58,22 @@ text.
   attach against a fake daemon.
 - A daemon-side `list` is now load-bearing for Emacs: with it broken, `C-u`
   attach fails loudly rather than degrading.
+
+## Amendments (2026-10-23, after the informal critical pass)
+
+- **No buffer-local target record.** `malebolge--live-process`
+  (`emacs/malebolge.el:176-179`) already answers whether a client is live, and a
+  stored target has no lifecycle: after `C-c C-q` it would still name an old
+  conversation while a plain `M-x malebolge-attach` reuses the same buffer for
+  root, and step 4's per-conversation buffers would inherit the lie. The
+  transcript's `attached to conversation N` is the only authority on what is bound.
+- **A switch must restore following.** `erase-buffer`
+  (`emacs/malebolge.el:218-222`) clips point to `point-min` and
+  `comint-scroll-to-bottom-on-output` is nil (`:163`), so the new snapshot would be
+  inserted below point and the window would never follow: `goto-char (point-max)`
+  after the erase, and set the point of windows already showing the buffer. An ERT
+  case asserts it.
+- **The listing call is announced.** A `message` plus `redisplay` before the
+  synchronous subprocess, so that a stopped daemon — the ordinary case when a
+  targeted attach is requested — does not freeze Emacs silently; DEC-008's short
+  wait bounds the pause.

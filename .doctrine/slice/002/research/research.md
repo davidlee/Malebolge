@@ -82,10 +82,15 @@ Load-bearing facts:
    The ownerless filter is therefore defensive, and `ownerTaskId` would select the
    wrong half.
 5. ✓ **A first line that is a command binds root and is acted on**
-   (`src/daemon.ts:186-192`; `docs/internals.md:110-111`), so an old daemon answers
-   `{"type":"list"}` with `unknown message type "list"` on a root-bound
-   connection — the client must route that to the restart hint, not print it as a
-   list.
+   (`src/daemon.ts:186-192`; `docs/internals.md:110-111`). **Corrected
+   2026-10-23 by the critical pass:** an old daemon's answer to `{"type":"list"}`
+   is a **root `snapshot` first, then `unknown message type "list"`** — the
+   catch at `src/daemon.ts:176-185` calls `bindRoot`, which writes the snapshot
+   (`:115-147`), and only then `writeError`. Asserted at
+   `test/daemon.test.ts:563-574` (`snapshot` before `error`) and reproduced by
+   the attach skew fake at `test/attach.test.ts:195-205`, which prints
+   `» earlier` before the error. So a listing client must ignore every frame
+   except its reply and an error, and must never print a snapshot.
 6. ✓ **`Printable` (`src/render.ts:15`) is `AgentEvent | ErrorMessage |
    AttachedMessage | ClientNotice`**, and `attached` already renders as
    `attached to conversation N` (`:246-247`), which is what the Emacs transcript
@@ -124,12 +129,14 @@ Load-bearing facts:
 
 Against `slice-002.md` as written:
 
-1. **Objective 1 tightens.** `list()` = one commit, `scanConversations({order:"ascending"}, PAGE)`,
-   then `items.filter(record => record.owner === undefined).map(record => record.id)`.
-   No cursor persistence, no paging beyond one page: the slice lists at most a
-   page. The page size is a named constant, and the doc must say what a
-   conversation outside the page does (it exists and is attachable by id, just not
-   listed).
+1. **Objective 1 tightens.** `list()` = one commit,
+   `scanConversations({order:"descending"}, PAGE)` (**corrected 2026-10-23:**
+   descending, so a page limit trims the oldest rather than the newest), then
+   `items.filter(record => record.owner === undefined).map(record => record.id)`,
+   plus `truncated: page.next !== undefined`. No cursor persistence, no paging
+   beyond one page: the slice lists at most a page. The page size is a named
+   constant, and the doc must say what a conversation outside the page does (it
+   exists and is attachable by id, just not listed).
 2. **Objective 2 is now two changes, not one:** a `list` frame in `protocol.ts`
    and a *clean close* seam in `daemon.ts` (today only `fail` closes).
 3. **Objective 4 generalises.** Skew detection should key on the daemon's
