@@ -6,7 +6,7 @@ slug = "many-conversations"
 title = "Many conversations per daemon: topics and conversations"
 status = "open"
 created = "2026-10-20"
-updated = "2026-10-20"
+updated = "2026-10-23"
 tags = ["malebolge", "conversations", "protocol", "topics"]
 
 [relationships]
@@ -21,4 +21,12 @@ target = "RFC-001"
 [[relation]]
 label = "related"
 target = "IMP-002"
+
+[[relation]]
+label = "related"
+target = "SL-002"
+
+[[relation]]
+label = "related"
+target = "SL-001"
 
