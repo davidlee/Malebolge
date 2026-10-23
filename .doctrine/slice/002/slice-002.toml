@@ -16,7 +16,7 @@ intent = "scope-relevant"
 
 [[selector]]
 selector = "emacs/malebolge.el"
-intent = "scope-relevant"
+intent = "design-target"
 
 [[selector]]
 selector = "test/**"
@@ -24,11 +24,67 @@ intent = "scope-relevant"
 
 [[selector]]
 selector = "docs/internals.md"
-intent = "scope-relevant"
+intent = "design-target"
 
 [[selector]]
 selector = "README.md"
-intent = "scope-relevant"
+intent = "design-target"
+
+[[selector]]
+selector = "src/protocol.ts"
+intent = "design-target"
+
+[[selector]]
+selector = "src/daemon.ts"
+intent = "design-target"
+
+[[selector]]
+selector = "src/conversations.ts"
+intent = "design-target"
+
+[[selector]]
+selector = "src/attach.ts"
+intent = "design-target"
+
+[[selector]]
+selector = "src/attach-main.ts"
+intent = "design-target"
+
+[[selector]]
+selector = "src/render.ts"
+intent = "design-target"
+
+[[selector]]
+selector = "test/daemon.test.ts"
+intent = "design-target"
+
+[[selector]]
+selector = "test/conversations.test.ts"
+intent = "design-target"
+
+[[selector]]
+selector = "test/attach.test.ts"
+intent = "design-target"
+
+[[selector]]
+selector = "test/protocol.test.ts"
+intent = "design-target"
+
+[[selector]]
+selector = "test/render.test.ts"
+intent = "design-target"
+
+[[selector]]
+selector = "test/fixtures.ts"
+intent = "design-target"
+
+[[selector]]
+selector = "test/malebolge-ert.el"
+intent = "design-target"
+
+[[selector]]
+selector = "test/emacs-attach-smoke.ts"
+intent = "design-target"
 
 [[relation]]
 label = "related"
