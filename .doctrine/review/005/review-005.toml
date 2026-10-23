@@ -22,6 +22,11 @@ act = "conclude"
 role = "raiser"
 note = "Second round on this pass: a narrow verification pass over the ten amendments (also recorded separately as RV-006 before it was clear that this run keeps one ledger) raised three residuals — a well-formed `list` on a bound connection answered nothing, the picker merged the truncation line into its candidates, and two citations were one line off. All three fixed in sec-2, sec-4 and sec-5 and re-materialised at revision 32. Thirteen findings, all fix-now and verified."
 
+[[review.turn]]
+act = "conclude"
+role = "raiser"
+note = "Pass concluded a third time so that every severe finding carries a route: the six amended majors (F-1..F-5, F-11) name `demonstrate` — their evidence is the plan's verification of the criteria the amendments introduced — while the minor and nit findings need none. Thirteen findings, all fix-now and verified."
+
 [target]                   # the outbound `reviews` edge: RV-NNN ──reviews──▶ <ref>
 ref   = "SL-002"
 
@@ -32,7 +37,8 @@ severity = "major"
 title = "Bound-connection refusal text contradicted DEC-007 and left laterLine unspecified"
 detail = "Sec-3 and sec-6 fixed the text as `list: already attached to conversation N`, while DEC-007's Choice says the *existing* (unprefixed) message and `docs/internals.md:112-114` documents it. `alreadyAttached` (src/daemon.ts:51-54) takes no frame, so a prefixed variant has no signature. Sec-2 replaced AttachRefused with FrameRefused but never said what laterLine's `error instanceof AttachRefused ? alreadyAttached(...) : errorMessage(...)` branch (src/daemon.ts:197-219) becomes; a mechanical rename would ship `attach: conversation must be a positive integer` where test/daemon.test.ts:624-629 requires `already attached to conversation 1`."
 disposition = "fix-now"
-response = "Sec-2 gained a bound-connection paragraph: the rule is about the connection, not the frame. Any frame line that fails to parse as a command -- valid or malformed `attach`, valid or malformed `list` -- answers the *unprefixed* `already attached to conversation N`, the connection stays open and the binding unchanged, so `laterLine` maps any `FrameRefused` to `alreadyAttached(conversation)`. Sec-3 and sec-6 now use the unprefixed message. DEC-007's Choice needed no change; the design was wrong, not the decision."
+response = "Amended; proven by the bound-connection criterion: a well-formed list, a malformed list and a malformed attach each answer the unprefixed message and the connection keeps its binding (control: an input still lands)."
+route = "demonstrate"
 
 [[finding.turn]]
 act = "raise"
@@ -48,6 +54,23 @@ response = "Sec-2 gained a bound-connection paragraph: the rule is about the con
 act = "verify"
 role = "raiser"
 note = "Amendment verified in the current design.md and the affected decision: the section now states what the finding required, and the citation it depends on was re-read at that site."
+
+[[finding.turn]]
+act = "reopen"
+role = "raiser"
+note = "Reopened only to carry a route: the machine requires severe findings to name where their evidence will be demonstrated before the pass can be disposed."
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+route = "demonstrate"
+response = "Amended; proven by the bound-connection criterion: a well-formed list, a malformed list and a malformed attach each answer the unprefixed message and the connection keeps its binding (control: an input still lands)."
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "Route accepted: the demonstration lands in the plan's verification, not in another review."
 
 [[finding]]
 id = "F-2"
@@ -56,7 +79,8 @@ severity = "major"
 title = "`truncated` had no consumer, and the docs duty it licensed could not be supported"
 detail = "Sec-6 required `--list` to print ids and no notices, and the picker read ids only, so nothing read the wire key. Worse, ids ascend while the scan descends (pi-durable dist/types.d.ts:867-870), so a full page trims the oldest conversation -- possibly root, the client's default target -- while the docs claimed older conversations stay attachable by id."
 disposition = "fix-now"
-response = "`truncated` now has two consumers: `--list` writes one truncation line to **stderr** (stdout stays ids-only, and the criterion says so) and the Emacs picker adds a minibuffer message. Sec-2 and sec-6 also say what happens to root when the page fills: a plain `malebolge-attach` always binds it, and `ROOT_CONVERSATION_ID` (pi-durable index.d.ts:29) names it explicitly."
+response = "Amended; proven by the truncation criterion: LIST_PAGE+1 conversations yield truncated:true, one stderr line and stdout ids only, plus the docs' root-reachability wording."
+route = "demonstrate"
 
 [[finding.turn]]
 act = "raise"
@@ -72,6 +96,23 @@ response = "`truncated` now has two consumers: `--list` writes one truncation li
 act = "verify"
 role = "raiser"
 note = "Amendment verified in the current design.md and the affected decision: the section now states what the finding required, and the citation it depends on was re-read at that site."
+
+[[finding.turn]]
+act = "reopen"
+role = "raiser"
+note = "Reopened only to carry a route: the machine requires severe findings to name where their evidence will be demonstrated before the pass can be disposed."
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+route = "demonstrate"
+response = "Amended; proven by the truncation criterion: LIST_PAGE+1 conversations yield truncated:true, one stderr line and stdout ids only, plus the docs' root-reachability wording."
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "Route accepted: the demonstration lands in the plan's verification, not in another review."
 
 [[finding]]
 id = "F-3"
@@ -80,7 +121,8 @@ severity = "major"
 title = "DEC-009's smoke obligation had no home and the gate could not reach it"
 detail = "DEC-009 Consequences requires test/emacs-attach-smoke.ts to gain a targeted attach, but sec-5 never mentioned it and sec-6's gate was `just check` and `just ert` only, while the smoke is `just smoke` (justfile:23-25). Its fake daemon answers only an attach frame (test/emacs-attach-smoke.ts:129-140), so a targeted attach needs a `list` reply there too."
 disposition = "fix-now"
-response = "Sec-5 names the smoke and what it gains (a `list` reply in the fake, an assertion that a targeted attach sends the argv the picker chose); sec-6 adds `just smoke` to the gate and says it is the only end-to-end evidence that the argv reaches a daemon."
+response = "Amended; proven by `just smoke` running a targeted attach against a fake daemon that now answers a list frame."
+route = "demonstrate"
 
 [[finding.turn]]
 act = "raise"
@@ -96,6 +138,23 @@ response = "Sec-5 names the smoke and what it gains (a `list` reply in the fake,
 act = "verify"
 role = "raiser"
 note = "Amendment verified in the current design.md and the affected decision: the section now states what the finding required, and the citation it depends on was re-read at that site."
+
+[[finding.turn]]
+act = "reopen"
+role = "raiser"
+note = "Reopened only to carry a route: the machine requires severe findings to name where their evidence will be demonstrated before the pass can be disposed."
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+route = "demonstrate"
+response = "Amended; proven by `just smoke` running a targeted attach against a fake daemon that now answers a list frame."
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "Route accepted: the demonstration lands in the plan's verification, not in another review."
 
 [[finding]]
 id = "F-4"
@@ -104,7 +163,8 @@ severity = "major"
 title = "The list client's failure contract was unstated, so 'exits 1 with one message' had no implementation"
 detail = "src/attach-main.ts:28-32 exits 1 only for an error carrying a `code` and rethrows everything else. The design named no rejection type, no dispatch from attach-main to the list mode, and no owner for ending the socket against an old daemon that binds root and stays open (src/daemon.ts:176-185)."
 disposition = "fix-now"
-response = 'Sec-4 now names it: `NotListedError` with `readonly code = "NOT_LISTED"`, mirroring `NotAttachedError` (src/attach.ts:35); `AttachInvocation` becomes a union of a `mode: "attach"` arm and a `mode: "list"` arm, which gives attach-main one dispatch; and the reader owns its socket, ending it on an error frame, a refusal or a skew (`failBeforeAttach` is the precedent, src/attach.ts:271-281) instead of waiting for a close that will not come.'
+response = "Amended; proven by the client criterion: a pre-list daemon produces the restart hint naming `list` and exits 1 through NotListedError rather than a stack trace."
+route = "demonstrate"
 
 [[finding.turn]]
 act = "raise"
@@ -120,6 +180,23 @@ response = 'Sec-4 now names it: `NotListedError` with `readonly code = "NOT_LIST
 act = "verify"
 role = "raiser"
 note = "Amendment verified in the current design.md and the affected decision: the section now states what the finding required, and the citation it depends on was re-read at that site."
+
+[[finding.turn]]
+act = "reopen"
+role = "raiser"
+note = "Reopened only to carry a route: the machine requires severe findings to name where their evidence will be demonstrated before the pass can be disposed."
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+route = "demonstrate"
+response = "Amended; proven by the client criterion: a pre-list daemon produces the restart hint naming `list` and exits 1 through NotListedError rather than a stack trace."
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "Route accepted: the demonstration lands in the plan's verification, not in another review."
 
 [[finding]]
 id = "F-5"
@@ -128,7 +205,8 @@ severity = "major"
 title = "The Emacs switch order was unspecified, and a failed second attach could strand the user"
 detail = "Sec-5 put the detach before the draft refusal without saying the listing, prompt and draft check settle first, so one implementer would refuse with the client intact and another detach then refuse. It also did not say what happens when the second attach fails after a successful detach -- `open` rejects `no conversation N` (src/conversations.ts:44) because an id is a snapshot of the store."
 disposition = "fix-now"
-response = "Sec-5 fixes the order in one clause -- list, prompt, draft check, detach, attach -- with the draft refusal at step 3, holding the client attached, and says a failed second attach reports the failure and leaves the transcript empty rather than falling back to root."
+response = "Amended; proven by the Emacs criteria: a draft-bearing switch is refused before any detach, and a failed second attach leaves the transcript empty."
+route = "demonstrate"
 
 [[finding.turn]]
 act = "raise"
@@ -144,6 +222,23 @@ response = "Sec-5 fixes the order in one clause -- list, prompt, draft check, de
 act = "verify"
 role = "raiser"
 note = "Amendment verified in the current design.md and the affected decision: the section now states what the finding required, and the citation it depends on was re-read at that site."
+
+[[finding.turn]]
+act = "reopen"
+role = "raiser"
+note = "Reopened only to carry a route: the machine requires severe findings to name where their evidence will be demonstrated before the pass can be disposed."
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+route = "demonstrate"
+response = "Amended; proven by the Emacs criteria: a draft-bearing switch is refused before any detach, and a failed second attach leaves the transcript empty."
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "Route accepted: the demonstration lands in the plan's verification, not in another review."
 
 [[finding]]
 id = "F-6"
@@ -272,7 +367,8 @@ severity = "major"
 title = "A well-formed `list` on a bound connection would have written nothing (RV-006 F-1, re-raised on the run's pass)"
 detail = """Sec-2's bound-connection paragraph covered only frame lines that fail to parse as a command. A well-formed `{"type":"list"}` parses cleanly, raises no FrameRefused and reaches `act`'s input/abort/compact switch (src/daemon.ts:120-135), which has no `list` case: the daemon would answer nothing and the connection would stay silently bound."""
 disposition = "fix-now"
-response = "Sec-2 now names both branches: `laterLine` refuses a well-formed `list` beside a well-formed `attach`, and maps any `FrameRefused` to `alreadyAttached(conversation)`; its lead-in is reworded to lines that are not an actionable command for the bound conversation."
+response = "Amended; proven by the same bound-connection criterion, whose well-formed `list` case exists because of this finding."
+route = "demonstrate"
 
 [[finding.turn]]
 act = "raise"
@@ -288,6 +384,23 @@ response = "Sec-2 now names both branches: `laterLine` refuses a well-formed `li
 act = "verify"
 role = "raiser"
 note = "Verified against design.md as materialised at revision 32."
+
+[[finding.turn]]
+act = "reopen"
+role = "raiser"
+note = "Reopened only to carry a route: the machine requires severe findings to name where their evidence will be demonstrated before the pass can be disposed."
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+route = "demonstrate"
+response = "Amended; proven by the same bound-connection criterion, whose well-formed `list` case exists because of this finding."
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "Route accepted: the demonstration lands in the plan's verification, not in another review."
 
 [[finding]]
 id = "F-12"
