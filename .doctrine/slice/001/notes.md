@@ -6,7 +6,7 @@ disposable phase sheet (`.doctrine/state/.../phase-NN.md`) that must survive
 
 ## Harvest
 <!-- single-copy: updated in place each harvest; ids only, never restated content -->
-fresh-as-of: 2026-10-23 · audit · 336b317
+fresh-as-of: 2026-10-23 · reconcile · 98a0793
 
 ### Produced
 - PHASE-01..PHASE-05 done — Emacs draft and frame mode, presentation profile, transcript guard, native follow, reattach, smoke, and docs (commits 4ef3751..6c8ca60).
