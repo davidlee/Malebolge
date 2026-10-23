@@ -54,6 +54,14 @@ intent = "design-target"
 selector = "test/emacs-attach-smoke.ts"
 intent = "design-target"
 
+[[selector]]
+selector = "README.md"
+intent = "design-target"
+
+[[selector]]
+selector = "justfile"
+intent = "design-target"
+
 # STRUCTURAL relations are uniform `[[relation]]` rows, never a typed
 # `[relationships]` axis. Slices carry no typed STRUCTURAL
 # relation axes — the `[relationships]` table above holds only the dep/seq payload

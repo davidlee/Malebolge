@@ -83,3 +83,27 @@ Follow-ups: IMP-003, IDE-001, CHR-001.
 
 ### Governance/spec (REV)
 - None. SL-001 has no linked specs, ADRs or requirements.
+
+## Reconciliation Outcome
+
+### Direct edits applied
+- design.md sec-5 (F-1): pre/post output hooks replaced by DEC-006 — local
+  `comint-scroll-to-bottom-on-output` nil, comint's native point-at-mark
+  follow, `M->` resumes; the accepted edge case is stated. Reattach paragraph
+  kept. sec-6 `emacs/malebolge.el` row amended; the sec-6 ERT window-test
+  sentence restated to the same model (same F-1 scope, user-agreed).
+  Plan PHASE-04 EX-1 untouched (immutable); satisfied as amended by DEC-006.
+- design.md sec-4 (F-2): queued-input boundary order (EVD-001) and the
+  mid-answer user-turn cut-in under `Satan (continued):`.
+- Selector registry (F-4): `README.md`, `justfile` added as design-target;
+  `doctrine slice conformance SL-001` reads 10 conformant, 0 undelivered.
+  sec-6 table gains the `README.md` and `justfile` rows.
+
+The design run is locked; per the CLI's refusal ("at reconcile, edit
+design.md directly and do not adopt") the edits were made directly, with no
+`design adopt`.
+
+### REVs completed
+- None. The brief had no governance/spec items.
+
+Reconcile pass complete — handoff to /close.

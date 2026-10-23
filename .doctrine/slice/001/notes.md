@@ -6,7 +6,7 @@ disposable phase sheet (`.doctrine/state/.../phase-NN.md`) that must survive
 
 ## Harvest
 <!-- single-copy: updated in place each harvest; ids only, never restated content -->
-fresh-as-of: 2026-10-23 · reconcile · 98a0793
+fresh-as-of: 2026-10-23 · close · 3f525b1
 
 ### Produced
 - PHASE-01..PHASE-05 done — Emacs draft and frame mode, presentation profile, transcript guard, native follow, reattach, smoke, and docs (commits 4ef3751..6c8ca60).
@@ -17,9 +17,11 @@ fresh-as-of: 2026-10-23 · reconcile · 98a0793
 - EVD-001 — pi-durable queues busy-conversation input, so the user turn follows the answer.
 - quotient's token ceiling counts cached reads; use fresh, narrow pi sessions (implementation log below).
 
+- RV-004 Reconciliation Outcome — design sec-4/5/6 reconciled (DEC-006, EVD-001); README.md and justfile selectors added.
+
 ### Open
-- DEC-006 — native comint follow; design sec-5 awaits reconcile (RV-004 brief).
-- PHASE-05 VH-1 — optional manual try against a live daemon.
+- PHASE-05 VH-1 — optional manual try against a live daemon; not performed before close.
+- Follow-ups: IMP-003, IDE-001, CHR-001.
 
 ## Further review after RV-003
 
