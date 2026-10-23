@@ -10,11 +10,10 @@
 //      and ends the answer with exactly one blank line;
 //   3. terminal attach still runs its line commands locally.
 //
-// Assumption: the fake echoes the submitted input as the user turn's
-// message_end *mid-answer*, so the draft lands between two streamed chunks.
-// The real daemon probably queues input to a turn boundary instead; the
-// renderer handles both orders (see emacs/malebolge.el), and this smoke pins
-// the harder, interleaved one.
+// Event order: like the real daemon, the fake echoes a draft submitted
+// mid-answer only after the answer ends. pi-durable queues input to a busy
+// conversation in its inbox (`Conversation.submit`), so the user turn's
+// message_end lands at a boundary; render.test.ts covers the interleaved order.
 
 import { spawn } from "node:child_process";
 import { readFile } from "node:fs/promises";
@@ -125,8 +124,7 @@ const frameOf =
 
 /**
  * A fake daemon on `path`: answers the attach frame with `attachReply` then
- * runs `serve`, recording every frame the client sends. A submitted `input` is
- * echoed once, here, as the user turn's message_end.
+ * runs `serve`, recording every frame the client sends.
  */
 async function fakeDaemon(
   path: string,
@@ -141,12 +139,6 @@ async function fakeDaemon(
       lineSplitter((line) => {
         const value: unknown = JSON.parse(line);
         received.push(value);
-        // The daemon echoes a submitted input as the user turn's message_end.
-        if (isRecord(value) && value["type"] === "input" && typeof value["content"] === "string") {
-          socket.write(
-            encodeLine({ type: "message_end", entry: userEntry(value["content"], "u-live") }),
-          );
-        }
         if (isRecord(value) && value["type"] === "attach") {
           socket.write(encodeLine(attachReply));
           // The session runs on after the exchange; its failures are the checks'.
@@ -222,6 +214,9 @@ const AFTER_TAIL = AFTER_REST;
 /** An elisp regexp: the transcript ends with the completed answer and its blank line. */
 const ANSWER_DONE = `(concat (regexp-quote ${JSON.stringify(AFTER_TAIL)}) "\n\n\\\\'")`;
 
+/** An elisp regexp: the transcript ends with the draft's echo as a user turn. */
+const ECHOED = `(concat (regexp-quote ${JSON.stringify(`You:\n${DRAFT}\n`)}) "\\\\'")`;
+
 /** An elisp regexp matching the head delta once the renderer has shown it. */
 const STREAMING = `(regexp-quote ${JSON.stringify(AFTER_HEAD)})`;
 
@@ -260,8 +255,8 @@ const draftDuringStreamElisp = (outFile: string): string => `
   (goto-char (point-max))
   (insert ${JSON.stringify(DRAFT)}))
 (malebolge-submit)
-(unless (mlb-smoke-wait ${ANSWER_DONE})
-  (mlb-smoke-fail "the answer never completed" ${JSON.stringify(outFile)}))
+(unless (mlb-smoke-wait ${ECHOED})
+  (mlb-smoke-fail "the draft was never echoed after the answer" ${JSON.stringify(outFile)}))
 (malebolge-quit)
 (unless (mlb-smoke-wait (regexp-quote "[status] detached"))
   (mlb-smoke-fail "the client never detached" ${JSON.stringify(outFile)}))
@@ -342,11 +337,14 @@ async function checkDraftDuringStream(dir: string): Promise<void> {
       );
       socket.write(encodeLine({ type: "message_start", message: partial("") }));
       socket.write(textDelta(AFTER_HEAD));
-      // Cut here: the rest streams only once the draft has been echoed back.
+      // The draft arrives mid-answer: the rest streams only once it is received.
       // The waiter is fed by the data handler, so this is event-driven, not a poll.
-      await received.next(frameOf("input"));
+      const input = await received.next(frameOf("input"));
       socket.write(textDelta(AFTER_REST));
       socket.write(encodeLine({ type: "message_end", entry: assistantEntry(AFTER, "a-answer") }));
+      // The queued input enters the conversation at the boundary, after the answer.
+      const content = isRecord(input) ? String(input["content"]) : "";
+      socket.write(encodeLine({ type: "message_end", entry: userEntry(content, "u-live") }));
     },
   );
   const transcriptFile = join(dir, "live.txt");
@@ -367,10 +365,8 @@ async function checkDraftDuringStream(dir: string): Promise<void> {
       `transcript echoes the draft once under "You:": ${JSON.stringify(transcript)}`,
     );
     expect(
-      transcript.includes(
-        `Satan:\n${AFTER_HEAD}\nYou:\n${DRAFT}\nSatan (continued):\n${AFTER_REST}\n\n[status] detached\n`,
-      ),
-      `the draft cuts into the answer, which resumes under a cue, completes with one blank line, then detaches: ${JSON.stringify(transcript)}`,
+      transcript.includes(`Satan:\n${AFTER}\n\nYou:\n${DRAFT}\n[status] detached\n`),
+      `the answer completes with one blank line, the draft follows as one user turn, then detaches: ${JSON.stringify(transcript)}`,
     );
   } finally {
     emacs.kill();
