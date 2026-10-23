@@ -191,3 +191,15 @@ and the `attached` render, the Emacs target plumbing and `comint-scroll-to-botto
 the smoke's attach-only fake, the skew fake, the task-owned and
 malformed-second-attach fixtures, the `just` gate, and pi-durable's
 `scanConversations`/`Page`/`ROOT_CONVERSATION_ID`). All hold; no fact changed.
+
+## Phase-planning restamp (2026-10-23, before PHASE-01)
+
+The advisory flagged `plan.md` and `plan.toml` as added — the plan artefacts
+themselves, not a source the research cites. Every Thread 2 fact was re-read at
+the `/phase-plan` step against `7a63e64` (the protocol's strict-parse tables and
+`AttachRefused`, `fail`/`alreadyAttached`/`firstLine`/`laterLine`, the one-commit
+read and the `Conversations` object literal, `lineClient`/`closed()`, the
+task-owned and snapshot-before-error and malformed-second-attach fixtures, and
+pi-durable's `transaction.d.ts:53` Tx-form `scanConversations`,
+`Page`/`Cursor`, `ConversationRecord.owner?`, `ConversationQuery`). All hold; no
+thread needed refreshing. Restamped on that basis.

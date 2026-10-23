@@ -1,0 +1,42 @@
+memory_uid = "mem_01a1687889237562a7929a9f7696b9ff"
+memory_key = "mem.fact.malebolge.verify-vt-needs-phase-close"
+schema_version = 1
+memory_type = "fact"
+status = "active"
+title = "verify-vt reads UNATTRIBUTABLE until the phase's conformance boundary closes"
+summary = "VT keywords are only attributable across the phase's recorded start..end commit range, so verify-vt is meaningful after --status completed"
+created = "2026-10-23"
+updated = "2026-10-23"
+
+[scope]
+paths = []
+globs = []
+commands = ["doctrine slice verify-vt"]
+tags = ["malebolge", "doctrine", "verify-vt"]
+workspace = "default"
+repo = "github.com/davidlee/Malebolge"
+repo_id_kind = "remote"
+repo_id_confidence = "high"
+
+[git]
+anchor_kind = "checkout_state"
+commit = ""
+tree = "3082d4fe1334d78faeea6e4a797a452be942fa53"
+ref_name = "refs/heads/main"
+checkout_state_id = "175f10c013610cb43140b57768cce52d0588c3ff3add538f0de5d754b598de96"
+base_commit = "ec6c8c54939d9c9fdb496b4116e9bc7629555128"
+verified_sha = ""
+normalizer = "forget.checkout.v1"
+
+[review]
+verification_state = "unverified"
+reviewed = ""
+review_by = ""
+
+[trust]
+trust_level = "medium"
+
+[ranking]
+severity = "none"
+weight = 0
+

@@ -1,0 +1,42 @@
+memory_uid = "mem_01a1687879fc7f02b5440f753c9fa58c"
+memory_key = "mem.pattern.malebolge.frame-decoder-before-renderer"
+schema_version = 1
+memory_type = "pattern"
+status = "active"
+title = "A daemon reply no renderer knows yet is decoded strictly in its test, not added to Printable early"
+summary = "New wire frames are asserted with a local strict decoder until the phase that renders them widens Printable"
+created = "2026-10-23"
+updated = "2026-10-23"
+
+[scope]
+paths = ["test/daemon.test.ts", "src/render.ts"]
+globs = []
+commands = []
+tags = ["malebolge", "tests", "protocol"]
+workspace = "default"
+repo = "github.com/davidlee/Malebolge"
+repo_id_kind = "remote"
+repo_id_confidence = "high"
+
+[git]
+anchor_kind = "checkout_state"
+commit = ""
+tree = "3082d4fe1334d78faeea6e4a797a452be942fa53"
+ref_name = "refs/heads/main"
+checkout_state_id = "4cf9b9bf561d457e6ba0a6c6ce3a7222bf271ea1edd0f7a441aad9c1766e5d10"
+base_commit = "ec6c8c54939d9c9fdb496b4116e9bc7629555128"
+verified_sha = ""
+normalizer = "forget.checkout.v1"
+
+[review]
+verification_state = "unverified"
+reviewed = ""
+review_by = ""
+
+[trust]
+trust_level = "medium"
+
+[ranking]
+severity = "none"
+weight = 0
+

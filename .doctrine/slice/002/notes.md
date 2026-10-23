@@ -92,9 +92,86 @@ slice; and the Emacs picker's listing call must be a **stub-able seam**, matchin
 how the suite already stubs `make-comint-in-buffer`, so no ERT case needs a live
 socket.
 
+## PHASE-01 — the `list` frame, one page, a clean close (2026-10-23)
+
+Implemented in one commit, `ec6c8c5` (the handover allowed "one commit or a
+short series"; the frame's type makes a protocol-only commit untypeable without
+a half-routed daemon, so the daemon seams went in with it).
+
+What shipped: `FrameRefused`/`frameRefused(frame, problem)` in place of
+`AttachRefused` (every shipped `attach: …` string byte-identical, pinned by a new
+exact-message table in `test/protocol.test.ts`); the strict `list` frame and the
+`conversations` reply; `LIST_PAGE = 50` with `list()` reading one descending
+`scanConversations` page in one commit and keeping `owner === undefined` only;
+`finish(state, value?)` as the one daemon-side close, with `fail` delegating to
+it; and `list` refused on a bound connection through both branches RV-005 F-11
+names (the well-formed frame never reaches `act`; any `FrameRefused` maps to the
+unprefixed `already attached to conversation N`).
+
+**Where TDD bent, recorded honestly.** The protocol tests were written first and
+were red for the right reason (`FrameRefused` undefined, 4 failures). The
+conversations and daemon tests were written after their seams, in the same
+sitting, so red-first could not be shown for them; each key claim was instead
+proven load-bearing by **mutation** and reverted:
+
+- `order: "ascending"` → `lists the ownerless conversations newest first` red.
+- dropping `|| message.type === "list"` in `laterLine` → the bound-connection
+test hangs and fails (5 s), which is exactly F-11's silent-write regression.
+- an extra `writeError` before the reply → the VT-1 test fails on the
+  one-frame assertion, so "no error written" is real and not incidental.
+
+Three implementation notes a reviewer would otherwise ask about:
+
+- **The reply is not a `Printable` yet.** PHASE-02 owns the renderer and its
+  `render.test.ts` case, so PHASE-01's daemon tests decode the frame with a local
+  strict decoder (`listingFrame`, narrowed on `isRecord`/`Array.isArray`/element
+  `typeof`/the `"truncated"` key). Recorded as
+  `mem.pattern.malebolge.frame-decoder-before-renderer`.
+- **The test teardown list is `{ close: () => void }[]`**, not
+  `LineClient<Printable>[]`: one afterEach closes clients of either frame
+  vocabulary, so the second frame needed no second list.
+- **`LIST_PAGE` is deliberately not the runner's `PAGE_SIZE`**
+  (`src/runner/durable-ids.ts:11`, 64): different store, different concern, and
+  DEC-007 names the daemon's value.
+
+Gate at phase end: biome/eslint/tsc clean, `npx vitest run` 1815 passed / 11
+failed — the 11 are exactly the `test/runner/*` container set, +13 new tests over
+the 1802 baseline; `just ert` 24/24; `just smoke` 3/3. `test/structure.test.ts`
+untouched: no new module, no moved import edge.
+
 ## Harvest
 <!-- single-copy: updated in place each harvest; ids only, never restated content -->
-fresh-as-of: 2026-10-23 · design locked (run dr-01a16771…, rev 37) · plan authored · lifecycle `ready` · gate baseline measured 2026-10-23: lint/tsc/format clean, `just ert` 24/24, `just smoke` 3/3, vitest 11 red all under `test/runner/` (container: git-guard shim, no room)
+fresh-as-of: 2026-10-23 · PHASE-01 · ec6c8c5
+
+### Produced
+- PHASE-01 done — the `list` frame, `list()`'s one descending ownerless page,
+  `finish`, and the bound-connection refusal (commit `ec6c8c5`; 13 new tests).
+- gate re-measured at phase end: lint/tsc/format clean, `just ert` 24/24,
+  `just smoke` 3/3, vitest 11 red, all under `test/runner/` (container: git-guard
+  shim, no room).
+- DEC-007..DEC-010 — the four dispositions PHASE-02..04 still implement against.
+- `design.md` (locked rev 37, att-1..att-6) and `RV-005` (13 findings; the routed
+  ones land in PHASE-02 F-4/F-2-consumer, PHASE-03 F-5/F-3, PHASE-04 F-2-docs).
+- `plan.toml` / `plan.md` — four phases with EN/EX/VT; `research/research.md`
+  baselined (restamped at phase-plan time, no thread needed refreshing).
+
+### Learned
+- mem.pattern.malebolge.frame-decoder-before-renderer — a reply no renderer
+  knows yet is decoded strictly in its test; do not widen `Printable` early.
+- mem.fact.malebolge.verify-vt-needs-phase-close — VT attribution reads
+  UNATTRIBUTABLE until the phase's conformance boundary closes.
+
+### Open
+- No open DEC / QUE / ASM minted by this phase.
+- PHASE-02 inherits two seams, not a design gap: the reply type exists in
+  `src/protocol.ts` but is not yet a `Printable`, and the renderer's
+  `conversations` case is PHASE-02/EX-2's.
+- IMP-003 (one shared fake-daemon fixture) still outside the slice; the Emacs
+  smoke grows its own `list` reply in PHASE-03.
+- IMP-004 owns the `justfile`'s `biome` override: until it lands `just fmt-check`
+  needs the devshell's biome on PATH (a shell without it cannot run the gate).
+- satan ISS-053 (SPEC-002 has no row for the client socket) and ISS-055
+  (protocol handshake) remain theirs, not this slice's.
 
 ### Produced
 - DEC-007..DEC-010 — `accepted`; the four inquiry dispositions, each with an
