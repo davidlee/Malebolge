@@ -32,11 +32,11 @@
       },
       "locked": {
         "dir": "flakes/agents",
-        "lastModified": 1792235978,
-        "narHash": "sha256-WVaxmWDfKkn5L20Bu6tWJjJ/BIsb8qQvCpBihgvp8oI=",
+        "lastModified": 1792329380,
+        "narHash": "sha256-CmdRTh55hh8MpRZWNQI68ngeJk1GC99MkIkCki8qADM=",
         "owner": "davidlee",
         "repo": "nix-config",
-        "rev": "a24a0f039bd5681fad17249ef879a4111802ed32",
+        "rev": "ea3cf561bc633bd8a36a5526ea0c657dc049e88d",
         "type": "github"
       },
       "original": {
@@ -169,11 +169,11 @@
         "rust-overlay": "rust-overlay"
       },
       "locked": {
-        "lastModified": 1792239881,
-        "narHash": "sha256-j0i9BhIGe6OhJjeskESuC1HJvpHC7qHMU0c5fb5L5b8=",
+        "lastModified": 1792463194,
+        "narHash": "sha256-vRbI4nEvHBODLXY/MczQsmv3zmTmP3bVzPBNtytf898=",
         "owner": "davidlee",
         "repo": "doctrine",
-        "rev": "f3ee07d38e4eefc931c31a4db5a9b359b30aca5b",
+        "rev": "e0f3c41dac2068a84d067e182c49ff3af2ad5140",
         "type": "github"
       },
       "original": {

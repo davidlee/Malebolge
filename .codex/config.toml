@@ -1,7 +1,10 @@
 [mcp_servers.doctrine]
-command = "sh"
-args = ["-c", 'exec "${DOCTRINE_BIN:-doctrine}" serve --mcp']
-env_vars = ["DOCTRINE_BIN"]
+#command = "sh"
+#args = ["-c", 'exec "${DOCTRINE_BIN:-doctrine}" serve --mcp']
+#env_vars = ["DOCTRINE_BIN"]
+command = "/home/david/.local/share/doctrine/bin/doctrine"
+args = ["serve", "--mcp"]
+
 
 # pi delegation via quotient. cwd is the launch dir, where ./.quotient/profiles
 # is found: satan's, so writes rooted here are not view-overlaps-protected.

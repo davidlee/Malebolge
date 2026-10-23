@@ -17,25 +17,61 @@
 
     # node runs the TypeScript directly (package.json `engines`: >=24); biome,
     # eslint, tsc and vitest are npm devDependencies, reached through `npx`, so
-    # they need `npm ci` and are not here. doctrine is how the patch runner
-    # reads a repo's boot inside the room (design SL-026 §4.3); harmless in the
-    # devshell. It publishes packages for x86_64-linux and aarch64-darwin only,
-    # so it is included only where its flake has this system.
+    # they need `npm ci` and are not here.
+    shellPkgs = pkgs: (with pkgs; [nodejs_24 just]);
+
+    # The room's tool set, and what the flake exports as `dev-tools` for
+    # oubliette capsules: the devshell's tools plus doctrine, which is how the
+    # patch runner reads a repo's boot inside the room (design SL-026 §4.3).
+    # Doctrine publishes packages for x86_64-linux and aarch64-darwin only, so
+    # it is included only where its flake has this system.
     devToolPkgs = pkgs:
-      (with pkgs; [nodejs_24 just])
+      shellPkgs pkgs
       ++ pkgs.lib.optional (doctrine.packages ? ${pkgs.stdenv.hostPlatform.system})
       doctrine.packages.${pkgs.stdenv.hostPlatform.system}.default;
 
     # Linux only (bwrap). Every jail shares one posture; only the agent
     # differs. No provider key enters a jail: each reaches models through the
-    # LLM gateway on the shared `pi` key.
+    # LLM gateway on the shared `pi` key. A jail gets `shellPkgs`, not
+    # `devToolPkgs`: doctrine comes from the host's own install, which the
+    # agents library binds read-only (`hostDoctrine`, on by default) and keeps
+    # runnable by binding the store closure its ELF needs. A pinned copy in
+    # `extraPkgs` would be prepended to PATH ahead of that bind and win —
+    # leaving the jail on a doctrine the host does not run.
     jails = pkgs: let
       jailLib = agents.lib.${pkgs.stdenv.hostPlatform.system}.mkJailedAgents {};
+      inherit (jailLib) combinators;
+
+      # Doctrine bakes `current_exe()` into every file it writes, so the jail
+      # must present it at the host's own path: any other path (the library's
+      # /run/doctrine-bin) makes the recorded binary flip with the side of the
+      # wall the write happened on. `add-path` interpolates raw — PATH is shell
+      # text in the wrapper — so the quoted `$HOME` reaches the runtime shell,
+      # where it can expand; a Nix-side path could not.
+      doctrineDir = "\"$HOME/.local/share/doctrine/bin\"";
+      doctrineOptions = [
+        # A directory, not the file: `cargo install` renames a new binary over
+        # the old inode, and a file bind would pin the deleted one.
+        (combinators.try-ro-bind
+          (combinators.noescape "~/.local/share/doctrine/bin")
+          (combinators.noescape doctrineDir))
+        (combinators.add-path doctrineDir)
+      ];
+
+      # Belongs upstream, in `hostDoctrineOptions` of nix-config's
+      # flakes/agents/jailed-agents.nix — its /run/doctrine-bin destination is
+      # what every consumer inherits. Bind at the host path instead, and find
+      # doctrine through that same path:
+      #   (try-ro-bind (noescape hostDoctrineDir)
+      #     (noescape "\"$HOME/.local/share/doctrine/bin\""))
+      #   (add-path "\"$HOME/.local/share/doctrine/bin\"")
+      # After which `doctrineOptions` here goes away.
       mkJail = maker: args:
         maker ({
             profile = "specDev";
-            extraPkgs = devToolPkgs pkgs;
+            extraPkgs = shellPkgs pkgs;
             gateway = jailLib.gatewayClient "pi";
+            extraOptions = doctrineOptions;
           }
           // args);
     in
@@ -90,8 +126,8 @@
         '';
       };
   in {
-    # One closure, the oubliette room's `toolsPackage`, so the VM and the
-    # devshell can't drift.
+    # One closure for the room — oubliette's `toolsPackage` and the exported
+    # `dev-tools` are the same set — so the two can't drift.
     packages = forAll (pkgs:
       jails pkgs
       // {
@@ -118,7 +154,7 @@
 
     devShells = forAll (pkgs: {
       default = pkgs.mkShell {
-        packages = devToolPkgs pkgs ++ builtins.attrValues (jails pkgs);
+        packages = shellPkgs pkgs ++ builtins.attrValues (jails pkgs);
       };
     });
   };
