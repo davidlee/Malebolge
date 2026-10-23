@@ -1,0 +1,5 @@
+slice = "SL-002"
+date = "2026-10-23"
+
+[hashes]
+".doctrine/slice/002/slice-002.md" = "2b1350054e918c0f5516b4f841fcdb1bb42b86a8ebf2d07e92163e7aaeace614"
