@@ -199,7 +199,7 @@ stdout; and against a fake daemon on a pipe, `--list` wrote exactly `9\n7\n3\n`
 
 ## Harvest
 <!-- single-copy: updated in place each harvest; ids only, never restated content -->
-fresh-as-of: 2026-10-24 · PHASE-02 complete · code commit precedes the doctrine flip
+fresh-as-of: 2026-10-24 · PHASE-02 complete · code `50cbb30`, doctrine `aa11889`
 
 ### Produced
 - PHASE-02 done — `--list` as its own mode: the renderer's `conversations` case,
