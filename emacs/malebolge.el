@@ -20,8 +20,10 @@
 ;;   C-c C-q  quit, detaching from the daemon
 ;;   C-c C-h  show this summary
 ;; Transcript only: C-c C-e and RET focus the draft.  The transcript is
-;; read-only for ordinary edits and never submits.  Lines beginning
-;; `[tool]' and `[status]' are coloured (`malebolge-tool-face',
+;; read-only for ordinary edits and never submits.  Speaker turns are
+;; coloured by the turn's label line: `malebolge-user-face' and
+;; `malebolge-satan-face'.  Lines beginning `[tool]' and `[status]'
+;; keep their own faces (`malebolge-tool-face',
 ;; `malebolge-status-face').  A transcript window whose point is at the
 ;; end follows new output; scrolled back, it keeps its place until you
 ;; move to the end again (M->).
@@ -58,6 +60,16 @@
   "Face for dimmer transcript lines that report session status."
   :group 'malebolge)
 
+(defface malebolge-user-face
+  '((t :inherit default))
+  "Face for the user's turns in the transcript."
+  :group 'malebolge)
+
+(defface malebolge-satan-face
+  '((t :inherit error :weight normal))
+  "Face for SATAN's turns in the transcript."
+  :group 'malebolge)
+
 (defconst malebolge-buffer-name "*malebolge*")
 (defconst malebolge-draft-buffer-name "*malebolge-draft*")
 
@@ -91,6 +103,46 @@ C-c C-h help")
     ("^\\[status\\] .*$" 0 'malebolge-status-face t))
   "Font-lock keywords distinguishing tool and status lines.")
 
+(defconst malebolge--speaker-labels
+  '(("^You:$" . malebolge-user-face)
+    ("^Satan\\(?: ([a-z]+)\\)?:$" . malebolge-satan-face))
+  "Alist of label REGEXP to the face its turn is shown in.")
+
+(defconst malebolge--speaker-label-regexp
+  (mapconcat #'car malebolge--speaker-labels "\\|")
+  "Regexp matching any speaker label line.")
+
+(defun malebolge--label-face (line)
+  "Return the face speaker label LINE opens, or nil."
+  (cdr (assoc line malebolge--speaker-labels
+              (lambda (regexp line) (string-match-p regexp line)))))
+
+(defun malebolge--face-before (pos)
+  "Return the speaker face in force before the line at POS, or nil."
+  (save-excursion
+    (goto-char (max (point-min) (1- pos)))
+    (when (re-search-backward malebolge--speaker-label-regexp nil t)
+      (malebolge--label-face (match-string-no-properties 0)))))
+
+(defun malebolge--colour-speakers (start end)
+  "Give START to END the speaker face each line falls under."
+  (save-excursion
+    (with-silent-modifications
+      (goto-char start)
+      (forward-line 0)
+      (let ((face (malebolge--face-before (point))))
+        (while (< (point) end)
+          (setq face (or (malebolge--label-face
+                          (buffer-substring-no-properties (point) (line-end-position)))
+                         face))
+          (when face
+            (put-text-property (point) (line-end-position) 'font-lock-face face))
+          (forward-line 1))))))
+
+(defun malebolge--colour-output (_string)
+  "Colour the speaker turn in the output chunk just inserted."
+  (malebolge--colour-speakers comint-last-output-start (point-max)))
+
 ;;;###autoload
 (define-derived-mode malebolge-draft-mode text-mode "Malebolge-Draft"
   "Major mode for composing one message to the malebolge daemon.
@@ -109,6 +161,7 @@ Process output is inserted here; input is composed in the draft buffer."
   ;; comint's own following suffices: a window whose point is at the
   ;; process mark follows output; one scrolled back keeps its place.
   (setq-local comint-scroll-to-bottom-on-output nil)
+  (add-hook 'comint-output-filter-functions #'malebolge--colour-output nil t)
   (setq buffer-read-only t))
 
 (declare-function satan-mcp-start "satan-mcp")
@@ -253,8 +306,12 @@ place; M-> (or any other move to the end) resumes following.
 
 Colours
 
-Lines beginning `[tool]' are shown in `malebolge-tool-face', lines
-beginning `[status]' in `malebolge-status-face'.")))
+Each speaker turn is shown in its speaker's face: your turns in
+`malebolge-user-face', SATAN's turns in `malebolge-satan-face' (red by
+default).  A turn runs from its label line (`You:', `Satan:',
+`Satan (continued):', `Satan (revised):') to the next label.  Lines beginning
+`[tool]' and `[status]' keep their own faces, `malebolge-tool-face' and
+`malebolge-status-face'.")))
 
 ;;;###autoload
 (defun malebolge-start ()

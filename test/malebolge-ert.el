@@ -405,6 +405,50 @@ created by `malebolge-attach' against the fake process."
           (should-not (memq 'malebolge-status-face
                             (list (funcall face-at plain-pos)))))))))
 
+;;; Speaker faces
+
+(defun malebolge-test--line-face (text)
+  "Return the transcript face on the first line containing TEXT.
+`face' (font-lock keywords) wins over `font-lock-face', as in display."
+  (with-current-buffer malebolge-buffer-name
+    (when (fboundp 'font-lock-ensure)
+      (let ((font-lock-support-mode nil))
+        (font-lock-ensure)))
+    (save-excursion
+      (goto-char (point-min))
+      (search-forward text)
+      (let ((pos (line-beginning-position)))
+        (or (get-text-property pos 'face)
+            (get-text-property pos 'font-lock-face))))))
+
+(ert-deftest malebolge-speaker-faces-follow-turns ()
+  "Each turn's label and body take its speaker's face."
+  (malebolge-test--with-session
+    (malebolge-test--feed "You:\nhello\nsecond line\n\nSatan:\nanswer one\nanswer two\n\n")
+    (should (eq 'malebolge-user-face (malebolge-test--line-face "You:")))
+    (should (eq 'malebolge-user-face (malebolge-test--line-face "second line")))
+    (should (eq 'malebolge-satan-face (malebolge-test--line-face "Satan:")))
+    (should (eq 'malebolge-satan-face (malebolge-test--line-face "answer two")))))
+
+(ert-deftest malebolge-speaker-faces-span-chunks ()
+  "A label split across chunks still opens a turn; later chunks continue it."
+  (malebolge-test--with-session
+    (malebolge-test--feed "You:\nq\n\nSat")
+    (malebolge-test--feed "an:\nstreamed ")
+    (malebolge-test--feed "text\n")
+    (malebolge-test--feed "next chunk\n")
+    (should (eq 'malebolge-satan-face (malebolge-test--line-face "Satan:")))
+    (should (eq 'malebolge-satan-face (malebolge-test--line-face "streamed text")))
+    (should (eq 'malebolge-satan-face (malebolge-test--line-face "next chunk")))))
+
+(ert-deftest malebolge-speaker-faces-yield-to-tool-lines ()
+  "Tool lines keep their face inside a turn; a resumed turn is SATAN's."
+  (malebolge-test--with-session
+    (malebolge-test--feed "Satan:\nbefore\n[tool] grep {}\nSatan (continued):\nafter\n")
+    (should (eq 'malebolge-tool-face (malebolge-test--line-face "[tool]")))
+    (should (eq 'malebolge-satan-face (malebolge-test--line-face "Satan (continued):")))
+    (should (eq 'malebolge-satan-face (malebolge-test--line-face "after")))))
+
 ;;; EX-5: output following is per window
 
 (defun malebolge-test--feed (text)
