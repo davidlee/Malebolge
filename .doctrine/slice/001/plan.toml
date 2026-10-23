@@ -18,7 +18,7 @@ collaborators = []
 targets      = []
 dependencies = []
 
-# One [[phase]]
+[[phase]]
 id        = "PHASE-01"
 name      = "Renderer Emacs presentation profile"
 objective = "createRenderer gains a presentation option; the Emacs profile renders role headings, live user echo, labelled notices, continuation cues and the completed-answer separator identically across snapshot and live paths (design sec-4). Default terminal output unchanged."
@@ -77,6 +77,7 @@ exit_criteria = [
   { id = "EX-3", text = "Abort, compact (optional instructions), quit send the matching frames and never clear a nonempty draft; bindings are buffer-local." },
   { id = "EX-4", text = "Header lines and C-c C-h help name the actions; draft survives process death." },
   { id = "EX-5", text = "test/malebolge-ert.el runs headless via a just recipe (emacs --batch) and passes; byte-compile of emacs/malebolge.el emits no warnings." },
+  { id = "EX-6", text = "User amendment 2026-10-23: transcript `[tool] ...` lines carry a distinct customisable `malebolge-tool-face`, and `[status] ...` lines a dimmer `malebolge-status-face`; the literal labels still carry the distinction without colour." },
 ]
 verification = [
   { id = "VT-1", expects = "ERT: submit framing, guard writes zero bytes, controls preserve draft, dead-process retention", test_file = "test/malebolge-ert.el", keywords = ["ert-deftest", "malebolge-draft", "process-send-string", "comint-send-input"], waived = false },

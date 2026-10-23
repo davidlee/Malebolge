@@ -28,3 +28,18 @@ and whether client-local notices preserve the assistant continuation cue. The
 RV-002 closed seven findings and the read-only RV-003 pass found no new design
 issue. The remaining checks need implementation behavior and are named in the
 design's verification section.
+
+## Implementation log
+
+- PHASE-01 (renderer): presentation table (`TERMINAL`/`EMACS`) over shared
+  streaming logic; `message_end` routes through `advance` so whole-at-end and
+  end-time rewrites get cues. Terminal drops trailing newlines that arrive only
+  at `message_end` (`finalText`); Emacs prints them, for snapshot parity.
+  RV by malebolge-06: F1 (continuation cue lost across invisible update),
+  F2 (double blank line after a trailing notice), F3 (end-only newlines parity)
+  fixed with tests.
+- plan.toml: PHASE-01 `[[phase]]` header restored (was inside a comment);
+  PHASE-03 EX-6 added — user amendment: coloured `[tool]`/`[status]` faces.
+- Delegation note: quotient's `tokens` ceiling (320k) counts cached reads, so a
+  pi session dies at ~20 requests and resumed sessions die almost at once.
+  Use fresh, tightly scoped sessions.
