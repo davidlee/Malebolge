@@ -139,11 +139,75 @@ failed — the 11 are exactly the `test/runner/*` container set, +13 new tests o
 the 1802 baseline; `just ert` 24/24; `just smoke` 3/3. `test/structure.test.ts`
 untouched: no new module, no moved import edge.
 
+## PHASE-02 — `--list`: one frame, ids on stdout, its own wait (2026-10-24)
+
+One commit: the renderer's `conversations` case, the fourth invocation shape, the
+skew predicate, `NotListedError` and its reader, and `attach-main`'s one dispatch.
+
+**TDD held this time — red first for all three units**, each red for the right
+reason and recorded before the seam was written:
+
+- renderer: `TypeError: handlers[type] is not a function` at `dispatch`, i.e. the
+  mapped `Handlers` had no `conversations` case (the type and the runtime agree).
+- invocation: `CACError: Unknown option --list` surfacing as the `UsageError` the
+  parse already makes of every `parseArgs` throw.
+- reader: `TS2305: no exported member 'listConversations'` and six failing cases.
+
+Five mutation checks, each reverted, each caught by exactly the intended test:
+
+- no truncation write → `writes one truncated line to stderr for --list` red.
+- a silent close settling as success (`if (!state.answered)` → `if (false)`) →
+  `reports a close before any reply through NOT_LISTED` red.
+- rendering every frame instead of its own two → `ignores the snapshot a pre-list
+  daemon sends first` red (the snapshot would print to stdout).
+- `LIST_WAIT` timeouts at attach's 10 s → `gives up on its own short LIST_WAIT` red.
+- re-sorting the ids the daemon sent → both listing-output tests red, which is
+  what "it never re-sorts" is worth.
+
+Implementation notes a reviewer would otherwise ask about:
+
+- **The attach arm of `AttachInvocation` is untagged** (`mode?: undefined`). EX-1
+  writes the union as `{mode:"attach",…} | {mode:"list",wait}` but also says the
+  three attach shapes parse exactly as shipped, and EX-6 requires every existing
+  `test/attach.test.ts` expectation to pass unchanged — `:569-583` asserts that
+  object with `toEqual`. Both hold only with the shipped shape; `mode` is the one
+  slot the list arm adds. `attach-main` still dispatches on `invocation.mode`.
+- **`listConversations` takes an `errors` sink**, not `process.stderr`: EX-2's
+  parameter list has no second stream but requires the truncation line on stderr,
+  and a dead daemon's connect notice must not land on stdout either. `attach-main`
+  supplies both streams, so the module stays off `process.*`.
+- **The truncation line states the cut, not the page size.** `LIST_PAGE` is the
+  daemon's constant (`src/conversations.ts:37`); a client printing 50 would own a
+  claim it cannot check. PHASE-04's docs state the number.
+- **The reader settles on the daemon's close, not on the reply**, so nothing is
+  reported before the connection is done with. It ends *its own* socket only on
+  failure, because an old daemon binds root and never closes.
+- The listing's one-line frame is typed `ListMessage` (`src/protocol.ts`), so a
+  client/daemon shape drift is a type error — that shared type, not a fixture, is
+  what composes.
+
+Gate at phase end: biome/eslint/tsc clean, `npx vitest run` 1824 passed / 11
+failed — the 11 are exactly the `test/runner/*` container set, +9 new tests over
+the 1815 baseline; `just ert` 24/24; `just smoke` 3/3. `test/structure.test.ts`
+untouched: no new module, no moved import edge.
+
+Beyond the suite, the CLI was exercised for the two contracts a unit test cannot
+see: `node src/attach-main.ts --list --new` → exit 2, one line plus the usage, no
+connection; `--list` with no daemon → exit 1 after 1.06 s, one stderr line, empty
+stdout; and against a fake daemon on a pipe, `--list` wrote exactly `9\n7\n3\n`
+(checked with `od -c`) and exited 0.
+
 ## Harvest
 <!-- single-copy: updated in place each harvest; ids only, never restated content -->
-fresh-as-of: 2026-10-23 · PHASE-01 complete · code `ec6c8c5`, doctrine `69929b9`
+fresh-as-of: 2026-10-24 · PHASE-02 complete · code commit precedes the doctrine flip
 
 ### Produced
+- PHASE-02 done — `--list` as its own mode: the renderer's `conversations` case,
+  the fourth invocation shape on its own `LIST_WAIT`, the generalised skew
+  predicate, `NotListedError` and a reader that accepts exactly two frames
+  (9 new tests).
+- gate re-measured at phase end: lint/tsc/format clean, `just ert` 24/24,
+  `just smoke` 3/3, vitest 11 red, all under `test/runner/` (container).
 - PHASE-01 done — the `list` frame, `list()`'s one descending ownerless page,
   `finish`, and the bound-connection refusal (commit `ec6c8c5`; 13 new tests).
 - gate re-measured at phase end: lint/tsc/format clean, `just ert` 24/24,
@@ -161,14 +225,28 @@ fresh-as-of: 2026-10-23 · PHASE-01 complete · code `ec6c8c5`, doctrine `69929b
 ### Learned
 - mem.pattern.malebolge.frame-decoder-before-renderer — a reply no renderer
   knows yet is decoded strictly in its test; do not widen `Printable` early.
+  PHASE-02 closed the loop: the same frame is now a `Printable`, its strict
+  decoding test passes unchanged, and the client narrows the type instead.
 - mem.fact.malebolge.verify-vt-needs-phase-close — VT attribution reads
   UNATTRIBUTABLE until the phase's conformance boundary closes.
+- mem.fact.malebolge.attach-exit-truncates-piped-stdout — `attach-main` calls
+  `process.exit(0)` right after an awaited write, and stdout to a pipe is
+  asynchronous, so a listing's completeness is something to observe (PHASE-03's
+  ERT case captures the numeric stdout lines) rather than assume.
+- A two-arm union whose arms differ by *absence* (one has `mode`, one does not)
+  is what lets a plan's "becomes a union" and "existing shapes unchanged" both
+  hold: `mode?: undefined` on the untagged arm buys the call-site reading
+  `invocation.mode === "list"` without touching the shipped object.
 
 ### Open
-- No open DEC / QUE / ASM minted by this phase.
-- PHASE-02 inherits two seams, not a design gap: the reply type exists in
-  `src/protocol.ts` but is not yet a `Printable`, and the renderer's
-  `conversations` case is PHASE-02/EX-2's.
+- No open DEC / QUE / ASM minted by PHASE-02.
+- The stdout-completeness sharp edge is recorded, not fixed: if a long listing is
+  ever truncated under `process.exit`, the fix is `process.exitCode` plus a
+  drained stream in `attach-main`, a change to the shipped client idiom that
+  wants its own slice or backlog item rather than a phase.
+- PHASE-03 inherits two seams it needs, not gaps: `--list` prints ids and exits 0
+  (proven against the real daemon) and every listing failure carries
+  `NOT_LISTED`. Its `list` reply goes into the smoke's fake daemon.
 - IMP-003 (one shared fake-daemon fixture) still outside the slice; the Emacs
   smoke grows its own `list` reply in PHASE-03.
 - IMP-004 owns the `justfile`'s `biome` override: until it lands `just fmt-check`

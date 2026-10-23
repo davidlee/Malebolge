@@ -1,0 +1,5 @@
+`src/attach-main.ts` ends with `process.exit(0)` immediately after the awaited client call. Node documents that writes to a pipe are asynchronous and `process.exit` does not flush them, so an `--list` whose ids go to a pipe (Emacs captures stdout through one) is the observable case: measured fine at 3 ids (SL-002 PHASE-02, `od -c` over a real pipe), unproven at a full 50.
+
+Why it matters: a truncated listing is silent — the client exits 0, so a picker would offer fewer conversations with no error. `attach` never showed the problem because a terminal is a TTY (synchronous writes).
+
+If it ever bites: `process.exitCode = 0` and let the loop drain, or await the write callback before resolving. That changes the shipped exit idiom for the attach path too, so it wants its own change, not a phase patch.

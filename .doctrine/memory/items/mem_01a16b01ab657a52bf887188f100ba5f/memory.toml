@@ -1,0 +1,42 @@
+memory_uid = "mem_01a16b01ab657a52bf887188f100ba5f"
+memory_key = "mem.fact.malebolge.attach-exit-truncates-piped-stdout"
+schema_version = 1
+memory_type = "fact"
+status = "active"
+title = "attach-main exits before a piped stdout drains: a listing's ids can be truncated"
+summary = "malebolge-attach's process.exit(0) after an awaited write is not a flush; a long --list through a pipe (Emacs) is the case that would show it"
+created = "2026-10-23"
+updated = "2026-10-23"
+
+[scope]
+paths = ["src/attach-main.ts", "src/attach.ts"]
+globs = []
+commands = []
+tags = ["malebolge", "protocol", "client"]
+workspace = "default"
+repo = "github.com/davidlee/Malebolge"
+repo_id_kind = "remote"
+repo_id_confidence = "high"
+
+[git]
+anchor_kind = "checkout_state"
+commit = ""
+tree = "853594f34010bfd47bd987015746bbccae8242dc"
+ref_name = "refs/heads/main"
+checkout_state_id = "d0392e494b86650e99cbd84e16a890854523760f3db4034fa25300de36d9c319"
+base_commit = "8113c98b8a0344bbc5f5ec9c5e4b7e72854625e2"
+verified_sha = ""
+normalizer = "forget.checkout.v1"
+
+[review]
+verification_state = "unverified"
+reviewed = ""
+review_by = ""
+
+[trust]
+trust_level = "high"
+
+[ranking]
+severity = "medium"
+weight = 0
+
