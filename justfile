@@ -14,6 +14,12 @@ typecheck:
 test:
   npx vitest run
 
+# Emacs ERT suite and byte-compile (needs emacs; kept out of `check`).
+ert:
+  emacs --batch -Q -L emacs -l ert -l test/malebolge-ert.el -f ert-run-tests-batch-and-exit
+  emacs --batch -Q -L emacs --eval '(setq byte-compile-error-on-warn t)' -f batch-byte-compile emacs/malebolge.el
+  rm -f emacs/malebolge.elc
+
 format:
   npx biome format --write .
 

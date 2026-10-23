@@ -50,3 +50,13 @@ design's verification section.
   Writer's red tests waited on terminal wording under emacs presentation —
   fixed. RV by malebolge-06: F1 prototype-key crash (Map), F2 strict quit
   fields, F3 `handleLine` rename — fixed with tests.
+- PHASE-03 (Emacs draft/controls/guard/faces): writers' ERT fixture had
+  harness bugs (unattached fake process, free `draft` var, paren slip) —
+  fixed. RV by malebolge-06: F1 (major) C-c C-c from the transcript sent and
+  erased the transcript → submit reads the draft by name; F2 comint EOF/signal
+  keys remapped to `malebolge--refuse-input`; F3 compact nil instructions;
+  F4/F5 docs; T1–T3 tests strengthened (faces via real output path).
+- PHASE-04 (follow/reattach): DEC-006 (user-accepted) amends sec-5 — comint's
+  native follow, no custom hooks; follow test mutation-checked. Failed start
+  writes a `[status]` line and keeps the draft.
+- Committed PHASE-03 and PHASE-04 together (same files, interleaved).

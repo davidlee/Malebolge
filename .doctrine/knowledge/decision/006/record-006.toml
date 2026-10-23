@@ -1,0 +1,33 @@
+schema = "doctrine.knowledge"
+version = 1
+
+id = 6
+slug = "sl-001-output-following-uses-comints-native-point-at-mark-follow"
+title = "SL-001 output following uses comint's native point-at-mark follow"
+record_kind = "decision"
+status = "proposed"
+created = "2026-10-23"
+updated = "2026-10-23"
+tags = []
+
+[facet]                         # every field typed; seeded empty (captured later)
+context = "Design sec-5 specified buffer-local pre/post output hooks that follow each transcript window whose view included the old end. PHASE-04's ERT test showed comint's native behaviour already satisfies the follow, hold-position and focus assertions."
+choice = "Amend sec-5: set comint-scroll-to-bottom-on-output nil locally and rely on comint's native follow (a window whose point is at the process mark follows; others keep window-start and point). No custom hooks."
+alternatives = ["Implement the sec-5 pre/post output hooks keyed on old-end visibility"]
+rationale = "Less code for the same observable behaviour. The only difference is the edge case of a window showing the end with point elsewhere, which does not follow."
+consequences = ["malebolge-follow-only-windows-at-end pins the behaviour (it fails if scroll-to-bottom is t)", "No pre/post output hooks in malebolge.el"]
+decided_by = "user (in session, 2026-10-23: 'Use comint native')"
+decided_on = "2026-10-23"
+
+[evidence]                      # free-text citations (supports / contradicts / notes)
+supports    = []
+contradicts = []
+notes       = []
+
+[relationships]                 # verb-written edges (set by doctrine supersede)
+supersedes    = []   # record ids this one replaces (set by doctrine supersede)
+superseded_by = []   # set on superseded predecessor (verb-written)
+
+[[relation]]
+label = "shapes"
+target = "SL-001"
