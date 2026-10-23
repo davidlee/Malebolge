@@ -7,13 +7,15 @@
 import type { Socket } from "node:net";
 import type { AgentEventStream, Conversation } from "@earendil-works/pi-durable";
 import { context } from "./context.ts";
-import type { Conversations } from "./conversations.ts";
+import type { ConversationPage, Conversations } from "./conversations.ts";
 import { encodeLine, lineSplitter } from "./ndjson.ts";
 import {
   type AttachMessage,
-  AttachRefused,
   type ClientMessage,
+  type ConversationsMessage,
   type ErrorMessage,
+  FrameRefused,
+  type ListMessage,
   parseConnectionMessage,
 } from "./protocol.ts";
 import { serveUnix, type UnixServer } from "./unix-socket.ts";
@@ -37,7 +39,7 @@ interface Connection {
   bound?: Conversation;
   /** The bound conversation's event stream, once acquired. */
   stream?: AgentEventStream;
-  /** Set when this connection takes no further line: a failed attach, or a departure. */
+  /** Set when this connection takes no further line: a failed attach, a listing, or a departure. */
   ended: boolean;
   /** Every line's turn, one after the previous one. */
   queue: Promise<void>;
@@ -63,14 +65,25 @@ function writeError(state: Connection, error: unknown): void {
   write(state, errorMessage(error));
 }
 
-/** This connection is over: one error, the socket ended, the lines queued behind it dropped. */
-function fail(state: Connection, error: unknown): void {
+/**
+ * This connection is over: an optional final frame, the socket ended, and the
+ * lines queued behind it dropped. The only daemon-side close, with an error or
+ * without one.
+ */
+function finish(state: Connection, value?: unknown): void {
   if (state.ended) {
     return;
   }
   state.ended = true;
-  writeError(state, error);
+  if (value !== undefined) {
+    write(state, value);
+  }
   state.socket.end();
+}
+
+/** This connection is over: one error, the socket ended, the lines queued behind it dropped. */
+function fail(state: Connection, error: unknown): void {
+  finish(state, errorMessage(error));
 }
 
 /** One input's turn: the daemon's gate, then the draft built from the validated fields. */
@@ -164,24 +177,49 @@ async function bindTarget(
   }
 }
 
+/**
+ * Answer a `list` frame with one page of this store's ids, then close cleanly:
+ * no binding, nothing created, no durable state (DEC-007). A failed listing goes
+ * through `fail`, because an error left on an open connection strands the client.
+ */
+async function answerList(state: Connection, conversations: Conversations): Promise<void> {
+  let page: ConversationPage;
+  try {
+    page = await conversations.list();
+  } catch (error) {
+    fail(state, error);
+    return;
+  }
+  const reply: ConversationsMessage = {
+    type: "conversations",
+    conversations: page.ids,
+    truncated: page.truncated,
+  };
+  finish(state, reply);
+}
+
 /** The first line binds: an attach frame's target, root for any other valid line. */
 async function firstLine(
   state: Connection,
   conversations: Conversations,
   line: string,
 ): Promise<void> {
-  let message: AttachMessage | ClientMessage;
+  let message: AttachMessage | ListMessage | ClientMessage;
   try {
     message = parseConnectionMessage(line);
   } catch (error) {
-    if (error instanceof AttachRefused) {
+    if (error instanceof FrameRefused) {
       fail(state, error);
       return;
     }
-    // Not an attach and not a valid command: root, then that error, and stay open.
+    // Not a first-line frame and not a valid command: root, then that error, and stay open.
     if (await bindRoot(state, conversations)) {
       writeError(state, error);
     }
+    return;
+  }
+  if (message.type === "list") {
+    await answerList(state, conversations);
     return;
   }
   if (message.type !== "attach") {
@@ -193,24 +231,25 @@ async function firstLine(
   await bindTarget(state, conversations, message.target);
 }
 
-/** A bound connection: an attach frame is refused, anything else acts on the binding. */
+/** A bound connection: a first-line frame is refused, anything else acts on the binding. */
 async function laterLine(
   state: Connection,
   conversation: Conversation,
   line: string,
 ): Promise<void> {
-  let message: AttachMessage | ClientMessage;
+  let message: AttachMessage | ListMessage | ClientMessage;
   try {
     message = parseConnectionMessage(line);
   } catch (error) {
     // A well-formed attach frame is still refused here: this connection is bound already.
     write(
       state,
-      error instanceof AttachRefused ? alreadyAttached(conversation) : errorMessage(error),
+      error instanceof FrameRefused ? alreadyAttached(conversation) : errorMessage(error),
     );
     return;
   }
-  if (message.type === "attach") {
+  if (message.type === "attach" || message.type === "list") {
+    // Neither frame is actionable for the bound conversation, so neither reaches `act`.
     write(state, alreadyAttached(conversation));
     return;
   }

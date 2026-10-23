@@ -23,7 +23,9 @@ import {
   conversations,
 } from "../src/conversations.ts";
 import { type Daemon, serve } from "../src/daemon.ts";
+import { isRecord } from "../src/json.ts";
 import { encodeLine } from "../src/ndjson.ts";
+import type { ConversationsMessage } from "../src/protocol.ts";
 import { type Printable, toPrintable } from "../src/render.ts";
 import { registryOf } from "../src/registry.ts";
 import { satanTools } from "../src/satan-tools.ts";
@@ -186,7 +188,7 @@ describe("daemon", () => {
   let daemon: Daemon;
   let socketPath: string;
   let dir: string;
-  const clients: LineClient<Printable>[] = [];
+  const clients: { close: () => void }[] = [];
   const extraStops: (() => Promise<void>)[] = [];
 
   /** The daemon on this test's socket, over a session that may not be ready yet. */
@@ -215,6 +217,37 @@ describe("daemon", () => {
     client.send({ type: "attach" });
     await client.next(isType("attached"));
     await client.next(isType("snapshot"));
+    return client;
+  };
+
+  /** The `conversations` reply, strictly: PHASE-01's frame, which no renderer knows yet. */
+  const listingFrame = (value: unknown): ConversationsMessage => {
+    const ids = isRecord(value) ? value["conversations"] : undefined;
+    const truncated = isRecord(value) ? value["truncated"] : undefined;
+    if (
+      !isRecord(value) ||
+      value["type"] !== "conversations" ||
+      !Array.isArray(ids) ||
+      !ids.every((id: unknown): id is number => typeof id === "number") ||
+      typeof truncated !== "boolean"
+    ) {
+      throw new Error(`not a listing: ${JSON.stringify(value)}`);
+    }
+    return { type: "conversations", conversations: ids, truncated };
+  };
+
+  /** Anything the daemon sends on a listing connection: its reply, or a `Printable`. */
+  type Frame = Printable | ConversationsMessage;
+
+  const isListing = (frame: Frame): frame is ConversationsMessage => frame.type === "conversations";
+
+  const toFrame = (value: unknown): Frame =>
+    isRecord(value) && value["type"] === "conversations" ? listingFrame(value) : toPrintable(value);
+
+  /** A client that understands the listing reply; every one is closed by the afterEach. */
+  const listClient = async (): Promise<LineClient<Frame>> => {
+    const client = await lineClient(socketPath, toFrame);
+    clients.push(client);
     return client;
   };
 
@@ -634,6 +667,71 @@ describe("daemon", () => {
     expect(garbage.message).toMatch(/nonsense/);
   });
 
+  it("answers a list frame with one page of ids, then closes cleanly (DEC-007)", async () => {
+    await start();
+    const api = conversations(test, DEFAULTS);
+    const first = await api.open({ kind: "new" });
+    const second = await api.open({ kind: "new" });
+    const client = await listClient();
+    client.send({ type: "list" });
+    const reply = await client.next(isListing);
+    await client.closed();
+    // Newest first, and the whole reply is one frame: no snapshot, no error, no notice.
+    expect(reply.conversations).toEqual([second.id, first.id, test.root.id]);
+    expect(reply.truncated).toBe(false);
+    expect(client.received()).toHaveLength(1);
+    // A listing binds nothing and creates nothing.
+    expect(await conversationIds()).toEqual([test.root.id, first.id, second.id]);
+  });
+
+  it("refuses a list frame on a bound connection, keeping its binding (EX-5, F-11)", async () => {
+    await start();
+    test.faux.setResponses([fauxAssistantMessage([fauxText("hello")])]);
+    const client = await attach();
+    // Well-formed and malformed alike: the rule is about the connection, not the frame.
+    for (const frame of [{ type: "list" }, { type: "list", topic: "x" }]) {
+      client.send(frame);
+      const error = await client.next(isType("error"));
+      expect(error.message).toBe("already attached to conversation 1");
+    }
+    // The control: the binding survived, so an input still lands on it.
+    client.send({ type: "input", content: "hi" });
+    await client.next(isType("run_end"));
+  });
+
+  it("answers a malformed list frame with one error naming the frame, then closes", async () => {
+    await start();
+    const client = await lineClient(socketPath, toPrintable);
+    clients.push(client);
+    await client.write(encodeLine({ type: "list", topic: "x" }));
+    const error = await client.next(isType("error"));
+    expect(error.message).toBe("list: unknown key topic");
+    await client.closed();
+    expect(client.received()).toHaveLength(1);
+    expect(await conversationIds()).toEqual([test.root.id]);
+  });
+
+  it("a failed listing answers one error and closes", async () => {
+    test = await openTestHarness([]);
+    const api = conversations(test, DEFAULTS);
+    const failing = {
+      ...api,
+      list: (): Promise<never> => Promise.reject(new Error("listing failed")),
+    };
+    daemon = await serve({
+      socketPath,
+      conversations: Promise.resolve(failing),
+      beforeInput: noGate,
+    });
+    const client = await lineClient(socketPath, toPrintable);
+    clients.push(client);
+    client.send({ type: "list" });
+    const error = await client.next(isType("error"));
+    expect(error.message).toBe("listing failed");
+    await client.closed();
+    expect(await conversationIds()).toEqual([test.root.id]);
+  });
+
   it("stops watching a bound conversation when its client leaves (EX-3)", async () => {
     await start();
     const client = await attach();
@@ -815,6 +913,7 @@ describe("daemon", () => {
         return conversation;
       },
       watch: (conversation) => api.watch(conversation),
+      list: () => api.list(),
     };
     daemon = await serve({
       socketPath,

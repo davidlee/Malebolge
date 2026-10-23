@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { AttachRefused, parseClientMessage, parseConnectionMessage } from "../src/protocol.ts";
+import { FrameRefused, parseClientMessage, parseConnectionMessage } from "../src/protocol.ts";
 
 describe("parseClientMessage", () => {
   it.each([
@@ -79,7 +79,21 @@ describe("parseConnectionMessage", () => {
     [{ type: "attach", conversation: 1, topic: "x" }],
     [{ type: "attach", new: true, cwd: "/tmp", topic: "x" }],
   ])("refuses %j", (message) => {
-    expect(() => parseConnectionMessage(JSON.stringify(message))).toThrow(AttachRefused);
+    expect(() => parseConnectionMessage(JSON.stringify(message))).toThrow(FrameRefused);
+  });
+
+  /** Every first-line frame names itself, so a refusal cannot be mistaken for the other. */
+  it.each([
+    ['{"type":"attach","conversation":0}', "attach: conversation must be a positive integer"],
+    ['{"type":"attach","topic":"x"}', "attach: unknown key topic"],
+    ['{"type":"list","topic":"x"}', "list: unknown key topic"],
+    ['{"type":"list","conversation":3}', "list: unknown key conversation"],
+  ])("names the frame that refused %s", (line, message) => {
+    expect(errorOf(() => parseConnectionMessage(line))).toBe(message);
+  });
+
+  it("parses a list frame", () => {
+    expect(parseConnectionMessage('{"type":"list"}')).toEqual({ type: "list" });
   });
 
   it.each([
@@ -105,7 +119,7 @@ describe("parseConnectionMessage", () => {
     );
   });
 
-  it("reports a non-attach parse error, not an AttachRefused", () => {
+  it("reports a non-frame parse error, not a FrameRefused", () => {
     let thrown: unknown;
     try {
       parseConnectionMessage('{"type":"warp"}');
@@ -113,10 +127,11 @@ describe("parseConnectionMessage", () => {
       thrown = error;
     }
     expect(thrown).toBeInstanceOf(Error);
-    expect(thrown).not.toBeInstanceOf(AttachRefused);
+    expect(thrown).not.toBeInstanceOf(FrameRefused);
   });
 
-  it("leaves parseClientMessage unaware of attach", () => {
+  it("leaves parseClientMessage unaware of the first-line frames", () => {
     expect(() => parseClientMessage('{"type":"attach"}')).toThrow('unknown message type "attach"');
+    expect(() => parseClientMessage('{"type":"list"}')).toThrow('unknown message type "list"');
   });
 });

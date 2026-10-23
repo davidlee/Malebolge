@@ -13,6 +13,7 @@ import {
   type ConversationDefaults,
   conversations,
   isConversationKey,
+  LIST_PAGE,
 } from "../src/conversations.ts";
 import { registryOf } from "../src/registry.ts";
 import { openSession, type Session } from "../src/session.ts";
@@ -202,5 +203,50 @@ describe("conversations", () => {
     } finally {
       await stream.stop();
     }
+  });
+
+  it("lists root alone in a fresh store", async () => {
+    const session = await passive();
+    expect(await conversations(session, DEFAULTS).list()).toEqual({
+      ids: [session.root.id],
+      truncated: false,
+    });
+  });
+
+  it("lists the ownerless conversations newest first", async () => {
+    const session = await passive();
+    const api = conversations(session, DEFAULTS);
+    const first = await api.open({ kind: "new" });
+    const second = await api.open({ kind: "new" });
+    expect((await api.list()).ids).toEqual([second.id, first.id, session.root.id]);
+  });
+
+  it("keeps a task-owned conversation out of the listing", async () => {
+    const session = await passive();
+    const api = conversations(session, DEFAULTS);
+    const owned = await session.harness.commit(async (tx) => {
+      const taskId = await tx.createTask(
+        stubTask,
+        {},
+        { ownership: { kind: "conversation" }, conversationId: session.root.id },
+      );
+      return (await tx.createConversation({ ownership: { kind: "task", taskId } })).id;
+    }, context);
+    const created = await api.open({ kind: "new" });
+    const { ids } = await api.list();
+    expect(ids).toContain(created.id);
+    expect(ids).not.toContain(owned);
+  });
+
+  it(`stops at LIST_PAGE (${String(LIST_PAGE)}) and reports the cut`, async () => {
+    const session = await passive();
+    await session.harness.commit(async (tx) => {
+      for (let created = 0; created < LIST_PAGE; created += 1) {
+        await tx.createConversation({ ownership: { kind: "ownerless" } });
+      }
+    }, context);
+    const page = await conversations(session, DEFAULTS).list();
+    expect(page.ids).toHaveLength(LIST_PAGE);
+    expect(page.truncated).toBe(true);
   });
 });

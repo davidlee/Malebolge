@@ -29,6 +29,17 @@ export interface Conversations {
   open(target: AttachTarget): Promise<Conversation>;
   /** The event stream of `conversation`: the transport's only route to the Harness. */
   watch(conversation: Conversation): Promise<AgentEventStream>;
+  /** One page of this store's ownerless conversations, newest first (DEC-007). */
+  list(): Promise<ConversationPage>;
+}
+
+/** Conversations read per listing page: small, so a listing never stalls the turn chain. */
+export const LIST_PAGE = 50;
+
+/** One page of a listing: the ids newest first, and whether the page was cut. */
+export interface ConversationPage {
+  ids: number[];
+  truncated: boolean;
 }
 
 /** The safe positive integer the wire parser accepts, as pi's branded id. */
@@ -89,5 +100,17 @@ export function conversations(session: Session, defaults: ConversationDefaults):
       }
     },
     watch: (conversation) => watchEvents(session.harness, conversation.id, context),
+    list: async (): Promise<ConversationPage> => {
+      // One read, one page, no cursor kept: `next` means the page was cut, not "keep going".
+      const page = await session.harness.commit(
+        (tx) => tx.scanConversations({ order: "descending" }, LIST_PAGE),
+        context,
+      );
+      return {
+        // A task-owned conversation is refused at attach, so listing one would be noise.
+        ids: page.items.filter((record) => record.owner === undefined).map((record) => record.id),
+        truncated: page.next !== undefined,
+      };
+    },
   };
 }
