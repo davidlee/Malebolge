@@ -33,3 +33,12 @@ by its lockfile, and the repo puts them into its own tree.
 6. **Native binaries.** biome's linux-gnu binary is dynamically linked. It
    needs `autoPatchelfHook` in the derivation, or a loader the room does not
    have yet (oubliette `IMP-021`). Unverified.
+
+## Related (2026-10-23)
+
+`IMP-004` was raised from the host side of this same problem: the checkout's
+`node_modules` carried a glibc-linked biome binary, so `just fmt-check` died with
+ENOENT and the justfile was edited to use the devshell's `biome` instead. IMP-004
+proposes one flake output serving both sides — items 1–6 above are the
+room-facing half, and item 6 is that exact failure. Read it before implementing,
+so the tree is built once rather than twice.

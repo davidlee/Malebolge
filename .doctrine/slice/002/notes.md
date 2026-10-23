@@ -118,7 +118,13 @@ fresh-as-of: 2026-10-23 · design locked (run dr-01a16771…, rev 37) · plan au
   two scope criteria given a home: PHASE-03/EX-5 and EX-9).
 - phase sheets — four, materialised from `plan.toml` via `doctrine slice phases`.
 - memories: `mem.pattern.doctrine.mcp-root-follows-session-cwd`,
-  `mem.pattern.doctrine.design-run-one-ledger-per-pass`.
+  `mem.pattern.doctrine.design-run-one-ledger-per-pass`,
+  `mem.fact.malebolge.biome-binary-needs-glibc-loader`,
+  `mem.fact.malebolge.runner-suite-red-in-agent-container`.
+- IMP-004 — a local dev flake so the gate's toolchain comes from the flake. The
+  `justfile`'s `biome format .` (instead of `npx biome format .`) is the in-place
+  workaround for this slice, not the fix; IMP-001 is the same destination from
+  the room side and both must land as one output.
 
 ### Learned
 - Cross-repo ledger writes must use the target repo's `doctrine` binary; the
@@ -130,6 +136,13 @@ fresh-as-of: 2026-10-23 · design locked (run dr-01a16771…, rev 37) · plan au
 - A research baseline hashes the slice's **intent docs**, so amending `design.md`
   after the round reports drift even when no fact changed. Re-read the Thread 2
   sites, record that they held, restamp — a re-round is not owed for that alone.
+- A native binary built for the wrong libc surfaces as `spawnSync … ENOENT` from
+  `npx`, not as "wrong platform": the file exists and is executable, and what is
+  missing is the loader. Check `/lib64/ld-linux-x86-64.so.2` before doubting the
+  package.
+- A base that is red for environment reasons must be *measured* before the plan
+  claims a green gate. "No new failure beyond the known set" is the honest form
+  of the criterion; "all green" would have been quietly weakened later.
 
 ### Open
 - No open DEC / QUE / ASM. Every decision is `accepted`; no assumption record
@@ -137,6 +150,9 @@ fresh-as-of: 2026-10-23 · design locked (run dr-01a16771…, rev 37) · plan au
 - Plan-phase handoff: `/phase-plan` expands the next phase's runtime sheet, then
   `/execute` (or `/dispatch` for confined workers per phase). PHASE-01 is the
   entry point; nothing else can start first.
+- IMP-004 (local dev flake) owns the justfile's `biome` override. Until it lands,
+  `just fmt-check` needs the devshell's biome on PATH; a shell without it cannot
+  run the gate, and that is environment, not code.
 - `review_pass RV-005 STALE` still prints in the run's status: the pass concluded
   before the final section amendments were attested. Every section's current
   fingerprint is attested, the edge to `locked` was cleared and the design is

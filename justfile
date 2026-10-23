@@ -3,7 +3,8 @@ check: fmt-check lint typecheck test
 
 # Biome is the formatter only; lint is typescript-eslint (IMP-041).
 fmt-check:
-  npx biome format .
+  # changed to flake biome (provided by satan)
+  biome format .
 
 lint:
   npx eslint . --max-warnings 0
@@ -25,7 +26,8 @@ smoke:
   node test/emacs-attach-smoke.ts
 
 format:
-  npx biome format --write .
+  # changed to flake biome
+  biome format --write .
 
 # Run the daemon (owns the durable session). satan-mcp is optional: without
 # it the daemon starts with no SATAN tools.
