@@ -94,7 +94,7 @@ socket.
 
 ## Harvest
 <!-- single-copy: updated in place each harvest; ids only, never restated content -->
-fresh-as-of: 2026-10-23 · design locked (run dr-01a16771…, rev 37) · plan authored · lifecycle `ready` · gate note: `just check` unrunnable on this host (IMP-001)
+fresh-as-of: 2026-10-23 · design locked (run dr-01a16771…, rev 37) · plan authored · lifecycle `ready` · gate baseline measured 2026-10-23: lint/tsc/format clean, `just ert` 24/24, `just smoke` 3/3, vitest 11 red all under `test/runner/` (container: git-guard shim, no room)
 
 ### Produced
 - DEC-007..DEC-010 — `accepted`; the four inquiry dispositions, each with an

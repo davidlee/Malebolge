@@ -1,0 +1,42 @@
+memory_uid = "mem_01a167e0ad677592a1b8829b0ead78e9"
+memory_key = "mem.fact.malebolge.runner-suite-red-in-agent-container"
+schema_version = 1
+memory_type = "fact"
+status = "active"
+title = "Eleven test/runner tests are red in this agent container, and none of them is a code regression"
+summary = "test/runner/{collect,recovery,project-context-probe} fail here because git is the pi agent's guard shim and there is no room/pi-env; GIT_GUARD=off clears 4, the other 7 need a real room"
+created = "2026-10-23"
+updated = "2026-10-23"
+
+[scope]
+paths = []
+globs = []
+commands = ["npx vitest run", "just check"]
+tags = ["malebolge", "tests", "just check"]
+workspace = "default"
+repo = "github.com/davidlee/Malebolge"
+repo_id_kind = "remote"
+repo_id_confidence = "high"
+
+[git]
+anchor_kind = "checkout_state"
+commit = ""
+tree = "5e2159c57fa39a4d320f1949beb7dbe103342ea1"
+ref_name = "refs/heads/main"
+checkout_state_id = "c07fe3d853140afb54c01df0a47995960c7edbec04b4fa63d6e3d170b0fd30c3"
+base_commit = "f13caae51f06b16344e45cc2f53baf85a5faf705"
+verified_sha = ""
+normalizer = "forget.checkout.v1"
+
+[review]
+verification_state = "unverified"
+reviewed = ""
+review_by = ""
+
+[trust]
+trust_level = "medium"
+
+[ranking]
+severity = "medium"
+weight = 0
+

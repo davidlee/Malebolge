@@ -1,26 +1,30 @@
-Observed 2026-10-23 (SL-002 plan): `just check` fails at its first recipe on
-this host. `just fmt-check` runs `npx biome format .`, which spawns
-`node_modules/@biomejs/cli-linux-x64/biome` — a 66 MB glibc-linked binary — and
-dies:
+Observed 2026-10-23 (SL-002 plan), corrected the same day when the user put
+biome on PATH.
 
-    Error: spawnSync .../cli-linux-x64/biome ENOENT
+**The hazard is the resolution path, not biome.** `just fmt-check` runs
+`npx biome format .`, and npx prefers the local install:
 
+    $ npx biome --version
+    Error: spawnSync .../node_modules/@biomejs/cli-linux-x64/biome ENOENT
     $ ./node_modules/@biomejs/cli-linux-x64/biome --version
     bash: ...: cannot execute: required file not found
 
-The file exists and is executable; what is missing is the interpreter it needs:
-`/lib64/ld-linux-x86-64.so.2` is absent on this nix host. So the ENOENT is the
-loader, not the binary. `npx eslint --version`, `npx tsc --version` and
-`npx vitest --version` all work (v10.13.0, 6.0.3, 5.0.5), so **only** the biome
-format check is broken; lint, typecheck and tests are runnable.
+The file exists and is executable; the interpreter is missing.
+`/lib64/ld-linux-x86-64.so.2` does not exist on this nix host, so a glibc-linked
+binary cannot start and spawnSync reports ENOENT (the loader, not the binary).
 
-Consequences for a slice whose exit criteria say "just check green": the
-criterion is currently unsatisfiable here. Do not weaken it. Either run the gate
-where the toolchain matches (the flake devshell / the room, where node_modules is
-built for that platform) or wait for IMP-001 ("Build the dev node_modules in the
-flake so a sealed room runs just check"), which is the fix this symptom is the
-evidence for.
+**What works.** `biome` on PATH is nix's 2.5.15 — the exact version
+`package.json` pins — and `biome format .` reports "Checked 168 files. No fixes
+applied." So the formatting gate is satisfiable here; only the npx path is
+broken. Run `biome format .` (or the flake devshell's toolchain) rather than
+`npx biome format .` until IMP-001 builds node_modules in the flake.
 
-Related but distinct: `mem.fact.malebolge.eslint-ignores-doctrine-state` is a
-different `just check` failure (typed eslint walking `.doctrine/state/pi`), fixed
-in-repo and unrelated to the loader.
+**What is not affected.** `npx eslint --version` (10.13.0), `npx tsc --version`
+(6.0.3) and `npx vitest --version` (5.0.5) all run, and `just ert` (24/24,
+byte-compile clean) and `just smoke` (3 checks) are green.
+
+See also `mem.fact.malebolge.runner-suite-red-in-agent-container` — the other,
+larger reason `just check` is red here.
+
+Unrelated: `mem.fact.malebolge.eslint-ignores-doctrine-state` is a different
+`just check` failure (typed eslint walking `.doctrine/state/pi`), fixed in-repo.

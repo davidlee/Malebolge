@@ -108,13 +108,16 @@ and the baseline was restamped with that recorded in `research.md`.
 - `finish` writes and then ends the socket. The tests must assert the reply
   *arrives before* the close (`lineClient`'s `closed()` is the seam), or the
   phase will pass while racing.
-- **The gate does not currently run on this host.** `just fmt-check` dies with
-  ENOENT because `@biomejs/cli-linux-x64/biome` is glibc-linked and the host has
-  no `/lib64` loader; eslint, tsc and vitest are fine. That is IMP-001's symptom,
-  not this slice's bug, and it is why PHASE-01/EN-4 makes gate-executability an
-  entrance condition: a worker that discovers it mid-phase would be tempted to
-  weaken an exit criterion instead of moving to an environment where the gate
-  runs.
+- **The gate is measured, not assumed, and it is red at base here.** Run at
+  `f13caae`: eslint and tsc clean, `biome format .` clean (2.5.15 — the pinned
+  version, but only via the PATH binary; `npx biome` resolves the checkout's
+  glibc-linked one and cannot exec — IMP-001 owns that packaging fix), `just ert` 24/24, `just smoke` 3/3, and
+  `npx vitest run` 11 red — every one under `test/runner/`, caused by this
+  container (`git` is the pi agent's guard shim; `GIT_GUARD=off` clears 4) and by
+  the absence of a room/pi-env (the other 7). None of it touches a file this
+  slice edits. So PHASE-01/EX-7 is written as *no new failure*, not *all green*:
+  that is the regression guarantee, and it is the only honest form of the
+  criterion in an environment whose base is red for reasons outside the slice.
 
 **Deliberately out of scope, so a phase cannot drift into it:** sharing one
 fake-daemon fixture between the attach tests and the Emacs smoke (IMP-003 — the

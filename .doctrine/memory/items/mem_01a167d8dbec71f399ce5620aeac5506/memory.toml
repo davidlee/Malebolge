@@ -3,8 +3,8 @@ memory_key = "mem.fact.malebolge.biome-binary-needs-glibc-loader"
 schema_version = 1
 memory_type = "fact"
 status = "active"
-title = "This host cannot run just check: the checkout's biome binary needs a glibc loader"
-summary = "just fmt-check dies with ENOENT on @biomejs/cli-linux-x64/biome (glibc-linked, no /lib64 loader on this nix host); eslint, tsc and vitest run fine"
+title = "just fmt-check must use the nix biome here: the checkout's node_modules binary cannot exec"
+summary = "npx biome resolves node_modules/@biomejs/cli-linux-x64/biome, a glibc binary with no /lib64 loader on this host; PATH biome 2.5.15 works and formats the repo clean"
 created = "2026-10-23"
 updated = "2026-10-23"
 
