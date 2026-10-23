@@ -1,0 +1,140 @@
+# Implementation plan for SL-002 — the authored, durable phase plan.
+#
+# This is the single source of each phase's objective, criteria, verification,
+# and links. Runtime status lives separately under .doctrine/state/ (phase
+# tracking) — never record progress here. Hand-edit freely: the tool reads this
+# file but does not rewrite it.
+schema  = "doctrine.plan.overview"
+version = 1
+slice   = "SL-002"
+
+# Canonical spec/requirement links — cite ids, never restate what they say. The
+# plan reader does not model these yet, so nothing downstream consumes them.
+[specs]
+primary       = []
+collaborators = []
+
+[requirements]
+targets      = []
+dependencies = []
+
+# One [[phase]] per ordered phase, in execution order — the authored array order
+# IS the order; never sort by id. Ids are PHASE-NN (zero-padded), immutable and
+# never reused once authored — edits append, they never renumber, so the id
+# sequence goes non-monotonic after a split and that is expected. Criterion ids
+# are local to their phase, bare, and equally immutable
+# (`lib:reference/glossary.md` § reference forms). The prefix is
+# the only mode marker; there is no mode field. Reference a criterion from
+# another phase phase-qualified (PHASE-03/EX-8) — bare EX-8 is ambiguous.
+[[phase]]
+id        = "PHASE-01"
+name      = "Daemon: the `list` frame, one page, a clean close"
+objective = "`src/protocol.ts` gains the `list` first-line frame, its `conversations` reply, and one frame-named refusal shared with `attach`; `src/conversations.ts` gains `list()` — one commit, descending, ownerless, `LIST_PAGE`, `truncated`; `src/daemon.ts` gains a clean `finish` close, routes a rejected listing through `fail`, and refuses `list` on a bound connection with the unprefixed message (design sec-2, sec-3; DEC-007)."
+entrance_criteria = [
+  { id = "EN-1", text = "Design locked: DEC-007..DEC-010 accepted, design.md sec-2/sec-3 at rev 37, SL-002 at lifecycle `plan`." },
+  { id = "EN-2", text = "`just check` green on the phase's base commit, and the working tree carries no uncommitted work outside this slice." },
+  { id = "EN-3", text = "pi-durable's `scanConversations`, `Page.next` and the positive-only `ConversationQuery` re-read at their sites (research Thread 2 facts 1-3) before `list()` is written: the design rests on one-commit read semantics, not a cached claim." },
+]
+exit_criteria = [
+  { id = "EX-1", text = "`parseConnectionMessage` yields a `list` frame only for `{\"type\":\"list\"}` with no other key; `{\"type\":\"list\",\"topic\":\"x\"}` is refused with `list: unknown key topic`. `AttachRefused`/`attachRefused` become `FrameRefused`/`frameRefused(frame, problem)` with message `${frame}: ${problem}`, and every shipped `attach: …` refusal text stays byte-identical (the existing assertions in test/daemon.test.ts and test/protocol.test.ts pass unchanged)." },
+  { id = "EX-2", text = "`firstLine` fails the connection for any `FrameRefused` — error first, then close, binding nothing — and a `list` frame answers exactly one `{\"type\":\"conversations\",…}` then closes cleanly through a new `finish(state)` seam (write, mark ended, `socket.end()`, drop the lines queued behind it): no error written, no conversation bound or created, no durable state (design sec-3; RV-005 F-1, F-11)." },
+  { id = "EX-3", text = "`conversations.list()` is one `harness.commit` calling `scanConversations({order:\"descending\"}, LIST_PAGE)` with `LIST_PAGE = 50`, keeping only `record.owner === undefined`, replying the ids in scan order and `truncated: page.next !== undefined`. No cursor is kept, and the daemon still holds no `Harness` of its own (DEC-007; RV-005 F-2)." },
+  { id = "EX-4", text = "A `list()` that rejects answers exactly one `error` and then closes — routed through `fail`, never left as an error on a connection that stays open and silent (scope done-criteria; design sec-3)." },
+  { id = "EX-5", text = "On a bound connection a well-formed `list`, a malformed `list` and a malformed `attach` each answer the *unprefixed* `already attached to conversation N`; the connection stays open and still accepts an input for its bound conversation (control proving the binding survived) (RV-005 F-1, F-11)." },
+  { id = "EX-6", text = "Every shipped daemon behaviour in test/daemon.test.ts is unchanged: a command first line still binds root and is acted on, a malformed first line still binds root, answers its error and stays open, and a refused `attach` still answers one error and closes." },
+  { id = "EX-7", text = "`just check` green (biome format, eslint zero warnings, tsc, vitest with the coverage gate); `test/structure.test.ts` unchanged — no new `src/` module, so no import edge moves." },
+]
+verification = [
+  { id = "VT-1", expects = "the `conversations` reply shape, newest first, and the clean close with no snapshot and no error", test_file = "test/daemon.test.ts", keywords = ["conversations", "\"truncated\""], waived = false },
+  { id = "VT-2", expects = "a well-formed `list` on a bound connection answers the unprefixed already-attached message and the binding survives a control input", test_file = "test/daemon.test.ts", keywords = ["refuses a list frame on a bound connection", "already attached to conversation"], waived = false },
+  { id = "VT-3", expects = "a malformed `list` and a rejected `list()` each answer one error and close, binding nothing", test_file = "test/daemon.test.ts", keywords = ["list: unknown key topic", "a failed listing answers one error and closes"], waived = false },
+  { id = "VT-4", expects = "`list()` reads one page descending, keeps ownerless conversations only, reports truncation, and bounds a full page", test_file = "test/conversations.test.ts", keywords = ["LIST_PAGE", "owner"], waived = false },
+  { id = "VT-5", expects = "strict parse of the `list` frame and the frame-named refusal for both frames", test_file = "test/protocol.test.ts", keywords = ["FrameRefused", "list: unknown key"], waived = false },
+  { id = "VA-1", text = "Orchestrator diff review: the `FrameRefused` rename leaves every shipped `attach:` message unchanged; `finish` is the only new close and it writes no error; no second scan or cursor is kept; the reply is built from the page, not from a second read." },
+]
+specs        = []
+requirements = []
+
+[[phase]]
+id        = "PHASE-02"
+name      = "Client: `--list` as its own mode"
+objective = "`malebolge-attach --list` becomes a fourth invocation shape — one `{\"type\":\"list\"}` frame, ids to stdout through the renderer, one truncation line to stderr, `NotListedError` and exit 1, a short `LIST_WAIT` — and the skew rule generalises from a literal to a predicate that names whichever frame the daemon did not know (design sec-4; DEC-008)."
+entrance_criteria = [
+  { id = "EN-1", text = "PHASE-01 complete: `src/protocol.ts` declares the `list` request and `conversations` reply shapes and the frame-named refusal." },
+  { id = "EN-2", text = "`just check` green on the phase's base commit." },
+  { id = "EN-3", text = "`src/attach-main.ts`'s coded-error exit path re-read at the site: the list mode's exit-1 contract must reach it through a coded error, not through a rethrow (RV-005 F-4's premise)." },
+]
+exit_criteria = [
+  { id = "EX-1", text = "`AttachInvocation` is a union of `{mode:\"attach\", target, inputMode, presentation}` and `{mode:\"list\", wait}`; `--list` combined with `--conversation`, `--new`, `--cwd` or `--emacs` is a `UsageError` — one line plus the usage, exit 2, before any connect. The three attach shapes parse exactly as shipped." },
+  { id = "EX-2", text = "`listConversations(socketPath, output, wait, presentation = \"terminal\")` connects through `connectOrExplain`, sends one list frame, accepts only `conversations` and `error`, ignores every other frame (including the snapshot a pre-`list` daemon sends first), writes one id per line to **stdout** through the renderer's new `conversations` case in the order received (it never re-sorts), and writes one truncation line to **stderr** when `truncated` is true. No `[connected]`, no `[detached]`, no notices on stdout (design sec-4; RV-005 F-2). The reader's frame type is the one PHASE-01 declared in `src/protocol.ts`, so a daemon/client shape mismatch is a type error rather than a runtime surprise — that shared type, not a shared fixture, is what proves the scope's first done-criterion composes." },
+  { id = "EX-3", text = "`NotListedError` with `readonly code = \"NOT_LISTED\"` mirrors `NotAttachedError`; `attach-main` dispatches on `invocation.mode` and exits 1 with one message rather than a stack trace; the reader ends its own socket on an error frame, a refusal or a skew (RV-005 F-4)." },
+  { id = "EX-4", text = "The skew rule generalises: an error whose message is `unknown message type \"<frame>\"` prints the existing restart hint naming that frame. `attach`'s case becomes the first instance of the rule and `list` the second; no second exact-message literal is introduced (DEC-008)." },
+  { id = "EX-5", text = "`LIST_WAIT` is `{intervalMs: 200, timeoutMs: 1000}` and no listing path uses attach's `DEFAULT_WAIT` (DEC-008's amendment)." },
+  { id = "EX-6", text = "`just check` green; every existing `test/attach.test.ts` and `test/render.test.ts` expectation for attach and terminal output passes unchanged." },
+]
+verification = [
+  { id = "VT-1", expects = "`--list` prints ids one per line and exits 0, with no notices on stdout; a truncation writes exactly one line to stderr", test_file = "test/attach.test.ts", keywords = ["--list", "stderr", "truncated"], waived = false },
+  { id = "VT-2", expects = "every `--list` flag combination is a usage refusal with exit 2 and no connection", test_file = "test/attach.test.ts", keywords = ["refuses --list combined with an attach flag", "UsageError"], waived = false },
+  { id = "VT-3", expects = "a pre-`list` daemon's snapshot-then-error is ignored except for the error, and the hint names `list` with exit 1 through `NOT_LISTED`", test_file = "test/attach.test.ts", keywords = ["NOT_LISTED", "unknown message type"], waived = false },
+  { id = "VT-4", expects = "the `conversations` frame renders one id per line in both presentations", test_file = "test/render.test.ts", keywords = ["conversations"], waived = false },
+  { id = "VT-5", expects = "the listing's own short wait is used, not the attach wait", test_file = "test/attach.test.ts", keywords = ["LIST_WAIT"], waived = false },
+  { id = "VA-1", text = "Orchestrator diff review: the listing shares `connectOrExplain`, `lineSplitter` and the renderer rather than growing a second transport or a second output writer; the skew predicate replaces the literal rather than sitting beside it; attach's behaviour is untouched." },
+]
+specs        = []
+requirements = []
+
+[[phase]]
+id        = "PHASE-03"
+name      = "Emacs: a target under a prefix argument"
+objective = "`M-x malebolge-attach` gains a picker over the daemon's own ids behind a prefix argument, in the fixed order list → prompt → draft check → detach → attach, passing the chosen target as argv and following output after the switch; the smoke's fake daemon gains a `list` reply and asserts the argv the picker chose (design sec-5; DEC-009)."
+entrance_criteria = [
+  { id = "EN-1", text = "PHASE-02 complete: `--list` prints ids and exits 0, and listing failures carry `NOT_LISTED`." },
+  { id = "EN-2", text = "`just ert` and `just smoke` green on the phase's base commit." },
+  { id = "EN-3", text = "`emacs/malebolge.el`'s comint following (`comint-scroll-to-bottom-on-output` nil) and `malebolge--live-process` re-read at the site, so the switch's point handling is written against what the buffer actually does (design sec-5)." },
+]
+exit_criteria = [
+  { id = "EX-1", text = "Plain `M-x malebolge-attach` is unchanged: root, or the live client when one is attached — no prompt, no new frame." },
+  { id = "EX-2", text = "With a prefix argument the order is fixed: list, prompt, draft check, detach, attach. `--list` runs synchronously into a temporary buffer with stderr kept in its own buffer (never merged), announced by a `message` and a `redisplay` before the call; a non-zero exit raises `user-error` carrying that output and abandons the attach — never a silent fallback to root (RV-005 F-5's premise, F-8). The listing call is a seam the headless suite can stub, as it already stubs `make-comint-in-buffer`: no ERT case may need a real socket or a real daemon." },
+  { id = "EX-3", text = "`completing-read` offers the numeric stdout lines newest first plus a final `new`; stderr contributes no candidate, and non-empty stderr is shown as a minibuffer message rather than a candidate (RV-005 F-12)." },
+  { id = "EX-4", text = "A draft holding any non-whitespace text refuses the switch *before* anything is detached, with a message to submit or clear it, and the draft survives unchanged (RV-005 F-5)." },
+  { id = "EX-5", text = "The chosen target becomes argv — `--conversation N`, or `--new`, before `--emacs`; a failed second attach reports the failure and leaves the transcript empty rather than attaching root (RV-005 F-5). On success the transcript names the conversation through the shipped `attached to conversation N` notice — no second announcement is added." },
+  { id = "EX-6", text = "After a switch, every window showing the transcript sits at `point-max` and follows new output, including a window that was scrolled back; no buffer-local target record is added — `malebolge--live-process` and the transcript's `attached to conversation N` remain the only authorities (DEC-009)." },
+  { id = "EX-7", text = "`test/emacs-attach-smoke.ts`'s fake daemon answers a `list` frame, and the smoke asserts that a targeted attach sends the argv the picker chose (RV-005 F-3)." },
+  { id = "EX-8", text = "`just ert` green and byte-compile clean; `just smoke` green; `just check` green." },
+  { id = "EX-9", text = "The shipped detach path is untouched: `C-c C-q` still sends the `quit` frame, waits boundedly, and leaves the conversation running; the existing ERT case for it passes unchanged." },
+]
+verification = [
+  { id = "VT-1", expects = "a draft-bearing switch refuses before detaching and keeps the draft", test_file = "test/malebolge-ert.el", keywords = ["refuses a draft-bearing switch before detaching"], waived = false },
+  { id = "VT-2", expects = "the chosen target reaches the command as argv, and a failed second attach leaves the transcript empty", test_file = "test/malebolge-ert.el", keywords = ["--conversation", "leaves the transcript empty"], waived = false },
+  { id = "VT-3", expects = "after a switch the transcript's windows are at point-max and follow", test_file = "test/malebolge-ert.el", keywords = ["point-max", "set-window-point"], waived = false },
+  { id = "VT-4", expects = "a failing `--list` aborts the attach with the client's own message, and no-prefix attach is unchanged", test_file = "test/malebolge-ert.el", keywords = ["aborts the attach when the listing fails", "prefix argument"], waived = false },
+  { id = "VT-5", expects = "end to end: batch Emacs, the real attach client, a fake daemon answering `list`, and the chosen target's argv on the socket", test_file = "test/emacs-attach-smoke.ts", keywords = ["list", "--conversation"], waived = false },
+  { id = "VA-1", text = "Orchestrator diff review: the picker shells out through `malebolge-attach-command` rather than re-implementing the protocol; the no-prefix path is behaviourally identical; the detach path reuses `malebolge-quit`'s frame and bounded wait instead of a new teardown." },
+]
+specs        = []
+requirements = []
+
+[[phase]]
+id        = "PHASE-04"
+name      = "Documentation: the frame, the flag, the page, the corrections"
+objective = "`docs/internals.md` §Protocol and `README.md` §\"Which conversation\" describe the `list` frame, `--list` and the Emacs prompt, state the 50-conversation page, the truncation line and what an id means outside one profile's store, correct the two claims the feature falsifies, and say how root stays reachable when a page fills (design sec-6; DEC-010)."
+entrance_criteria = [
+  { id = "EN-1", text = "PHASE-01 and PHASE-03 complete: the shipped frame vocabulary and the Emacs prompt are settled, so the docs describe what exists rather than what was planned." },
+  { id = "EN-2", text = "`just check`, `just ert` and `just smoke` green on the phase's base commit." },
+]
+exit_criteria = [
+  { id = "EX-1", text = "`docs/internals.md` §Protocol documents the `list` first-line frame, the `conversations` reply and its `truncated` key, the clean close (reply then end, no error), and keeps the bound-connection paragraph stating the *unprefixed* message for both frames; a reader can tell a first-line frame from a command." },
+  { id = "EX-2", text = "`README.md` §\"Which conversation\" gains `--list`, `C-u M-x malebolge-attach`, the 50-conversation page with its truncation line, and the statement that an id names a conversation only inside one profile's store and socket; the claim that `just attach` and `M-x malebolge-attach` accept no arguments is corrected (RV-005 F-9)." },
+  { id = "EX-3", text = "The skew paragraph describes a rule about whichever frame the daemon did not know, naming `list` as well as `attach`, rather than an `attach`-only hint (RV-005 F-9)." },
+  { id = "EX-4", text = "The docs state that a plain `malebolge-attach` always binds root and that `ROOT_CONVERSATION_ID` names it explicitly, so a full page cannot lose the default target (RV-005 F-2)." },
+  { id = "EX-5", text = "No shipped document claims the listing waits ten seconds; the short list wait is either unstated or stated correctly (DEC-008's amendment)." },
+  { id = "EX-6", text = "`just check`, `just ert` and `just smoke` remain green." },
+]
+verification = [
+  { id = "VT-1", expects = "README names the flag, the Emacs prompt, the page and the root escape hatch", test_file = "README.md", keywords = ["--list", "C-u M-x malebolge-attach", "ROOT_CONVERSATION_ID"], waived = false },
+  { id = "VT-2", expects = "internals names the frame, the reply key and the unprefixed bound-connection message", test_file = "docs/internals.md", keywords = ["conversations", "truncated", "already attached to conversation"], waived = false },
+  { id = "VA-1", text = "Prose review: the page limit, the truncation line and the per-profile meaning of an id read as statements of what ships; the two corrections read as corrections rather than hedges; no doc promises labels, topics, paging or a handshake, which are RFC-002's later steps." },
+  { id = "VH-1", text = "Optional: the user reads README §\"Which conversation\" and confirms a returning reader can reach a conversation (and root) without being misled by the page limit." },
+]
+specs        = []
+requirements = []

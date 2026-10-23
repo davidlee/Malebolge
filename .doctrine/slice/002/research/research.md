@@ -178,3 +178,16 @@ What it changes here:
   first-line frame and does not generalise the prelude.
 - Reply shape is settled as a **framed object** (`conversations: [N,…]`), so
   step 4's widening to topics and labels is additive.
+
+## Plan-time restamp (2026-10-23)
+
+Re-baselined before `/plan`: the advisory flagged `design.md` as changed, which is
+RV-005's own amendments landing after the first stamp, not a research drift. Every
+Thread 2 site cited above was re-read against the tree at plan time (the protocol's
+attach parse and its keys, `fail`/`alreadyAttached`/`firstLine`/`laterLine`, the
+one-commit read in `conversations.ts`, `SKEW`/`SKEW_HINT`/`connectOrExplain`/
+`failBeforeAttach` and `DEFAULT_WAIT`, `attach-main`'s coded-error exit, `Printable`
+and the `attached` render, the Emacs target plumbing and `comint-scroll-to-bottom-on-output`,
+the smoke's attach-only fake, the skew fake, the task-owned and
+malformed-second-attach fixtures, the `just` gate, and pi-durable's
+`scanConversations`/`Page`/`ROOT_CONVERSATION_ID`). All hold; no fact changed.
