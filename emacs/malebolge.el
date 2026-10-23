@@ -30,6 +30,11 @@
 ;;
 ;; `malebolge-start' starts satan-mcp (when loaded), the daemon's systemd
 ;; user unit, and attaches; `malebolge-stop' stops the unit.
+;;
+;; `M-x malebolge-attach' with a prefix argument asks the daemon which
+;; conversations it holds, prompts for one, and switches to it.  The switch
+;; is refused while the draft holds unsent text: the draft is shared, so it
+;; would otherwise post one conversation's words to another.
 
 ;;; Code:
 
@@ -207,10 +212,143 @@ signal keys are remapped to."
   (interactive)
   (user-error "malebolge: the transcript does not accept input; use C-c C-e and C-c C-c"))
 
-;;;###autoload
-(defun malebolge-attach ()
-  "Attach to the malebolge daemon and open its companion draft buffer."
-  (interactive)
+;;; Choosing the conversation to attach to
+
+(defvar malebolge--detach-timeout 2.0
+  "Seconds to wait for a detached client to exit before deleting it.")
+
+(defvar malebolge--list-timeout 5.0
+  "Seconds to wait for the listing client to answer before giving up.")
+
+(defun malebolge--attach-arguments (target)
+  "Extra arguments for the attach client when it should open TARGET.
+TARGET is nil for root, `new', or a conversation id."
+  (cond ((null target) '("--emacs"))
+        ((equal target "new") '("--new" "--emacs"))
+        (t (list "--conversation" target "--emacs"))))
+
+(defun malebolge--target-label (target)
+  "How TARGET reads inside a message."
+  (if (equal target "new")
+      "a new conversation"
+    (format "conversation %s" target)))
+
+(defun malebolge--list-conversations ()
+  "Ask the daemon which conversations this store holds.
+Run the attach client with `--list' and wait, boundedly, for it: its
+standard output in a temporary buffer and its standard error in a buffer
+of its own.  Return a plist (:stdout TEXT :stderr TEXT); signal
+`user-error', naming the client's output, when it fails or never answers."
+  (with-temp-buffer
+    (let* ((stderr (generate-new-buffer " *malebolge-list-stderr*"))
+           (pipe (make-pipe-process :name "malebolge-list-stderr"
+                                    :buffer stderr
+                                    :sentinel #'ignore
+                                    :noquery t)))
+      (unwind-protect
+          (let ((process (make-process
+                          :name "malebolge-list"
+                          :buffer (current-buffer)
+                          :stderr pipe
+                          :sentinel #'ignore
+                          :connection-type 'pipe
+                          :noquery t
+                          :command (append malebolge-attach-command
+                                           '("--list")))))
+            (malebolge--await-listing process)
+            (let ((out (buffer-string))
+                  (err (with-current-buffer stderr (buffer-string)))
+                  (status (process-exit-status process)))
+              (unless (eql status 0)
+                (user-error "malebolge: cannot list conversations: %s"
+                            (string-trim (concat out err))))
+              (list :stdout out :stderr err)))
+        (when (process-live-p pipe)
+          (delete-process pipe))
+        (when (buffer-live-p stderr)
+          (kill-buffer stderr))))))
+
+(defun malebolge--await-listing (process)
+  "Wait, boundedly, for the listing PROCESS to exit, and signal if it will not.
+The client answers and closes; one still running after
+`malebolge--list-timeout' is waiting for a daemon that never will."
+  (let ((deadline (+ (float-time) malebolge--list-timeout)))
+    (while (and (process-live-p process) (< (float-time) deadline))
+      (accept-process-output process 0.05)))
+  (when (process-live-p process)
+    (delete-process process)
+    (user-error
+     "malebolge: the daemon did not answer the listing in %s seconds"
+     malebolge--list-timeout)))
+
+(defun malebolge--conversation-candidates (stdout)
+  "The conversation ids in STDOUT, one per line, in the daemon's order."
+  (let (candidates)
+    (dolist (line (split-string stdout "\n" t))
+      (when (string-match-p "\\`[0-9]+\\'" line)
+        (push line candidates)))
+    (nreverse candidates)))
+
+(defun malebolge--choose-target ()
+  "Ask which conversation to attach to.
+The daemon's own ids come first, newest first, then `new'.  A listing
+the daemon cut short says so as a message, never as a candidate."
+  (message "malebolge: asking the daemon which conversations it holds...")
+  (redisplay)
+  (let* ((listing (malebolge--list-conversations))
+         (candidates (malebolge--conversation-candidates
+                      (or (plist-get listing :stdout) "")))
+         (diagnostics (string-trim (or (plist-get listing :stderr) ""))))
+    ;; Said after the prompt: a message sent before it would be replaced by
+    ;; the minibuffer's own prompt before anyone could read it.
+    (prog1 (completing-read "Conversation (new to create): "
+                            (append candidates (list "new"))
+                            nil t)
+      (unless (string-empty-p diagnostics)
+        (message "malebolge: %s" diagnostics)))))
+
+(defun malebolge--refuse-pending-draft ()
+  "Refuse a conversation switch while the draft holds unsent text."
+  (let ((draft (get-buffer malebolge-draft-buffer-name)))
+    (when (and draft
+               (with-current-buffer draft
+                 (not (string-blank-p (buffer-substring-no-properties
+                                       (point-min) (point-max))))))
+      (user-error "malebolge: the draft holds unsent text; \
+submit it (C-c C-c) or clear it before switching"))))
+
+(defun malebolge--await-exit (process)
+  "Wait for PROCESS to exit, boundedly, then delete it if it survives.
+The client leaves on the `quit' frame; one that does not is not going to."
+  (let ((deadline (+ (float-time) malebolge--detach-timeout)))
+    (while (and (process-live-p process) (< (float-time) deadline))
+      (accept-process-output process 0.05)))
+  (when (process-live-p process)
+    (delete-process process)))
+
+(defun malebolge--detach-waiting ()
+  "Detach the live client and wait, boundedly, for it to exit."
+  (when (malebolge--live-process)
+    (malebolge-quit)
+    (malebolge--await-exit (get-buffer-process malebolge-buffer-name))))
+
+(defun malebolge--follow (buffer)
+  "Put BUFFER's point, and every window showing it, at its end.
+Comint follows only a window whose point is at the process mark.  A
+switch's erase clamps every window there as well, so this is a
+guarantee rather than the mechanism -- one that survives a switch
+which does not erase (DEC-009)."
+  (with-current-buffer buffer
+    (goto-char (point-max))
+    (dolist (window (get-buffer-window-list buffer nil t))
+      (set-window-point window (point-max)))))
+
+(defun malebolge--start-transcript (target)
+  "Start the attach client in the transcript buffer, attached to TARGET.
+TARGET is nil for root, `new', or a conversation id.  A client that will
+not start is reported for root as a `[status]' line, as it always has
+been; for a chosen TARGET it signals `user-error' instead, leaving the
+transcript empty rather than silently attaching somewhere else."
   (let ((buffer (get-buffer-create malebolge-buffer-name)))
     (with-current-buffer buffer
       (unless (derived-mode-p 'malebolge-transcript-mode)
@@ -223,15 +361,37 @@ signal keys are remapped to."
       (condition-case err
           (apply #'make-comint-in-buffer "malebolge" buffer
                  (car malebolge-attach-command) nil
-                 (append (cdr malebolge-attach-command) '("--emacs")))
+                 (append (cdr malebolge-attach-command)
+                         (malebolge--attach-arguments target)))
         (error
-         (let ((inhibit-read-only t))
-           (with-current-buffer buffer
-             (insert (format "[status] cannot start %s: %s\n"
-                             (car malebolge-attach-command)
-                             (error-message-string err))))))))
-    (pop-to-buffer buffer)
-    (malebolge--pop-to-draft)))
+         (if target
+             (user-error "malebolge: cannot attach to %s: %s"
+                         (malebolge--target-label target)
+                         (error-message-string err))
+           (let ((inhibit-read-only t))
+             (with-current-buffer buffer
+               (insert (format "[status] cannot start %s: %s\n"
+                               (car malebolge-attach-command)
+                               (error-message-string err)))))))))
+    buffer))
+
+;;;###autoload
+(defun malebolge-attach (&optional choose)
+  "Attach to the malebolge daemon and open its companion draft buffer.
+With a prefix argument, ask the daemon which conversations it holds and
+prompt for the one to open: list, prompt, draft check, detach, attach, so
+nothing is torn down before the decisions that could refuse it.
+Without one, attach to root as always."
+  (interactive "P")
+  (let ((target (and choose (malebolge--choose-target))))
+    (when target
+      (malebolge--refuse-pending-draft)
+      (malebolge--detach-waiting))
+    (let ((buffer (malebolge--start-transcript target)))
+      (pop-to-buffer buffer)
+      (when target
+        (malebolge--follow buffer))
+      (malebolge--pop-to-draft))))
 
 ;;;###autoload
 (defun malebolge-draft ()

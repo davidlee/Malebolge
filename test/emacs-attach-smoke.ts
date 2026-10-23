@@ -8,7 +8,9 @@
 //      as exactly one `input` with the exact content, and no `quit` follows;
 //   2. reattaching to a snapshot of those turns shows each role heading once
 //      and ends the answer with exactly one blank line;
-//   3. terminal attach still runs its line commands locally.
+//   3. terminal attach still runs its line commands locally;
+//   4. (SL-002 PHASE-03) a prefix-argument attach lists the store, picks from
+//      the daemon's own ids, and sends the chosen target's argv.
 //
 // Event order: like the real daemon, the fake echoes a draft submitted
 // mid-answer only after the answer ends. pi-durable queues input to a busy
@@ -37,6 +39,11 @@ const ATTACH = join(REPO, "src", "attach-main.ts");
 const EMACS_DIR = join(REPO, "emacs");
 /** The whole check; a hang must fail rather than block. */
 const OVERALL_MS = 20_000;
+
+/** The id the stubbed picker answers; not the first, so the listing was read. */
+const CHOSEN = 7;
+/** What the fake daemon says it holds: ids newest first, as the daemon sends them. */
+const LISTED = [9, CHOSEN, 3];
 
 /** The draft: leading spaces, an interior blank line, a slash line, trailing spaces. */
 const DRAFT = "first line\n\n  /not a command\nlast  ";
@@ -124,7 +131,8 @@ const frameOf =
 
 /**
  * A fake daemon on `path`: answers the attach frame with `attachReply` then
- * runs `serve`, recording every frame the client sends.
+ * runs `serve`, and answers a `list` frame with `LISTED` before closing, as
+ * the daemon's own clean close does.  Records every frame the client sends.
  */
 async function fakeDaemon(
   path: string,
@@ -139,6 +147,11 @@ async function fakeDaemon(
       lineSplitter((line) => {
         const value: unknown = JSON.parse(line);
         received.push(value);
+        if (frameOf("list")(value)) {
+          socket.end(
+            encodeLine({ type: "conversations", conversations: LISTED, truncated: false }),
+          );
+        }
         if (isRecord(value) && value["type"] === "attach") {
           socket.write(encodeLine(attachReply));
           // The session runs on after the exchange; its failures are the checks'.
@@ -274,6 +287,25 @@ const reattachElisp = (outFile: string): string => `
 (malebolge-attach)
 (unless (mlb-smoke-wait ${ANSWER_DONE})
   (mlb-smoke-fail "the second snapshot never arrived" ${JSON.stringify(outFile)}))
+(mlb-smoke-finish ${JSON.stringify(outFile)})
+`;
+
+/** Attach under a prefix argument, the picker answering CHOSEN, and save the transcript. */
+const targetedElisp = (outFile: string): string => `
+(require 'cl-lib)
+(cl-letf (((symbol-function 'completing-read)
+           (lambda (_prompt collection &rest _)
+             (unless (member ${JSON.stringify(String(CHOSEN))} collection)
+               (mlb-smoke-fail "the listing never offered the chosen id"
+                               ${JSON.stringify(outFile)}))
+             ${JSON.stringify(String(CHOSEN))})))
+  (malebolge-attach t))
+(unless (mlb-smoke-wait ${ANSWER_DONE})
+  (mlb-smoke-fail "the chosen conversation's snapshot never arrived"
+                  ${JSON.stringify(outFile)}))
+(malebolge-quit)
+(unless (mlb-smoke-wait (regexp-quote "[status] detached"))
+  (mlb-smoke-fail "the client never detached" ${JSON.stringify(outFile)}))
 (mlb-smoke-finish ${JSON.stringify(outFile)})
 `;
 
@@ -454,6 +486,47 @@ async function checkTerminal(dir: string): Promise<void> {
   }
 }
 
+/**
+ * 4: a prefix-argument attach lists the store, picks, and sends the chosen
+ * target's argv.  The argv is `--conversation CHOSEN`, so the socket must see
+ * the attach frame naming it -- the argument reaching the client is what the
+ * picker got right, not the frame the fake happened to expect.
+ */
+async function checkTargetedAttach(dir: string): Promise<void> {
+  const received = recorder<unknown>();
+  const fake = await fakeDaemon(
+    join(dir, "targeted.sock"),
+    received,
+    { type: "attached", conversation: CHOSEN },
+    (socket) => {
+      socket.write(encodeLine(snapshotOf([assistantEntry(AFTER, "a-target")])));
+    },
+  );
+  const transcriptFile = join(dir, "targeted.txt");
+  const emacs = emacsSession(fake.path, targetedElisp(transcriptFile));
+  try {
+    const code = await emacs.done;
+    const transcript = await readFile(transcriptFile, "utf8").catch(() => "");
+    equal(
+      code,
+      0,
+      `targeted emacs exit (stderr: ${emacs.stderr()}; transcript: ${JSON.stringify(transcript)})`,
+    );
+    equal(framesOf(received.items, "list"), [{ type: "list" }], "the picker's listing frames");
+    equal(
+      framesOf(received.items, "attach"),
+      [{ type: "attach", conversation: CHOSEN }],
+      "the argv the picker chose",
+    );
+    expect(
+      transcript.includes(`attached to conversation ${String(CHOSEN)}`),
+      `the transcript names the conversation: ${JSON.stringify(transcript)}`,
+    );
+  } finally {
+    emacs.kill();
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Entry point.
 // ---------------------------------------------------------------------------
@@ -467,6 +540,7 @@ async function run(): Promise<void> {
       ["draft submitted during a streamed answer", checkDraftDuringStream],
       ["reattach shows role cues and spacing", checkReattach],
       ["terminal attach line commands", checkTerminal],
+      ["prefix-argument attach sends the chosen target", checkTargetedAttach],
     ];
     for (const [name, check] of checks) {
       await within(check(dir), OVERALL_MS, name);

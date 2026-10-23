@@ -28,6 +28,20 @@
 ;; - Faces `malebolge-tool-face' (transcript lines starting "[tool] ") and
 ;;   `malebolge-status-face' (lines starting "[status] ").
 ;; - `header-line-format' is non-nil in both buffers.
+;;
+;; ASSUMED API (SL-002 PHASE-03; the target picker):
+;;
+;; - `malebolge-attach' with a prefix argument lists the store, prompts over
+;;   the ids, refuses a switch while the draft holds text, detaches, then
+;;   attaches; the chosen target becomes argv before "--emacs".
+;; - `malebolge--attach-arguments' turns a target (nil, "new", or an id
+;;   string) into the extra argv.
+;; - `malebolge--list-conversations' is the listing seam: it returns a plist
+;;   (:stdout TEXT :stderr TEXT).  No ERT case starts a real client.
+;; - `malebolge--conversation-candidates' parses stdout's numeric lines.
+;; - `malebolge--await-exit' waits boundedly for the client to go, then
+;;   deletes it.  `malebolge--detach-timeout' bounds the wait, and
+;;   `malebolge--list-timeout' bounds the synchronous listing.
 
 ;;; Code:
 
@@ -69,10 +83,13 @@
   (mapcar (lambda (line) (json-parse-string line :object-type 'alist))
           (malebolge-test--frames)))
 
-(defun malebolge-test--make-fake ()
-  "Create the fake attach process, copying stdin into the capture file."
-  (setq malebolge-test--capture-file
-        (make-temp-file "malebolge-ert-" nil ".stdin"))
+(defun malebolge-test--make-fake (&optional keep-capture)
+  "Create the fake attach process, copying stdin into the capture file.
+With KEEP-CAPTURE the existing capture file is reused, so a switch's
+old and new processes are read from one place."
+  (unless (and keep-capture malebolge-test--capture-file)
+    (setq malebolge-test--capture-file
+          (make-temp-file "malebolge-ert-" nil ".stdin")))
   (make-process
    :name "malebolge-test-fake"
    :buffer (current-buffer)
@@ -606,6 +623,259 @@ Only a window whose point is at the end follows output."
     (should (equal "survives" (malebolge-test--draft-text)))
     (with-current-buffer transcript
       (should (string-match-p "\\[status\\] " (buffer-string))))))
+
+;;; SL-002 PHASE-03: the target picker
+
+(defvar malebolge-test--offered nil
+  "The candidate collection the last stubbed `completing-read' received.")
+
+(defvar malebolge-test--messages nil
+  "Every message the stubbed `message' was given, newest first.")
+
+(defmacro malebolge-test--with-target-choice (listing answer &rest body)
+  "Run BODY with the listing stubbed to LISTING and the prompt answering ANSWER.
+LISTING is a plist.  BODY reads the offered collection from
+`malebolge-test--offered' and the messages from `malebolge-test--messages'."
+  (declare (indent 2) (debug t))
+  `(let ((malebolge-test--offered nil)
+         (malebolge-test--messages nil))
+     (cl-letf (((symbol-function 'malebolge--list-conversations)
+                (lambda () ,listing))
+               ((symbol-function 'completing-read)
+                (lambda (_prompt collection &rest _)
+                  (setq malebolge-test--offered collection)
+                  ,answer))
+               ((symbol-function 'message)
+                (lambda (string &rest args)
+                  (push (apply #'format-message string args)
+                        malebolge-test--messages)))
+               ((symbol-function 'redisplay) #'ignore))
+       ,@body)))
+
+(defmacro malebolge-test--with-fast-detach (&rest body)
+  "Run BODY with the detach wait too short to notice, but still bounded."
+  (declare (indent 0) (debug t))
+  `(let ((malebolge--detach-timeout 0.2))
+     ,@body))
+
+(defun malebolge-test--started-args (thunk)
+  "Run THUNK, returning the argv the attach client was started with."
+  (let (started)
+    (cl-letf (((symbol-function 'make-comint-in-buffer)
+               (lambda (_name buffer _program _startfile &rest switches)
+                 (setq started switches)
+                 (with-current-buffer buffer (malebolge-test--make-fake t)))))
+      (funcall thunk))
+    started))
+
+;;; The argv a target names
+
+(ert-deftest malebolge-attach-arguments-name-each-target ()
+  "Root, `new' and an id each shape the client's arguments.
+The chosen target reaches the command as --conversation N, before --emacs."
+  (should (equal '("--emacs") (malebolge--attach-arguments nil)))
+  (should (equal '("--new" "--emacs") (malebolge--attach-arguments "new")))
+  (should (equal '("--conversation" "7" "--emacs")
+                 (malebolge--attach-arguments "7"))))
+
+(ert-deftest malebolge-target-labels-read-in-a-message ()
+  "A target reads as prose when it is reported."
+  (should (equal "a new conversation" (malebolge--target-label "new")))
+  (should (equal "conversation 7" (malebolge--target-label "7"))))
+
+;;; Candidates come from stdout only
+
+(ert-deftest malebolge-candidates-keep-only-the-numeric-stdout-lines ()
+  "Only whole numeric lines are candidates; prose never becomes one."
+  (should (equal '("9" "7" "3")
+                 (malebolge--conversation-candidates "9\n7\n\n3\n")))
+  (should (equal '("9")
+                 (malebolge--conversation-candidates
+                  (concat "9\nthe listing was truncated: older conversations"
+                          " are not shown\n"))))
+  (should-not (malebolge--conversation-candidates " 7 \nnew\n")))
+
+;;; The listing's stderr is a message, not a candidate
+
+(ert-deftest malebolge-prompt-offers-the-stdout-ids-and-messages-stderr ()
+  "The truncation prose is a message; the candidates are stdout's ids plus new."
+  (malebolge-test--with-session
+    (malebolge-test--with-target-choice
+        '(:stdout "9\n7\n"
+          :stderr "the listing was truncated: older conversations are not shown\n")
+        "7"
+      (malebolge-test--with-fast-detach
+        (malebolge-test--started-args (lambda () (malebolge-attach '(4)))))
+      (should (equal '("9" "7" "new") malebolge-test--offered))
+      (should (cl-some (lambda (message) (string-match-p "truncated" message))
+                       malebolge-test--messages)))))
+
+;;; The fixed order: list, prompt, draft check, detach, attach
+
+(ert-deftest malebolge-prefix-argument-refuses-a-draft-bearing-switch-before-detaching ()
+  "A non-empty draft refuses a draft-bearing switch before detaching.
+The client stays attached and the draft survives untouched."
+  (malebolge-test--with-session
+    (malebolge-test--with-target-choice '(:stdout "9\n7\n" :stderr "") "7"
+      (malebolge-test--insert-draft "unsent words")
+      (malebolge-test--with-fast-detach
+        (should-error (malebolge-attach '(4)) :type 'user-error))
+      (malebolge-test--wait)
+      (should-not (malebolge-test--frames))
+      (should (process-live-p (get-buffer-process transcript)))
+      (should (equal "unsent words" (malebolge-test--draft-text))))))
+
+(ert-deftest malebolge-switch-detaches-then-attaches-with-the-chosen-target-as-argv ()
+  "The switch sends the quit frame, then starts the client with --conversation N."
+  (malebolge-test--with-session
+    (malebolge-test--with-target-choice '(:stdout "9\n7\n" :stderr "") "7"
+      (let (quit-before-attach started)
+        (malebolge-test--with-fast-detach
+          (cl-letf (((symbol-function 'make-comint-in-buffer)
+                     (lambda (_name buffer _program _startfile &rest switches)
+                       (setq quit-before-attach (malebolge-test--capture-bytes)
+                             started switches)
+                       (with-current-buffer buffer (malebolge-test--make-fake t)))))
+            (malebolge-attach '(4))))
+        (should (equal '("--conversation" "7" "--emacs") started))
+        (should (string-match-p "\"quit\"" (or quit-before-attach "")))))))
+
+(ert-deftest malebolge-switch-leaves-the-transcript-empty-when-the-second-attach-fails ()
+  "A failed second attach reports and leaves the transcript empty, never root."
+  (malebolge-test--with-session
+    (malebolge-test--with-target-choice '(:stdout "9\n7\n" :stderr "") "7"
+      (malebolge-test--feed "old conversation\n")
+      (malebolge-test--with-fast-detach
+        (cl-letf (((symbol-function 'make-comint-in-buffer)
+                   (lambda (&rest _)
+                     (signal 'error '("no conversation 7")))))
+          (let ((failure (should-error (malebolge-attach '(4)) :type 'user-error)))
+            (should (string-match-p "no conversation 7"
+                                    (error-message-string failure))))))
+      (should (equal "" (with-current-buffer transcript (buffer-string))))
+      (should-not (process-live-p (get-buffer-process transcript))))))
+
+(ert-deftest malebolge-prefix-argument-aborts-the-attach-when-the-listing-fails ()
+  "A `--list' that exits non-zero aborts the attach when the listing fails.
+The client's own message is signalled, nothing is detached, and nothing is
+attached."
+  (malebolge-test--with-session
+    (let ((prompted nil))
+      (malebolge-test--with-fast-detach
+        (cl-letf (((symbol-function 'malebolge--list-conversations)
+                   (lambda ()
+                     (signal 'user-error
+                             '("malebolge: cannot list conversations: \
+the daemon predates list"))))
+                  ((symbol-function 'completing-read)
+                   (lambda (&rest _) (setq prompted t) "7"))
+                  ((symbol-function 'message) #'ignore)
+                  ((symbol-function 'redisplay) #'ignore))
+          (let ((failure (should-error (malebolge-attach '(4)) :type 'user-error)))
+            (should (string-match-p "predates list"
+                                    (error-message-string failure))))))
+      (malebolge-test--wait)
+      (should-not prompted)
+      (should-not (malebolge-test--frames))
+      (should (process-live-p (get-buffer-process transcript))))))
+
+(ert-deftest malebolge-attach-without-a-prefix-argument-attaches-to-root-and-never-lists ()
+  "No prefix argument: no listing, no prompt, argv is --emacs alone."
+  (malebolge-test--with-session
+    (delete-process (get-buffer-process transcript))
+    (cl-letf (((symbol-function 'malebolge--list-conversations)
+               (lambda () (error "the plain path must not list")))
+              ((symbol-function 'completing-read)
+               (lambda (&rest _) (error "the plain path must not prompt"))))
+      (should (equal '("--emacs")
+                     (malebolge-test--started-args (lambda () (malebolge-attach))))))))
+
+;;; Following survives the switch
+
+(ert-deftest malebolge-switch-puts-every-transcript-window-at-point-max ()
+  "Both transcript windows, including one scrolled back, end at point-max and follow.
+Clearing the transcript clamps every window's point, and comint follows only a
+window whose point is at the process mark, so the switch sets each window point."
+  (malebolge-test--with-session
+    (malebolge-test--with-transcript-frame
+      (malebolge-test--feed-lines 200)
+      (malebolge-test--redisplay)
+      (delete-other-windows)
+      (set-window-buffer (selected-window) draft)
+      (let* ((draft-window (selected-window))
+             (w1 (split-window-below))
+             (w2 (split-window-below)))
+        (set-window-buffer w1 transcript)
+        (set-window-buffer w2 transcript)
+        ;; W1 sits at the end; W2 reads older text.  Neither is selected.
+        (with-current-buffer transcript
+          (set-window-point w1 (point-max))
+          (set-window-start w1 (max (point-min) (- (point-max) 4)))
+          (set-window-point w2 (point-min))
+          (set-window-start w2 (point-min)))
+        (select-window draft-window)
+        (malebolge-test--redisplay)
+        (malebolge-test--with-target-choice '(:stdout "9\n" :stderr "") "9"
+          (malebolge-test--with-fast-detach
+            (malebolge-test--started-args (lambda () (malebolge-attach '(4)))))
+          (malebolge-test--feed-lines 200)
+          (malebolge-test--redisplay)
+          (let ((end (with-current-buffer transcript (point-max))))
+            (should (= end (window-point w1)))
+            (should (= end (window-point w2)))
+            (should (> (window-start w2) (point-min)))))))))
+
+(ert-deftest malebolge-follow-puts-a-scrolled-back-window-at-point-max ()
+  "`malebolge--follow' itself moves a window that was reading older text.
+A switch happens to satisfy this through the erase, which clamps every
+window to the process mark; the helper makes it independent of that."
+  (malebolge-test--with-session
+    (malebolge-test--feed-lines 200)
+    (malebolge-test--with-transcript-frame
+      (delete-other-windows)
+      (set-window-buffer (selected-window) draft)
+      (let ((draft-window (selected-window))
+            (window (split-window-below)))
+        (set-window-buffer window transcript)
+        (with-current-buffer transcript
+          (set-window-point window (point-min))
+          (set-window-start window (point-min)))
+        (select-window draft-window)
+        (malebolge-test--redisplay)
+        (malebolge--follow (get-buffer malebolge-buffer-name))
+        (should (= (with-current-buffer transcript (point-max))
+                   (window-point window)))))))
+
+;;; The bounded wait
+
+(ert-deftest malebolge-await-exit-deletes-a-client-that-will-not-go ()
+  "The switch's wait is bounded: a client that ignores the quit is deleted."
+  (malebolge-test--with-session
+    (let ((malebolge--detach-timeout 0.1)
+          (process (get-buffer-process transcript))
+          (started (float-time)))
+      (malebolge--await-exit process)
+      (should-not (process-live-p process))
+      (should (< (- (float-time) started) 2)))))
+
+;;; The listing itself, without a daemon
+
+(ert-deftest malebolge-listing-keeps-stdout-and-stderr-apart ()
+  "The listing's ids and its prose arrive in separate streams, never merged."
+  (let ((malebolge-attach-command
+         '("sh" "-c" "printf '9\\n7\\n'; printf 'cut short\\n' >&2")))
+    (let ((listing (malebolge--list-conversations)))
+      (should (equal "9\n7\n" (plist-get listing :stdout)))
+      (should (equal "cut short\n" (plist-get listing :stderr))))))
+
+(ert-deftest malebolge-listing-gives-up-when-the-daemon-never-answers ()
+  "The listing is bounded, so a daemon that never replies cannot freeze Emacs."
+  ;; `sh -c' ignores the "extra argument --list", so this process really does hang.
+  (let ((malebolge-attach-command '("sh" "-c" "sleep 30"))
+        (malebolge--list-timeout 0.2)
+        (started (float-time)))
+    (should-error (malebolge--list-conversations) :type 'user-error)
+    (should (< (- (float-time) started) 5))))
 
 (provide 'malebolge-ert)
 ;;; malebolge-ert.el ends here
