@@ -20,7 +20,11 @@
 ;;   C-c C-q  quit, detaching from the daemon
 ;;   C-c C-h  show this summary
 ;; Transcript only: C-c C-e and RET focus the draft.  The transcript is
-;; read-only for ordinary edits and never submits.
+;; read-only for ordinary edits and never submits.  Lines beginning
+;; `[tool]' and `[status]' are coloured (`malebolge-tool-face',
+;; `malebolge-status-face').  A transcript window whose point is at the
+;; end follows new output; scrolled back, it keeps its place until you
+;; move to the end again (M->).
 ;;
 ;; `malebolge-start' starts satan-mcp (when loaded), the daemon's systemd
 ;; user unit, and attaches; `malebolge-stop' stops the unit.
@@ -239,7 +243,18 @@ C-c C-c submits the exact draft text as one input frame and clears the
 draft.  C-c C-a aborts the current run, C-c C-m compacts the transcript
 (prompting for optional instructions) and C-c C-q quits, detaching this
 client.  None of them clear or alter the draft.  The transcript is
-read-only; C-c C-e (or RET there) returns you to the draft.")))
+read-only; C-c C-e (or RET there) returns you to the draft.
+
+Following
+
+A transcript window follows process output while its point is at the end
+of the buffer.  After you scroll back to read older text it keeps its
+place; M-> (or any other move to the end) resumes following.
+
+Colours
+
+Lines beginning `[tool]' are shown in `malebolge-tool-face', lines
+beginning `[status]' in `malebolge-status-face'.")))
 
 ;;;###autoload
 (defun malebolge-start ()

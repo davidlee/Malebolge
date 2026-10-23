@@ -421,9 +421,10 @@ created by `malebolge-attach' against the fake process."
     (malebolge-test--feed (format "line %03d\n" i))))
 
 (defun malebolge-test--redisplay ()
-  "Force a redisplay so window-start/point reflect the inserted text.
-In `--batch' there is a frame, but no idle redisplay, so window state is
-only recomputed when we ask for it explicitly."
+  "Give window state a chance to settle.
+Under `--batch' `(redisplay t)' does not recompute `window-start'; the
+tests therefore assert marker positions (`window-point', `window-start')
+only, which comint's output filter moves directly."
   (redisplay t)
   (sit-for 0))
 
@@ -477,6 +478,43 @@ transcript window reading older text); the draft window stays selected."
           (should (eq draft (window-buffer (selected-window))))
           (should (eq (selected-window) draft-window)))))))
 
+(ert-deftest malebolge-follow-selected-window-reading-older-text ()
+  "A selected transcript window reading older text keeps its place.
+Only a window whose point is at the end follows output."
+  (malebolge-test--with-session
+    (malebolge-test--with-transcript-frame
+      (malebolge-test--insert-draft "draft stays put")
+      (malebolge-test--feed-lines 200)
+      (malebolge-test--redisplay)
+      (delete-other-windows)
+      (set-window-buffer (selected-window) draft)
+      (let* ((draft-window (selected-window))
+             (w1 (split-window-below))
+             (w2 (split-window-below)))
+        (set-window-buffer w1 transcript)
+        (set-window-buffer w2 transcript)
+        ;; W1 sits at the end of the transcript; W2, which we select, reads
+        ;; older text.
+        (set-window-point w1 (point-max))
+        (with-current-buffer transcript
+          (set-window-start w1 (max (point-min) (- (point-max) 4)))
+          (goto-char (point-min)))
+        (set-window-point w2 (point-min))
+        (set-window-start w2 (point-min))
+        (select-window w2)
+        (malebolge-test--redisplay)
+        (let ((w1-start (window-start w1))
+              (w2-start (window-start w2))
+              (w2-point (window-point w2)))
+          (malebolge-test--feed-lines 5)
+          (malebolge-test--redisplay)
+          (let ((end (with-current-buffer transcript (point-max))))
+            (should (= end (window-point w1)))
+            (should (>= (window-point w1) w1-start))
+            (should (= w2-start (window-start w2)))
+            (should (= w2-point (window-point w2))))
+          (should (eq w2 (selected-window))))))))
+
 ;;; EX-5: reattachment
 
 (ert-deftest malebolge-reattach-live-reuses-buffers ()
@@ -520,7 +558,7 @@ transcript window reading older text); the draft window stays selected."
     (cl-letf (((symbol-function 'make-comint-in-buffer)
                (lambda (&rest _)
                  (signal 'file-missing '("Opening process input file" "nope")))))
-      (ignore-errors (malebolge-attach)))
+      (malebolge-attach))
     (should (equal "survives" (malebolge-test--draft-text)))
     (with-current-buffer transcript
       (should (string-match-p "\\[status\\] " (buffer-string))))))

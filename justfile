@@ -20,6 +20,10 @@ ert:
   emacs --batch -Q -L emacs --eval '(setq byte-compile-error-on-warn t)' -f batch-byte-compile emacs/malebolge.el
   rm -f emacs/malebolge.elc
 
+# End-to-end Emacs -> malebolge-attach --emacs -> fake daemon smoke (needs emacs).
+smoke:
+  node test/emacs-attach-smoke.ts
+
 format:
   npx biome format --write .
 

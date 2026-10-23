@@ -60,3 +60,13 @@ design's verification section.
   native follow, no custom hooks; follow test mutation-checked. Failed start
   writes a `[status]` line and keeps the draft.
 - Committed PHASE-03 and PHASE-04 together (same files, interleaved).
+- PHASE-05 (smoke + docs): `just smoke` = batch Emacs + real
+  `malebolge-attach --emacs` + fake daemon: draft submitted mid-stream (asserted
+  in flight) arrives as exactly one exact `input`, no quit; reattach in the same
+  Emacs (dead process → attach again) shows each turn once and one trailing
+  blank line; terminal line commands unchanged. The smoke exposed a renderer gap
+  — a live user turn mid-answer printed without the interrupt path — fixed
+  (`interrupt(p.userTurn(…))`) with a render test. PHASE-04 RV follow-ups:
+  selected-window-reading-older-text ERT (no defect), M-> resume documented in
+  help/README. Smoke's fake daemon is its own (scripted streaming) — not shared
+  with attach.test.ts's; candidate for a shared fixture later.

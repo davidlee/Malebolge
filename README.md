@@ -95,6 +95,28 @@ login — and is defined in ~/flakes (unit facts: `~/flakes/SATAN.md`). Logs:
 | `/compact [instructions]` | summarise older history to free up the model's context |
 | `/quit` | detach; its conversation keeps going |
 
+### Emacs session
+
+`M-x malebolge-start` (or `M-x malebolge-attach`) opens two buffers: the
+read-only transcript `*malebolge*` and the draft `*malebolge-draft*`. You
+type in the draft and only ever read the transcript.
+
+| Key | Effect |
+|---|---|
+| `C-c C-c` | submit the draft as one message |
+| `C-c C-a` | abort the run in progress |
+| `C-c C-m` | compact, optionally with instructions |
+| `C-c C-q` | quit, detaching from the daemon |
+| `C-c C-e` | focus the draft (also `RET` in the transcript) |
+| `C-c C-h` | show the key summary |
+
+The draft is ordinary text, so multi-line drafts submit as one message; RET
+inserts a newline and paste keeps every line. Leading `/` is content, not a
+command — only an all-whitespace draft is refused. A transcript window whose
+point is at the end follows new output; after scrolling back it stays put,
+and `M->` resumes following. `[tool]` and `[status]` lines are coloured
+(`malebolge-tool-face`, `malebolge-status-face`).
+
 **Which conversation.** The client sends its choice when it connects, and
 prints `[attached to conversation N]` once the daemon accepts it; that `N` is
 what `--conversation` takes. With no flag the client attaches to root. The

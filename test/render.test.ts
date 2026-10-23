@@ -429,6 +429,18 @@ describe("emacs presentation", () => {
       ).toBe("Satan:\nabc\n[tool] x {}\n\n");
     });
 
+    it("cuts a live user turn into a streaming answer like a notice", () => {
+      expect(
+        emacs([
+          start(),
+          delta("hello"),
+          { type: "message_end", entry: user("hi\nthere") },
+          delta(" world"),
+          { type: "message_end", entry: assistant("hello world") },
+        ]),
+      ).toBe("Satan:\nhello\nYou:\nhi\nthere\nSatan (continued):\n world\n\n");
+    });
+
     it("does the same for a client-local notice mid-stream", () => {
       expect(
         emacs([

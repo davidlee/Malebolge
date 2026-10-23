@@ -335,7 +335,8 @@ export function createRenderer(options: RendererOptions = {}): (event: Printable
     message_end: (event) => {
       const message = messageOf(event.entry);
       if (message?.role === "user") {
-        return p.echoesTyping ? "" : p.userTurn(textOf(message));
+        // A turn from this or another client can land mid-answer: it cuts in like a notice.
+        return p.echoesTyping ? "" : interrupt(p.userTurn(textOf(message)));
       }
       if (message?.role !== "assistant") {
         return "";
