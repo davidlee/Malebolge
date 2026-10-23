@@ -1,17 +1,16 @@
 #!/usr/bin/env node
 // malebolge-attach: a line client of the running daemon.
 
-import { attach, attachTargetOf, UsageError } from "./attach.ts";
+import { attach, type AttachInvocation, attachInvocationOf, UsageError } from "./attach.ts";
 import { attachSocket } from "./config.ts";
-import type { AttachTarget } from "./protocol.ts";
 import { codeOf } from "./unix-socket.ts";
 
-const USAGE = "usage: malebolge-attach [--conversation N | --new [--cwd DIR]]";
+const USAGE = "usage: malebolge-attach [--conversation N | --new [--cwd DIR]] [--emacs]";
 
-/** The target the command line names; a refusal is one line and exit 2, before any connect. */
-function targetOf(args: string[]): AttachTarget {
+/** The invocation the command line names; a refusal is one line and exit 2, before any connect. */
+function invocationOf(args: string[]): AttachInvocation {
   try {
-    return attachTargetOf(args);
+    return attachInvocationOf(args);
   } catch (error) {
     if (!(error instanceof UsageError)) {
       throw error;
@@ -22,9 +21,8 @@ function targetOf(args: string[]): AttachTarget {
 }
 
 try {
-  await attach(attachSocket(process.env), process.stdin, process.stdout, {
-    target: targetOf(process.argv.slice(2)),
-  });
+  const invocation = invocationOf(process.argv.slice(2));
+  await attach(attachSocket(process.env), process.stdin, process.stdout, invocation);
 } catch (error) {
   // A connect failure or a refused attach: attach has already said why, so no stack trace.
   if (codeOf(error) === undefined) {

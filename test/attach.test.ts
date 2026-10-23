@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, onTestFinished } from "vit
 import {
   attach,
   type AttachOptions,
+  attachInvocationOf,
   attachTargetOf,
   commandOf,
   UsageError,
@@ -524,3 +525,179 @@ const fakeDaemon = async (
     closed,
   };
 };
+
+// ---------------------------------------------------------------------------
+// PHASE-02 (SL-001): frame input mode and Emacs presentation.
+//
+// Assumed API (not yet implemented in src/attach.ts):
+//   attachInvocationOf(argv) -> {
+//     target: AttachTarget,
+//     inputMode: "lines" | "frames",
+//     presentation: "terminal" | "emacs",
+//   }
+//     Strict: the parse errors of `parseAttachArgs` still throw `UsageError`.
+//     `--emacs` selects frames + emacs; it composes with `--conversation N`
+//     and `--new --cwd D`. `attachTargetOf` keeps working (may delegate).
+//   attach(socketPath, input, output, { target, wait, inputMode, presentation })
+//     A frame-mode stdin line is one JSON frame, forwarded unchanged as exactly
+//     one socket message; `{"type":"quit"}` is local and never sent.
+//   Client-local notices all go through the renderer: one shared client path.
+//   In emacs presentation a client notice is one line starting "[status] ".
+// ---------------------------------------------------------------------------
+
+/** A frame-mode attach session: typed lines become JSON frames. */
+const frameSession = (path: string, options: AttachOptions = {}): Session =>
+  session(path, { ...options, inputMode: "frames", presentation: "emacs" });
+
+/**
+ * An attach session bound to `path` with a fake daemon already listening.
+ * The emacs presentation frames notices as status lines, so the waits match it.
+ */
+const attachedSession = async (
+  options: AttachOptions = {},
+): Promise<{ path: string; fake: FakeDaemon; s: Session }> => {
+  const path = await socketPath();
+  const fake = await fakeDaemon(path);
+  const s = session(path, options);
+  await s.until("[status] connected\n");
+  await fake.lines.next((line) => line.includes('"attach"'));
+  fake.send({ type: "attached", conversation: 7 });
+  await s.until("[status] attached to conversation 7\n");
+  return { path, fake, s };
+};
+
+describe("attachInvocationOf", () => {
+  it.each<[string[], unknown]>([
+    [[], { target: { kind: "root" }, inputMode: "lines", presentation: "terminal" }],
+    [["--emacs"], { target: { kind: "root" }, inputMode: "frames", presentation: "emacs" }],
+    [
+      ["--emacs", "--conversation", "3"],
+      { target: { kind: "existing", id: 3 }, inputMode: "frames", presentation: "emacs" },
+    ],
+    [
+      ["--emacs", "--new", "--cwd", "/x"],
+      { target: { kind: "new", cwd: "/x" }, inputMode: "frames", presentation: "emacs" },
+    ],
+  ])("%j → %j", (args, invocation) => {
+    expect(attachInvocationOf(args)).toEqual(invocation);
+  });
+
+  it("still refuses an unknown flag", () => {
+    expect(() => attachInvocationOf(["--emacs", "--wat"])).toThrow(UsageError);
+  });
+});
+
+describe("attach: frame input mode", () => {
+  it("sends a draft with newlines and a slash line as one input message", async () => {
+    const { fake, s } = await attachedSession({ inputMode: "frames", presentation: "emacs" });
+    const content = "  lead\n\n/slash line\ntrail  ";
+    s.input.write(`${JSON.stringify({ type: "input", content })}\n`);
+    await fake.lines.next((line) => line.includes('"input"'));
+    expect(fake.lines.items.slice(1)).toEqual([JSON.stringify({ type: "input", content })]);
+    s.input.write('{"type":"quit"}\n');
+    await s.done;
+  });
+
+  it("forwards abort and compact unchanged", async () => {
+    const { fake, s } = await attachedSession({ inputMode: "frames", presentation: "emacs" });
+    s.input.write('{"type":"abort"}\n');
+    s.input.write('{"type":"compact"}\n');
+    s.input.write('{"type":"compact","instructions":"keep names"}\n');
+    await fake.lines.next((line) => line.includes("keep names"));
+    expect(fake.lines.items.slice(1)).toEqual([
+      JSON.stringify({ type: "abort" }),
+      JSON.stringify({ type: "compact" }),
+      JSON.stringify({ type: "compact", instructions: "keep names" }),
+    ]);
+    s.input.write('{"type":"quit"}\n');
+    await s.done;
+  });
+
+  it("detaches on quit without sending it", async () => {
+    const { fake, s } = await attachedSession({ inputMode: "frames", presentation: "emacs" });
+    s.input.write('{"type":"quit"}\n');
+    await s.done;
+    expect(fake.lines.items).toHaveLength(1);
+    expect(s.printed()).not.toContain("quit");
+    expect(s.printed()).toContain("[status] detached");
+  });
+
+  it("holds frames until attached, then sends them in order", async () => {
+    const path = await socketPath();
+    const fake = await fakeDaemon(path);
+    const s = frameSession(path);
+    await s.until("[status] connected");
+    await fake.lines.next((line) => line.includes('"attach"'));
+    s.input.write('{"type":"input","content":"one"}\n');
+    s.input.write('{"type":"input","content":"two"}\n');
+    fake.send({ type: "attached", conversation: 7 });
+    await s.until("[status] attached to conversation 7");
+    await fake.lines.next((line) => line.includes('"two"'));
+    expect(fake.lines.items.slice(1)).toEqual([
+      JSON.stringify({ type: "input", content: "one" }),
+      JSON.stringify({ type: "input", content: "two" }),
+    ]);
+    s.input.write('{"type":"quit"}\n');
+    await s.done;
+  });
+
+  it.each<[string, string]>([
+    ["malformed JSON", "{not json"],
+    ["an unknown type", '{"type":"wat"}'],
+    ["a wrong field type", '{"type":"input","content":3}'],
+    ["an extra field", '{"type":"abort","extra":1}'],
+    ["an extra field on quit", '{"type":"quit","extra":1}'],
+    ["a prototype key as type", '{"type":"constructor"}'],
+    ["__proto__ as type", '{"type":"__proto__"}'],
+  ])("sends nothing and notices on %s", async (_name, line) => {
+    const { fake, s } = await attachedSession({ inputMode: "frames", presentation: "emacs" });
+    s.input.write(`${line}\n`);
+    await s.until("[status] ");
+    expect(fake.lines.items).toHaveLength(1);
+    const statusLines = s
+      .printed()
+      .split("\n")
+      .filter((l) => l.startsWith("[status] "));
+    expect(statusLines.length).toBeGreaterThanOrEqual(2);
+    s.input.write('{"type":"quit"}\n');
+    await s.done;
+    expect(fake.lines.items).toHaveLength(1);
+  });
+});
+
+describe("attach: emacs presentation of client notices", () => {
+  it("labels the version-skew hint `[status]`", async () => {
+    const path = await socketPath();
+    const skew = skewOf();
+    await fakeDaemon(path, (socket) => {
+      socket.write(encodeLine({ type: "error", message: skew }));
+    });
+    const s = frameSession(path);
+    expect(await rejection(s.done)).toMatchObject({ code: "NOT_ATTACHED" });
+    expect(s.printed()).toContain(
+      "[status] the daemon predates attach: restart it (malebolge-stop, then malebolge-start)\n",
+    );
+  });
+
+  it("prints the connected banner as a status line", async () => {
+    const path = await socketPath();
+    await fakeDaemon(path);
+    const s = session(path, { inputMode: "frames", presentation: "emacs" });
+    await s.until("[status] ");
+    expect(s.printed()).toContain("[status] connected");
+    expect(s.printed()).not.toContain("[connected]");
+    s.input.write('{"type":"quit"}\n');
+    await s.done;
+  });
+
+  it("keeps today's exact text in the default presentation", async () => {
+    const path = await socketPath();
+    await fakeDaemon(path);
+    const s = session(path);
+    await s.until("[connected]\n");
+    expect(s.printed().startsWith("[connected]\n")).toBe(true);
+    s.input.end();
+    await s.done;
+    expect(s.printed()).toContain("[detached]\n");
+  });
+});

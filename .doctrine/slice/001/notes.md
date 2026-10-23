@@ -43,3 +43,10 @@ design's verification section.
 - Delegation note: quotient's `tokens` ceiling (320k) counts cached reads, so a
   pi session dies at ~20 requests and resumed sessions die almost at once.
   Use fresh, tightly scoped sessions.
+- PHASE-02 (attach frame mode): `attachInvocationOf` is the one parser
+  (`attachTargetOf` delegates); frames: `FRAME_FIELDS` Map allowlist (narrows,
+  fails closed) then `parseClientMessage`; `quit` local; refusals noticed.
+  Renderer created before connect; every client notice via `client_notice`.
+  Writer's red tests waited on terminal wording under emacs presentation —
+  fixed. RV by malebolge-06: F1 prototype-key crash (Map), F2 strict quit
+  fields, F3 `handleLine` rename — fixed with tests.
