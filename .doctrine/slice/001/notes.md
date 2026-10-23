@@ -6,18 +6,20 @@ disposable phase sheet (`.doctrine/state/.../phase-NN.md`) that must survive
 
 ## Harvest
 <!-- single-copy: updated in place each harvest; ids only, never restated content -->
-fresh-as-of: 2026-10-23 · plan · 1d3b7bb
+fresh-as-of: 2026-10-23 · audit · 336b317
 
 ### Produced
-- SL-001 — scoped research and six-section design recorded; design locked at revision 44, with authored work uncommitted.
-- RV-003 — final design pass concluded with no new findings; RV-002's seven findings were resolved in the design.
-- SL-001 — phase planning is next; no implementation or tests were run, and `doctrine check gate` was not run.
+- PHASE-01..PHASE-05 done — Emacs draft and frame mode, presentation profile, transcript guard, native follow, reattach, smoke, and docs (commits 4ef3751..6c8ca60).
+- RV-004 — reconciliation audit; F-3 fixed in 336b317 (smoke echoes the draft at the turn boundary).
+- minted: IMP-003 — share one fake-daemon fixture; IDE-001 — show a queued draft before the boundary; CHR-001 — `just gate` recipe.
 
 ### Learned
-- SL-001 — the Emacs composition boundary and attach-client framing are documented in the research and locked design.
+- EVD-001 — pi-durable queues busy-conversation input, so the user turn follows the answer.
+- quotient's token ceiling counts cached reads; use fresh, narrow pi sessions (implementation log below).
 
 ### Open
-- DEC-001–DEC-005 — locked interaction and protocol choices govern the forthcoming plan.
+- DEC-006 — native comint follow; design sec-5 awaits reconcile (RV-004 brief).
+- PHASE-05 VH-1 — optional manual try against a live daemon.
 
 ## Further review after RV-003
 

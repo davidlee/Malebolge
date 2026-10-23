@@ -1,0 +1,275 @@
+id    = 4
+slug  = "reconciliation-review-of-sl-001"
+title = "reconciliation review of SL-001"
+# no status — a review's status is DERIVED from its findings, so
+# it is never stored (the storage rule forbids derived data in authored files).
+
+[review]
+facet     = "reconciliation"     # scope|design|plan|phase-plan|implementation|code-review|reconciliation
+raiser    = "raiser"
+responder = "responder"
+rounds_base = 0
+contests_base = 0
+concluded = true
+
+[[review.turn]]
+act = "conclude"
+role = "raiser"
+note = """
+Conformance audit of SL-001 on main (4ef3751..6c8ca60, plus fix 336b317). Checked:
+- the delivered code against design sec-1..sec-6 as amended by DEC-006;
+- `slice conformance`;
+- `just check` (1813 tests), `just ert` and `just smoke` (5 of 5 runs);
+- `slice verify-vt` (all VTs pass) and `doctrine check gate` (no recipe; CHR-001);
+- the smoke's event order against pi-durable's submit semantics (EVD-001).
+8 findings, all terminal. The design drift (F-1, F-2) and the selector drift (F-4) are in the Reconciliation Brief.
+"""
+
+[target]                   # the outbound `reviews` edge: RV-NNN ──reviews──▶ <ref>
+ref   = "SL-001"
+
+[[finding]]
+id = "F-1"
+status = "verified"
+severity = "minor"
+title = "Design sec-5 still specifies pre/post output hooks; implementation uses comint's native follow (DEC-006)"
+detail = """
+Expected: design.md sec-5 (and the sec-6 code-impact row for emacs/malebolge.el) describe the shipped following rule.
+Observed: sec-5 specifies buffer-local preoutput/postoutput hooks that follow windows whose view included the old end, and says returning to the bottom resumes following. DEC-006 (accepted by the user) replaced this with comint's native rule: a window follows only when its point is at the process mark; a scrolled-back window resumes with M->. emacs/malebolge.el sets `comint-scroll-to-bottom-on-output` nil and has no hooks; README and malebolge-help document M->. PHASE-04 EX-1 ("only transcript windows that showed the old end") is worded to the old rule; plan criteria are immutable, so it is read as amended by DEC-006.
+"""
+disposition = "design-wrong"
+response = """
+The implementation is correct per DEC-006; the design is stale. Reconciliation brief: rewrite design.md sec-5 to DEC-006's point-at-mark rule, M-> resume, and no hooks, and fix the sec-6 emacs/malebolge.el row. PHASE-04 EX-1 is not edited (immutable); the brief records that it is satisfied as amended by DEC-006.
+"""
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "design-wrong"
+response = """
+The implementation is correct per DEC-006; the design is stale. Reconciliation brief: rewrite design.md sec-5 to DEC-006's point-at-mark rule, M-> resume, and no hooks, and fix the sec-6 emacs/malebolge.el row. PHASE-04 EX-1 is not edited (immutable); the brief records that it is satisfied as amended by DEC-006.
+"""
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "Reconciliation Brief entry written"
+
+[[finding]]
+id = "F-2"
+status = "verified"
+severity = "minor"
+title = "Design sec-4 omits a live user turn arriving mid-answer and the daemon's queued-input order"
+detail = """
+Expected: sec-4 states how a live user turn interacts with an answer in flight, matching the daemon's event order.
+Observed: src/render.ts routes a live user message_end through `interrupt` (fresh line, later text under `Satan (continued):`), added in PHASE-05; sec-4 says nothing about it. pi-durable's `Conversation.submit` docs (node_modules/@earendil-works/pi-durable/dist/harness/types.d.ts:595) say a busy conversation queues input in `pi.inbox`, so the real echo lands at a turn boundary; the interleaved case arises only from atypical event orders. Sec-2's "daemon's user event supplies the transcript echo" is consistent, but sec-4 should state the boundary order and the defensive cut-in.
+"""
+disposition = "design-wrong"
+response = """
+The code is correct: a defensive cut-in is right for either order. Reconciliation brief: add to design.md sec-4 that a busy conversation queues input, so a live user turn normally follows the answer's completion, and that a user turn arriving mid-answer is handled as a notice-style interruption.
+"""
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "design-wrong"
+response = """
+The code is correct: a defensive cut-in is right for either order. Reconciliation brief: add to design.md sec-4 that a busy conversation queues input, so a live user turn normally follows the answer's completion, and that a user turn arriving mid-answer is handled as a notice-style interruption.
+"""
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "Reconciliation Brief entry written"
+
+[[finding]]
+id = "F-3"
+status = "verified"
+severity = "major"
+title = "Smoke test modelled a mid-answer echo the real daemon does not produce"
+detail = """
+Expected: test/emacs-attach-smoke.ts's fake daemon follows the real daemon's event order so its transcript assertion reflects real output.
+Observed (at 6c8ca60): the fake echoed the input as the user message_end immediately on receipt, between streamed chunks, and the check asserted `You:` ... `Satan (continued):` mid-answer. pi-durable queues input to a busy conversation (see the sec-4 finding), so the real echo follows the answer's message_end. The smoke therefore pinned an unrealistic transcript and never exercised the realistic one end to end. The mid-answer interleaving remains covered by render.test.ts.
+"""
+disposition = "fix-now"
+response = '''
+Fixed in 336b317. The fake daemon now echoes the input as the user message_end after the answer's message_end. The elisp waits for the echo (ECHOED), and the check asserts `Satan:\n<answer>\n\nYou:\n<draft>\n[status] detached\n`. Just smoke passed 5 of 5 runs; eslint and tsc are clean. Interleaved order stays covered by render.test.ts.
+'''
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+response = '''
+Fixed in 336b317. The fake daemon now echoes the input as the user message_end after the answer's message_end. The elisp waits for the echo (ECHOED), and the check asserts `Satan:\n<answer>\n\nYou:\n<draft>\n[status] detached\n`. Just smoke passed 5 of 5 runs; eslint and tsc are clean. Interleaved order stays covered by render.test.ts.
+'''
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+
+[[finding]]
+id = "F-4"
+status = "verified"
+severity = "minor"
+title = "Conformance: README.md and justfile edited outside the slice's selectors"
+detail = """
+Expected: every path the slice edits is covered by a selector (`slice conformance` undeclared = lifecycle artefacts only).
+Observed: `doctrine slice conformance 1` lists undeclared README.md (PHASE-05 docs, EX-3) and justfile (`ert`/`smoke` recipes, PHASE-03 EX-5 and PHASE-05 EX-2). Both were planned work. The other undeclared paths are SL-001's own doctrine artefacts (DEC-006 record, notes.md, plan.toml) and are expected. Undelivered: none; conformant: 8.
+"""
+disposition = "design-wrong"
+response = """
+Both edits were planned (PHASE-03 EX-5, PHASE-05 EX-2 and EX-3); the selectors missed them. Reconciliation brief: `doctrine slice selector add` README.md and justfile as design-target (the load-bearing change), mirrored in the design.md sec-6 table. The doctrine artefact paths are SL-001's own lifecycle records and are expected.
+"""
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "design-wrong"
+response = """
+Both edits were planned (PHASE-03 EX-5, PHASE-05 EX-2 and EX-3); the selectors missed them. Reconciliation brief: `doctrine slice selector add` README.md and justfile as design-target (the load-bearing change), mirrored in the design.md sec-6 table. The doctrine artefact paths are SL-001's own lifecycle records and are expected.
+"""
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "Reconciliation Brief entry written"
+
+[[finding]]
+id = "F-5"
+status = "verified"
+severity = "nit"
+title = "Terminal presentation drops trailing newlines that arrive only at message_end"
+detail = """
+Expected (plan PHASE-01 EX-1): the default terminal output reproduces existing expectations.
+Observed: all existing terminal render tests pass unchanged, but terminal behaviour differs in one untested edge: trailing newlines present only in the final message_end text (not streamed) are no longer printed; the old renderer printed them plus a terminator. Emacs prints them (snapshot parity). Accepted during PHASE-01 review as benign.
+"""
+disposition = "tolerated"
+response = """
+The terminal presentation is one-line oriented. Trailing newlines that arrive only at message_end carry no content, and the terminal still ends every answer with its line terminator. Matching the old bytes would need a terminal-only branch in the shared end-of-message path, adding code for no user-visible gain. The plan's terminal test expectations are unchanged. Accepted during the PHASE-01 review.
+"""
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "tolerated"
+response = """
+The terminal presentation is one-line oriented. Trailing newlines that arrive only at message_end carry no content, and the terminal still ends every answer with its line terminator. Matching the old bytes would need a terminal-only branch in the shared end-of-message path, adding code for no user-visible gain. The plan's terminal test expectations are unchanged. Accepted during the PHASE-01 review.
+"""
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+
+[[finding]]
+id = "F-6"
+status = "verified"
+severity = "minor"
+title = "Smoke's fake daemon duplicates the attach test fake"
+detail = """
+Expected: one shared fake-daemon fixture (DRY).
+Observed: test/emacs-attach-smoke.ts builds its own scripted fake on `serveUnix` (fakeDaemon, snapshotOf, userEntry, assistantEntry, partial) separate from test/attach.test.ts's fake. Two fakes can drift from the daemon independently.
+"""
+disposition = "follow-up"
+response = """
+Captured as IMP-003. This is test-only DRY debt, outside SL-001's acceptance: both fakes currently model the daemon correctly after F-3's fix.
+"""
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "follow-up"
+response = """
+Captured as IMP-003. This is test-only DRY debt, outside SL-001's acceptance: both fakes currently model the daemon correctly after F-3's fix.
+"""
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+
+[[finding]]
+id = "F-7"
+status = "verified"
+severity = "minor"
+title = "A draft queued mid-answer is invisible in the Emacs transcript until the turn boundary"
+detail = """
+Expected (sec-2): a submit gives the user enough feedback; only the daemon's user event echoes the turn.
+Observed: since the daemon queues a mid-answer input (pi.inbox), the transcript shows nothing until the answer ends; the only feedback is the minibuffer "malebolge: sent N characters". The renderer silences `inbox_update`. This meets sec-2, which allows a local minibuffer acknowledgement, but a long answer leaves the queued message unseen. It is a UX gap outside this slice's design, not a defect.
+"""
+disposition = "follow-up"
+response = """
+Captured as IDE-001. It meets the locked sec-2 (a minibuffer acknowledgement is allowed); changing it is new UX scope, not a defect in this slice.
+"""
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "follow-up"
+response = """
+Captured as IDE-001. It meets the locked sec-2 (a minibuffer acknowledgement is allowed); changing it is new UX scope, not a defect in this slice.
+"""
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+
+[[finding]]
+id = "F-8"
+status = "verified"
+severity = "nit"
+title = "doctrine check gate fails: the project has no just gate recipe"
+detail = """
+Expected: `doctrine check gate` runs the project's gate.
+Observed: "error: justfile does not contain recipe `gate`". The project's gate is `just check` (fmt, lint, typecheck, tests with coverage), green at 1813 tests; `just ert` and `just smoke` are green separately (smoke 5/5 after this audit's fix).
+"""
+disposition = "follow-up"
+response = """
+Captured as CHR-001. This is project tooling outside the slice's selectors; the equivalent gates (`just check`, `just ert`, `just smoke`) were run and are green for this audit.
+"""
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "follow-up"
+response = """
+Captured as CHR-001. This is project tooling outside the slice's selectors; the equivalent gates (`just check`, `just ert`, `just smoke`) were run and are green for this audit.
+"""
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+
+# Findings are append-only `[[finding]]` tables, added by `review raise`.
+# Empty here at creation — a fresh review is Active, awaiting the raiser.
