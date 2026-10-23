@@ -4,7 +4,7 @@
 import type { Message } from "@earendil-works/pi-ai";
 import type { AgentEvent, EntryRecord, MessageChange } from "@earendil-works/pi-durable";
 import { isRecord } from "./json.ts";
-import type { AttachedMessage, ErrorMessage } from "./protocol.ts";
+import type { AttachedMessage, ConversationsMessage, ErrorMessage } from "./protocol.ts";
 
 /** A notice the client makes for itself; it never reaches the daemon. */
 export interface ClientNotice {
@@ -12,7 +12,12 @@ export interface ClientNotice {
   text: string;
 }
 
-export type Printable = AgentEvent | ErrorMessage | AttachedMessage | ClientNotice;
+export type Printable =
+  | AgentEvent
+  | ErrorMessage
+  | AttachedMessage
+  | ConversationsMessage
+  | ClientNotice;
 
 /** How the output reads: the terminal's own, or an Emacs comint buffer's. */
 export type Presentation = "terminal" | "emacs";
@@ -245,6 +250,8 @@ function notices(p: PresentationTable, interrupt: (out: string) => string): Noti
     error: (event) => interrupt(p.notice(`error: ${event.message}`)),
     attached: (event) =>
       interrupt(p.notice(`attached to conversation ${String(event.conversation)}`)),
+    // Bare ids, one per line: the listing reads the same text in both presents.
+    conversations: (event) => event.conversations.map((id) => `${String(id)}\n`).join(""),
     client_notice: (event) => interrupt(p.notice(event.text)),
     agent_changed: silent,
     auto_retry_end: silent,

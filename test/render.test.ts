@@ -215,6 +215,13 @@ describe("renderer", () => {
     );
   });
 
+  it("renders a conversations frame as one id per line, in both presentations", () => {
+    const frame = { type: "conversations", conversations: [9, 7, 3], truncated: false };
+    expect(renderAll([frame])).toBe("9\n7\n3\n");
+    expect(renderAll([frame], { presentation: "emacs" })).toBe("9\n7\n3\n");
+    expect(renderAll([{ type: "conversations", conversations: [], truncated: true }])).toBe("");
+  });
+
   it("ignores bookkeeping events", () => {
     expect(renderAll([{ type: "usage_changed", usage: {} }, { type: "turn_start" }])).toBe("");
   });
