@@ -1,0 +1,206 @@
+id    = 2
+slug  = "design-review-of-sl-001"
+title = "design review of SL-001"
+# no status — a review's status is DERIVED from its findings, so
+# it is never stored (the storage rule forbids derived data in authored files).
+
+[review]
+facet     = "design"     # scope|design|plan|phase-plan|implementation|code-review|reconciliation
+raiser    = "raiser"
+responder = "responder"
+rounds_base = 0
+contests_base = 0
+concluded = true
+
+[[review.turn]]
+act = "conclude"
+role = "raiser"
+note = "Read-only hostile pass over the materialised SL-001 design and current Emacs, attach, renderer, protocol, and focused test surfaces; seven findings integrated and verified against revised design text."
+
+[target]                   # the outbound `reviews` edge: RV-NNN ──reviews──▶ <ref>
+ref   = "SL-001"
+
+[[finding]]
+id = "F-1"
+status = "verified"
+severity = "major"
+title = "Route --emacs through one strict CLI parser"
+detail = "design.md:34 and :65 require --emacs with target options, but src/attach.ts:40-52 parses argv strictly and src/attach-main.ts:24-27 passes all args to attachTargetOf. The design must name the single parser extension; otherwise --emacs is rejected or validated in a second parser."
+disposition = "fix-now"
+route = "review"
+response = "Added a single strict invocation parser in the attach client; main consumes the parsed target and mode. The design now names the existing parser extension and combined flag validation."
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+route = "review"
+response = "Added a single strict invocation parser in the attach client; main consumes the parsed target and mode. The design now names the existing parser extension and combined flag validation."
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "design.md:34 and :69-70 now name one strict parser shared by main and attach."
+
+[[finding]]
+id = "F-2"
+status = "verified"
+severity = "major"
+title = "Prevent transcript comint input from reaching frame stdin"
+detail = "design.md:6 and :30 call the transcript read-only and say typing does not submit, while emacs/malebolge.el:47-52 currently creates ordinary comint. The design must disable comint-send-input at the sender and route RET to the draft; a read-only visual treatment alone does not protect stdin."
+disposition = "fix-now"
+route = "review"
+response = "Specified a read-only transcript, RET routing to the draft, a refusing comint input sender, and direct process-send-string only from the draft. ERT now checks that transcript input writes zero bytes."
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+route = "review"
+response = "Specified a read-only transcript, RET routing to the draft, a refusing comint input sender, and direct process-send-string only from the draft. ERT now checks that transcript input writes zero bytes."
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "design.md:26 and :30 specify direct draft send and transcript sender refusal; :79 names zero-byte ERT checks."
+
+[[finding]]
+id = "F-3"
+status = "verified"
+severity = "major"
+title = "Format direct attach banners in the Emacs profile"
+detail = "design.md:44 promises status labels for connected and detached, but src/attach.ts:164, :181, :237, :290, :309 write notices directly outside createRenderer. Name an attach-level formatting helper for all client notices and verify it."
+disposition = "fix-now"
+route = "review"
+response = "Moved all client-origin notices through the selected renderer, created before connecting. Terminal text remains the default, and attach tests cover Emacs labels."
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+route = "review"
+response = "Moved all client-origin notices through the selected renderer, created before connecting. Terminal text remains the default, and attach tests cover Emacs labels."
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "design.md:46 routes all listed direct notices through an early-created profile renderer; :75 covers client notices."
+
+[[finding]]
+id = "F-4"
+status = "verified"
+severity = "minor"
+title = "Specify reattach transcript replacement ordering"
+detail = "design.md:58 says replace stale derived text with snapshot, while emacs/malebolge.el:47-52 starts comint in a reused buffer and src/render.ts:1-2 is append-only. Specify clearing before a new process can emit output and preserving the separate draft."
+disposition = "fix-now"
+route = "review"
+response = "Specified clearing the derived transcript before starting a replacement process, so no new output can precede the clear; the draft stays intact and failures remain visible."
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+route = "review"
+response = "Specified clearing the derived transcript before starting a replacement process, so no new output can precede the clear; the draft stays intact and failures remain visible."
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "design.md:62 orders transcript clear before replacement process creation and retains draft."
+
+[[finding]]
+id = "F-5"
+status = "verified"
+severity = "minor"
+title = "Delay Satan heading until visible assistant text"
+detail = "design.md:46 says empty assistant turns emit no heading, but src/render.ts:155-166 can begin with empty partial text. Specify lazy heading emission and empty/thinking-only behavior for both snapshot and live paths."
+disposition = "fix-now"
+route = "review"
+response = "Specified lazy Satan heading on first visible text and no heading or separator for empty and thinking-only turns in snapshot and live paths."
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+route = "review"
+response = "Specified lazy Satan heading on first visible text and no heading or separator for empty and thinking-only turns in snapshot and live paths."
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "design.md:48 specifies lazy heading and empty/thinking-only behavior; :77 names checks."
+
+[[finding]]
+id = "F-6"
+status = "verified"
+severity = "minor"
+title = "Make boundary smoke automated and cover duplicate echoes"
+detail = "design.md:71-77 includes unit checks and a local smoke but does not say the Emacs-to-attach-to-socket check is automated. Specify an automated integration check for one exact input, no forwarded quit, and one user echo across the snapshot/live boundary."
+disposition = "fix-now"
+route = "review"
+response = "The original design already named a local end-to-end smoke; it now makes the check automated and required, with exact input and no forwarded quit. Renderer tests cover valid snapshot then new live user events without duplicate echoes."
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+route = "review"
+response = "The original design already named a local end-to-end smoke; it now makes the check automated and required, with exact input and no forwarded quit. Renderer tests cover valid snapshot then new live user events without duplicate echoes."
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "design.md:81 makes the full boundary smoke automated; :77 covers valid snapshot/live user turns."
+
+[[finding]]
+id = "F-7"
+status = "verified"
+severity = "major"
+title = "Client notices must share renderer stream state"
+detail = "design.md:46 routes direct attach notices through an independent helper, while design.md:50 expects the renderer to resume assistant text after an interrupting notice. A malformed Emacs frame or detach notice during an answer can make later assistant deltas append without a continuation cue. Route in-stream client notices through the stateful renderer; only preconnect failures may be formatted statelessly."
+disposition = "fix-now"
+route = "review"
+response = "All in-stream client notices now pass through the same stateful renderer as daemon events; the design explicitly covers continuation cues and adds a renderer check for a client notice during an answer."
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+route = "review"
+response = "All in-stream client notices now pass through the same stateful renderer as daemon events; the design explicitly covers continuation cues and adds a renderer check for a client notice during an answer."
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "design.md:46 and :52 share renderer state for client notices; :77 requires a mid-stream client notice check."
+
+# Findings are append-only `[[finding]]` tables, added by `review raise`.
+# Empty here at creation — a fresh review is Active, awaiting the raiser.

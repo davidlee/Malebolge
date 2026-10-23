@@ -1,0 +1,33 @@
+schema = "doctrine.knowledge"
+version = 1
+
+id = 2
+slug = "sl-001-uses-client-private-json-stdin-frames-for-emacs"
+title = "SL-001 uses client-private JSON stdin frames for Emacs"
+record_kind = "decision"
+status = "proposed"
+created = "2026-10-23"
+updated = "2026-10-23"
+tags = []
+
+[facet]                         # every field typed; seeded empty (captured later)
+context = "The attach client treats each stdin line as one input, while the daemon already accepts string content."
+choice = "An explicit Emacs attach mode accepts one JSON stdin frame per submitted draft or command; the attach client forwards one existing daemon ClientMessage. Default terminal stdin remains typed-line mode."
+alternatives = ["A sentinel-delimited multiline mode", "Escaping newlines in an ordinary typed line"]
+rationale = "JSON frames preserve arbitrary newlines and slash-leading text without sentinel collisions or daemon protocol changes."
+consequences = ["Add strict client-side frame handling and a mode flag.", "Emacs serializes input and controls; quit stays local to the attach client."]
+decided_by   = ""
+decided_on   = ""
+
+[evidence]                      # free-text citations (supports / contradicts / notes)
+supports    = []
+contradicts = []
+notes       = []
+
+[relationships]                 # verb-written edges (set by doctrine supersede)
+supersedes    = []   # record ids this one replaces (set by doctrine supersede)
+superseded_by = []   # set on superseded predecessor (verb-written)
+
+[[relation]]
+label = "shapes"
+target = "SL-001"

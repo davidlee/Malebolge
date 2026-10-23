@@ -1,0 +1,64 @@
+id = 1
+slug = "emacs-session-ux"
+title = "Improve Malebolge's Emacs session interaction"
+status = "ready"
+created = "2026-10-23"
+updated = "2026-10-23"
+tags = []
+
+[relationships]
+needs = []                      # slice→work hard prerequisite
+after = []                      # slice→work soft sequence: { to, rank }
+
+[[selector]]
+selector = "emacs/**"
+intent = "scope-relevant"
+
+[[selector]]
+selector = "src/attach.ts"
+intent = "design-target"
+
+[[selector]]
+selector = "src/protocol.ts"
+intent = "scope-relevant"
+
+[[selector]]
+selector = "test/**"
+intent = "scope-relevant"
+
+[[selector]]
+selector = "src/render.ts"
+intent = "design-target"
+
+[[selector]]
+selector = "src/attach-main.ts"
+intent = "design-target"
+
+[[selector]]
+selector = "emacs/malebolge.el"
+intent = "design-target"
+
+[[selector]]
+selector = "test/attach.test.ts"
+intent = "design-target"
+
+[[selector]]
+selector = "test/render.test.ts"
+intent = "design-target"
+
+[[selector]]
+selector = "test/malebolge-ert.el"
+intent = "design-target"
+
+[[selector]]
+selector = "test/emacs-attach-smoke.ts"
+intent = "design-target"
+
+# STRUCTURAL relations are uniform `[[relation]]` rows, never a typed
+# `[relationships]` axis. Slices carry no typed STRUCTURAL
+# relation axes — the `[relationships]` table above holds only the dep/seq payload
+# (`needs`/`after`). Author a structural edge with the `doctrine link` verb
+# — it validates the (source, label) pair and resolves the target:
+#   doctrine link SL-NNN specs SPEC-NNN
+#   doctrine link SL-NNN governed_by ADR-NNN
+# `doctrine inspect SL-NNN` renders the inbound + outbound edges.

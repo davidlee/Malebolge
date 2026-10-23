@@ -1,0 +1,33 @@
+schema = "doctrine.knowledge"
+version = 1
+
+id = 4
+slug = "sl-001-follows-output-only-in-transcript-windows-already-at-bottom"
+title = "SL-001 follows output only in transcript windows already at bottom"
+record_kind = "decision"
+status = "proposed"
+created = "2026-10-23"
+updated = "2026-10-23"
+tags = []
+
+[facet]                         # every field typed; seeded empty (captured later)
+context = "A draft must remain usable while the attach process emits output, and readers must be able to inspect older transcript text."
+choice = "Keep the draft in its own buffer; before each comint output insertion note which transcript windows show the old end, then move only those windows to the new end. Preserve point and window start elsewhere."
+alternatives = ["Always scroll to the newest output", "Never follow streamed output"]
+rationale = "This meets the reader-follow rule without moving the draft cursor."
+consequences = ["Emacs-local preoutput and postoutput handling must account for multiple windows and reattachment."]
+decided_by   = ""
+decided_on   = ""
+
+[evidence]                      # free-text citations (supports / contradicts / notes)
+supports    = []
+contradicts = []
+notes       = []
+
+[relationships]                 # verb-written edges (set by doctrine supersede)
+supersedes    = []   # record ids this one replaces (set by doctrine supersede)
+superseded_by = []   # set on superseded predecessor (verb-written)
+
+[[relation]]
+label = "shapes"
+target = "SL-001"

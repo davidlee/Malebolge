@@ -1,0 +1,33 @@
+schema = "doctrine.knowledge"
+version = 1
+
+id = 1
+slug = "sl-001-uses-a-separate-emacs-draft-buffer"
+title = "SL-001 uses a separate Emacs draft buffer"
+record_kind = "decision"
+status = "proposed"
+created = "2026-10-23"
+updated = "2026-10-23"
+tags = []
+
+[facet]                         # every field typed; seeded empty (captured later)
+context = "Streaming output must not disturb a multiline draft."
+choice = "Use a dedicated editable draft buffer alongside a read-only comint transcript. RET inserts newline; C-c C-c sends the entire draft."
+alternatives = ["Compose in comint's prompt region"]
+rationale = "Separate buffers keep stream insertion and output-follow independent of draft point and text."
+consequences = ["The session uses two buffers and needs explicit discoverable key bindings."]
+decided_by   = ""
+decided_on   = ""
+
+[evidence]                      # free-text citations (supports / contradicts / notes)
+supports    = []
+contradicts = []
+notes       = []
+
+[relationships]                 # verb-written edges (set by doctrine supersede)
+supersedes    = []   # record ids this one replaces (set by doctrine supersede)
+superseded_by = []   # set on superseded predecessor (verb-written)
+
+[[relation]]
+label = "shapes"
+target = "SL-001"

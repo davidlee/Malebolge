@@ -1,0 +1,123 @@
+# Implementation plan for SL-001 — the authored, durable phase plan.
+#
+# This is the single source of each phase's objective, criteria, verification,
+# and links. Runtime status lives separately under .doctrine/state/ (phase
+# tracking) — never record progress here. Hand-edit freely: the tool reads this
+# file but does not rewrite it.
+schema  = "doctrine.plan.overview"
+version = 1
+slice   = "SL-001"
+
+# Canonical spec/requirement links — cite ids, never restate what they say. The
+# plan reader does not model these yet, so nothing downstream consumes them.
+[specs]
+primary       = []
+collaborators = []
+
+[requirements]
+targets      = []
+dependencies = []
+
+# One [[phase]]
+id        = "PHASE-01"
+name      = "Renderer Emacs presentation profile"
+objective = "createRenderer gains a presentation option; the Emacs profile renders role headings, live user echo, labelled notices, continuation cues and the completed-answer separator identically across snapshot and live paths (design sec-4). Default terminal output unchanged."
+entrance_criteria = [
+  { id = "EN-1", text = "Design locked (DEC-001..DEC-005); test/render.test.ts green on the base commit." },
+]
+exit_criteria = [
+  { id = "EX-1", text = "createRenderer accepts a presentation option; omitting it reproduces every existing terminal expectation in test/render.test.ts unchanged." },
+  { id = "EX-2", text = "Emacs profile: `You:` heading + exact content for snapshot and live user message_end; lazy `Satan:` heading only on first visible text; no heading or separator for empty or thinking-only answers (RV-002 F-5)." },
+  { id = "EX-3", text = "Completed nonempty answer ends with exactly the missing newlines to give >= 2 trailing newlines, in snapshot and live paths alike." },
+  { id = "EX-4", text = "`[status] ...` and `[tool] ...` labels; a renderer-accepted client-local notice event type renders `[status] ...` in Emacs and current text by default (RV-002 F-3, F-7)." },
+  { id = "EX-5", text = "Notice mid-stream starts on a fresh line and later text resumes under `Satan (continued):`; a non-overwritable rewrite starts `Satan (revised):`; reattached partial answer gets one heading and no duplicated text." },
+  { id = "EX-6", text = "just check green (fmt, lint zero warnings, typecheck, tests with coverage gate)." },
+]
+verification = [
+  { id = "VT-1", expects = "live vs snapshot parity for multiline user/assistant turns and 0/1/many trailing newlines", test_file = "test/render.test.ts", keywords = ["presentation", "You:", "Satan:"], waived = false },
+  { id = "VT-2", expects = "continuation, revised, notice and client-notice cues during a stream", test_file = "test/render.test.ts", keywords = ["Satan (continued):", "Satan (revised):", "[status]", "[tool]"], waived = false },
+  { id = "VA-1", text = "Orchestrator diff review: default profile untouched in behaviour; no regexp reconstruction of roles; renderer stays pure over events." },
+]
+specs        = []
+requirements = []
+
+[[phase]]
+id        = "PHASE-02"
+name      = "Attach client frame mode"
+objective = "One strict invocation parser adds --emacs; frame mode parses private JSON stdin frames (input/abort/compact via the existing protocol parser + strict field check, local quit), refuses malformed frames visibly, and routes client-local notices through the selected renderer (design sec-3, sec-4 para 2). Typed-line mode unchanged."
+entrance_criteria = [
+  { id = "EN-1", text = "PHASE-01 complete: renderer presentation option and client-local notice event exist." },
+]
+exit_criteria = [
+  { id = "EX-1", text = "Exported invocation parser yields target + mode; --emacs composes with --conversation and --new --cwd; strict refusals before connect; attachTargetOf delegates; attach-main consumes it and passes inputMode frames + presentation emacs (RV-002 F-1)." },
+  { id = "EX-2", text = "A frame whose content has leading/trailing spaces, an interior blank line and a slash-leading line yields exactly one socket input with identical content." },
+  { id = "EX-3", text = "abort, compact with and without instructions forward; quit never reaches the socket and detaches; frames before attach are held as typed commands are." },
+  { id = "EX-4", text = "Malformed JSON, unknown type, wrong field type and extra field each send nothing and print a visible notice; protocol.ts ClientMessage and parser unchanged." },
+  { id = "EX-5", text = "Connection, detach, failure, early-close, version-skew and malformed-frame notices go through the renderer (`[status]` in Emacs, current text by default) (RV-002 F-3, F-7)." },
+  { id = "EX-6", text = "Default typed-line behaviour (commandOf, blank lines, slash commands) passes existing tests unchanged; just check green." },
+]
+verification = [
+  { id = "VT-1", expects = "--emacs parsing and frame-mode exactly-one-input round trip with hostile whitespace and slash content", test_file = "test/attach.test.ts", keywords = ["--emacs", "frames", "quit"], waived = false },
+  { id = "VT-2", expects = "malformed frames send nothing and notify; client notices formatted per profile", test_file = "test/attach.test.ts", keywords = ["malformed", "[status]"], waived = false },
+  { id = "VA-1", text = "Orchestrator diff review: no duplicated protocol validation; one parser; protocol.ts untouched." },
+]
+specs        = []
+requirements = []
+
+[[phase]]
+id        = "PHASE-03"
+name      = "Emacs draft buffer, controls and transcript guard"
+objective = "malebolge.el starts attach with --emacs; adds the companion *malebolge-draft* mode with C-c C-c framed submit, C-c C-a/C-c C-m/C-c C-q controls, C-c C-e and C-c C-h, header-line cues; read-only transcript with refusing comint-input-sender and RET-to-draft (design sec-2). ERT harness established."
+entrance_criteria = [
+  { id = "EN-1", text = "PHASE-02 complete: malebolge-attach --emacs accepts JSON frames." },
+]
+exit_criteria = [
+  { id = "EX-1", text = "C-c C-c writes exactly one JSON line via process-send-string with the exact draft text and clears the draft only after a successful write to a live process; all-whitespace draft refused; dead process leaves draft intact with an error." },
+  { id = "EX-2", text = "RET and paste in the draft never submit; RET and comint-send-input in the transcript write zero bytes (RV-002 F-2)." },
+  { id = "EX-3", text = "Abort, compact (optional instructions), quit send the matching frames and never clear a nonempty draft; bindings are buffer-local." },
+  { id = "EX-4", text = "Header lines and C-c C-h help name the actions; draft survives process death." },
+  { id = "EX-5", text = "test/malebolge-ert.el runs headless via a just recipe (emacs --batch) and passes; byte-compile of emacs/malebolge.el emits no warnings." },
+]
+verification = [
+  { id = "VT-1", expects = "ERT: submit framing, guard writes zero bytes, controls preserve draft, dead-process retention", test_file = "test/malebolge-ert.el", keywords = ["ert-deftest", "malebolge-draft", "process-send-string", "comint-send-input"], waived = false },
+  { id = "VA-1", text = "Orchestrator review: draft never receives process output; no change to other comint modes." },
+]
+specs        = []
+requirements = []
+
+[[phase]]
+id        = "PHASE-04"
+name      = "Output following and reattachment"
+objective = "Per-window conditional follow via buffer-local pre/post output hooks with comint-scroll-to-bottom-on-output disabled; reattach clears only the dead transcript before restarting, preserving the draft (design sec-5)."
+entrance_criteria = [
+  { id = "EN-1", text = "PHASE-03 complete; ERT harness runs." },
+]
+exit_criteria = [
+  { id = "EX-1", text = "Only transcript windows that showed the old end follow a new chunk; a selected window reading older text keeps window-start and point; focus never leaves the draft." },
+  { id = "EX-2", text = "Live malebolge-attach reuses buffers; dead process: transcript cleared before the new process starts, one snapshot repopulates it, draft untouched; failed start leaves a status line and the draft (RV-002 F-4)." },
+  { id = "EX-3", text = "ERT suite green; byte-compile clean." },
+]
+verification = [
+  { id = "VT-1", expects = "ERT window-follow and reattach-clearing checks", test_file = "test/malebolge-ert.el", keywords = ["window-start", "reattach", "comint-scroll-to-bottom-on-output"], waived = false },
+]
+specs        = []
+requirements = []
+
+[[phase]]
+id        = "PHASE-05"
+name      = "End-to-end smoke and docs"
+objective = "test/emacs-attach-smoke.ts drives batch Emacs + real malebolge-attach --emacs + fake daemon socket end to end; README/docs describe the Emacs session; full gate green (design sec-6, RV-002 F-6)."
+entrance_criteria = [
+  { id = "EN-1", text = "PHASE-01..PHASE-04 complete." },
+]
+exit_criteria = [
+  { id = "EX-1", text = "Smoke: multiline draft submitted during a streamed answer reaches the fake socket as exactly one input with exact content; no quit frame reaches it; reattach shows completed-response spacing and role cues once; plain terminal attach line commands still work (RV-002 F-6)." },
+  { id = "EX-2", text = "Smoke runs from a just recipe alongside ERT and exits nonzero on failure." },
+  { id = "EX-3", text = "User-facing docs name the Emacs keys and draft workflow; just check green." },
+]
+verification = [
+  { id = "VT-1", expects = "automated Emacs-to-attach-to-socket boundary smoke", test_file = "test/emacs-attach-smoke.ts", keywords = ["--emacs", "emacs", "--batch", "input"], waived = false },
+  { id = "VH-1", text = "Optional: the user tries M-x malebolge-start against a live daemon and confirms the workflow feels right." },
+]
+specs        = []
+requirements = []

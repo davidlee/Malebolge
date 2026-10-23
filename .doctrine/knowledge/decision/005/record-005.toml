@@ -1,0 +1,33 @@
+schema = "doctrine.knowledge"
+version = 1
+
+id = 5
+slug = "sl-001-verifies-the-emacs-attach-boundary-and-presentation-parity"
+title = "SL-001 verifies the Emacs attach boundary and presentation parity"
+record_kind = "decision"
+status = "proposed"
+created = "2026-10-23"
+updated = "2026-10-23"
+tags = []
+
+[facet]                         # every field typed; seeded empty (captured later)
+context = "The behavior spans Emacs composition, attach framing, renderer output, and a live daemon boundary."
+choice = "Use focused attach and renderer tests, Emacs ERT checks for submission and window behavior, and a local Emacs-to-fake-daemon smoke that captures exactly one input with all lines."
+alternatives = ["TypeScript unit tests alone", "Manual Emacs inspection alone"]
+rationale = "Each check covers a different failure boundary, including real process interaction and streaming draft preservation."
+consequences = ["The implementation phase needs an Emacs test path and an end-to-end smoke."]
+decided_by   = ""
+decided_on   = ""
+
+[evidence]                      # free-text citations (supports / contradicts / notes)
+supports    = []
+contradicts = []
+notes       = []
+
+[relationships]                 # verb-written edges (set by doctrine supersede)
+supersedes    = []   # record ids this one replaces (set by doctrine supersede)
+superseded_by = []   # set on superseded predecessor (verb-written)
+
+[[relation]]
+label = "shapes"
+target = "SL-001"
