@@ -141,7 +141,7 @@ untouched: no new module, no moved import edge.
 
 ## Harvest
 <!-- single-copy: updated in place each harvest; ids only, never restated content -->
-fresh-as-of: 2026-10-23 · PHASE-01 · ec6c8c5
+fresh-as-of: 2026-10-23 · PHASE-01 complete · code `ec6c8c5`, doctrine `69929b9`
 
 ### Produced
 - PHASE-01 done — the `list` frame, `list()`'s one descending ownerless page,
@@ -149,6 +149,9 @@ fresh-as-of: 2026-10-23 · PHASE-01 · ec6c8c5
 - gate re-measured at phase end: lint/tsc/format clean, `just ert` 24/24,
   `just smoke` 3/3, vitest 11 red, all under `test/runner/` (container: git-guard
   shim, no room).
+- IMP-005 — `doctrine check gate` cannot run here: the justfile has no `gate`
+  recipe, so the verb dies at `just gate` (`69929b9`); the phase ran the
+  components its criteria name instead.
 - DEC-007..DEC-010 — the four dispositions PHASE-02..04 still implement against.
 - `design.md` (locked rev 37, att-1..att-6) and `RV-005` (13 findings; the routed
   ones land in PHASE-02 F-4/F-2-consumer, PHASE-03 F-5/F-3, PHASE-04 F-2-docs).
