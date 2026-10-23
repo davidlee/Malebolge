@@ -1,0 +1,42 @@
+memory_uid = "mem_01a167c35e2f7b9186aa6404a377c8e0"
+memory_key = "mem.pattern.doctrine.design-run-one-ledger-per-pass"
+schema_version = 1
+memory_type = "pattern"
+status = "active"
+title = "Mechanics of a design run's review stage"
+summary = "A managed design run keeps one RV pass; second rounds reopen it; sections are attested with att- nodes; severe findings need a route"
+created = "2026-10-23"
+updated = "2026-10-23"
+
+[scope]
+paths = []
+globs = []
+commands = []
+tags = ["doctrine,design,review"]
+workspace = "default"
+repo = "github.com/davidlee/Malebolge"
+repo_id_kind = "remote"
+repo_id_confidence = "high"
+
+[git]
+anchor_kind = "checkout_state"
+commit = ""
+tree = "beaf342c6b1a3971a0ba72087a4cb89276245bf8"
+ref_name = "refs/heads/main"
+checkout_state_id = "4d8900d0791480fd80c933b50e53e8c0ac5b6f65b0af0a0f2cb3b858e58bf8c5"
+base_commit = "ff9b64dd07b38735e2afee2af7f3b79167cf4aba"
+verified_sha = ""
+normalizer = "forget.checkout.v1"
+
+[review]
+verification_state = "unverified"
+reviewed = ""
+review_by = ""
+
+[trust]
+trust_level = "high"
+
+[ranking]
+severity = "none"
+weight = 0
+

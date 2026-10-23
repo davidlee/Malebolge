@@ -73,19 +73,42 @@ turn.
 `.agents/` (doctrine-installed skills) is deliberately left untracked.
 
 ## Harvest
+<!-- single-copy: updated in place each harvest; ids only, never restated content -->
+fresh-as-of: 2026-10-23 · design locked (run dr-01a16771…, rev 37) · work head ff9b64d · lifecycle `plan`
 
-## Review round lessons (2026-10-23)
+### Produced
+- DEC-007..DEC-010 — `accepted`; the four inquiry dispositions, each with an
+  amendments section carrying the informal pass's nine findings.
+- `design.md` — six sections (sec-1..sec-6), materialised at rev 32, locked at
+  rev 37; attested by att-1..att-6 (adversarial lane).
+- `research/research.md` — two threads + `raw/`, baselined; one cited fact
+  corrected (an old daemon answers an unknown first-line frame with root's
+  snapshot *then* the error).
+- RV-005 — design review, 13 findings (6 major), all `fix-now`, verified; the
+  six majors route `demonstrate` (evidence is the plan's verification).
+- RV-006 — the narrow verification round, kept as its own record (3 findings,
+  re-raised on RV-005 so the run's own pass carries them).
+- `slice-002.md` — scope amended twice: to the RFC-002 refresh, then to RV-005.
+- memories: `mem.pattern.doctrine.mcp-root-follows-session-cwd`,
+  `mem.pattern.doctrine.design-run-one-ledger-per-pass`.
 
-- **The doctrine MCP tools are rooted at the session's cwd, not the repo under
-  work.** Ten design findings were first raised on *satan's* RV-005 (SL-015's
-  reconciliation audit) because this session runs from `/workspace/satan`. They
-  were withdrawn there with a note and re-raised through malebolge's own CLI. Any
-  cross-repo slice driven from a satan session must use the target repo's
-  `doctrine` binary for ledger writes.
-- **One ledger per design run's pass.** The run names its pass once (RV-005); a
-  second, narrower verification round belongs on *that* ledger (raise → dispose →
-  verify → conclude again), not on a fresh RV. RV-006 was created before that was
-  clear; it stands as an accurate record, and its three residuals were re-raised
-  on RV-005 so the run's own pass carries them.
-- **Section attestations are `att-` nodes** (`attests: sec-N`, `reviewer`), not a
-  single `section-reviewed` act; the act reconciles coverage, it does not create it.
+### Learned
+- Cross-repo ledger writes must use the target repo's `doctrine` binary; the
+  MCP tools root at the session cwd (this misfiled ten findings on satan's
+  RV-005, since withdrawn).
+- A run keeps one RV pass; second rounds reopen it. Section attestations are
+  `att-` nodes. Severe findings need a `route`, and a concluded pass cannot be
+  amended onto one — reopen, dispose again with `--route`, verify.
+
+### Open
+- No open DEC / QUE / ASM. Every decision is `accepted`; no assumption record
+  was needed.
+- Awaiting the user's nod on the **four-phase decomposition** proposed at
+  handover (daemon / client / Emacs / docs), which `/plan` authors.
+- `review_pass RV-005 STALE` still prints in the run's status: the pass concluded
+  before the final section amendments were attested. Every section's current
+  fingerprint is attested, the edge to `locked` was cleared and the design is
+  locked — treat the flag as informational, not as an unreviewed section.
+- Other repos: satan ISS-053 (SPEC-002 has no row for the client socket, which
+  now carries a verb that creates durable state) and ISS-055 (protocol
+  handshake) remain theirs.

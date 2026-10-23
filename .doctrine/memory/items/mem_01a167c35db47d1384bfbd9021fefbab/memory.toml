@@ -1,0 +1,42 @@
+memory_uid = "mem_01a167c35db47d1384bfbd9021fefbab"
+memory_key = "mem.pattern.doctrine.mcp-root-follows-session-cwd"
+schema_version = 1
+memory_type = "pattern"
+status = "active"
+title = "The doctrine MCP server roots ledger writes at the session cwd"
+summary = "doctrine MCP ledger writes root at the session cwd, not the repo under work — use the target repo's CLI for cross-repo ledgers"
+created = "2026-10-23"
+updated = "2026-10-23"
+
+[scope]
+paths = []
+globs = []
+commands = []
+tags = ["doctrine,review,gotcha"]
+workspace = "default"
+repo = "github.com/davidlee/Malebolge"
+repo_id_kind = "remote"
+repo_id_confidence = "high"
+
+[git]
+anchor_kind = "checkout_state"
+commit = ""
+tree = "beaf342c6b1a3971a0ba72087a4cb89276245bf8"
+ref_name = "refs/heads/main"
+checkout_state_id = "3114b3d038fb663b19ccd894bedcca8a59383301b4313e2d8dec6cf937286cd0"
+base_commit = "ff9b64dd07b38735e2afee2af7f3b79167cf4aba"
+verified_sha = ""
+normalizer = "forget.checkout.v1"
+
+[review]
+verification_state = "unverified"
+reviewed = ""
+review_by = ""
+
+[trust]
+trust_level = "high"
+
+[ranking]
+severity = "high"
+weight = 0
+
