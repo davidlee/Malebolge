@@ -9,6 +9,12 @@
 //   2. reattaching to a snapshot of those turns shows each role heading once
 //      and ends the answer with exactly one blank line;
 //   3. terminal attach still runs its line commands locally.
+//
+// Assumption: the fake echoes the submitted input as the user turn's
+// message_end *mid-answer*, so the draft lands between two streamed chunks.
+// The real daemon probably queues input to a turn boundary instead; the
+// renderer handles both orders (see emacs/malebolge.el), and this smoke pins
+// the harder, interleaved one.
 
 import { spawn } from "node:child_process";
 import { readFile } from "node:fs/promises";
@@ -36,10 +42,10 @@ const OVERALL_MS = 20_000;
 /** The draft: leading spaces, an interior blank line, a slash line, trailing spaces. */
 const DRAFT = "first line\n\n  /not a command\nlast  ";
 const BEFORE = "Satan speaks first.";
-const AFTER = "Then Satan answers.";
-
-/** Resolves after `ms`; the streamed answer spreads its deltas over these. */
-const delay = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+/** The streamed answer, and its cut point: the head streams before the draft, the rest after. */
+const AFTER_HEAD = "Then Satan ";
+const AFTER_REST = "answers.";
+const AFTER = AFTER_HEAD + AFTER_REST;
 
 /** `what` did not happen in time. */
 const timeout = (what: string): SmokeFailure => new SmokeFailure(`timed out waiting for ${what}`);
@@ -94,34 +100,13 @@ const snapshotOf = (entries: unknown[]): Record<string, unknown> => ({
   usage: {},
 });
 
-/**
- * The answer as it streams: a start, the text spread over `steps` deltas some
- * `gapMs` apart, then the end. Resolves once the last one is written.
- */
-async function streamAnswer(
-  socket: Socket,
-  text: string,
-  steps: number,
-  gapMs: number,
-): Promise<void> {
-  const size = Math.ceil(text.length / steps);
-  const chunks = Array.from({ length: steps }, (_, i) => text.slice(i * size, (i + 1) * size));
-  socket.write(encodeLine({ type: "message_start", message: partial("") }));
-  for (const chunk of chunks) {
-    await delay(gapMs);
-    if (chunk === "") {
-      continue;
-    }
-    socket.write(
-      encodeLine({
-        type: "message_update",
-        usage: {},
-        changes: [{ type: "text_delta", contentIndex: 0, delta: chunk }],
-      }),
-    );
-  }
-  socket.write(encodeLine({ type: "message_end", entry: assistantEntry(text, "a-answer") }));
-}
+/** One streamed delta of the current assistant message. */
+const textDelta = (delta: string): string =>
+  encodeLine({
+    type: "message_update",
+    usage: {},
+    changes: [{ type: "text_delta", contentIndex: 0, delta }],
+  });
 
 /** A fake daemon on `path`, and what it received. */
 interface FakeSocket {
@@ -132,9 +117,16 @@ interface FakeSocket {
 /** What the fake does with one attached connection. */
 type ServeSession = (socket: Socket) => Promise<void> | undefined;
 
+/** `isRecord` and `type` is `type`; the receive side's frame predicate. */
+const frameOf =
+  (type: string) =>
+  (value: unknown): boolean =>
+    isRecord(value) && value["type"] === type;
+
 /**
  * A fake daemon on `path`: answers the attach frame with `attachReply` then
- * runs `serve`, recording every frame the client sends.
+ * runs `serve`, recording every frame the client sends. A submitted `input` is
+ * echoed once, here, as the user turn's message_end.
  */
 async function fakeDaemon(
   path: string,
@@ -225,10 +217,13 @@ function startChild(
 }
 
 /** The answer's last word: a draft cut in mid-stream splits the rest under a continuation cue. */
-const AFTER_TAIL = "answers.";
+const AFTER_TAIL = AFTER_REST;
 
 /** An elisp regexp: the transcript ends with the completed answer and its blank line. */
 const ANSWER_DONE = `(concat (regexp-quote ${JSON.stringify(AFTER_TAIL)}) "\n\n\\\\'")`;
+
+/** An elisp regexp matching the head delta once the renderer has shown it. */
+const STREAMING = `(regexp-quote ${JSON.stringify(AFTER_HEAD)})`;
 
 /** Elisp helpers both sessions share: wait for transcript text, and read it. */
 const smokeHelpers = (totalMs: number): string => `
@@ -254,10 +249,10 @@ const smokeHelpers = (totalMs: number): string => `
   (kill-emacs 0))
 `;
 
-/** Attach, submit a multiline draft while the answer streams, and save the transcript. */
+/** Attach, submit a multiline draft while the answer streams, detach, and save the transcript. */
 const draftDuringStreamElisp = (outFile: string): string => `
 (malebolge-attach)
-(unless (mlb-smoke-wait ${JSON.stringify(`^${AFTER.slice(0, 6)}`)})
+(unless (mlb-smoke-wait ${STREAMING})
   (mlb-smoke-fail "the answer never started streaming" ${JSON.stringify(outFile)}))
 (when (string-match-p ${ANSWER_DONE} (mlb-smoke-text))
   (mlb-smoke-fail "the answer completed before the draft was submitted" ${JSON.stringify(outFile)}))
@@ -267,6 +262,9 @@ const draftDuringStreamElisp = (outFile: string): string => `
 (malebolge-submit)
 (unless (mlb-smoke-wait ${ANSWER_DONE})
   (mlb-smoke-fail "the answer never completed" ${JSON.stringify(outFile)}))
+(malebolge-quit)
+(unless (mlb-smoke-wait (regexp-quote "[status] detached"))
+  (mlb-smoke-fail "the client never detached" ${JSON.stringify(outFile)}))
 (mlb-smoke-finish ${JSON.stringify(outFile)})
 `;
 
@@ -276,6 +274,8 @@ const reattachElisp = (outFile: string): string => `
 (unless (mlb-smoke-wait ${ANSWER_DONE})
   (mlb-smoke-fail "the first snapshot never arrived" ${JSON.stringify(outFile)}))
 (delete-process (get-buffer-process malebolge-buffer-name))
+;; Let comint's sentinel write its "Process malebolge …" line before reattaching.
+(accept-process-output nil 0.1)
 (malebolge-attach)
 (unless (mlb-smoke-wait ${ANSWER_DONE})
   (mlb-smoke-fail "the second snapshot never arrived" ${JSON.stringify(outFile)}))
@@ -340,7 +340,13 @@ async function checkDraftDuringStream(dir: string): Promise<void> {
       socket.write(
         encodeLine(snapshotOf([userEntry(BEFORE, "u-0"), assistantEntry(BEFORE, "a-0")])),
       );
-      await streamAnswer(socket, AFTER, 3, 100);
+      socket.write(encodeLine({ type: "message_start", message: partial("") }));
+      socket.write(textDelta(AFTER_HEAD));
+      // Cut here: the rest streams only once the draft has been echoed back.
+      // The waiter is fed by the data handler, so this is event-driven, not a poll.
+      await received.next(frameOf("input"));
+      socket.write(textDelta(AFTER_REST));
+      socket.write(encodeLine({ type: "message_end", entry: assistantEntry(AFTER, "a-answer") }));
     },
   );
   const transcriptFile = join(dir, "live.txt");
@@ -361,12 +367,10 @@ async function checkDraftDuringStream(dir: string): Promise<void> {
       `transcript echoes the draft once under "You:": ${JSON.stringify(transcript)}`,
     );
     expect(
-      transcript.includes(`You:\n${DRAFT}\nSatan (continued):\n`),
-      `the draft cuts into the streaming answer, which resumes under a cue: ${JSON.stringify(transcript)}`,
-    );
-    expect(
-      transcript.endsWith(`${AFTER_TAIL}\n\n`),
-      `the completed answer ends with one blank line: ${JSON.stringify(transcript)}`,
+      transcript.includes(
+        `Satan:\n${AFTER_HEAD}\nYou:\n${DRAFT}\nSatan (continued):\n${AFTER_REST}\n\n[status] detached\n`,
+      ),
+      `the draft cuts into the answer, which resumes under a cue, completes with one blank line, then detaches: ${JSON.stringify(transcript)}`,
     );
   } finally {
     emacs.kill();
@@ -414,8 +418,8 @@ async function checkReattach(dir: string): Promise<void> {
       `the answer ends in one blank line: ${JSON.stringify(transcript.slice(-20))}`,
     );
     expect(
-      !transcript.endsWith("\n\n\n"),
-      `no extra blank line at EOF: ${JSON.stringify(transcript.slice(-20))}`,
+      !transcript.includes("Process malebolge"),
+      `no comint process message survives reattach: ${JSON.stringify(transcript)}`,
     );
   } finally {
     emacs.kill();

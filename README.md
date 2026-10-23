@@ -106,7 +106,7 @@ type in the draft and only ever read the transcript.
 | `C-c C-c` | submit the draft as one message |
 | `C-c C-a` | abort the run in progress |
 | `C-c C-m` | compact, optionally with instructions |
-| `C-c C-q` | quit, detaching from the daemon |
+| `C-c C-q` | quit: detach this client; the daemon keeps running |
 | `C-c C-e` | focus the draft (also `RET` in the transcript) |
 | `C-c C-h` | show the key summary |
 
