@@ -197,11 +197,88 @@ connection; `--list` with no daemon → exit 1 after 1.06 s, one stderr line, em
 stdout; and against a fake daemon on a pipe, `--list` wrote exactly `9\n7\n3\n`
 (checked with `od -c`) and exited 0.
 
+## PHASE-03 — Emacs: a target under a prefix argument (2026-10-24)
+
+One commit: the picker behind a prefix argument, in the fixed order list →
+prompt → draft check → detach → attach; the chosen target becomes argv; every
+window follows after the switch; and the smoke's fake daemon learns a `list`
+reply. 12 new ERT cases (24 → 38 by way of two real-process listing cases) and a
+fourth smoke check.
+
+**TDD held: red first for every unit.** Fourteen cases failed for the right
+reason before the seam existed — `void-function` for
+`malebolge--attach-arguments`/`--target-label`/`--conversation-candidates`/
+`--await-exit`, `wrong-number-of-arguments` for `malebolge-attach` without its
+prefix argument — and the smoke check failed by timing out because the fake
+daemon did not yet answer `list`.
+
+Three things the phase learned that the design did not carry:
+
+- **The listing has no reply timeout.** `LIST_WAIT` is a `ConnectWait`
+  (`connectUnixWaiting`), and the listing reader settles on the socket's
+  `close`. A server that accepts `{"type":"list"}` and never answers held the
+  client for **19 s** in a measured repro. EX-2's "so a stopped daemon does not
+  freeze the editor silently" therefore needed the picker's *own* bound:
+  `malebolge--list-timeout` (5 s) with `malebolge--await-listing`, which deletes
+  the client and signals `user-error`. DEC-009's amendment ("DEC-008's short wait
+  bounds the pause") assumed the client bounds the reply; it does not. The
+  client-side fix is filed as **IMP-006** and the shape recorded as
+  `mem.fact.malebolge.list-has-no-reply-timeout` rather than smuggled into this
+  phase.
+- **`call-process` cannot send stderr to a buffer** (Emacs 31: `wrong-type-argument
+  stringp #<buffer …>`; its `(BUFFER STDERR)` form wants a *file name*). So the
+  listing uses `make-process :stderr PIPE` with a `make-pipe-process` whose
+  sentinel is `ignore`. `:stderr BUFFER` works but appends a `Process … stderr
+  finished` line, which would have leaked into the truncation message. The
+  separation is pinned by a case that runs a real `sh`, not by the stub.
+- **`malebolge--follow` is a guarantee, not the mechanism.** `erase-buffer`
+  relocates every window's point marker to `point-min`, which *is* the process
+  mark of the emptied buffer, so comint's own following already satisfies EX-6
+  after a switch. Removing the *call* is therefore unobservable; removing
+  `set-window-point` from the helper is not. The helper stays — DEC-009 mandates
+  it, and it survives a switch that does not erase (RFC-002 step 4's
+  per-conversation buffers) — but the sheet records which mutation is live.
+
+Two smaller decisions a reviewer would otherwise ask about:
+
+- **The stderr notice is emitted after `completing-read` returns.** A `message`
+  before the prompt is replaced by the minibuffer's own prompt before anyone can
+  read it; F-12's intent is that the truncation prose is read.
+- **A targeted failure signals `user-error`; root keeps its `[status]` line.**
+  The shipped root path is byte-identical (its ERT case passes untouched); a
+  chosen target refuses instead, because "the user asked for a specific
+  conversation, and a silent substitute is worse than an empty buffer" (sec-5
+  step 5). `malebolge--start-transcript` carries that difference in `target`
+  itself rather than a second flag.
+
+Mutation checks, each reverted, each caught: draft check moved after the detach
+→ the draft-bearing-switch case; `--attach-arguments` never naming a target →
+the argv cases; a targeted failure writing the shipped `[status]` line → the
+empty-transcript case; `--follow` without `set-window-point` → the follow
+contract case; stderr merged into stdout → the stream-separation case; the
+listing's reply bound widened to 120 s → the bounded-listing case (fails after
+30 s); the fake daemon not answering `list` → the whole smoke check.
+
+Gate at phase end: biome/eslint/tsc clean, `npx vitest run` 1824 passed / 11
+failed — all 11 under `test/runner/` (the container set), `just ert` 38/38,
+`just smoke` 4/4, byte-compile clean with `byte-compile-error-on-warn`.
+`test/structure.test.ts` untouched: no `src/` change.
+
 ## Harvest
 <!-- single-copy: updated in place each harvest; ids only, never restated content -->
-fresh-as-of: 2026-10-24 · PHASE-02 complete · code `50cbb30`, doctrine `aa11889`
+fresh-as-of: 2026-10-24 · PHASE-03 complete · code pending, doctrine pending
 
 ### Produced
+- PHASE-03 done — the Emacs target picker: `malebolge-attach` under a prefix
+  argument in the fixed order list → prompt → draft check → detach → attach,
+  `--conversation N` / `--new` argv, the bounded listing seam with its own
+  timeout, `malebolge--follow`, and the smoke's `list` reply + targeted-argv
+  check (12 new ERT cases, 1 new smoke check).
+- gate re-measured at phase end: lint/tsc/format clean, `just ert` 38/38,
+  `just smoke` 4/4, vitest 11 red, all under `test/runner/` (container).
+- IMP-006 — `--list` bounds its connect but not its reply; the picker's own
+  bound defends Emacs, the client fix is left as work.
+- `mem.fact.malebolge.list-has-no-reply-timeout` — the measurement and its shape.
 - PHASE-02 done — `--list` as its own mode: the renderer's `conversations` case,
   the fourth invocation shape on its own `LIST_WAIT`, the generalised skew
   predicate, `NotListedError` and a reader that accepts exactly two frames
@@ -223,6 +300,17 @@ fresh-as-of: 2026-10-24 · PHASE-02 complete · code `50cbb30`, doctrine `aa1188
   baselined (restamped at phase-plan time, no thread needed refreshing).
 
 ### Learned
+- A `ConnectWait` bounds connecting, not answering: read which promise a named
+  wait is actually handed to before describing it as a timeout for the reply.
+- `malebolge--follow`'s criterion is already satisfied by the erase's marker
+  relocation; when a mutation survives, the mechanism is somewhere else — say so
+  in the sheet rather than adding a second test that also passes either way.
+- `call-process`'s `(BUFFER STDERR)` wants a file name; only `make-process`
+  takes a buffer, and `:stderr BUFFER` pays a sentinel line — a pipe process
+  with `:sentinel #'ignore` is the clean separation.
+- A test whose process "fails fast" proves the wrong thing: `sleep 30 --list`
+  rejects its extra argument immediately, so a bound test on it passes with the
+  bound removed. `sh -c "sleep 30"` is what actually hangs.
 - mem.pattern.malebolge.frame-decoder-before-renderer — a reply no renderer
   knows yet is decoded strictly in its test; do not widen `Printable` early.
   PHASE-02 closed the loop: the same frame is now a `Printable`, its strict
@@ -239,16 +327,21 @@ fresh-as-of: 2026-10-24 · PHASE-02 complete · code `50cbb30`, doctrine `aa1188
   `invocation.mode === "list"` without touching the shipped object.
 
 ### Open
-- No open DEC / QUE / ASM minted by PHASE-02.
+- IMP-006 (above) is the terminal-path fix for the unbounded listing; it also
+  makes the picker's own bound a backstop rather than the only defence.
+- PHASE-04 next, and it is the last phase: `docs/internals.md` sec-Protocol and
+  `README.md` sec-"Which conversation" must describe the frame, `--list`, `C-u
+  M-x malebolge-attach`, the 50-conversation page, and the tree's two README
+  corrections (RV-005 F-9, F-2-docs).
+- No open DEC / QUE / ASM minted by PHASE-02 or PHASE-03.
 - The stdout-completeness sharp edge is recorded, not fixed: if a long listing is
   ever truncated under `process.exit`, the fix is `process.exitCode` plus a
   drained stream in `attach-main`, a change to the shipped client idiom that
   wants its own slice or backlog item rather than a phase.
-- PHASE-03 inherits two seams it needs, not gaps: `--list` prints ids and exits 0
-  (proven against the real daemon) and every listing failure carries
-  `NOT_LISTED`. Its `list` reply goes into the smoke's fake daemon.
-- IMP-003 (one shared fake-daemon fixture) still outside the slice; the Emacs
-  smoke grows its own `list` reply in PHASE-03.
+- PHASE-03's two inherited seams held as promised: `--list` prints ids and exits
+  0, and every listing failure carries `NOT_LISTED`. The smoke's fake daemon now
+  answers `list` itself; IMP-003 (one shared fake-daemon fixture) still sits
+  outside the slice, so each fake grows its own reply.
 - IMP-004 owns the `justfile`'s `biome` override: until it lands `just fmt-check`
   needs the devshell's biome on PATH (a shell without it cannot run the gate).
 - satan ISS-053 (SPEC-002 has no row for the client socket) and ISS-055

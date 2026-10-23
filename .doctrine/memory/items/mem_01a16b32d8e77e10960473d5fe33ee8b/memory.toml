@@ -1,0 +1,46 @@
+memory_uid = "mem_01a16b32d8e77e10960473d5fe33ee8b"
+memory_key = "mem.fact.malebolge.list-has-no-reply-timeout"
+schema_version = 1
+memory_type = "fact"
+status = "active"
+title = "A --list connection has no reply timeout: it settles only when the daemon closes"
+summary = "listConversations bounds only the connect (LIST_WAIT); a daemon that accepts and never answers leaves --list hanging until the socket closes."
+created = "2026-10-23"
+updated = "2026-10-23"
+
+[scope]
+paths = ["src/attach.ts", "emacs/malebolge.el"]
+globs = []
+commands = []
+tags = ["attach", "list"]
+workspace = "default"
+repo = "github.com/davidlee/Malebolge"
+repo_id_kind = "remote"
+repo_id_confidence = "high"
+
+[git]
+anchor_kind = "checkout_state"
+commit = ""
+tree = "bf6d2c511aec5389bc39406b05c1bc600920f994"
+ref_name = "refs/heads/main"
+checkout_state_id = "1d9156cbe0a80ad560508a1f5b7d3737f637c4c1ca69b21df9536aa2f27bb78b"
+base_commit = "96d1e410ebdb594086c9db5afbd9596da9f93e41"
+verified_sha = ""
+normalizer = "forget.checkout.v1"
+
+[review]
+verification_state = "unverified"
+reviewed = ""
+review_by = ""
+
+[trust]
+trust_level = "high"
+
+[ranking]
+severity = "medium"
+weight = 0
+
+[[source]]
+kind = "commit"
+ref = "50cbb30"
+
