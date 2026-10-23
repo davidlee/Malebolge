@@ -34,6 +34,7 @@ entrance_criteria = [
   { id = "EN-1", text = "Design locked: DEC-007..DEC-010 accepted, design.md sec-2/sec-3 at rev 37, SL-002 at lifecycle `plan`." },
   { id = "EN-2", text = "`just check` green on the phase's base commit, and the working tree carries no uncommitted work outside this slice." },
   { id = "EN-3", text = "pi-durable's `scanConversations`, `Page.next` and the positive-only `ConversationQuery` re-read at their sites (research Thread 2 facts 1-3) before `list()` is written: the design rests on one-commit read semantics, not a cached claim." },
+  { id = "EN-4", text = "The gate executes in the working environment: `just fmt-check` runs, which this host's checkout cannot do — `@biomejs/cli-linux-x64/biome` is glibc-linked and the host has no `/lib64/ld-linux-x86-64.so.2`, so it dies with ENOENT while eslint, tsc and vitest work (IMP-001; mem.fact.malebolge.biome-binary-needs-glibc-loader). Run the gate from the flake devshell, or wait for IMP-001 — do not weaken the gate to work around it." },
 ]
 exit_criteria = [
   { id = "EX-1", text = "`parseConnectionMessage` yields a `list` frame only for `{\"type\":\"list\"}` with no other key; `{\"type\":\"list\",\"topic\":\"x\"}` is refused with `list: unknown key topic`. `AttachRefused`/`attachRefused` become `FrameRefused`/`frameRefused(frame, problem)` with message `${frame}: ${problem}`, and every shipped `attach: …` refusal text stays byte-identical (the existing assertions in test/daemon.test.ts and test/protocol.test.ts pass unchanged)." },

@@ -98,7 +98,7 @@ changed; the change was RV-005's own amendments landing after the first stamp,
 not research drift. Every Thread 2 fact was re-read against the tree, all held,
 and the baseline was restamped with that recorded in `research.md`.
 
-**Two implementation risks, named now so the phases carry them.**
+**Three implementation risks, named now so the phases carry them.**
 
 - The page-bound test needs `LIST_PAGE + 1` (51) ownerless conversations. That
   is affordable only because the test harness is the in-memory faux harness —
@@ -108,6 +108,13 @@ and the baseline was restamped with that recorded in `research.md`.
 - `finish` writes and then ends the socket. The tests must assert the reply
   *arrives before* the close (`lineClient`'s `closed()` is the seam), or the
   phase will pass while racing.
+- **The gate does not currently run on this host.** `just fmt-check` dies with
+  ENOENT because `@biomejs/cli-linux-x64/biome` is glibc-linked and the host has
+  no `/lib64` loader; eslint, tsc and vitest are fine. That is IMP-001's symptom,
+  not this slice's bug, and it is why PHASE-01/EN-4 makes gate-executability an
+  entrance condition: a worker that discovers it mid-phase would be tempted to
+  weaken an exit criterion instead of moving to an environment where the gate
+  runs.
 
 **Deliberately out of scope, so a phase cannot drift into it:** sharing one
 fake-daemon fixture between the attach tests and the Emacs smoke (IMP-003 — the

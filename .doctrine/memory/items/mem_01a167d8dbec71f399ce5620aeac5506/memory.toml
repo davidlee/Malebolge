@@ -1,0 +1,46 @@
+memory_uid = "mem_01a167d8dbec71f399ce5620aeac5506"
+memory_key = "mem.fact.malebolge.biome-binary-needs-glibc-loader"
+schema_version = 1
+memory_type = "fact"
+status = "active"
+title = "This host cannot run just check: the checkout's biome binary needs a glibc loader"
+summary = "just fmt-check dies with ENOENT on @biomejs/cli-linux-x64/biome (glibc-linked, no /lib64 loader on this nix host); eslint, tsc and vitest run fine"
+created = "2026-10-23"
+updated = "2026-10-23"
+
+[scope]
+paths = []
+globs = []
+commands = ["just check", "just fmt-check"]
+tags = ["malebolge", "biome", "just check"]
+workspace = "default"
+repo = "github.com/davidlee/Malebolge"
+repo_id_kind = "remote"
+repo_id_confidence = "high"
+
+[git]
+anchor_kind = "checkout_state"
+commit = ""
+tree = "55edea97e1281f8ab7362092a210827215110d2c"
+ref_name = "refs/heads/main"
+checkout_state_id = "2b366cff5f31c9e4cda2fcb70dbd25cf0671d835662086cfdf640cf8a45b4ddf"
+base_commit = "f0f3ff1b31dae8e0e53807d058850dde7ce62b57"
+verified_sha = ""
+normalizer = "forget.checkout.v1"
+
+[review]
+verification_state = "unverified"
+reviewed = ""
+review_by = ""
+
+[trust]
+trust_level = "medium"
+
+[ranking]
+severity = "medium"
+weight = 0
+
+[[source]]
+kind = "issue"
+ref = "IMP-001"
+

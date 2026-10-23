@@ -72,9 +72,29 @@ turn.
 
 `.agents/` (doctrine-installed skills) is deliberately left untracked.
 
+## Plan (2026-10-23)
+
+The user nodded the four-phase decomposition at plan time (`ok, go`), so the
+proposal recorded in the design-lock handover is now the authored plan: daemon /
+client / Emacs / docs, in that order and for the reasons `plan.md` §Sequencing
+gives (a shared frame type, then the `--list` flag contract, then the only
+end-to-end evidence, then a description that needs settled wording).
+
+One documented deviation from the handover proposal: **no fifth gate phase.**
+`just check` is an exit criterion on PHASE-01..03 and `just ert`/`just smoke` on
+PHASE-03..04; a gate phase would have nothing to build.
+
+Two things the plan pins that the design left at the seam, recorded so a phase
+does not re-litigate them: the composition the scope's first done-criterion
+names is proven by **one declared frame type** in `src/protocol.ts` (a shape
+mismatch is a type error), not by shared fixtures — IMP-003 stays outside this
+slice; and the Emacs picker's listing call must be a **stub-able seam**, matching
+how the suite already stubs `make-comint-in-buffer`, so no ERT case needs a live
+socket.
+
 ## Harvest
 <!-- single-copy: updated in place each harvest; ids only, never restated content -->
-fresh-as-of: 2026-10-23 · design locked (run dr-01a16771…, rev 37) · work head ff9b64d · lifecycle `plan`
+fresh-as-of: 2026-10-23 · design locked (run dr-01a16771…, rev 37) · plan authored · lifecycle `ready` · gate note: `just check` unrunnable on this host (IMP-001)
 
 ### Produced
 - DEC-007..DEC-010 — `accepted`; the four inquiry dispositions, each with an
@@ -89,6 +109,14 @@ fresh-as-of: 2026-10-23 · design locked (run dr-01a16771…, rev 37) · work he
 - RV-006 — the narrow verification round, kept as its own record (3 findings,
   re-raised on RV-005 so the run's own pass carries them).
 - `slice-002.md` — scope amended twice: to the RFC-002 refresh, then to RV-005.
+- `plan.toml` — four phases (PHASE-01 daemon, PHASE-02 client, PHASE-03 Emacs,
+  PHASE-04 docs) with EN/EX and structured VT mandates; RV-005's routed findings
+  are cited inline where their evidence lands (F-1, F-11 → 01; F-4, F-2 consumer →
+  02; F-5, F-3 → 03; F-2 docs → 04).
+- `plan.md` — sequencing rationale, plus the critical pass that revised it before
+  materialisation (order preservation, typed composition, stub-able listing seam,
+  two scope criteria given a home: PHASE-03/EX-5 and EX-9).
+- phase sheets — four, materialised from `plan.toml` via `doctrine slice phases`.
 - memories: `mem.pattern.doctrine.mcp-root-follows-session-cwd`,
   `mem.pattern.doctrine.design-run-one-ledger-per-pass`.
 
@@ -99,12 +127,16 @@ fresh-as-of: 2026-10-23 · design locked (run dr-01a16771…, rev 37) · work he
 - A run keeps one RV pass; second rounds reopen it. Section attestations are
   `att-` nodes. Severe findings need a `route`, and a concluded pass cannot be
   amended onto one — reopen, dispose again with `--route`, verify.
+- A research baseline hashes the slice's **intent docs**, so amending `design.md`
+  after the round reports drift even when no fact changed. Re-read the Thread 2
+  sites, record that they held, restamp — a re-round is not owed for that alone.
 
 ### Open
 - No open DEC / QUE / ASM. Every decision is `accepted`; no assumption record
   was needed.
-- Awaiting the user's nod on the **four-phase decomposition** proposed at
-  handover (daemon / client / Emacs / docs), which `/plan` authors.
+- Plan-phase handoff: `/phase-plan` expands the next phase's runtime sheet, then
+  `/execute` (or `/dispatch` for confined workers per phase). PHASE-01 is the
+  entry point; nothing else can start first.
 - `review_pass RV-005 STALE` still prints in the run's status: the pass concluded
   before the final section amendments were attested. Every section's current
   fingerprint is attested, the edge to `locked` was cleared and the design is
