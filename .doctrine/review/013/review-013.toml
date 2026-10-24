@@ -1,0 +1,148 @@
+id    = 13
+slug  = "adversarial-plandesign-pass-on-sl-004-weakest-points"
+title = "Adversarial plan+design pass on SL-004 (weakest points)"
+# no status — a review's status is DERIVED from its findings, so
+# it is never stored (the storage rule forbids derived data in authored files).
+
+[review]
+facet     = "plan"     # scope|design|plan|phase-plan|implementation|code-review|reconciliation
+raiser    = "raiser"
+responder = "responder"
+rounds_base = 0
+contests_base = 0
+
+[target]                   # the outbound `reviews` edge: RV-NNN ──reviews──▶ <ref>
+ref   = "SL-004"
+
+[[finding]]
+id = "F-1"
+status = "open"
+severity = "major"
+title = "Design sec-2 room masking evidence cites a launch path malebolge does not use"
+detail = """
+Design sec-2 says the room daemon is "started through the room user's login shell (pi-env/dist/ssh.js:421)". That is pi-env's sshConnectionFor/launchCommand path, login shell only when options.loginShell === true (ssh.js:405-421). Malebolge builds its own command: src/room/connection.ts:238 [ssh, ...sshArguments(target, true), launch(daemon)], directLaunch = [daemon] (:57), with -o SendEnv=-* (pi-env/dist/ssh.js:65). Production room daemon env is sshd's non-login env for the room user (inference: SATAN_* reaches it only via PAM/pam_env or ~/.ssh/environment). DEC-021 still holds as defence in depth; the stated reason is wrong, and PHASE-02 EX-4's fixture (fake ssh inheriting the test process env) over-approximates production — the plan should say so. Verified by orchestrator at the cited lines. pi review, quotient run-20261024T111155349Z-9.
+"""
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding]]
+id = "F-2"
+status = "open"
+severity = "major"
+title = "Env-build failure semantics unspecified: a failed index read now fails the tool call"
+detail = """
+The hook becomes async and reads the index on every build. A rejected env promise is caught at pi-durable/dist/harness/tool.js:309-329: result isError, task ending failed ("Tool <name> threw"). readIndex can reject (storage error; pi-durable documents.js:78-86 refuses a newer/migrating malebolge.index version). Before SL-004 neither hostEnv nor roomEnv construction could throw. The prompt path instead degrades (generation.js:63-71 passes env undefined; prompt.js falls back to shown). Design sec-3/sec-6 state no policy (propagate vs degrade to empty context) and no criterion covers it. Verified by orchestrator at tool.js:309-329. pi review, quotient run-20261024T111314368Z-10.
+"""
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding]]
+id = "F-3"
+status = "open"
+severity = "major"
+title = "PHASE-02 bundles the type change, host, room and fixture; the room masking risk is not isolated"
+detail = """
+PHASE-02 carries the SessionOptions.env widening, host wiring, room wiring, the harness fixture change, a two-conversation test and three masking/precedence demonstrations. The slice's only MAJOR risk (RV-012 F-1, room half) lands mixed with routine work. Split: host (type change, fixture, host VTs) then room (observedEnv shellEnv, room masking, room per-exec precedence — pi ran the shipped daemon and saw per-exec env win in the room too). Phase ids are immutable: append a new phase, never renumber. pi review, quotient run-20261024T111426219Z-11; room precedence from run-20261024T111155349Z-9.
+"""
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding]]
+id = "F-4"
+status = "open"
+severity = "major"
+title = "Harness fixture contract unspecified; the EnvTarget keyword mandate is vacuous"
+detail = """
+test/harness-fixture.ts:66 is env: ({ cwd }) => new NodeExecutionEnv(...). By parameter contravariance it already typechecks against (target: EnvTarget) => ..., so PHASE-02 VT-4's keyword EnvTarget proves only an annotation. openTestHarness(extensions, fauxOptions?) (:56-68) hardcodes the env, so "through the real daemonEnv" (EX-1, design VT-3, RV-012 F-9) is unbuildable without a new option. EX-1 also never says how conversation B gets a non-default topic: harness.createConversation({ownership:{kind:"ownerless"}, init: assignTopic("...")}, context) (test/topics.test.ts:79-83) and toolResults(harness, conversationB) (harness-fixture.ts:158). Verified by orchestrator. pi review, quotient run-20261024T111426219Z-11.
+"""
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding]]
+id = "F-5"
+status = "open"
+severity = "major"
+title = "PHASE-03: order pattern cannot prove order; section test ripple under-scoped"
+detail = '''
+VT-2's pattern ^\s*conversationExtension, matches at any array position (src/daemon-extensions.ts:24-31 is one literal), so it cannot prove "after cwdExtension"; the order belongs to the daemon-sections test. EX-2 says existing order assertions are "updated" but four exact assertions break: test/daemon-sections.test.ts:87 (keys), :117 (keys), :128 and the re-send sequence from :140 (a stored conversation re-sent every section — rework, not a one-word edit). Verified by orchestrator. pi review, quotient run-20261024T111426219Z-11.
+'''
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding]]
+id = "F-6"
+status = "open"
+severity = "minor"
+title = "observedEnv has two more callers; 'src/runner/ untouched' needs the optional-shellEnv invariant stated"
+detail = """
+observedEnv is also called from src/runner/env.ts:25 and src/room/shell.ts:217. Only an optional shellEnv keeps them unchanged. PHASE-02 EX-5 should state it next to the daemon-start.ts clause. Verified by orchestrator (grep). pi review, quotient run-20261024T111426219Z-11.
+"""
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding]]
+id = "F-7"
+status = "open"
+severity = "minor"
+title = "PHASE-01 VT keywords guess literals the code may spell as constants"
+detail = """
+PHASE-01 VT-1 keyword "malebolge" and VT-2 "default" may be written as a constant (DEFAULT_TOPIC exists in src/topics.ts) giving a false red, or appear incidentally giving a weak floor. Prefer SATAN_HARNESS, assignTopic, DEFAULT_TOPIC. pi review, quotient run-20261024T111426219Z-11.
+"""
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding]]
+id = "F-8"
+status = "open"
+severity = "minor"
+title = "Docs: wrong README home for the six variables; internals.md env diagram goes stale"
+detail = """
+PHASE-03 objective puts the six variables "beside the daemon's own SATAN_* table" — README.md:274-291 is "Configuration — set through environment variables", daemon config; the six are what tools receive (RV-012 F-2), so they need their own subsection. docs/internals.md:36-37 (env(state) -> NodeExecutionEnv(cwd = state.cwd ?? launch dir)) goes stale in PHASE-02 and no criterion covers it. Verified by orchestrator. pi review, quotient run-20261024T111426219Z-11.
+"""
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding]]
+id = "F-9"
+status = "open"
+severity = "minor"
+title = "Masking tests: process.env mutation against a lazy shared daemon"
+detail = """
+EX-2/EX-4 set SATAN_TOPIC on process.env. The room daemon is spawned lazily at first exec and kept by the connection (test/daemon-env.test.ts:139-147; src/room/connection.ts:178-193), and inherits env at spawn. The variable must be set before the first exec on a fresh connection and restored in afterEach; plan notes say restore only. pi review, quotient run-20261024T111155349Z-9.
+"""
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding]]
+id = "F-10"
+status = "open"
+severity = "nit"
+title = "Design sec-3 cost: env is built per request as well as per tool attempt"
+detail = """
+Sec-3 lists env builds per task attempt and nested executeTool. Prompt preparation also builds one (pi-durable harness/generation.js:60), so reads are per tool call and per request. Plan notes already say so; design text lags. pi review, quotient run-20261024T111314368Z-10.
+"""
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+# Findings are append-only `[[finding]]` tables, added by `review raise`.
+# Empty here at creation — a fresh review is Active, awaiting the raiser.
