@@ -133,6 +133,12 @@ export const gitRootDirs = (cwd: string): string[] => {
   }
 };
 
+/** The nearest directory at or above `cwd` holding `.git`, or `undefined` outside a repository. */
+export const gitRootOf = (cwd: string): string | undefined => {
+  const root = gitRootDirs(cwd)[0];
+  return root !== undefined && existsSync(join(root, ".git")) ? root : undefined;
+};
+
 const isRegularFile = async (path: string): Promise<boolean> => {
   try {
     return (await stat(path)).isFile();

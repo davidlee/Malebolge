@@ -4,7 +4,7 @@
 
 import { PassThrough } from "node:stream";
 import { describe, expect, it, onTestFinished } from "vitest";
-import { attachInvocationOf } from "../src/attach-invocation.ts";
+import { attachInvocationOf, isResolved } from "../src/attach-invocation.ts";
 import { context } from "../src/context.ts";
 import { conversations } from "../src/conversations.ts";
 import { encodeLine } from "../src/ndjson.ts";
@@ -29,7 +29,7 @@ function requested(
   const errors = new PassThrough();
   const errorText = collect(errors);
   const invocation = attachInvocationOf(args);
-  if (invocation.mode === undefined) {
+  if (invocation.mode === undefined || !isResolved(invocation)) {
     throw new Error(`${args.join(" ")} attaches rather than requests`);
   }
   const reply = request(

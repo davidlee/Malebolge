@@ -9,6 +9,7 @@ import {
   capSource,
   type ContextSource,
   gitRootDirs,
+  gitRootOf,
   nodeSourceReader,
   projectContextExtension,
   readChainDir,
@@ -232,6 +233,26 @@ describe("gitRootDirs and nodeSourceReader", () => {
       expect(gitRootDirs(root)).toEqual([root]);
     },
   );
+
+  it("gitRootOf is the nearest .git from a nested subdirectory", async () => {
+    const root = await fresh();
+    const repo = join(root, "repo");
+    const cwd = join(repo, "a", "b");
+    await mkdir(join(repo, ".git"), { recursive: true });
+    await mkdir(cwd, { recursive: true });
+    expect(gitRootOf(cwd)).toBe(repo);
+  });
+
+  it("gitRootOf is the root itself when cwd is the root", async () => {
+    const repo = join(await fresh(), "repo");
+    await mkdir(join(repo, ".git"), { recursive: true });
+    expect(gitRootOf(repo)).toBe(repo);
+  });
+
+  // tmp may itself sit under a repo, which would then be the root found above it.
+  it.skipIf(underRepo(tmpdir()))("gitRootOf is undefined with no .git above", async () => {
+    expect(gitRootOf(await fresh())).toBeUndefined();
+  });
 
   it("reads AGENTS.md through a symlink", async () => {
     const dir = await fresh();

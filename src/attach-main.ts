@@ -2,16 +2,23 @@
 // malebolge-attach: a line client of the running daemon.
 
 import { attach } from "./attach.ts";
-import { type AttachInvocation, attachInvocationOf, UsageError } from "./attach-invocation.ts";
+import {
+  type AttachInvocation,
+  attachInvocationOf,
+  HereRefusedError,
+  resolveHere,
+  type ResolvedInvocation,
+  UsageError,
+} from "./attach-invocation.ts";
 import { attachSocket } from "./config.ts";
 import { createRenderer } from "./render.ts";
 import { frameOf, replyTypeOf, request } from "./request.ts";
 import { codeOf } from "./unix-socket.ts";
 
 const USAGE = [
-  "usage: malebolge-attach [--list [--topic NAME]] | [--topics]",
-  " | [--set-topic NAME [--dir DIR | --no-dir]]",
-  " | [--conversation N | --new [--cwd DIR] | --topic NAME [--new [--cwd DIR]]] [--emacs]",
+  "usage: malebolge-attach [--list [--topic NAME | --here]] | [--topics]",
+  " | [--set-topic NAME [--dir DIR | --no-dir | --here]]",
+  " | [--conversation N | --new [--cwd DIR] | --topic NAME | --here] [--new [--cwd DIR]] [--emacs]",
 ].join("\n");
 
 /** The invocation the command line names; a refusal is one line and exit 2, before any connect. */
@@ -27,9 +34,26 @@ function invocationOf(args: string[]): AttachInvocation {
   }
 }
 
+/** `--here` resolved against the answering daemon; a refusal is one line and exit 1, before any frame. */
+async function resolved(
+  invocation: AttachInvocation,
+  socketPath: string,
+): Promise<ResolvedInvocation> {
+  try {
+    return await resolveHere(invocation, socketPath);
+  } catch (error) {
+    if (!(error instanceof HereRefusedError)) {
+      throw error;
+    }
+    process.stderr.write(`${error.message}\n`);
+    process.exit(1);
+  }
+}
+
 try {
-  const invocation = invocationOf(process.argv.slice(2));
+  const parsed = invocationOf(process.argv.slice(2));
   const socketPath = attachSocket(process.env);
+  const invocation = await resolved(parsed, socketPath);
   if (invocation.mode === undefined) {
     await attach(socketPath, process.stdin, process.stdout, invocation);
   } else {

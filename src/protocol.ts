@@ -35,15 +35,16 @@ export interface ErrorMessage {
 }
 
 /**
- * The conversation an `attach` frame names; nothing is created before it parses.
- * A topic target names no id: it binds that topic's latest conversation, or
- * creates its first when `new` asks for one.
+ * Where an `attach` frame points: the conversation an `attach` frame names,
+ * which nothing creates before it parses; only a client's unresolved parse
+ * parameterises the name. A topic target names no id: it binds that topic's
+ * latest conversation, or creates its first when `new` asks for one.
  */
-export type AttachTarget =
+export type AttachTarget<T = string> =
   | { kind: "root" }
   | { kind: "existing"; id: number }
   | { kind: "new"; cwd?: string }
-  | { kind: "topic"; name: string; new: boolean; cwd?: string };
+  | { kind: "topic"; name: T; new: boolean; cwd?: string };
 
 export interface AttachMessage {
   type: "attach";
