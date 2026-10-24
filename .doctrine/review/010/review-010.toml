@@ -24,7 +24,7 @@ ref   = "SL-003"
 
 [[finding]]
 id = "F-1"
-status = "open"
+status = "verified"
 severity = "major"
 title = "Expected an unwritten topic named `constructor` refused like any other; observed it passes the existence check, creates an orphaned conversation, and can never be written"
 detail = """
@@ -40,14 +40,30 @@ Reproduced (scratchpad proto.mts, real memory harness, fresh store):
 
 Fix: `Object.hasOwn` at every `index.topics[...]` read (or null-prototype maps); add `constructor` to the name tests.
 """
+disposition = "fix-now"
+response = """
+Fix in SL-003 before /audit (user agreed 2026-10-24); test-first where behavioural.
+"""
 
 [[finding.turn]]
 act = "raise"
 role = "raiser"
 
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+response = """
+Fix in SL-003 before /audit (user agreed 2026-10-24); test-first where behavioural.
+"""
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+
 [[finding]]
 id = "F-2"
-status = "open"
+status = "verified"
 severity = "major"
 title = 'Expected backfill to write `{topic:"default", parent?}` (design backfill step 2); observed it never writes `parent`, so pre-index forks lose their lineage'
 detail = """
@@ -60,14 +76,30 @@ Live impact: the room daemon restarted on this code 2026-10-24 19:35, so backfil
 
 Nothing reads `parent` today; D4 builds on it.
 """
+disposition = "fix-now"
+response = """
+Fix in SL-003 before /audit (user agreed 2026-10-24); test-first where behavioural.
+"""
 
 [[finding.turn]]
 act = "raise"
 role = "raiser"
 
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+response = """
+Fix in SL-003 before /audit (user agreed 2026-10-24); test-first where behavioural.
+"""
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+
 [[finding]]
 id = "F-3"
-status = "open"
+status = "verified"
 severity = "major"
 title = "Expected `--topic NAME` with `--dir`/`--no-dir` refused at parse (exit 2, like bare `--dir`); observed both accepted and the flag silently dropped"
 detail = """
@@ -80,14 +112,30 @@ Failure: `--topic work --new --dir ~/repo` (confusing --dir with --cwd) silently
 Test gap: test/attach-invocation.test.ts:74-75 covers only bare `--dir`/`--no-dir`.
 Fix: hoist the dir/no-dir check above the topic branches; add both pairs to the refusal table.
 """
+disposition = "fix-now"
+response = """
+Fix in SL-003 before /audit (user agreed 2026-10-24); test-first where behavioural.
+"""
 
 [[finding.turn]]
 act = "raise"
 role = "raiser"
 
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+response = """
+Fix in SL-003 before /audit (user agreed 2026-10-24); test-first where behavioural.
+"""
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+
 [[finding]]
 id = "F-4"
-status = "open"
+status = "verified"
 severity = "minor"
 title = "Expected a request to settle once — an error refuses it; observed an error followed by a matching reply resolves (exit 0 with `[error: …]` on stderr)"
 detail = """
@@ -98,14 +146,30 @@ Reachability: today's daemon `finish()` (src/daemon.ts:75-84) sends exactly one 
 Verified by reviewer script against a fake daemon (both orders resolved).
 Fix: early-return in `handleRequestFrame` when failure is set or already answered.
 """
+disposition = "fix-now"
+response = """
+Fix in SL-003 before /audit (user agreed 2026-10-24); test-first where behavioural.
+"""
 
 [[finding.turn]]
 act = "raise"
 role = "raiser"
 
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+response = """
+Fix in SL-003 before /audit (user agreed 2026-10-24); test-first where behavioural.
+"""
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+
 [[finding]]
 id = "F-5"
-status = "open"
+status = "verified"
 severity = "minor"
 title = 'Expected a malformed daemon line to end the client with one error line and exit 1 (README:140-147 "never a stack trace"); observed an uncaught SyntaxError'
 detail = """
@@ -113,14 +177,30 @@ src/request.ts:179 `handleRequestFrame(state, JSON.parse(line))` inside the `dat
 Carried over, not introduced: a7ec48f src/attach.ts:549 (listing path) had the same unguarded parse; src/attach.ts still has it on the interactive path.
 Fix: parse in a try; on failure treat as a failed request (notice + RequestFailedError). Consider fixing the interactive path in the same change.
 """
+disposition = "fix-now"
+response = """
+Fix in SL-003 before /audit (user agreed 2026-10-24); test-first where behavioural.
+"""
 
 [[finding.turn]]
 act = "raise"
 role = "raiser"
 
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+response = """
+Fix in SL-003 before /audit (user agreed 2026-10-24); test-first where behavioural.
+"""
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+
 [[finding]]
 id = "F-6"
-status = "open"
+status = "verified"
 severity = "minor"
 title = "Expected attaching to a topic with no conversations to start exactly one; observed two concurrent attaches each start one"
 detail = """
@@ -129,14 +209,39 @@ Reproduced (scratchpad race.ts): `Promise.all` of two `open({kind:"topic",name:"
 Failure: two terminals/Emacs + terminal `--topic work` at once on an empty topic bind different conversations; the older one is no longer "latest".
 Fix: an in-process per-topic mutex around the find-or-create (one daemon owns the store), or record the gap as accepted in sec-3.
 """
+disposition = "fix-now"
+response = """
+Fixed: `serially(openTopic)` in src/conversations.ts runs topic find-or-create one at a time per daemon (`conversations()` is built once, src/daemon-start.ts:97). Test: "starts one conversation when two attaches race on an empty topic".
+"""
 
 [[finding.turn]]
 act = "raise"
 role = "raiser"
 
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+response = """
+Fix now: per-topic in-process lock around openTopic's find-or-create (one daemon owns the store), with the concurrent-attach test (user took the recommendation 2026-10-24).
+"""
+
+[[finding.turn]]
+act = "amend"
+role = "responder"
+note = "Implemented as one serial queue over all topic opens, not one lock per topic: simpler, and contention between topic attaches is negligible."
+disposition = "fix-now"
+response = """
+Fixed: `serially(openTopic)` in src/conversations.ts runs topic find-or-create one at a time per daemon (`conversations()` is built once, src/daemon-start.ts:97). Test: "starts one conversation when two attaches race on an empty topic".
+"""
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+
 [[finding]]
 id = "F-7"
-status = "open"
+status = "verified"
 severity = "minor"
 title = "Expected the backfill test to exercise paging and forks; observed 3 conversations (< BACKFILL_PAGE=64) and no fork"
 detail = """
@@ -144,14 +249,30 @@ test/topics.test.ts:248-296 creates 3 conversations; BACKFILL_PAGE is 64 (src/to
 Reviewer script confirmed paging works at 203 conversations: a coverage gap, not a paging bug.
 Fix: >64 conversations including a fork; assert the fork's `parent` and that a second run commits nothing.
 """
+disposition = "fix-now"
+response = """
+Fix in SL-003 before /audit (user agreed 2026-10-24); test-first where behavioural.
+"""
 
 [[finding.turn]]
 act = "raise"
 role = "raiser"
 
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+response = """
+Fix in SL-003 before /audit (user agreed 2026-10-24); test-first where behavioural.
+"""
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+
 [[finding]]
 id = "F-8"
-status = "open"
+status = "verified"
 severity = "minor"
 title = "Expected the BACKFILL_PAGE comment to be true; observed it claims one commit never reads the whole store, while backfill reads every page inside one commit"
 detail = """
@@ -159,14 +280,30 @@ src/topics.ts:46 "small, so one commit never reads the whole store at once". bac
 Consequence: each daemon start scans the whole conversations table (subagent conversations included) before `resume()` — O(N) startup work, even when nothing is unindexed. Acceptable, but the comment states the opposite of the mechanism.
 Fix: correct the comment (paging bounds each storage read, not the commit); optionally keep ids, not records.
 """
+disposition = "fix-now"
+response = """
+Fix in SL-003 before /audit (user agreed 2026-10-24); test-first where behavioural.
+"""
 
 [[finding.turn]]
 act = "raise"
 role = "raiser"
 
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+response = """
+Fix in SL-003 before /audit (user agreed 2026-10-24); test-first where behavioural.
+"""
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+
 [[finding]]
 id = "F-9"
-status = "open"
+status = "verified"
 severity = "minor"
 title = "Expected the default `--here` git-root wiring to be tested; observed every resolveHere test injects the gitRoot seam"
 detail = """
@@ -174,14 +311,30 @@ src/attach-invocation.ts:391 default `gitRoot = () => gitRootOf(process.cwd())`.
 The past bug (lookup returning cwd) is now covered at unit level — `gitRootOf` tests from a subdirectory, the root, and no .git (test/project-context.test.ts:237-255). But a regression of line 391 itself (e.g. back to `() => process.cwd()`) passes the suite — exactly the shape mem.pattern.malebolge.injected-seam-needs-real-test names.
 Fix: one test that chdirs into a temp repo subdirectory and calls resolveHere without the seam.
 """
+disposition = "fix-now"
+response = """
+Fix in SL-003 before /audit (user agreed 2026-10-24); test-first where behavioural.
+"""
 
 [[finding.turn]]
 act = "raise"
 role = "raiser"
 
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+response = """
+Fix in SL-003 before /audit (user agreed 2026-10-24); test-first where behavioural.
+"""
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+
 [[finding]]
 id = "F-10"
-status = "open"
+status = "verified"
 severity = "minor"
 title = "Expected `--here` matching to be documented as exact physical-path equality; observed a topic dir written with a trailing slash or via a symlink silently never matches"
 detail = """
@@ -190,28 +343,60 @@ Verified by reviewer script: topic dir `.../repo/` or `.../link/repo` → `no to
 This follows the design/README "exactly" rule, so it is not a code defect, but the trap is undocumented. The client cannot normalise (room paths are not the client's).
 Fix: README sentence — `--here` compares the symlink-resolved git root; `--set-topic NAME --here` writes one that matches.
 """
-
-[[finding.turn]]
-act = "raise"
-role = "raiser"
-
-[[finding]]
-id = "F-11"
-status = "open"
-severity = "minor"
-title = "Expected the usage text to describe accepted attach forms; observed `--new [--cwd DIR]` twice, implying `--conversation N --new` is valid"
-detail = """
-src/attach-main.ts:21 `[--conversation N | --new [--cwd DIR] | --topic NAME | --here] [--new [--cwd DIR]] [--emacs]`. The trailing group suggests `--conversation N --new`, which is refused. Seen live in VH-1 output.
-Fix: `[--conversation N | [--topic NAME | --here] [--new [--cwd DIR]] | --new [--cwd DIR]] [--emacs]`, or one line per mode.
+disposition = "fix-now"
+response = """
+Fix in SL-003 before /audit (user agreed 2026-10-24); test-first where behavioural.
 """
 
 [[finding.turn]]
 act = "raise"
 role = "raiser"
 
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+response = """
+Fix in SL-003 before /audit (user agreed 2026-10-24); test-first where behavioural.
+"""
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+
+[[finding]]
+id = "F-11"
+status = "verified"
+severity = "minor"
+title = "Expected the usage text to describe accepted attach forms; observed `--new [--cwd DIR]` twice, implying `--conversation N --new` is valid"
+detail = """
+src/attach-main.ts:21 `[--conversation N | --new [--cwd DIR] | --topic NAME | --here] [--new [--cwd DIR]] [--emacs]`. The trailing group suggests `--conversation N --new`, which is refused. Seen live in VH-1 output.
+Fix: `[--conversation N | [--topic NAME | --here] [--new [--cwd DIR]] | --new [--cwd DIR]] [--emacs]`, or one line per mode.
+"""
+disposition = "fix-now"
+response = """
+Fix in SL-003 before /audit (user agreed 2026-10-24); test-first where behavioural.
+"""
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+response = """
+Fix in SL-003 before /audit (user agreed 2026-10-24); test-first where behavioural.
+"""
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+
 [[finding]]
 id = "F-12"
-status = "open"
+status = "verified"
 severity = "minor"
 title = "Expected a test that a `topic` write frame on a bound connection is refused and writes nothing; observed only `list` frames tested"
 detail = """
@@ -219,56 +404,120 @@ test/daemon.test.ts:762-775 sends `{type:"list"}` and `{type:"list",page:2}` aft
 Behaviour is correct today (`isFirstLineFrame` derives from `FIRST_LINE` via Object.hasOwn), but a narrowing of that check would let a later `topic` line write the index with no test failing.
 Fix: add `{type:"topic",name:"work"}` and `{type:"attach",topic:"work"}` to the loop and assert the index's topics are unchanged.
 """
+disposition = "fix-now"
+response = """
+Fix in SL-003 before /audit (user agreed 2026-10-24); test-first where behavioural.
+"""
 
 [[finding.turn]]
 act = "raise"
 role = "raiser"
 
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+response = """
+Fix in SL-003 before /audit (user agreed 2026-10-24); test-first where behavioural.
+"""
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+
 [[finding]]
 id = "F-13"
-status = "open"
+status = "verified"
 severity = "nit"
 title = "Expected README skew contract to cover sec-5 skew shapes; observed it names only `unknown message type` for `attach`/`list`"
 detail = """
 README:222-229 describes `unknown message type "<frame>"` naming `attach` or `list`; omits the `topic` frame and the unknown-key form (`<frame>: unknown key topic[s]`) that `skewOf` also recognises, and the hint now names a feature (`topic`/`topics`). README:144-145 still "a daemon that predates `list`". The hint string itself matches (src/request.ts:74-75).
 Fix: add the unknown-key shape; say `<feature>` not `<frame>`.
 """
-
-[[finding.turn]]
-act = "raise"
-role = "raiser"
-
-[[finding]]
-id = "F-14"
-status = "open"
-severity = "nit"
-title = "Expected `attach --here` to wait for a starting daemon like a plain attach (10 s); observed resolveHere uses the 1 s listing wait"
-detail = """
-src/attach-invocation.ts:400-402 resolves with `LIST_WAIT` (:417, 1 s); a plain attach uses DEFAULT_WAIT (src/attach.ts:266, 10 s). Right after `malebolge-start`, `attach --here` can fail where `attach --topic X` would have waited. Read, not run.
-Fix: pass the attach's wait when resolving `--here` for an attach.
+disposition = "fix-now"
+response = """
+Fix in SL-003 before /audit (user agreed 2026-10-24); test-first where behavioural.
 """
 
 [[finding.turn]]
 act = "raise"
 role = "raiser"
 
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+response = """
+Fix in SL-003 before /audit (user agreed 2026-10-24); test-first where behavioural.
+"""
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+
+[[finding]]
+id = "F-14"
+status = "verified"
+severity = "nit"
+title = "Expected `attach --here` to wait for a starting daemon like a plain attach (10 s); observed resolveHere uses the 1 s listing wait"
+detail = """
+src/attach-invocation.ts:400-402 resolves with `LIST_WAIT` (:417, 1 s); a plain attach uses DEFAULT_WAIT (src/attach.ts:266, 10 s). Right after `malebolge-start`, `attach --here` can fail where `attach --topic X` would have waited. Read, not run.
+Fix: pass the attach's wait when resolving `--here` for an attach.
+"""
+disposition = "fix-now"
+response = """
+Fix in SL-003 before /audit (user agreed 2026-10-24); test-first where behavioural.
+"""
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+response = """
+Fix in SL-003 before /audit (user agreed 2026-10-24); test-first where behavioural.
+"""
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+
 [[finding]]
 id = "F-15"
-status = "open"
+status = "verified"
 severity = "nit"
 title = "Expected `--topics` output to be one `NAME<TAB>DIR` record per line; observed a directory containing newline or tab breaks the records"
 detail = '''
 `cwd` is an opaque string (DEC-107; docs/internals.md:133-137); src/render.ts prints `name\tcwd` raw. A directory with `\n`/`\t` yields extra/broken lines on a stdout README says scripts can read. Names are constrained, directories not. Low likelihood (only a deliberate `--dir`).
 Fix: refuse control characters in `cwd` at the `topic` frame parse, or escape on output.
 '''
+disposition = "fix-now"
+response = """
+Fix now: refuse control characters in a topic frame's cwd at parse, so --topics stays one record per line (user took the recommendation 2026-10-24).
+"""
 
 [[finding.turn]]
 act = "raise"
 role = "raiser"
 
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+response = """
+Fix now: refuse control characters in a topic frame's cwd at parse, so --topics stays one record per line (user took the recommendation 2026-10-24).
+"""
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+
 [[finding]]
 id = "F-16"
-status = "open"
+status = "verified"
 severity = "nit"
 title = "Expected one line-wiring helper and distinct names; observed wireRequest cloning attach wire, two different `frameOf`s, and a hard-wired stderr"
 detail = """
@@ -277,14 +526,30 @@ detail = """
 - `resolveHere` hard-wires `process.stderr` (attach-invocation.ts:402) where every other path takes `errors`.
 - the socket `error` handler drops the cause, so ECONNRESET surfaces only as "closed before the request was answered".
 """
+disposition = "fix-now"
+response = """
+Fix in SL-003 before /audit (user agreed 2026-10-24); test-first where behavioural.
+"""
 
 [[finding.turn]]
 act = "raise"
 role = "raiser"
 
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+response = """
+Fix in SL-003 before /audit (user agreed 2026-10-24); test-first where behavioural.
+"""
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+
 [[finding]]
 id = "F-17"
-status = "open"
+status = "verified"
 severity = "nit"
 title = "Expected loose result typing to be tight; observed `answer` takes `Promise<unknown>`, `ListResult` discriminated by Array.isArray, `cwd` type check duplicated"
 detail = """
@@ -292,27 +557,59 @@ detail = """
 - src/conversations.ts `ListResult = ConversationPage | readonly NamedTopic[]` told apart by `Array.isArray`; tag it like `ListQuery`, or split a `topics()` method.
 - src/protocol.ts:183 and :209 each check `typeof cwd !== "string"` → `cwd must be a string`; one helper.
 """
-
-[[finding.turn]]
-act = "raise"
-role = "raiser"
-
-[[finding]]
-id = "F-18"
-status = "open"
-severity = "nit"
-title = "Expected design sec-5 step 1 git-root mechanism to match code; observed `.git` directory walk instead of `git rev-parse --show-toplevel`"
-detail = """
-design.md:330 names `git rev-parse --show-toplevel`; src/project-context.ts:137-140 `gitRootOf` walks up for `.git`. Same result for repos, worktrees, submodules; differs under GIT_DIR/GIT_WORK_TREE or a stray `.git`. Amend the design text at reconcile.
+disposition = "fix-now"
+response = """
+Fix in SL-003 before /audit (user agreed 2026-10-24); test-first where behavioural.
 """
 
 [[finding.turn]]
 act = "raise"
 role = "raiser"
 
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+response = """
+Fix in SL-003 before /audit (user agreed 2026-10-24); test-first where behavioural.
+"""
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+
+[[finding]]
+id = "F-18"
+status = "verified"
+severity = "nit"
+title = "Expected design sec-5 step 1 git-root mechanism to match code; observed `.git` directory walk instead of `git rev-parse --show-toplevel`"
+detail = """
+design.md:330 names `git rev-parse --show-toplevel`; src/project-context.ts:137-140 `gitRootOf` walks up for `.git`. Same result for repos, worktrees, submodules; differs under GIT_DIR/GIT_WORK_TREE or a stray `.git`. Amend the design text at reconcile.
+"""
+disposition = "design-wrong"
+response = """
+Design is wrong, code stays: sec-5 step 1 should name the .git walk gitRootOf performs. Amend at /reconcile.
+"""
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "design-wrong"
+response = """
+Design is wrong, code stays: sec-5 step 1 should name the .git walk gitRootOf performs. Amend at /reconcile.
+"""
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+
 [[finding]]
 id = "F-19"
-status = "open"
+status = "verified"
 severity = "nit"
 title = "Expected test names to match what they assert; observed several that overstate"
 detail = """
@@ -322,36 +619,84 @@ detail = """
 - test/daemon.test.ts:893 "not the client's" — no client profile to contrast.
 - test/topics.test.ts:156-168 hook-throw test installs its own throwing hook: it proves pi-durable's rollback contract, not `indexConversation`; name it as a contract test.
 """
+disposition = "fix-now"
+response = """
+Fix in SL-003 before /audit (user agreed 2026-10-24); test-first where behavioural.
+"""
 
 [[finding.turn]]
 act = "raise"
 role = "raiser"
 
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+response = """
+Fix in SL-003 before /audit (user agreed 2026-10-24); test-first where behavioural.
+"""
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+
 [[finding]]
 id = "F-20"
-status = "open"
+status = "verified"
 severity = "nit"
 title = "Expected one storage owner per file in tests; observed backfill test opening a second harness while the first is open"
 detail = """
 test/topics.test.ts:259 opens `before`; :274 and :285 open the same SQLite path while `before` stays open until :290. pi-durable README: "One process owns a storage at a time". Works under WAL today; relies on unpromised behaviour.
 Fix: close `before.harness` before `openSession`.
 """
+disposition = "fix-now"
+response = """
+Fix in SL-003 before /audit (user agreed 2026-10-24); test-first where behavioural.
+"""
 
 [[finding.turn]]
 act = "raise"
 role = "raiser"
 
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+response = """
+Fix in SL-003 before /audit (user agreed 2026-10-24); test-first where behavioural.
+"""
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+
 [[finding]]
 id = "F-21"
-status = "open"
+status = "verified"
 severity = "nit"
 title = "Expected parseFirstLineFrame tests to add coverage; observed they largely repeat the parseConnectionMessage table"
 detail = """
 test/protocol.test.ts:259-319 repeats the list/topic/refusal rows of :111-160. Keep the cases specific to the `undefined` (not-a-first-line-frame) return; drop the copies.
 """
+disposition = "fix-now"
+response = """
+Fix in SL-003 before /audit (user agreed 2026-10-24); test-first where behavioural.
+"""
 
 [[finding.turn]]
 act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+response = """
+Fix in SL-003 before /audit (user agreed 2026-10-24); test-first where behavioural.
+"""
+
+[[finding.turn]]
+act = "verify"
 role = "raiser"
 
 # Findings are append-only `[[finding]]` tables, added by `review raise`.

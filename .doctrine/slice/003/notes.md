@@ -128,7 +128,7 @@ Incidental:
 
 ## Harvest
 <!-- single-copy: updated in place each harvest; ids only, never restated content -->
-fresh-as-of: 2026-10-24 · PHASE-01..06 completed (VH-1 passed, § VH-1 live session) · head b895f5a · next: cross-model /code-review, then /audit
+fresh-as-of: 2026-10-24 · PHASE-01..06 completed; RV-010 code review done (21 findings, all fixed/verified) · next: restart both daemons onto the fixes, then /audit
 
 ### Produced
 - design locked 2026-10-24 (RV-008), regressed for the planning-time amendment, relocked (RV-009, rev 49) — each on the user's section review, `conducted` disposition and acceptance
@@ -142,6 +142,7 @@ fresh-as-of: 2026-10-24 · PHASE-01..06 completed (VH-1 passed, § VH-1 live ses
 - scope `slice-003.md` amended to the decisions; selector `src/daemon-start.ts` → design-target
 - implementation (capsule-driver seat, workers = quotient `pi_agent` deepseek-flash `implement`): PHASE-01 64aa25f · PHASE-02 97aa60a · PHASE-03 d251fb3 · PHASE-04 3d80a8f (extraction) + 95f36aa · PHASE-05 76839f2 · PHASE-06 docs b053e1f. Host `just check` green at each (2053 tests at head); `just ert`/`just smoke` green from PHASE-04
 - IMP-010 (pager duplication); IMP-006 and mem.fact.malebolge.list-has-no-reply-timeout updated for `request`/`REQUEST_FAILED`
+- RV-010: Claude code review (user chose Claude over Codex), 4 parallel reviewers, 21 findings (3 major, 9 minor, 9 nit), all fix-now except F-18 design-wrong; fixed test-first, `just check` 2062 green, `just ert` 38/38, `just smoke` green
 - two friction observations (quotient ceilings vs phase size; no biome in the write jail)
 
 ### Learned
@@ -158,5 +159,7 @@ fresh-as-of: 2026-10-24 · PHASE-01..06 completed (VH-1 passed, § VH-1 live ses
 - design sec-5's flag table omits `--set-topic NAME --here`, which the code accepts and PHASE-05 EX-3 requires — add at reconcile (PHASE-06 docs pass)
 - `~/satan-corpus/prompts/env/host.txt` (user-authored at VH-1) states the working directory as the daemon's launch dir; it is the conversation's (set at creation from `--cwd` or the topic's directory, else the launch dir). Corpus fix, user's call
 - VH-1 skew check not run (no older daemon at hand) — dispose at audit
-- review depth: all code by deepseek-flash; orchestrator review was VA-1-targeted, not line-by-line. A dedicated cross-model `/code-review` before `/audit` is recommended (user agreed 2026-10-24)
+- RV-010 drift owed at reconcile: design sec-4 `topic` row gains `cwd must not contain a control character` (F-15); sec-5 step 1 names `.git` walk, not `git rev-parse` (F-18); backfill step 2 also merges a missing `parent` into existing entries (F-2 repair); sec-3 records topic opens serialised daemon-wide (F-6)
+- after the RV-010 fix commit: restart `malebolge-room` (repairs the room store's parentless pre-index forks at backfill) and the host daemon
+- ISS-001 — interactive attach throws on a JSON line that is not an event (pre-existing; found at RV-010 F-5)
 - IMP-010 — share the `scanConversations` pager (PHASE-01 copied `durable-ids`'s loop)
