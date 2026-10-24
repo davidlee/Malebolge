@@ -102,6 +102,8 @@ export async function checkBaseRef(
 export interface CommitInfo {
   oid: string;
   subject: string;
+  /** The full message, subject and body, as git stores it. */
+  message: string;
 }
 
 export interface Diffstat {
@@ -163,12 +165,30 @@ async function changedPaths(quarantine: string, range: string): Promise<string[]
   return [...new Set(nulFields(stdout))];
 }
 
+/**
+ * Each commit in `range`, oldest first. Two NUL-separated fields a commit, `%H %s` then `%B`,
+ * read in pairs rather than through `nulFields`: an empty message is a field too.
+ */
 async function commitsIn(quarantine: string, range: string): Promise<CommitInfo[]> {
-  const { stdout } = await runGit(quarantine, ["log", "-z", "--reverse", "--format=%H %s", range]);
-  return nulFields(stdout).map((line) => {
-    const space = line.indexOf(" ");
-    return { oid: line.slice(0, space), subject: line.slice(space + 1) };
-  });
+  const { stdout } = await runGit(quarantine, [
+    "log",
+    "-z",
+    "--reverse",
+    "--format=%H %s%x00%B",
+    range,
+  ]);
+  const fields = stdout.split("\0");
+  const commits: CommitInfo[] = [];
+  for (let at = 0; at + 1 < fields.length; at += 2) {
+    const head = fields[at] ?? "";
+    const space = head.indexOf(" ");
+    commits.push({
+      oid: head.slice(0, space),
+      subject: head.slice(space + 1),
+      message: fields[at + 1] ?? "",
+    });
+  }
+  return commits;
 }
 
 /** A `--shortstat` count, 0 when git leaves that part out. */

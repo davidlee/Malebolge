@@ -123,6 +123,22 @@ describe("the quarantine reader: facts over base..reviewed", () => {
     expect(facts.diffstat).toEqual({ files: 1, insertions: 1, deletions: 0 });
   });
 
+  it("gives each commit its full message, body included, an empty one too", async () => {
+    const repo = tempRepo();
+    const base = repo.git("rev-parse", "HEAD");
+    repo.commit("src/a.ts");
+    repo.git("commit", "--quiet", "--allow-empty", "--allow-empty-message", "-m", "");
+    repo.git("commit", "--quiet", "--allow-empty", "-m", "fix the walk", "-m", "Why:\n- it looped");
+    const tip = repo.git("rev-parse", "HEAD");
+    const facts = await inspect(repo.path, base, tip);
+    expect(facts.commits.map(({ subject, message }) => [subject, message])).toEqual([
+      ["add src/a.ts", "add src/a.ts\n"],
+      ["", ""],
+      ["fix the walk", "fix the walk\n\nWhy:\n- it looped\n"],
+    ]);
+    expect(facts.commits.at(-1)?.oid).toBe(tip);
+  });
+
   it("lists the paths a merge commit brings in", async () => {
     const repo = tempRepo();
     const base = repo.git("rev-parse", "HEAD");

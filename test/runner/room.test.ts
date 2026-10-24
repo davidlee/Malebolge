@@ -703,14 +703,14 @@ describe("collection: a clean job", () => {
       quarantine: world.quarantine.path,
       quarantineRef: job.quarantineRef,
       reviewedOid: tip,
-      commits: [{ oid: tip, subject: "add src/a.ts" }],
+      commits: [{ oid: tip, subject: "add src/a.ts", message: "add src/a.ts\n" }],
       diffstat: { files: 1, insertions: 1, deletions: 0 },
     });
     expect(resultBody(job, collected)).toMatchObject({
       baseOid: world.base,
       reviewedOid: tip,
       quarantine: world.quarantine.path,
-      commits: [{ oid: tip, subject: "add src/a.ts" }],
+      commits: [{ oid: tip, subject: "add src/a.ts", message: "add src/a.ts\n" }],
       diffstat: { files: 1, insertions: 1, deletions: 0 },
     });
     expect(await lastPayload(world, "transition")).toMatchObject({
