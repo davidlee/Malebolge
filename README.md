@@ -119,15 +119,38 @@ and `M->` resumes following. `[tool]` and `[status]` lines are coloured
 
 **Which conversation.** The client sends its choice when it connects, and
 prints `[attached to conversation N]` once the daemon accepts it; that `N` is
-what `--conversation` takes. With no flag the client attaches to root. The
-flags go to the program directly — `just attach` and `M-x malebolge-attach`
-accept none, so both stay on root:
+what `--conversation` takes. With no flag the client attaches to root, so a
+plain `malebolge-attach` — and `just attach` — always reaches root, whatever a
+listing below does or does not show. pi-durable's `ROOT_CONVERSATION_ID`
+(id 1) is the explicit spelling of that root, for a caller that would rather
+name it than rely on the default.
+
+There are two ways to choose. `C-u M-x malebolge-attach` asks the daemon which
+conversations this store holds, then prompts with those ids newest first, plus
+`new`; the one you pick is the one it attaches to. In a terminal, or from a
+script, ask for the list yourself and pass the id:
 
 ```sh
+node src/attach-main.ts --list             # this store's ids, newest first
 node src/attach-main.ts --conversation N   # conversation N
 node src/attach-main.ts --new              # a new one, in the daemon's cwd
 node src/attach-main.ts --new --cwd DIR    # a new one whose cwd is DIR
 ```
+
+`--list` prints ids only, one per line, on standard output, and exits 0. It
+takes no other flag: `--list` with `--conversation`, `--new`, `--cwd` or
+`--emacs` is one usage line and exit 2, before any connection is made. A
+listing that fails — no daemon, or one that predates `list` — prints one line
+and exits 1, never a stack trace. Its connect budget is one second, not the
+attach client's ten seconds: a listing runs against a daemon already up.
+
+One page is **50 conversations**. When the store holds more, `--list` writes
+one line to standard error — `the listing was truncated: older conversations
+are not shown` — and the Emacs picker says the same in the minibuffer; standard
+output stays ids only, because it is the picker's candidate list. A cut page
+takes nothing away: an id you kept still attaches, and root is still reached by
+a plain attach or by `ROOT_CONVERSATION_ID`. The picker waits five seconds for
+the listing and then says so, rather than leaving the editor waiting silently.
 
 `DIR` reaches the daemon uninterpreted, the empty string included, and becomes
 the conversation's working directory: this profile's tools run there, so a
@@ -155,11 +178,12 @@ to start listening.
 
 **After an upgrade, restart the daemon.** It is a long-lived user unit and
 `malebolge-start` does not restart a running one, so a fresh client can meet
-a daemon older than its attach frame. That daemon answers `unknown message
-type "attach"` and the client prints
-`[the daemon predates attach: restart it (malebolge-stop, then malebolge-start)]`.
-Restart the daemon (`M-x malebolge-stop`, then `M-x malebolge-start`) to
-attach again.
+a daemon older than the frame it sent. That daemon answers `unknown message
+type "<frame>"` — naming whichever first-line frame it did not know, `attach`
+or `list` — and the client prints
+`[the daemon predates <frame>: restart it (malebolge-stop, then malebolge-start)]`.
+Restart the daemon (`M-x malebolge-stop`, then `M-x malebolge-start`) and the
+same command works.
 
 To run the daemon on the host, outside the jail:
 `MALEBOLGE_PROFILE=host node src/daemon-main.ts`. It reaches models through

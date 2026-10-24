@@ -81,9 +81,22 @@ lock is not excluded.
 
 ## Protocol
 
-One JSON message per line on the daemon socket. The first line a connection
-sends binds it to one conversation (`src/daemon.ts`); every later line acts
-on that binding.
+One JSON message per line on the daemon socket. A connection's first line is
+either a **first-line frame** — `attach`, which names the conversation the
+connection binds to, or `list`, which asks what this store holds — or a
+command, which binds the connection to root (`src/daemon.ts`). Every later
+line acts on that binding.
+
+| first line | answered with | the connection after |
+|---|---|---|
+| `attach`, well-formed | `attached`, then the snapshot | bound to that conversation |
+| `attach`, refused | one `error` | ended, binding nothing |
+| `list`, well-formed | `conversations` | ended cleanly: reply, then end, no error |
+| `list`, malformed | one `error` | ended, binding nothing |
+| a command | its own events, no `attached` | bound to root, stays open |
+
+Neither frame is a verb a bound connection can use: a `list` sent later is
+refused by the rule below, not served.
 
 - client → daemon, the `attach` frame, valid only as the first line:
   `{"type":"attach"}` (root), `{"type":"attach","conversation":N}`,
@@ -94,27 +107,48 @@ on that binding.
   (`src/protocol.ts`). `cwd` is handed to pi uninterpreted; a new conversation
   is ownerless and carries the daemon's model and cwd as its defaults
   (`src/conversations.ts`).
+- client → daemon, the `list` frame, valid only as the first line:
+  `{"type":"list"}`. Strict too: any key it does not know is refused before
+  anything is read, so `{"type":"list","topic":"x"}` answers
+  `list: unknown key topic` and ends the connection, binding nothing
+  (`src/protocol.ts`). It takes no argument and names no target: the page size
+  is the daemon's, not the client's.
 - client → daemon, later lines:
   `{"type":"input","content":…,"requestId"?:…}`, `{"type":"abort"}`,
   `{"type":"compact","instructions"?:…}`
-- daemon → client: `{"type":"attached","conversation":N}` once, after a
-  successful attach and before the snapshot; then pi-durable `watchEvents`
-  agent events, first a `snapshot`; `{"type":"error","message":…}` for a line
-  it could not act on.
+- daemon → client, the `list` frame's reply:
+  `{"type":"conversations","conversations":[N,…],"truncated":false}` — bare
+  ids, newest first, and whether the page was cut. A framed object rather than
+  a bare array, so keys can widen additively; a conversation a task owns is
+  absent, since an attach to one is refused. The page is `LIST_PAGE` (50,
+  `src/conversations.ts`), and `truncated: true` says the oldest conversations
+  are not in this page — not that some pager exists. `malebolge-attach --list`
+  is this frame's client: ids on stdout, one truncation line on stderr.
+- daemon → client, an attached connection:
+  `{"type":"attached","conversation":N}` once, after a successful attach and
+  before the snapshot; then pi-durable `watchEvents` agent events, first a
+  `snapshot`; `{"type":"error","message":…}` for a line it could not act on.
 
 The first line's outcome:
 
-- a refused `attach`, an unknown id or a task-owned conversation: one
-  `{"type":"error"}` and the daemon ends the connection, dropping the lines
+- a refused `attach` — an unknown id, a conversation a task owns,
+  `conversation` with `new` — or a malformed `list`: one `{"type":"error"}`
+  naming the frame, and the daemon ends the connection, dropping the lines
   queued behind it.
+- a `list` that parses: one `conversations` reply, then the daemon ends the
+  connection. A listing writes no error and leaves nothing behind — no
+  binding, nothing created, no durable state.
+- a `list` whose read fails: one `{"type":"error"}` and the connection ends,
+  rather than an error left on a connection that would then stay silent.
 - a first line that is a command: root is bound, the line is acted on, and
   no `attached` is sent.
-- on a bound connection, any line that parses as an `attach` frame, valid or
-  refused, answers `already attached to conversation N` and the connection
-  stays open with its binding unchanged; a line that is not JSON or not an
-  object, or any other bad line, gets its ordinary error.
-- a line that is not JSON, or neither `attach` nor a valid command, binds
-  root, answers the error, and stays open.
+- on a bound connection, any line that parses as a first-line frame — `attach`
+  or `list`, valid or refused — answers the unprefixed message
+  `already attached to conversation N`, and the connection stays open with its
+  binding unchanged; a line that is not JSON or not an object, or any other bad
+  line, gets its ordinary error.
+- a line that is not JSON, or neither frame nor a valid command, binds root,
+  answers the error, and stays open.
 
 A connection that sends nothing is never bound and receives nothing
 (`probeUnix` connects and leaves). An id names a conversation only within
