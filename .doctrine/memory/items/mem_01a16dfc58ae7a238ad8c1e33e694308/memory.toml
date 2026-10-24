@@ -1,0 +1,46 @@
+memory_uid = "mem_01a16dfc58ae7a238ad8c1e33e694308"
+memory_key = "mem.pattern.malebolge.env-hook-test-idioms"
+schema_version = 1
+memory_type = "pattern"
+status = "active"
+title = "Testing daemon env hooks: stub readers, created conversations, inherited env"
+summary = "Idioms for tests through daemonEnv/openTestHarness: Promise.resolve stub readers, configure created conversations, preserve process.env, set room env before first exec"
+created = "2026-10-24"
+updated = "2026-10-24"
+
+[scope]
+paths = ["test/daemon-env.test.ts", "test/harness-fixture.ts"]
+globs = []
+commands = []
+tags = ["testing", "sl-004"]
+workspace = "default"
+repo = "github.com/davidlee/Malebolge"
+repo_id_kind = "remote"
+repo_id_confidence = "high"
+
+[git]
+anchor_kind = "checkout_state"
+commit = ""
+tree = "0d49f035f1a5a892fb33d3cf0db69b8da102a5ec"
+ref_name = "refs/heads/main"
+checkout_state_id = "e6fd7aa747e1e65c3f9de5f4f8777de92258857f8d8dfac833841695eb819b6f"
+base_commit = "9d996b2085c6c0cd91610e82259f36150376a4b7"
+verified_sha = ""
+normalizer = "forget.checkout.v1"
+
+[review]
+verification_state = "unverified"
+reviewed = ""
+review_by = ""
+
+[trust]
+trust_level = "high"
+
+[ranking]
+severity = "medium"
+weight = 0
+
+[[source]]
+kind = "commit"
+ref = "322cfdb"
+

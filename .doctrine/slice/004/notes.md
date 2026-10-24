@@ -78,7 +78,7 @@ run (user direction). Outcomes:
 
 ## Harvest
 <!-- single-copy: updated in place each harvest; ids only, never restated content -->
-fresh-as-of: 2026-10-24 · plan reviewed (RV-013), slice ready · 794caf8
+fresh-as-of: 2026-10-24 · PHASE-03 (all phases implemented; next /audit) · 9d996b2
 
 ### Produced
 
@@ -86,6 +86,9 @@ fresh-as-of: 2026-10-24 · plan reviewed (RV-013), slice ready · 794caf8
 - RV-012 (adversarial design pass, done)
 - plan.toml / plan.md (four phases); RV-013 (plan+design pass, concluded); design VT-6
 - IDE-002 (task-owned conversations' variables)
+- PHASE-01 conversation context, 0a80895; PHASE-02 host shellEnv, 51c5dfb; PHASE-04 room shellEnv, 322cfdb; PHASE-03 prompt section + docs, 9d996b2. `just check` green on host at 9d996b2 (2083 tests); no `gate` recipe, so `doctrine check gate` is unconfigured.
+- Plan deviations for /audit + /reconcile: PHASE-03 EX-2 predicted four assertion updates, but three were needed (the re-send case's `before` harness declares only persona+skills); PHASE-02 env hook type is pi-durable's wider `NonNullable<HarnessOptions["env"]>`; PHASE-04 VT-2 is a source-token check, its behavioural proof is VT-1. Beyond plan: test helpers lifted into `test/harness-fixture.ts`; `IndexReader`/`storedEntry` added to `src/topics.ts`; host and room env tests share one fixture.
+- minted: IMP-011 — route topics.ts's remaining index reads through the own-key helpers
 
 ### Learned
 
@@ -93,6 +96,7 @@ fresh-as-of: 2026-10-24 · plan reviewed (RV-013), slice ready · 794caf8
 - pi-env drops undefined `shellEnv` values (RV-012 F-1) — basis of DEC-021.
 - Merge order daemon env < `shellEnv` < per-exec `env` holds in the shipped pi-env daemon; empty strings survive transport (RV-013 F-1, by running it).
 - An env-build throw ends the tool task `failed` (`harness/tool.js:309-329`); the prompt path degrades on its own.
+- mem.pattern.malebolge.env-hook-test-idioms — stub readers, configured created conversations, inherited-env order in daemon env tests
 
 ### Open
 
