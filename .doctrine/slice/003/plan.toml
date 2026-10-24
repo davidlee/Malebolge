@@ -1,0 +1,164 @@
+# Implementation plan for SL-003 — the authored, durable phase plan.
+#
+# This is the single source of each phase's objective, criteria, verification,
+# and links. Runtime status lives separately under .doctrine/state/ (phase
+# tracking) — never record progress here. Hand-edit freely: the tool reads this
+# file but does not rewrite it.
+schema  = "doctrine.plan.overview"
+version = 1
+slice   = "SL-003"
+
+# Canonical spec/requirement links — cite ids, never restate what they say. The
+# plan reader does not model these yet, so nothing downstream consumes them.
+[specs]
+primary       = []
+collaborators = []
+
+[requirements]
+targets      = []
+dependencies = []
+
+# One [[phase]] per ordered phase, in execution order — the authored array order
+# IS the order; never sort by id. Ids are PHASE-NN (zero-padded), immutable and
+# never reused once authored — edits append, they never renumber.
+[[phase]]
+id        = "PHASE-01"
+name      = "Index: the document, the creation hook, the backfill"
+objective = "New root module `src/topics.ts` owns the conversation index: `IndexDocument` (session scope, `malebolge.index` v1, `checkpointWhen`), `indexConversation` (the `conversationCreated` hook), `assignTopic(name)` (the `init`), `readIndex` (snapshot, absent → `initial()`), `backfillIndex`, and the reads `topicsOf`, `latestIn`, `idsIn`. `src/session.ts` passes the hook to `Harness.open` and runs the backfill after `root()`, before `resume()`. No wire change (design sec-2, sec-3 Latest; DEC-012, DEC-013, DEC-015)."
+entrance_criteria = [
+  { id = "EN-1", text = "CHR-002 done: `package.json` pins every `@earendil-works/*` package at exactly 1.4.0, the runner's flake pin moved in the same rollout, and `just check` is green on 1.4.0 (DEC-011). This slice does not perform the upgrade." },
+  { id = "EN-2", text = "Design locked (run rev 41, commit c802f6d); SL-003 at lifecycle `ready`." },
+  { id = "EN-3", text = "The gate baseline reproduced at the base commit: eslint, tsc and `biome format .` clean; vitest red only in the `test/runner/*` set `mem.fact.malebolge.runner-suite-red-in-agent-container` records (re-count it on 1.4.0: the set is the baseline, not this slice's regression)." },
+  { id = "EN-4", text = "pi-durable 1.4.0's `conversationCreated` ordering (after the built-in `pi.*` documents, before `agent` and `init`), `Session.snapshot`'s absent-document `undefined`, `scanConversations` paging and `defineDoc`'s `checkpointWhen` re-read in the installed `dist/` before writing against them (design sec-2 cites the source; RV-008 F-4 found one such claim wrong)." },
+]
+exit_criteria = [
+  { id = "EX-1", text = "Every creating commit indexes the conversation: `createConversation` without `init` → `{topic:\"default\"}`; with `init: assignTopic(name)` → `{topic:name}`; `Conversation.fork` → `{topic: parent's topic, parent: parent id}`; raw `tx.createConversation` → `default`; a task-owned conversation → no entry (D7, DEC-012)." },
+  { id = "EX-2", text = "Atomicity: a hook that throws fails the creating commit, and an `init` that throws persists neither the conversation nor its entry (RV-008 F-5)." },
+  { id = "EX-3", text = "Root is indexed by the hook alone: a fresh store opened with `Harness.open` and `indexConversation`, without `backfillIndex`, has root's entry right after `root()` (RV-008 F-5)." },
+  { id = "EX-4", text = "Backfill: conversations created through `openFauxHarness` (no hook), root included, are in `default` after reopening the same storage through `openSession`; a second reopen writes nothing (the document's sequence does not move). One commit, every read before any write." },
+  { id = "EX-5", text = "`readIndex` over a store whose index was never written returns `initial()`; `latestIn` is the highest id in a topic; `idsIn` is newest first. Nothing outside `src/topics.ts` names `IndexDocument`." },
+  { id = "EX-6", text = "`test/harness-fixture.ts` gains `indexOf(harness)`, reading through `readIndex`. `just check` adds no failure beyond EN-3's baseline; `test/structure.test.ts` passes unchanged (`topics` is a root module imported by root modules)." },
+]
+verification = [
+  { id = "VT-1", expects = "creation paths, fork, raw, owned, throwing hook and throwing init (EX-1, EX-2)", test_file = "test/topics.test.ts", keywords = ["indexConversation", "assignTopic", "fork", "owner"], waived = false },
+  { id = "VT-2", expects = "root indexed by the hook with no backfill (EX-3)", test_file = "test/topics.test.ts", keywords = ["Harness.open", "root()"], waived = false },
+  { id = "VT-3", expects = "backfill of a pre-index store and its idempotence (EX-4)", test_file = "test/topics.test.ts", keywords = ["backfillIndex", "openFauxHarness", "openSession"], waived = false },
+  { id = "VT-4", expects = "absent-document read, latest and newest-first ids (EX-5)", test_file = "test/topics.test.ts", keywords = ["readIndex", "latestIn", "idsIn"], waived = false },
+  { id = "VA-1", text = "Orchestrator diff review: the hook reads documents only (no table read, so no ReadAfterWrite); `src/topics.ts` is the sole owner of `IndexDocument`; the backfill pages with the cursor loop of `src/runner/durable-ids.ts`." },
+]
+specs        = []
+requirements = []
+
+[[phase]]
+id        = "PHASE-02"
+name      = "First-line frames: one parser, one dispatch table (behaviour unchanged)"
+objective = "Refactor before feature: `src/protocol.ts` gains `FirstLineFrame` and `parseFirstLineFrame` over today's `attach` and `list`; `parseConnectionMessage` becomes `parseFirstLineFrame(...) ?? parseClientMessage(line)`. `src/daemon.ts` replaces `firstLine`'s per-verb branches with the mapped-type `FIRST_LINE` table, `answer` generalises `answerList`, and `laterLine` refuses any `FirstLineFrame` on a bound connection. No new frame and no wire change (design sec-4 The split; scope objective 6)."
+entrance_criteria = [
+  { id = "EN-1", text = "PHASE-01 complete (or independent: this phase touches neither `src/topics.ts` nor `src/session.ts`, so it may run in parallel on a separate worktree)." },
+  { id = "EN-2", text = "`firstLine`, `laterLine`, `answerList` and `bindTarget` re-read at their sites in `src/daemon.ts` before the table is written." },
+]
+exit_criteria = [
+  { id = "EX-1", text = "`FIRST_LINE` is typed `{ [K in FirstLineFrame[\"type\"]]: FrameHandler<K> }`, so a `FirstLineFrame` member without a handler fails `tsc`." },
+  { id = "EX-2", text = "Every shipped protocol and daemon test passes unchanged: `attach` binding, `list` reply and clean close, every refusal byte-identical, a bound connection answering any first-line frame (valid or refused) with the unprefixed `already attached to conversation N`." },
+  { id = "EX-3", text = "`answer(state, produce)` is the one produce-reply-finish path; a rejected `produce` goes through `fail` (DEC-007's failed reads close). `answerList` is gone." },
+  { id = "EX-4", text = "`just check` adds no failure beyond the baseline." },
+]
+verification = [
+  { id = "VT-1", expects = "shipped daemon behaviour unchanged across the refactor, including first-line frames on a bound connection", test_file = "test/daemon.test.ts", keywords = ["already attached to conversation", "conversations"], waived = false },
+  { id = "VT-2", expects = "the first-line parser yields attach and list frames and nothing else", test_file = "test/protocol.test.ts", keywords = ["parseFirstLineFrame"], waived = false },
+  { id = "VA-1", text = "Orchestrator diff review: no behaviour change; the table is the only per-verb dispatch; a new verb needs one parser case and one table row." },
+]
+specs        = []
+requirements = []
+
+[[phase]]
+id        = "PHASE-03"
+name      = "Topics on the wire: the topic frame, attach by topic, filtered and topic listings"
+objective = "`src/protocol.ts` gains `TopicMessage` and the `topics` reply (`{type:\"topics\", profile, topics}`), and widens `attach` (`topic`) and `list` (`topic`, `topics`) strictly. `src/conversations.ts`: `open` resolves a topic target (latest, or create with `client cwd ?? topic cwd ?? daemon cwd` and `assignTopic`; an empty topic creates; an unknown topic refuses); `list(query)` over `all | topic | topics`; `setTopic`; `conversations(session, defaults, profile)`. `src/daemon-start.ts` passes `config.execution.profile`. The table gains the `topic` row (design sec-3, sec-4; DEC-015, DEC-016)."
+entrance_criteria = [
+  { id = "EN-1", text = "PHASE-01 and PHASE-02 complete." },
+  { id = "EN-2", text = "`test/daemon.test.ts`'s `list: unknown key topic` case (design cites `:702-712`) located before it is rewritten." },
+]
+exit_criteria = [
+  { id = "EX-1", text = "Every first-line row of design sec-4's table holds over the socket, with each listed refusal as one `FrameRefused` and a close: `conversation and topic are exclusive`, `cwd needs new`, bad name, `no topic X`, `topic and topics are exclusive`, `topics must be true`, `default is reserved`, `cwd must be a string or null`." },
+  { id = "EX-2", text = "D1: topic with dir A, attach new → A; set B; the first conversation's `agent().cwd` is still A; a new one gets B. Client `cwd` beats topic beats daemon." },
+  { id = "EX-3", text = "Attach by topic binds the highest-id conversation; `new` creates; a topic with no conversations creates its first; `default` binds its latest; plain `attach` still binds root." },
+  { id = "EX-4", text = "`list` with no key returns exactly SL-002's reply on the same store; `{topic}` returns that topic's ids newest first, cut at `LIST_PAGE` with `truncated`; `{topics:true}` returns `default` first then by name, with the daemon's `profile`; a `topic` write replies `topics` with the one record and the same `profile`." },
+  { id = "EX-5", text = "`topic` without `cwd` creates or leaves unchanged (idempotent); a string sets; `null` clears. The rewritten unknown-key test asserts the topic filter, and `{\"type\":\"list\",\"page\":2}` keeps the shipped refusal shape." },
+  { id = "EX-6", text = "`src/daemon.ts` imports nothing from `src/topics.ts`: it knows only `Conversations`. `just check` adds no failure beyond the baseline." },
+  { id = "EX-7", text = "Topic names: one validator, `topicNameOf`, accepts `^[a-z0-9][a-z0-9._-]{0,63}$` and refuses anything else as `<frame>: topic must match [a-z0-9][a-z0-9._-]{0,63}`; the protocol parser uses it, and PHASE-04's client uses the same function (design sec-3 Names)." },
+]
+verification = [
+  { id = "VT-1", expects = "D1 and the cwd precedence (EX-2)", test_file = "test/conversations.test.ts", keywords = ["setTopic", "cwd"], waived = false },
+  { id = "VT-2", expects = "attach by topic, list filters, topics listing with profile, topic frame replies and refusals over the socket (EX-1, EX-3, EX-4, EX-5)", test_file = "test/daemon.test.ts", keywords = ["\"topics\"", "profile", "no topic", "default is reserved"], waived = false },
+  { id = "VT-3", expects = "strict parse table for the topic frame and the widened attach and list keys", test_file = "test/protocol.test.ts", keywords = ["TopicMessage", "topic and topics are exclusive", "cwd must be a string or null"], waived = false },
+  { id = "VT-4", expects = "the name rule: boundary lengths, leading character, allowed punctuation", test_file = "test/protocol.test.ts", keywords = ["topicNameOf", "topic must match"], waived = false },
+  { id = "VA-1", text = "Orchestrator diff review: no implicit topic creation anywhere; the topic's cwd is read once at creation and written only into the new conversation's agent; `cwd` stays an opaque string (DEC-107)." },
+]
+specs        = []
+requirements = []
+
+[[phase]]
+id        = "PHASE-04"
+name      = "Client: one request path, topic flags, topics renderer, skew"
+objective = "`src/attach.ts`: `listConversations` becomes `request(socketPath, frame, replyType, errors, wait)`, resolving to the typed reply and printing nothing to stdout; callers render. The invocation union gains `--topic`, `--list --topic`, `--topics` and `--set-topic NAME [--dir | --no-dir]`; `checkAlone` generalises `checkListAlone`; `skewOf` replaces `skewFrameOf` and matches both skew shapes. `src/render.ts` gains the `topics` renderer; `src/attach-main.ts` gains `USAGE` and dispatch. `--here` is PHASE-05 (design sec-5; DEC-017)."
+entrance_criteria = [
+  { id = "EN-1", text = "PHASE-03 complete: the wire shapes the client sends and reads exist." },
+  { id = "EN-2", text = "`listConversations`, `failBeforeAttach`, `skewFrameOf` and `attach-main.ts`'s coded-error exit path re-read at their sites." },
+]
+exit_criteria = [
+  { id = "EX-1", text = "`request` resolves to the typed reply; a `FrameRefused`, a skew reply, or a close without a reply rejects; stray traffic from an older daemon that bound root is ignored. `--list` output is byte-identical to SL-002's." },
+  { id = "EX-2", text = "Flags and exclusivity per design sec-5 (except `--here`): one invocation-table test row per accepted form and per refused pair, each refusal a `UsageError` (exit 2, usage line)." },
+  { id = "EX-3", text = "`--topics` prints `name<TAB>cwd` lines; `--set-topic` prints the written record and exits 0; `--topic NAME [--new [--cwd]]` attaches." },
+  { id = "EX-4", text = "Skew: a stub daemon answering `unknown message type \"topic\"`, `attach: unknown key topic` and `list: unknown key topics` each produce the restart hint, through both `failBeforeAttach` and `request`." },
+  { id = "EX-5", text = "`just check` adds no failure beyond the baseline; `just ert` and `just smoke` green (the Emacs client's `--list` and attach paths are untouched)." },
+]
+verification = [
+  { id = "VT-1", expects = "invocation table, exclusivity refusals, request contract and skew (EX-1, EX-2, EX-4)", test_file = "test/attach.test.ts", keywords = ["request", "checkAlone", "skewOf", "--set-topic", "--topics"], waived = false },
+  { id = "VT-2", expects = "topics renderer output", test_file = "test/render.test.ts", keywords = ["topics"], waived = false },
+  { id = "VA-1", text = "Orchestrator diff review: one request path serves `--list`, `--topics` and `--set-topic`; there is no second listing client; nothing but the public mode's caller writes the reply to stdout." },
+]
+specs        = []
+requirements = []
+
+[[phase]]
+id        = "PHASE-05"
+name      = "Client: --here, resolved against the daemon's own profile"
+objective = "`Here` and the parameterised `AttachInvocation<T>`: parsing stays synchronous and leaves `--here` unresolved; `attach-main.ts` awaits `resolveHere` and dispatches only a `ResolvedInvocation`. `resolveHere`: git root, then a silent `topics` request, then refuse unless the reply's `profile` is `host`; with `--set-topic` the git root is the directory; for attach and `--list` exactly one exact match, else refuse (design sec-5 `--here`; DEC-014; RV-008 F-1, F-2, F-3, F-6)."
+entrance_criteria = [
+  { id = "EN-1", text = "PHASE-04 complete: `request` returns typed replies and `--topic`/`--set-topic` exist." },
+]
+exit_criteria = [
+  { id = "EX-1", text = "Exact single match: attach, `--list` and the frame sent all use the resolved name." },
+  { id = "EX-2", text = "Refusals, each exit 1 with nothing created and no frame after the listing: not in a git repo (nothing sent at all); daemon reports `room` (both mismatches: `MALEBOLGE_PROFILE=host` with a room daemon's socket refuses; an unset profile with a host daemon's socket succeeds); no match; several matches, naming them." },
+  { id = "EX-3", text = "`--set-topic NAME --here` sets the git root with zero and with several existing matches, and refuses against a `room` daemon." },
+  { id = "EX-4", text = "The lookup writes nothing to stdout: `--list --here` prints only ids." },
+  { id = "EX-5", text = "`--here` is exclusive with `--topic`, `--conversation`, `--dir` and `--no-dir` (`UsageError`, exit 2). `just check` adds no failure beyond the baseline." },
+]
+verification = [
+  { id = "VT-1", expects = "resolveHere with a stubbed git root and a stub daemon: match, room refusal in both mismatch directions, none, several, set-topic cases, silent lookup (EX-1..EX-4)", test_file = "test/attach.test.ts", keywords = ["resolveHere", "--here", "profile", "have directory"], waived = false },
+  { id = "VA-1", text = "Orchestrator diff review: the client's `MALEBOLGE_PROFILE` selects the default socket and nothing else; an unresolved `Here` cannot reach a frame (the dispatch takes `ResolvedInvocation`)." },
+]
+specs        = []
+requirements = []
+
+[[phase]]
+id        = "PHASE-06"
+name      = "Documents and the live check"
+objective = "README's \"Which conversation\" and `docs/internals.md` §Protocol describe topics, `default`, the index, the first-line table and the client flags; one live session against running daemons verifies `--topic` and `--here` (design sec-7 Documents owed; scope done-when)."
+entrance_criteria = [
+  { id = "EN-1", text = "PHASE-03 and PHASE-05 complete: the docs describe what exists." },
+  { id = "EN-2", text = "A host-profile daemon and the room daemon both runnable on the host, on pi 1.4.0 with matching pi-env (`mem.fact.malebolge.pi-env-version-skew-churns-room-daemon`)." },
+]
+exit_criteria = [
+  { id = "EX-1", text = "README \"Which conversation\": topics, `default`, `--topic`, `--topics`, `--set-topic`, and `--here` as host-only with the path-space reason. `docs/internals.md` §Protocol: the sec-4 first-line rows, the index document, the dispatch table." },
+  { id = "EX-2", text = "Sweep: no document in the repo, `.doctrine/` included, still says `list: unknown key topic` is the shipped refusal or that `--here` is refused outright (`mem.pattern.malebolge.criterion-sweep-must-include-governance`). The DEC-007, DEC-008 and DEC-010 amendments are left to reconcile, as the design says." },
+  { id = "EX-3", text = "`just check`, `just ert` and `just smoke` green." },
+]
+verification = [
+  { id = "VT-1", expects = "README documents the topic flags", test_file = "README.md", keywords = ["--topic", "--set-topic", "--here", "default"], waived = false },
+  { id = "VT-2", expects = "internals documents the topic frame and the index", test_file = "docs/internals.md", keywords = ["\"topic\"", "malebolge.index"], waived = false },
+  { id = "VH-1", text = "One live session, recorded in notes: create a topic with `--set-topic NAME --here` against the host daemon; `--here` attaches a new conversation there and its tools run in that directory; `--topics` and `--list --topic` show it; against the room daemon `--here` refuses with the path-space message; an older-daemon skew check if one is at hand." },
+]
+specs        = []
+requirements = []
