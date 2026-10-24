@@ -20,6 +20,7 @@ import {
   MemoryStorage,
   type Registry,
   type Storage,
+  type StorageWrite,
   ToolResultEntry,
 } from "@earendil-works/pi-durable";
 import { NodeExecutionEnv } from "@earendil-works/pi-durable/env/node";
@@ -27,6 +28,7 @@ import { context } from "../src/context.ts";
 import { isRecord } from "../src/json.ts";
 import { registryOf } from "../src/registry.ts";
 import { openSession } from "../src/session.ts";
+import { type IndexDoc, readIndex } from "../src/topics.ts";
 
 export const FAUX_MODEL = { provider: "faux", modelId: "faux-1" } as const;
 
@@ -75,6 +77,8 @@ export interface FauxHarnessOptions {
   env?: HarnessOptions["env"];
   /** Enable scheduling once open (default). `false` leaves a passive harness that only reads. */
   resume?: boolean;
+  /** The creating-commit hook; `openSession` installs the index's, a pre-index store installs none. */
+  conversationCreated?: HarnessOptions["conversationCreated"];
 }
 
 function harnessOptionsOf(options: FauxHarnessOptions, models: Models): HarnessOptions {
@@ -83,6 +87,9 @@ function harnessOptionsOf(options: FauxHarnessOptions, models: Models): HarnessO
     registry: options.registry ?? registryOf(options.extensions ?? []),
     ...(options.settings === undefined ? {} : { settings: options.settings }),
     ...(options.env === undefined ? {} : { env: options.env }),
+    ...(options.conversationCreated === undefined
+      ? {}
+      : { conversationCreated: options.conversationCreated }),
   };
 }
 
@@ -101,6 +108,35 @@ export async function openFauxHarness(
     harness.resume();
   }
   return { harness, root, faux };
+}
+
+/** The conversation index of `harness`: what the creating commits wrote, read the one way. */
+export function indexOf(harness: Pick<Harness, "snapshot">): Promise<IndexDoc> {
+  return readIndex(harness);
+}
+
+/**
+ * `storage`, counting the commits that carried writes: how a test sees that a
+ * start over an unchanged store wrote nothing.
+ */
+export function countingCommits(storage: Storage): { storage: Storage; commits: () => number } {
+  let commits = 0;
+  const counted: Storage = new Proxy(storage, {
+    get(target, property): unknown {
+      const member: unknown = Reflect.get(target, property);
+      if (typeof member !== "function") {
+        return member;
+      }
+      if (property !== "commit") {
+        return (...args: readonly unknown[]): unknown => Reflect.apply(member, target, args);
+      }
+      return (writes: readonly StorageWrite[], ...rest: readonly unknown[]): unknown => {
+        commits += writes.length > 0 ? 1 : 0;
+        return Reflect.apply(member, target, [writes, ...rest]);
+      };
+    },
+  });
+  return { storage: counted, commits: () => commits };
 }
 
 /** Scripted model turns: one tool call, then a final text answer. */

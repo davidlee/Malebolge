@@ -11,6 +11,7 @@ import {
 } from "@earendil-works/pi-durable";
 import type { ExecutionEnv } from "@earendil-works/pi-durable/env";
 import { context } from "./context.ts";
+import { backfillIndex, indexConversation } from "./topics.ts";
 
 export interface Session {
   harness: Harness;
@@ -34,11 +35,15 @@ export async function openSession(storage: Storage, options: SessionOptions): Pr
       models: options.models,
       registry: options.registry,
       env: options.env,
+      conversationCreated: indexConversation,
     },
     context,
   );
   const root = await harness.root(context);
   await root.configure(options.agent, context);
+  // After `root()`, so root is indexed by the hook like every other conversation,
+  // and before `resume()`, so no client and no resumed task outruns the backfill.
+  await backfillIndex(harness);
   harness.resume();
   return { harness, root };
 }
