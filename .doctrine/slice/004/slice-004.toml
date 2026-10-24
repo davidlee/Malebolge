@@ -12,11 +12,11 @@ after = []                      # slice→work soft sequence: { to, rank }
 
 [[selector]]
 selector = "src/session.ts"
-intent = "scope-relevant"
+intent = "design-target"
 
 [[selector]]
 selector = "src/daemon-env.ts"
-intent = "scope-relevant"
+intent = "design-target"
 
 [[selector]]
 selector = "src/cwd.ts"
@@ -33,6 +33,38 @@ intent = "scope-relevant"
 [[selector]]
 selector = "test/**"
 intent = "scope-relevant"
+
+[[selector]]
+selector = "src/conversation-context.ts"
+intent = "design-target"
+
+[[selector]]
+selector = "src/room/connection.ts"
+intent = "design-target"
+
+[[selector]]
+selector = "src/daemon-extensions.ts"
+intent = "design-target"
+
+[[selector]]
+selector = "test/conversation-context.test.ts"
+intent = "design-target"
+
+[[selector]]
+selector = "test/daemon-env.test.ts"
+intent = "design-target"
+
+[[selector]]
+selector = "test/daemon-sections.test.ts"
+intent = "design-target"
+
+[[selector]]
+selector = "README.md"
+intent = "design-target"
+
+[[selector]]
+selector = "docs/internals.md"
+intent = "design-target"
 
 # STRUCTURAL relations are uniform `[[relation]]` rows, never a typed
 # `[relationships]` axis. Slices carry no typed STRUCTURAL

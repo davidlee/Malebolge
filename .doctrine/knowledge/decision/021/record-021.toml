@@ -1,0 +1,33 @@
+schema = "doctrine.knowledge"
+version = 1
+
+id = 21
+slug = "a-conversation-with-no-index-entry-gets-no-topic-or-parent-variable-the-rest-are-set"
+title = "A conversation with no index entry gets no topic or parent variable; the rest are set"
+record_kind = "decision"
+status = "accepted"
+created = "2026-10-24"
+updated = "2026-10-24"
+tags = []
+
+[facet]                         # every field typed; seeded empty (captured later)
+context = "DEC-012 leaves task-owned conversations out of the index; ~/db/q stores an unset variable as NULL."
+choice = "No entry: SATAN_TOPIC and SATAN_PARENT_CONVERSATION unset; SATAN_HARNESS, SATAN_PROFILE, SATAN_CONVERSATION, SATAN_CWD set. Ids are decimal strings. Root resolves to default (DEC-015)."
+alternatives = ["Fall back to topic default", "Read the owner chain for a topic (IDE-002)"]
+rationale = "An honest gap, never a guess; task-owned support waits for a feature that creates them (IDE-002)."
+consequences = ["IDE-002 carries owner and task variables"]
+decided_by = "user (accepted agent proposal, 2026-10-24)"
+decided_on = "2026-10-24"
+
+[evidence]                      # free-text citations (supports / contradicts / notes)
+supports    = []
+contradicts = []
+notes       = []
+
+[relationships]                 # verb-written edges (set by doctrine supersede)
+supersedes    = []   # record ids this one replaces (set by doctrine supersede)
+superseded_by = []   # set on superseded predecessor (verb-written)
+
+[[relation]]
+label = "shapes"
+target = "SL-004"

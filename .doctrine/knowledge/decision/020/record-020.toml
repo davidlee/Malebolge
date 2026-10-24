@@ -1,0 +1,33 @@
+schema = "doctrine.knowledge"
+version = 1
+
+id = 20
+slug = "the-variables-reach-tool-execs-as-shellenv-at-env-construction-not-through-an-exec-wrapper"
+title = "The variables reach tool execs as shellEnv at env construction, not through an exec wrapper"
+record_kind = "decision"
+status = "accepted"
+created = "2026-10-24"
+updated = "2026-10-24"
+tags = []
+
+[facet]                         # every field typed; seeded empty (captured later)
+context = "Both NodeExecutionEnv and RemoteExecutionEnv accept shellEnv, inherited by every command; daemonEnv builds a fresh env per call (research F-1, F-2)."
+choice = "hostEnv and roomEnv pass conversationVars as shellEnv; observedEnv gains an optional shellEnv; the room env id stays pi-env:daemon-room; a caller's per-exec env wins."
+alternatives = ["A wrapper overriding exec and forwarding the rest of ExecutionEnv"]
+rationale = "No forwarding of ~28 methods; RemoteExecutionEnv's private fields break a delegating wrapper (research F-8)."
+consequences = ["SessionOptions.env widens to EnvTarget", "daemonEnv reads the index once per env build"]
+decided_by = "user (accepted agent proposal, 2026-10-24)"
+decided_on = "2026-10-24"
+
+[evidence]                      # free-text citations (supports / contradicts / notes)
+supports    = []
+contradicts = []
+notes       = []
+
+[relationships]                 # verb-written edges (set by doctrine supersede)
+supersedes    = []   # record ids this one replaces (set by doctrine supersede)
+superseded_by = []   # set on superseded predecessor (verb-written)
+
+[[relation]]
+label = "shapes"
+target = "SL-004"

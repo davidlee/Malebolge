@@ -1,0 +1,33 @@
+schema = "doctrine.knowledge"
+version = 1
+
+id = 22
+slug = "satan-cwd-is-the-conversations-stored-cwd-else-the-cwd-its-env-is-built-with"
+title = "SATAN_CWD is the conversation's stored cwd, else the cwd its env is built with"
+record_kind = "decision"
+status = "accepted"
+created = "2026-10-24"
+updated = "2026-10-24"
+tags = []
+
+[facet]                         # every field typed; seeded empty (captured later)
+context = "EnvTarget.cwd is optional; daemonEnv already falls back to the launch dir (host) or room home."
+choice = "SATAN_CWD = target.cwd ?? the daemon env's cwd: where the tools actually run."
+alternatives = ["Leave SATAN_CWD unset when the agent has no cwd"]
+rationale = "It states where commands run, which is what q records; satan DEC-104/107 keep the stored cwd authoritative."
+consequences = []
+decided_by = "user (accepted agent proposal, 2026-10-24)"
+decided_on = "2026-10-24"
+
+[evidence]                      # free-text citations (supports / contradicts / notes)
+supports    = []
+contradicts = []
+notes       = []
+
+[relationships]                 # verb-written edges (set by doctrine supersede)
+supersedes    = []   # record ids this one replaces (set by doctrine supersede)
+superseded_by = []   # set on superseded predecessor (verb-written)
+
+[[relation]]
+label = "shapes"
+target = "SL-004"

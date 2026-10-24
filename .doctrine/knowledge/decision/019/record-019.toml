@@ -1,0 +1,33 @@
+schema = "doctrine.knowledge"
+version = 1
+
+id = 19
+slug = "the-conversation-id-and-topic-are-a-separate-untagged-prompt-section-after-cwd"
+title = "The conversation id and topic are a separate untagged prompt section after cwd"
+record_kind = "decision"
+status = "accepted"
+created = "2026-10-24"
+updated = "2026-10-24"
+tags = []
+
+[facet]                         # every field typed; seeded empty (captured later)
+context = "SL-004 Q-1: a new section, or fold into the existing cwd section."
+choice = "Section `conversation`, untagged like cwd, after cwd: `Conversation: 12 (topic: satan-db)`, or `Conversation: 12` with no topic."
+alternatives = ["Fold into the cwd section"]
+rationale = "cwd keeps pi's wording; one fact per section."
+consequences = ["daemon-extensions.ts gains one extension after cwdExtension"]
+decided_by = "user (accepted agent proposal, 2026-10-24)"
+decided_on = "2026-10-24"
+
+[evidence]                      # free-text citations (supports / contradicts / notes)
+supports    = []
+contradicts = []
+notes       = []
+
+[relationships]                 # verb-written edges (set by doctrine supersede)
+supersedes    = []   # record ids this one replaces (set by doctrine supersede)
+superseded_by = []   # set on superseded predecessor (verb-written)
+
+[[relation]]
+label = "shapes"
+target = "SL-004"

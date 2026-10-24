@@ -1,0 +1,33 @@
+schema = "doctrine.knowledge"
+version = 1
+
+id = 18
+slug = "one-module-holds-the-conversation-context-index-read-pure-variable-mapping-prompt-section"
+title = "One module holds the conversation context: index read, pure variable mapping, prompt section"
+record_kind = "decision"
+status = "accepted"
+created = "2026-10-24"
+updated = "2026-10-24"
+tags = []
+
+[facet]                         # every field typed; seeded empty (captured later)
+context = "SL-004 needs the conversation's index entry in two outlets: tool env and system prompt."
+choice = "src/conversation-context.ts: contextOf(read, id) does the one index read; pure conversationVars({profile, id, cwd, entry}); the conversation prompt section."
+alternatives = ["Variables in daemon-env.ts, section in cwd.ts", "Two modules, one per outlet"]
+rationale = "One read and one mapping shared by both outlets; daemon-env stays about where tools run."
+consequences = ["daemon-env.ts and the extension list import from one module"]
+decided_by = "user (accepted agent proposal, 2026-10-24)"
+decided_on = "2026-10-24"
+
+[evidence]                      # free-text citations (supports / contradicts / notes)
+supports    = []
+contradicts = []
+notes       = []
+
+[relationships]                 # verb-written edges (set by doctrine supersede)
+supersedes    = []   # record ids this one replaces (set by doctrine supersede)
+superseded_by = []   # set on superseded predecessor (verb-written)
+
+[[relation]]
+label = "shapes"
+target = "SL-004"
