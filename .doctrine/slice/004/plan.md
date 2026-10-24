@@ -7,17 +7,22 @@ authored in the TOML. Use this for the plan's rationale and sequencing.
 
 ## Overview
 
-Three phases, each ending green: the pure context module, then its two
-outlets — tool environment and system prompt — in that order.
+Four phases, each ending green: the pure context module, then its two
+outlets — tool environment (host, then room) and system prompt.
 
 ```
 PHASE-01  conversation-context.ts   contextOf · conversationVars · conversationLine   (no consumer)
    │
-PHASE-02  tool env                  session.ts · daemon-env.ts · room/connection.ts · harness-fixture.ts
+PHASE-02  tool env, host            session.ts · daemon-env.ts (conversationEnv, host) · harness-fixture.ts
+   │
+PHASE-04  tool env, room            daemon-env.ts (room) · room/connection.ts observedEnv shellEnv
    │
 PHASE-03  prompt + docs             conversationExtension · daemon-extensions.ts · README · internals
    └─► VH-1 (user, in the room, after deploy)
 ```
+
+Array order in `plan.toml` is execution order; PHASE-04 was added by
+RV-013 F-3 and runs before PHASE-03 (ids are never renumbered).
 
 ## Sequencing & Rationale
 
@@ -27,12 +32,18 @@ PHASE-03  prompt + docs             conversationExtension · daemon-extensions.t
 - **Tool env before prompt.** It carries the slice's only MAJOR risk
   (RV-012 F-1: masking an inherited value in the room) and the one type
   change that ripples (`SessionOptions.env` → `EnvTarget`, through
-  `daemon-env.ts`, `daemon-start.ts` and the test fixture). Landing it second
+  `daemon-env.ts`, `daemon-start.ts` and the test fixture). Landing it first
   leaves the last phase a small, additive section.
+- **Host, then room (RV-013 F-3).** PHASE-02 lands the type change, the
+  fixture option and the host arm; PHASE-04 adds only the room arm and
+  `observedEnv`'s optional `shellEnv`, so the room half of RV-012 F-1 is
+  tested in a phase of its own.
 - **RV-012 F-1 is demonstrated by test on both profiles.** The design placed
   the room half on VT-4 as "shellEnv is passed"; the existing room fixture
   runs pi-env's real local daemon behind a fake `ssh` that inherits the test's
-  environment, so PHASE-02 asserts the masking itself (`[]`) in the room too.
+  environment, so PHASE-04 asserts the masking itself (`[]`) in the room too.
+  The fixture over-approximates production: the room daemon is launched
+  directly, with sshd's non-login environment (design sec-2, RV-013 F-1).
   This strengthens, not changes, design VT-4. VH-1 then only confirms the
   deployed room and `q`'s `mem.origin` row.
 - **Section in PHASE-03 lives in the same module** (DEC-018), so PHASE-01's
@@ -40,8 +51,10 @@ PHASE-03  prompt + docs             conversationExtension · daemon-extensions.t
   wrapper and its registration.
 
 Design VT ids map to phase VTs: design VT-1/VT-2 → PHASE-01/VT-1, VT-2;
-design VT-3 → PHASE-02/VT-1; design VT-4 → PHASE-02/VT-2; design VT-5 →
-PHASE-03/VT-1; design VH-1 → PHASE-03/VH-1.
+design VT-3 → PHASE-02/VT-1; design VT-6 → PHASE-02/VT-5; design VT-4 →
+PHASE-04/VT-1; design VT-5 → PHASE-03/VT-1; design VH-1 → PHASE-03/VH-1.
+PHASE-02's EX-4, VT-2 and VT-3 moved to PHASE-04 (RV-013 F-3); their ids are
+retired, not reused.
 
 ## Notes
 
@@ -62,7 +75,10 @@ PHASE-03/VT-1; design VH-1 → PHASE-03/VH-1.
 - The env hook also builds the env for each prompt preparation
   (`PromptInput.env`), so index reads run per request as well as per tool
   call. Same in-process document read design sec-3 accepts; no memoisation.
-- PHASE-02's masking tests set `process.env.SATAN_TOPIC`; restore it in
-  `afterEach`.
+- The masking tests set `process.env.SATAN_TOPIC`; restore it in
+  `afterEach`. In the room, set it before the first exec on a fresh
+  connection: the daemon inherits env at its lazy spawn (RV-013 F-9).
 - `daemonEnv(...).env` becomes async: existing `daemon-env.test.ts` calls
   `await` it (PHASE-02 EX-5).
+- A failed index read propagates and fails the tool call (design sec-3
+  Failure, RV-013 F-2); PHASE-02 EX-7.

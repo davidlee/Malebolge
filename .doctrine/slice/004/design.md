@@ -48,12 +48,21 @@ conversation, which malebolge does not create today.
 
 **Masking (RV-012 F-1).** Both envs merge the daemon's inherited environment
 under `shellEnv`: host `{...process.env, ...shellEnv, ...options.env}`
-(`pi-durable/dist/env/node.js:205-212`), room the pi-env daemon's environment,
-started through the room user's login shell (`pi-env/dist/ssh.js:421`). pi-env
-drops `undefined` values (`remote-env.js:767-769`), so only a value can
-override an inherited one. Setting all six, empty when absent, overrides any
-inherited `SATAN_*` of these names on both profiles, and `shellEnv` is one
-`Record<string, string>` for both. A comment at `conversationVars` says why no key may be omitted: dropping empty ones would reopen RV-012 F-1 in the room.
+(`pi-durable/dist/env/node.js:205-212`), room the pi-env daemon's environment
+(daemon env < `shellEnv` < per-exec `env`; checked by running the shipped
+daemon, RV-013 F-1). The room daemon is launched directly, not through a login
+shell: `[ssh, …sshArguments, daemon]` (`src/room/connection.ts:57,238`) with
+`SendEnv=-*` (`pi-env/dist/ssh.js:65`), so it inherits sshd's non-login
+environment for the room user. An inherited `SATAN_*` there can come only from
+sshd or PAM (e.g. `pam_env`, `~/.ssh/environment`; inference): masking is
+defence in depth, not a known leak. pi-env drops `undefined` values
+(`remote-env.js:767-769`), so only a value can override an inherited one.
+Setting all six, empty when absent, overrides any inherited `SATAN_*` of these
+names on both profiles, and `shellEnv` is one `Record<string, string>` for
+both. It overrides the environment only: a script a shell sources per command
+(e.g. `$BASH_ENV`) could still re-set a value. A command run with
+`inheritEnv: false` gets no `shellEnv` on either profile; pi-durable's bash
+tool inherits. A comment at `conversationVars` says why no key may be omitted: dropping empty ones would reopen RV-012 F-1 in the room.
 
 The six names live once, in `conversation-context.ts`. The daemon also reads
 other `SATAN_*` variables of its own (`SATAN_CORPUS_ROOT`, `SATAN_MCP_SOCKET`,
@@ -96,9 +105,18 @@ env: async (target) => { const { cwd, vars } = await conversationEnv("room", hom
   (`tools/bash.js:36-37`), so every bash call inherits `shellEnv`; a caller's
   explicit per-exec `env` still wins in both merges.
 - Cost (RV-012 F-3): one index snapshot read per env build. pi-durable builds
-  an env per task attempt and per nested `executeTool` (`harness/scheduler.js:1984`,
-  `harness/tool.js:309`), and already reads the agent document at each build;
-  this adds one more in-process document read. No memoisation unless measured.
+  an env per tool attempt, per nested `executeTool` and per request's prompt
+  preparation (`harness/scheduler.js:1984`, `harness/tool.js:309`,
+  `harness/generation.js:60`; RV-013 F-10), and already reads the agent
+  document at each build (`harness/harness.js:48`); this adds one more
+  in-process document read. No memoisation unless measured.
+- Failure (RV-013 F-2): a failed index read propagates. The env build
+  rejects, and pi-durable fails that tool call with the error's message
+  (`harness/tool.js:309-329`); the conversation carries on. A failed index
+  read means the daemon's storage is faulty, and degrading to an empty topic
+  would write a wrong attribution into `mem.origin` without a trace. The
+  prompt path needs nothing: pi-durable already reports a failed build and
+  renders without an env (`harness/generation.js:63-71`). (User, 2026-10-24.)
 
 <!-- doctrine:section sec-4 -->
 ## System prompt
@@ -138,10 +156,10 @@ can name `$SATAN_CONVERSATION` and `$SATAN_TOPIC` knowing they are set.
 | `src/room/connection.ts` | `observedEnv` passes an optional `shellEnv` to `RemoteExecutionEnv` |
 | `src/daemon-extensions.ts` | `conversationExtension` after `cwdExtension` |
 | `test/conversation-context.test.ts` (new) | the mapping table; `contextOf` on an indexed, a forked and an unindexed conversation |
-| `test/daemon-env.test.ts` | host: a bash exec sees its own conversation's variables, overrides an inherited `SATAN_TOPIC` with empty; room: `RemoteExecutionEnv` gets the `shellEnv` and keeps its id |
-| `test/harness-fixture.ts` | `openTestHarness`'s hook (`:66`) takes `EnvTarget` and can build the daemon's env, so VT-3 runs through the real `daemonEnv` (RV-012 F-9) |
+| `test/daemon-env.test.ts` | host: a bash exec sees its own conversation's variables, overrides an inherited `SATAN_TOPIC` with empty; room: `RemoteExecutionEnv` gets the `shellEnv` and keeps its id; a rejecting index read fails the env build (RV-013 F-2) |
+| `test/harness-fixture.ts` | `openTestHarness` takes an optional `env` hook (today hardcoded at `:66`), so a test can pass the daemon's env, so VT-3 runs through the real `daemonEnv` (RV-012 F-9) |
 | `test/daemon-sections.test.ts` | the `conversation` section, its order after `cwd`, with and without a topic |
-| `README.md` / `docs/internals.md` | the variable table, if those docs list the daemon's prompt sections or env |
+| `README.md` / `docs/internals.md` | README: the six variables in their own subsection, not the daemon-configuration table (`README.md:274-291`; RV-012 F-2); internals: the `conversation` section in the section tree and the env diagram (`docs/internals.md:36-37`) with `shellEnv` (RV-013 F-8) |
 
 - `src/topics.ts` stays the index's only owner; `conversation-context.ts`
   reads through `readIndex` only.
@@ -156,6 +174,7 @@ can name `$SATAN_CONVERSATION` and `$SATAN_TOPIC` knowing they are set.
 | VT-2. `contextOf` reads root in `default`, a fork's parent, and no entry for an unindexed id | VT, same file, over `openTestHarness` (hook installed) |
 | VT-3. Host: a bash tool call in conversation A prints A's `SATAN_*`, in B prints B's; an inherited `SATAN_TOPIC` in the daemon's environment is overridden with empty for an unindexed conversation (the command prints `[${SATAN_TOPIC}]`, asserted `[]`, so empty is distinguished from absent); a per-exec `env` wins | VT, `test/daemon-env.test.ts` with `callThenAnswer` + `toolResults` (`test/harness-fixture.ts`) |
 | VT-4. Room: `observedEnv` builds `RemoteExecutionEnv` with the given `shellEnv` and id `pi-env:daemon-room` | VT, `test/daemon-env.test.ts`, existing room fixture |
+| VT-6. A reader whose index read rejects fails the env build with that error, so the tool call fails with its message (RV-013 F-2) | VT, `test/daemon-env.test.ts` |
 | VT-5. The `conversation` section renders `Conversation: <id> (topic: <t>)`, untagged, right after `cwd` | VT, `test/daemon-sections.test.ts` via `systemPromptSections` |
 | VH-1. In the room, from a malebolge conversation: `env \| grep SATAN_` shows all six with this conversation's values; `~/db/q who` shows a `mem.origin` row with them | VH, user at the terminal |
 
