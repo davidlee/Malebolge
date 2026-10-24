@@ -17,6 +17,16 @@ act = "conclude"
 role = "raiser"
 note = "Adversarial pass by pi review profile (deepseek-flash, quotient run-20261024T101840336Z-7); 9 findings raised, all disposed; F-1 design change accepted by user."
 
+[[review.turn]]
+act = "conclude"
+role = "raiser"
+note = "All 9 findings verified by the raiser; revised sec-2/sec-6 folded in."
+
+[[review.turn]]
+act = "conclude"
+role = "raiser"
+note = "F-1, F-4 routed and re-verified."
+
 [target]                   # the outbound `reviews` edge: RV-NNN ──reviews──▶ <ref>
 ref   = "SL-004"
 
@@ -27,7 +37,8 @@ severity = "major"
 title = "Room path cannot mask an inherited SATAN_* value"
 detail = "pi-env drops undefined shellEnv values (remote-env.js:767-769); the room daemon starts via the login shell (ssh.js:421). An absent value cannot mask an inherited one. VH-1 cannot observe it. (pi review, deepseek-flash, quotient run-20261024T101840336Z-7)"
 disposition = "design-wrong"
-response = "Accepted by user 2026-10-24: all six always set, empty when absent (DEC-021 amended); q maps empty to NULL. sec-2 Masking, VT-1/VT-3."
+response = "All six always set, empty when absent (DEC-021 amended, user-accepted). Demonstrated by VT-3: unindexed conversation prints [] for an inherited SATAN_TOPIC."
+route = "demonstrate"
 
 [[finding.turn]]
 act = "raise"
@@ -43,6 +54,23 @@ response = "Accepted by user 2026-10-24: all six always set, empty when absent (
 act = "verify"
 role = "raiser"
 note = "Raiser (pi review session f466c739…, run-20261024T102815816Z-8) verified against revised design.md."
+
+[[finding.turn]]
+act = "reopen"
+role = "raiser"
+note = "Reopened to add the route the design gate requires."
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "design-wrong"
+route = "demonstrate"
+response = "All six always set, empty when absent (DEC-021 amended, user-accepted). Demonstrated by VT-3: unindexed conversation prints [] for an inherited SATAN_TOPIC."
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "Raiser verified in run-20261024T102815816Z-8; re-verified after routing."
 
 [[finding]]
 id = "F-2"
@@ -99,7 +127,8 @@ severity = "major"
 title = "Shared env id with divergent shellEnv unverified"
 detail = "RemoteExecutionEnv id pi-env:daemon-room is shared while shellEnv differs per conversation; RFC-002's serialisation argument assumed identical envs."
 disposition = "aligned"
-response = "Rejected: env id is the file namespace (pi-durable env/index.d.ts:166), unaffected by shellEnv. Stated in sec-3."
+response = "Env id is the file namespace (pi-durable env/index.d.ts:166), unaffected by shellEnv; stated in sec-3."
+route = "review"
 
 [[finding.turn]]
 act = "raise"
@@ -115,6 +144,23 @@ response = "Rejected: env id is the file namespace (pi-durable env/index.d.ts:16
 act = "verify"
 role = "raiser"
 note = "Raiser (pi review session f466c739…, run-20261024T102815816Z-8) verified against revised design.md."
+
+[[finding.turn]]
+act = "reopen"
+role = "raiser"
+note = "Reopened to add the route the design gate requires."
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "aligned"
+route = "review"
+response = "Env id is the file namespace (pi-durable env/index.d.ts:166), unaffected by shellEnv; stated in sec-3."
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "Raiser verified in run-20261024T102815816Z-8; re-verified after routing."
 
 [[finding]]
 id = "F-5"
