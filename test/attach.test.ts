@@ -170,6 +170,19 @@ describe("attach: version skew", () => {
     expect(text).not.toContain("[detached]");
     expect(fake.lines.items).toHaveLength(1);
   });
+
+  it("prints the restart hint when the daemon predates the topic key on attach", async () => {
+    const path = await socketPath();
+    const fake = await fakeDaemon(path, (socket) => {
+      socket.write(encodeLine({ type: "error", message: "attach: unknown key topic" }));
+    });
+    const s = session(path, { target: { kind: "topic", name: "work", new: false } });
+    expect(await rejection(s.done)).toMatchObject({ code: "NOT_ATTACHED" });
+    expect(s.printed()).toContain(
+      "[the daemon predates topic: restart it (malebolge-stop, then malebolge-start)]\n",
+    );
+    expect(fake.lines.items).toHaveLength(1);
+  });
 });
 
 describe("attach: holds typed lines until attached", () => {

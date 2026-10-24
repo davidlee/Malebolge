@@ -1,28 +1,23 @@
-// One frame out, one typed reply in: the listing lifecycle, and the skew an
-// older daemon answers it with. The topic and `--here` requests share this
-// path (SL-003 design sec-5); the caller renders each reply.
+// One frame out, one typed reply in: the request path `--list`, `--topics` and
+// `--set-topic` share, and the skew an older daemon answers it with. Nothing
+// here renders a reply — its caller does (SL-003 design sec-5).
 
 import type { Socket } from "node:net";
 import type { Writable } from "node:stream";
-import { isRecord } from "./json.ts";
+import type { RequestInvocation } from "./attach-invocation.ts";
+import { isRecord, type JsonRecord } from "./json.ts";
 import { encodeLine, lineSplitter } from "./ndjson.ts";
-import type { ErrorMessage } from "./protocol.ts";
-import {
-  type ClientNotice,
-  createRenderer,
-  type Presentation,
-  type Printable,
-  toPrintable,
-} from "./render.ts";
+import type { ConversationsMessage, ErrorMessage, TopicsMessage } from "./protocol.ts";
+import { type ClientNotice, createRenderer, type Printable, toPrintable } from "./render.ts";
 import { type ConnectWait, codeOf, connectUnixWaiting } from "./unix-socket.ts";
 
-/** A listing the daemon never answered; `attach-main` exits 1. */
-export class NotListedError extends Error {
-  readonly code = "NOT_LISTED";
+/** A request the daemon never answered; `attach-main` exits 1. */
+export class RequestFailedError extends Error {
+  readonly code = "REQUEST_FAILED";
 
   constructor(message: string) {
     super(message);
-    this.name = "NotListedError";
+    this.name = "RequestFailedError";
   }
 }
 
@@ -52,117 +47,170 @@ export async function connectOrExplain(
 }
 
 /** A daemon that does not know a first-line frame answers `unknown message type "<frame>"`. */
-const SKEW = /^unknown message type "([^"]+)"$/;
+const UNKNOWN_TYPE = /^unknown message type "([^"]+)"$/;
 
-/** The frame the daemon did not know, when `message` says it predates one. */
-export function skewFrameOf(message: string): string | undefined {
-  return SKEW.exec(message)?.[1];
+/** A daemon that does not know a key refuses the frame that carried it: `<frame>: unknown key <key>`. */
+const UNKNOWN_KEY = /^[a-z-]+: unknown key ([A-Za-z0-9_]+)$/;
+
+/** The keys whose refusal means the daemon predates the feature the key carries. */
+const SKEWED_KEYS = ["topic", "topics"] as const;
+
+/**
+ * The feature the answering daemon predates, when `message` says it predates
+ * one (design sec-5 Skew): an unknown first-line frame, or an unknown key on a
+ * frame that gained one. `undefined` for every other failure, so a caller hints
+ * a restart only where a restart would help.
+ */
+export function skewOf(message: string): string | undefined {
+  const frame = UNKNOWN_TYPE.exec(message)?.[1];
+  if (frame !== undefined) {
+    return frame;
+  }
+  const key = UNKNOWN_KEY.exec(message)?.[1];
+  return SKEWED_KEYS.find((skewed) => skewed === key);
 }
 
-/** What a skew means for the user: restart onto a daemon that knows `frame`. */
-export const skewHint = (frame: string): string =>
-  `the daemon predates ${frame}: restart it (malebolge-stop, then malebolge-start)`;
+/** What a skew means for the user: restart onto a daemon that knows `feature`. */
+export const skewHint = (feature: string): string =>
+  `the daemon predates ${feature}: restart it (malebolge-stop, then malebolge-start)`;
 
-const CLOSED_BEFORE_LISTING = "the daemon closed before the listing completed";
+/** The replies a request is answered with: ids for a listing, topic records for the rest. */
+export type ReplyMessage = ConversationsMessage | TopicsMessage;
+
+/** The frame a request-reply invocation sends, as it goes on the wire (design sec-4). */
+export function frameOf(invocation: RequestInvocation): JsonRecord {
+  switch (invocation.mode) {
+    case "list":
+      return invocation.topic === undefined
+        ? { type: "list" }
+        : { type: "list", topic: invocation.topic };
+    case "topics":
+      return { type: "list", topics: true };
+    case "set-topic":
+      // `cwd` absent creates the topic, or leaves its directory unchanged.
+      return invocation.cwd === undefined
+        ? { type: "topic", name: invocation.name }
+        : { type: "topic", name: invocation.name, cwd: invocation.cwd };
+  }
+}
+
+/** The reply that answers `invocation`'s frame. */
+export function replyTypeOf(invocation: RequestInvocation): ReplyMessage["type"] {
+  return invocation.mode === "list" ? "conversations" : "topics";
+}
+
+const CLOSED_BEFORE_REPLY = "the daemon closed before the request was answered";
 const TRUNCATED_HINT = "the listing was truncated: older conversations are not shown";
 
-/** The one line a listing sends: SL-002's exact wire frame, still only `type`. */
-const LIST_FRAME = { type: "list" };
-
-/** One listing connection: its two streams, the renderer, and how it settles. */
-interface ListingState {
+/** One request connection: where failures go, the reply it waits for, and how it settles. */
+interface RequestState<K extends ReplyMessage["type"]> {
   socket: Socket;
-  output: Writable;
   errors: Writable;
   render: Render;
+  replyType: K;
   answered: boolean;
-  failure?: NotListedError;
-  resolve: (value: undefined) => void;
+  failure?: RequestFailedError;
+  resolve: (reply: Extract<ReplyMessage, { type: K }>) => void;
   reject: (error: Error) => void;
 }
 
-/** The daemon refused or failed the listing: say so on stderr, then leave. */
-function failListing(state: ListingState, event: ErrorMessage): void {
+/** The daemon refused or failed the request: say so on stderr, then leave. */
+function failRequest<K extends ReplyMessage["type"]>(
+  state: RequestState<K>,
+  event: ErrorMessage,
+): void {
   state.errors.write(state.render(event));
-  const frame = skewFrameOf(event.message);
-  if (frame !== undefined) {
-    state.errors.write(noticeText(state.render, skewHint(frame)));
+  const feature = skewOf(event.message);
+  if (feature !== undefined) {
+    state.errors.write(noticeText(state.render, skewHint(feature)));
   }
-  state.failure = new NotListedError(event.message);
+  state.failure = new RequestFailedError(event.message);
   // The old daemon bound root and left the connection open: its close will not come.
   state.socket.end();
 }
 
 /**
- * One frame on a listing connection. Only two are its own — the reply and an
- * error; everything else is ignored, because a daemon that predates `list`
- * binds root and sends root's whole snapshot before saying so.
+ * One frame on a request connection. Only two are its own — the reply it asked
+ * for and an error; everything else is ignored, because a daemon that predates
+ * the frame binds root and sends root's whole snapshot before saying so.
  */
-function handleListingFrame(state: ListingState, value: unknown): void {
+function handleRequestFrame<K extends ReplyMessage["type"]>(
+  state: RequestState<K>,
+  value: unknown,
+): void {
   if (!isRecord(value) || typeof value["type"] !== "string") {
     return;
   }
   const event = toPrintable(value);
   if (event.type === "error") {
-    failListing(state, event);
-  } else if (event.type === "conversations") {
+    failRequest(state, event);
+  } else if (event.type === state.replyType) {
     state.answered = true;
-    state.output.write(state.render(event));
-    if (event.truncated) {
+    // TypeScript cannot correlate `event.type === replyType` with `K`, so the wire's
+    // discriminant is asserted here, once, where the match is made.
+    // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
+    state.resolve(event as Extract<ReplyMessage, { type: K }>);
+    if (event.type === "conversations" && event.truncated) {
       state.errors.write(`${TRUNCATED_HINT}\n`);
     }
   }
 }
 
-/** The daemon closed: a reply settles, a failure rejects, silence is its own failure. */
-function settleListing(state: ListingState): void {
+/** The daemon closed: a failure rejects; a close with no reply is its own failure. */
+function settleRequest<K extends ReplyMessage["type"]>(state: RequestState<K>): void {
   if (state.failure !== undefined) {
     state.reject(state.failure);
     return;
   }
   if (!state.answered) {
-    state.errors.write(noticeText(state.render, CLOSED_BEFORE_LISTING));
-    state.reject(new NotListedError(CLOSED_BEFORE_LISTING));
-    return;
+    state.errors.write(noticeText(state.render, CLOSED_BEFORE_REPLY));
+    state.reject(new RequestFailedError(CLOSED_BEFORE_REPLY));
   }
-  state.resolve(undefined);
 }
 
 /** Wire the socket: a reset destroys it; each accepted frame is handled; close settles. */
-function wireListing(state: ListingState): void {
+function wireRequest<K extends ReplyMessage["type"]>(state: RequestState<K>): void {
   state.socket.on("error", () => {
     state.socket.destroy();
   });
   state.socket.on(
     "data",
     lineSplitter((line) => {
-      handleListingFrame(state, JSON.parse(line));
+      handleRequestFrame(state, JSON.parse(line));
     }),
   );
   state.socket.on("close", () => {
-    settleListing(state);
+    settleRequest(state);
   });
 }
 
 /**
- * List the store's conversation ids: one `list` frame in, one `conversations`
- * reply out, then a clean close. Ids go to `output` through the renderer and
- * nothing else does; every refusal, skew and truncation goes to `errors`, so a
- * `--list` reading stdout sees ids and only ids (DEC-008).
+ * Ask the daemon one question on a fresh connection: one frame out, one reply
+ * of `replyType` in, then a clean close. Resolves to that reply and prints
+ * nothing itself — the caller renders it on stdout, and every refusal, skew and
+ * truncation goes to `errors` (DEC-008).
  */
-export async function listConversations(
+export async function request<K extends ReplyMessage["type"]>(
   socketPath: string,
-  output: Writable,
+  frame: JsonRecord,
+  replyType: K,
   errors: Writable,
   wait: ConnectWait,
-  presentation: Presentation = "terminal",
-): Promise<void> {
-  const render = createRenderer({ presentation });
-  // A dead daemon is told on `errors`: stdout stays reserved for ids.
+): Promise<Extract<ReplyMessage, { type: K }>> {
+  const render = createRenderer();
+  // A dead daemon is told on `errors`: stdout stays reserved for the reply.
   const socket = await connectOrExplain(socketPath, errors, render, wait);
-  const { promise, resolve, reject } = Promise.withResolvers<undefined>();
-  const state: ListingState = { socket, output, errors, render, answered: false, resolve, reject };
-  socket.write(encodeLine(LIST_FRAME));
-  wireListing(state);
-  await promise;
+  const { promise, resolve, reject } = Promise.withResolvers<Extract<ReplyMessage, { type: K }>>();
+  const state: RequestState<K> = {
+    socket,
+    errors,
+    render,
+    replyType,
+    answered: false,
+    resolve,
+    reject,
+  };
+  socket.write(encodeLine(frame));
+  wireRequest(state);
+  return promise;
 }

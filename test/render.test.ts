@@ -222,6 +222,18 @@ describe("renderer", () => {
     expect(renderAll([{ type: "conversations", conversations: [], truncated: true }])).toBe("");
   });
 
+  it("renders a topics frame as name and directory, one per line, in both presentations", () => {
+    // A topic with no directory (always `default`) leaves its second field empty.
+    const frame = {
+      type: "topics",
+      profile: "host",
+      topics: [{ name: "default" }, { name: "work", cwd: "/tmp/work" }],
+    };
+    expect(renderAll([frame])).toBe("default\t\nwork\t/tmp/work\n");
+    expect(renderAll([frame], { presentation: "emacs" })).toBe("default\t\nwork\t/tmp/work\n");
+    expect(renderAll([{ type: "topics", profile: "room", topics: [] }])).toBe("");
+  });
+
   it("ignores bookkeeping events", () => {
     expect(renderAll([{ type: "usage_changed", usage: {} }, { type: "turn_start" }])).toBe("");
   });

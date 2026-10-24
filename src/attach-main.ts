@@ -4,10 +4,15 @@
 import { attach } from "./attach.ts";
 import { type AttachInvocation, attachInvocationOf, UsageError } from "./attach-invocation.ts";
 import { attachSocket } from "./config.ts";
-import { listConversations } from "./request.ts";
+import { createRenderer } from "./render.ts";
+import { frameOf, replyTypeOf, request } from "./request.ts";
 import { codeOf } from "./unix-socket.ts";
 
-const USAGE = "usage: malebolge-attach [--list] | [--conversation N | --new [--cwd DIR]] [--emacs]";
+const USAGE = [
+  "usage: malebolge-attach [--list [--topic NAME]] | [--topics]",
+  " | [--set-topic NAME [--dir DIR | --no-dir]]",
+  " | [--conversation N | --new [--cwd DIR] | --topic NAME [--new [--cwd DIR]]] [--emacs]",
+].join("\n");
 
 /** The invocation the command line names; a refusal is one line and exit 2, before any connect. */
 function invocationOf(args: string[]): AttachInvocation {
@@ -24,15 +29,19 @@ function invocationOf(args: string[]): AttachInvocation {
 
 try {
   const invocation = invocationOf(process.argv.slice(2));
-  if (invocation.mode === "list") {
-    await listConversations(
-      attachSocket(process.env),
-      process.stdout,
+  const socketPath = attachSocket(process.env);
+  if (invocation.mode === undefined) {
+    await attach(socketPath, process.stdin, process.stdout, invocation);
+  } else {
+    // Every request-reply mode: one frame through `request`, and its reply on stdout.
+    const reply = await request(
+      socketPath,
+      frameOf(invocation),
+      replyTypeOf(invocation),
       process.stderr,
       invocation.wait,
     );
-  } else {
-    await attach(attachSocket(process.env), process.stdin, process.stdout, invocation);
+    process.stdout.write(createRenderer()(reply));
   }
 } catch (error) {
   // A connect failure or a refused attach: attach has already said why, so no stack trace.

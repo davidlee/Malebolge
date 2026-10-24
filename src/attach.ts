@@ -14,7 +14,7 @@ import {
   parseClientMessage,
 } from "./protocol.ts";
 import { createRenderer, type Presentation, type Printable, toPrintable } from "./render.ts";
-import { connectOrExplain, noticeText, type Render, skewFrameOf, skewHint } from "./request.ts";
+import { connectOrExplain, noticeText, type Render, skewHint, skewOf } from "./request.ts";
 import type { ConnectWait } from "./unix-socket.ts";
 
 /** A connection the daemon never confirmed as attached; `attach-main` exits 1. */
@@ -152,9 +152,9 @@ function flushHeld(state: AttachState): void {
 /** The daemon refused or failed the attach: show it, drop held lines, and leave. */
 function failBeforeAttach(state: AttachState, event: ErrorMessage): void {
   state.output.write(state.render(event));
-  const frame = skewFrameOf(event.message);
-  if (frame !== undefined) {
-    notice(state, skewHint(frame));
+  const feature = skewOf(event.message);
+  if (feature !== undefined) {
+    notice(state, skewHint(feature));
   }
   state.failure = new NotAttachedError(event.message);
   state.held = [];
