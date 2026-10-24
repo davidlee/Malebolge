@@ -128,7 +128,7 @@ Incidental:
 
 ## Harvest
 <!-- single-copy: updated in place each harvest; ids only, never restated content -->
-fresh-as-of: 2026-10-24 · PHASE-01..06 completed; RV-010 done; RV-011 audit done (8 findings verified; brief written) · lifecycle reconcile · next: /reconcile per RV-011 § Reconciliation Brief
+fresh-as-of: 2026-10-24 · PHASE-01..06 completed; RV-010 done; RV-011 done and reconciled (79ccae6) · lifecycle done
 
 ### Produced
 - design locked 2026-10-24 (RV-008), regressed for the planning-time amendment, relocked (RV-009, rev 49) — each on the user's section review, `conducted` disposition and acceptance
@@ -144,15 +144,18 @@ fresh-as-of: 2026-10-24 · PHASE-01..06 completed; RV-010 done; RV-011 audit don
 - IMP-010 (pager duplication); IMP-006 and mem.fact.malebolge.list-has-no-reply-timeout updated for `request`/`REQUEST_FAILED`
 - RV-010: Claude code review (user chose Claude over Codex), 4 parallel reviewers, 21 findings (3 major, 9 minor, 9 nit), all fix-now except F-18 design-wrong; fixed test-first, `just check` 2062 green, `just ert` 38/38, `just smoke` green
 - two friction observations (quotient ceilings vs phase size; no biome in the write jail)
+- reconcile 79ccae6: design sec-2..sec-6, DEC-007/008/010 amendments, selectors (+src/project-context.ts, −test/session.test.ts); conformance 0 undelivered
 - RV-011: reconciliation audit, 8 findings (1 major, 4 minor, 3 nit); F-5 fixed in-audit (four test titles carry the identifiers the VT mandates name; verify-vt 21/21); brief maps F-1..F-4 to reconcile
 
 ### Learned
 - mem.fact.malebolge.pi-env-version-skew-churns-room-daemon — mismatched pi-env versions delete each other's room daemon binary
 - mem.fact.deps.pi-durable-conversation-created-covers-root — the hook fires on every creation path, root included
 - mem.pattern.malebolge.injected-seam-needs-real-test — stubbed git root hid PHASE-05's `gitRootOf` bug
+- mem.fact.malebolge.vt-keyword-must-not-wrap — extended: a keyword reached through a helper/constant/type also FAILs (RV-011 F-5)
+- mem.fact.doctrine.knowledge-edit-body-takes-stdin-not-at-path — `--body @path` is stored literally
 
 ### Open
-- RV-011 § Reconciliation Brief owns all reconcile drift: DEC-007/008/010 amendments (F-1); design sec-2..sec-4 (F-2) and sec-5/sec-6 (F-3), which absorb the earlier sec-3 `no topic X`, `new:false`, `--set-topic --here` items and RV-010 F-2/F-6/F-15/F-18; selector add `src/project-context.ts`, rm `test/session.test.ts` (F-4)
+- RV-011 brief fully reconciled (79ccae6); nothing owed to design or governance
 - the top-level-`acceptance` trap fired twice (revs 38, 42) → mem.fact.doctrine.design-apply-top-level-acceptance-records-design-accepted
 - run rev 38 recorded a `design-accepted` act in error (a top-level `acceptance` on a declare-only submission records one). `review-disposed` did not stale it; the lock at rev 41 invalidated it and recorded the user's acceptance
 - `~/satan-corpus/prompts/env/host.txt` (user-authored at VH-1) states the working directory as the daemon's launch dir; it is the conversation's. Corpus fix, user's call

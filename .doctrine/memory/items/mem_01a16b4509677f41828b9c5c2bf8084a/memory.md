@@ -26,3 +26,18 @@ Consequences:
 - A keyword present is necessary and never sufficient: the gate cannot tell
   `conversation N` in a sentence from `conversation N` in a padded list, so the
   VA prose review stays the load-bearing check.
+
+## Second failure mode: the identifier is reached, not written (SL-003, 2026-10-24)
+
+RV-011 F-5: four VT FAILs over behaviour that was tested. The test files reached
+the mandated identifier only indirectly: `Harness.open` through the
+`openFauxHarness` fixture; `checkAlone` through the flags it guards;
+`TopicMessage` as a TS type the parse table never names; and
+`topic must match` through a shared constant (`NAME_RULE`) in
+`test/harness-fixture.ts`. The match is a literal substring of the
+`test_file` alone. Helpers, imports and types do not count.
+
+- At planning time, choose keywords that the test *text* will contain: a
+  test title or a literal it asserts. Do not pick the symbols it exercises.
+- Repair after the fact by putting the identifier in the test title, which
+  is honest when the test does exercise it. Plan criteria are immutable.

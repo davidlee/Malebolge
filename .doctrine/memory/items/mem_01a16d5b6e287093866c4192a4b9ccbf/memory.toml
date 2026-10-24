@@ -1,0 +1,42 @@
+memory_uid = "mem_01a16d5b6e287093866c4192a4b9ccbf"
+memory_key = "mem.fact.doctrine.knowledge-edit-body-takes-stdin-not-at-path"
+schema_version = 1
+memory_type = "fact"
+status = "active"
+title = "knowledge edit --body stores @path literally; use - and stdin"
+summary = "doctrine knowledge edit --body accepts '-' (stdin) but stores '@path' literally"
+created = "2026-10-24"
+updated = "2026-10-24"
+
+[scope]
+paths = []
+globs = []
+commands = ["doctrine knowledge edit"]
+tags = ["doctrine"]
+workspace = "default"
+repo = "github.com/davidlee/Malebolge"
+repo_id_kind = "remote"
+repo_id_confidence = "high"
+
+[git]
+anchor_kind = "checkout_state"
+commit = ""
+tree = "76e2d10539f543373fb4203220ae6478ffe73465"
+ref_name = "refs/heads/main"
+checkout_state_id = "13d538055d0638f9e6169e1a1f2248f6c0296a6eb16e1e44cd80c8abba075cd2"
+base_commit = "79ccae6448781a19600bc543d0a713f84f19a85a"
+verified_sha = ""
+normalizer = "forget.checkout.v1"
+
+[review]
+verification_state = "unverified"
+reviewed = ""
+review_by = ""
+
+[trust]
+trust_level = "high"
+
+[ranking]
+severity = "low"
+weight = 0
+

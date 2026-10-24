@@ -1,7 +1,7 @@
 id = 3
 slug = "topics-and-index"
 title = "Topics and the conversation index"
-status = "reconcile"
+status = "done"
 created = "2026-10-23"
 updated = "2026-10-24"
 tags = ["durable", "protocol", "topics"]
