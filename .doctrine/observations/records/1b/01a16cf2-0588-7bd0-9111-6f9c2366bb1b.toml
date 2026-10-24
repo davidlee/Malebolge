@@ -1,0 +1,18 @@
+schema = "doctrine.observation"
+schema_version = 1
+uid = "01a16cf2-0588-7bd0-9111-6f9c2366bb1b"
+recorded_at = "2026-10-24T08:06:02.888269889Z"
+kind = "friction"
+summary = "quotient pi_agent policy ceilings (30 requests, 900 s) are below one slice phase: 7 of 17 worker runs stopped at a ceiling or timeout and needed session continuation"
+detail = "SL-003 via capsule-driver-over-quotient, deepseek-flash, implement profile (thinking high). Continuation with the same session worked every time and cost little; the cost is orchestrator turns. Also: one upstream DeepSeek connection reset (litellm TransferEncodingError) after a 382 s response."
+
+[facets.execution]
+schema_version = 1
+interface = "cli"
+interface_origin = "automatic"
+product_surface = "doctrine"
+product_surface_origin = "automatic"
+command = "observation record"
+command_origin = "automatic"
+repository_context = "primary"
+repository_context_origin = "automatic"

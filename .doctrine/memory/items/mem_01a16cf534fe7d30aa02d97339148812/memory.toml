@@ -1,0 +1,46 @@
+memory_uid = "mem_01a16cf534fe7d30aa02d97339148812"
+memory_key = "mem.pattern.malebolge.injected-seam-needs-real-test"
+schema_version = 1
+memory_type = "pattern"
+status = "active"
+title = "An injected seam needs its own test of the real implementation"
+summary = "When a function takes an injected lookup (git root, clock, socket) so tests can stub it, test the default implementation directly too: SL-003 PHASE-05's gitRootOf returned cwd, not the repo root, and every --here test passed because all of them stubbed it."
+created = "2026-10-24"
+updated = "2026-10-24"
+
+[scope]
+paths = ["src/attach-invocation.ts", "src/project-context.ts"]
+globs = []
+commands = []
+tags = ["testing"]
+workspace = "default"
+repo = "github.com/davidlee/Malebolge"
+repo_id_kind = "remote"
+repo_id_confidence = "high"
+
+[git]
+anchor_kind = "checkout_state"
+commit = ""
+tree = "f9df3a12314a1a264cf091e364e4c57c92c3e4d2"
+ref_name = "refs/heads/main"
+checkout_state_id = "6124b4700b6302ab5b4e6ec6e28d5e623e8f8a447e963eabc801fa9d561be274"
+base_commit = "b053e1fc1ced651bbd015bcb5c4cb0a74ee57cc8"
+verified_sha = ""
+normalizer = "forget.checkout.v1"
+
+[review]
+verification_state = "unverified"
+reviewed = ""
+review_by = ""
+
+[trust]
+trust_level = "high"
+
+[ranking]
+severity = "medium"
+weight = 0
+
+[[source]]
+kind = "commit"
+ref = "76839f2"
+

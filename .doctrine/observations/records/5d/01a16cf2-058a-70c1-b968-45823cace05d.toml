@@ -1,0 +1,18 @@
+schema = "doctrine.observation"
+schema_version = 1
+uid = "01a16cf2-058a-70c1-b968-45823cace05d"
+recorded_at = "2026-10-24T08:06:02.890753138Z"
+kind = "friction"
+summary = "biome (@biomejs/cli-linux-x64) is missing inside the quotient write jail, so workers cannot run just fmt-check; the orchestrator ran just format on the host every phase"
+detail = "malebolge's justfile fmt-check uses the flake biome provided by satan; node_modules lacks the platform binary. Related: IMP-004 (dev flake for the gate's toolchain)."
+
+[facets.execution]
+schema_version = 1
+interface = "cli"
+interface_origin = "automatic"
+product_surface = "doctrine"
+product_surface_origin = "automatic"
+command = "observation record"
+command_origin = "automatic"
+repository_context = "primary"
+repository_context_origin = "automatic"

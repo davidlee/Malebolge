@@ -107,7 +107,7 @@ If a later pass is wanted, it should probe the client's `resolveHere` and
 
 ## Harvest
 <!-- single-copy: updated in place each harvest; ids only, never restated content -->
-fresh-as-of: 2026-10-24 · PHASE-01..05 committed, PHASE-06 docs committed (capsule-driver via quotient `pi_agent`, deepseek-flash) · next: PHASE-06 VH-1 live session, then /audit
+fresh-as-of: 2026-10-24 · PHASE-01..05 completed, PHASE-06 in_progress (docs done, VH-1 owed) · head b053e1f · next: VH-1, cross-model /code-review, then /audit
 
 ### Produced
 - design locked 2026-10-24 (RV-008), regressed for the planning-time amendment, relocked (RV-009, rev 49) — each on the user's section review, `conducted` disposition and acceptance
@@ -119,11 +119,14 @@ fresh-as-of: 2026-10-24 · PHASE-01..05 committed, PHASE-06 docs committed (caps
 - minted: DEC-011..DEC-017 — the shaping decisions; CHR-002 — pi 1.4.0 upgrade, SL-003 needs it; IMP-009 — `--here` under `room`
 - amended at RV-008: DEC-014 (daemon-reported profile; lookup refusals for attach/list only), DEC-016 (`profile` on the `topics` reply)
 - scope `slice-003.md` amended to the decisions; selector `src/daemon-start.ts` → design-target
-- no code; no gate run (nothing to gate)
+- implementation (capsule-driver seat, workers = quotient `pi_agent` deepseek-flash `implement`): PHASE-01 64aa25f · PHASE-02 97aa60a · PHASE-03 d251fb3 · PHASE-04 3d80a8f (extraction) + 95f36aa · PHASE-05 76839f2 · PHASE-06 docs b053e1f. Host `just check` green at each (2053 tests at head); `just ert`/`just smoke` green from PHASE-04
+- IMP-010 (pager duplication); IMP-006 and mem.fact.malebolge.list-has-no-reply-timeout updated for `request`/`REQUEST_FAILED`
+- two friction observations (quotient ceilings vs phase size; no biome in the write jail)
 
 ### Learned
 - mem.fact.malebolge.pi-env-version-skew-churns-room-daemon — mismatched pi-env versions delete each other's room daemon binary
 - mem.fact.deps.pi-durable-conversation-created-covers-root — the hook fires on every creation path, root included
+- mem.pattern.malebolge.injected-seam-needs-real-test — stubbed git root hid PHASE-05's `gitRootOf` bug
 
 ### Open
 - DEC-007, DEC-008, DEC-010 — amendments owed at reconcile (design sec-7)
@@ -132,4 +135,6 @@ fresh-as-of: 2026-10-24 · PHASE-01..05 committed, PHASE-06 docs committed (caps
 - design sec-3:176 says `attach: no topic <name>`; sec-4's table and PHASE-03 EX-1 say `no topic X` (unprefixed, like `no conversation N`). Code follows sec-4 — amend sec-3 at reconcile (PHASE-03 review)
 - `{"type":"attach","topic":T,"new":false}` refuses `attach: new must be true`; sec-4's attach-by-topic cell does not list it — add at reconcile
 - design sec-5's flag table omits `--set-topic NAME --here`, which the code accepts and PHASE-05 EX-3 requires — add at reconcile (PHASE-06 docs pass)
+- PHASE-06 VH-1 — live session owed: needs a running `host` daemon and the room daemon redeployed on this code (the deployed `malebolge-room.service` predates topics)
+- review depth: all code by deepseek-flash; orchestrator review was VA-1-targeted, not line-by-line. A dedicated cross-model `/code-review` before `/audit` is recommended (user agreed 2026-10-24)
 - IMP-010 — share the `scanConversations` pager (PHASE-01 copied `durable-ids`'s loop)
