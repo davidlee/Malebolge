@@ -1,0 +1,211 @@
+id    = 14
+slug  = "reconciliation-review-of-sl-004"
+title = "reconciliation review of SL-004"
+# no status — a review's status is DERIVED from its findings, so
+# it is never stored (the storage rule forbids derived data in authored files).
+
+[review]
+facet     = "reconciliation"     # scope|design|plan|phase-plan|implementation|code-review|reconciliation
+raiser    = "raiser"
+responder = "responder"
+rounds_base = 0
+contests_base = 0
+concluded = true
+
+[[review.turn]]
+act = "conclude"
+role = "raiser"
+note = """
+Conformance self-audit of SL-004 (67208d0..9d996b2 plus the F-6 fix) against design sec-1..sec-6 and plan.toml EX/VT: slice conformance, verify-vt, just check on host, full source/test diff read, delegate second pass (quotient review profile) with its leads checked. VH-1 out of reach (user, after deploy).
+"""
+
+[target]                   # the outbound `reviews` edge: RV-NNN ──reviews──▶ <ref>
+ref   = "SL-004"
+
+[[finding]]
+id = "F-1"
+status = "verified"
+severity = "minor"
+title = "Conformance: 5 undeclared paths (src/topics.ts, test/harness-fixture.ts, 3 test files)"
+detail = """
+Expected: every edited path matched by a design-target selector (design sec-5 Code impact is its mirror).
+Observed: `doctrine slice conformance 004` → undeclared: src/topics.ts, test/harness-fixture.ts, test/conversations.test.ts, test/daemon.test.ts, test/topics.test.ts; undelivered 0; conformant 10.
+- test/harness-fixture.ts is in design sec-5's table (optional env hook, RV-012 F-9) but no selector was registered.
+- src/topics.ts gained `IndexReader`, `ownKey` and `storedEntry` (the own-key lookup `contextOf` uses). This keeps topics.ts the index's only owner, as sec-5 requires, but sec-5's table omits the file and its bullet says conversation-context reads "through `readIndex` only" — it also calls `storedEntry`.
+- The three test files lost byte-identical helpers lifted into harness-fixture.ts at PHASE-01's refactor (phase-01 sheet Findings; notes Harvest > Produced).
+All five edits are in-scope and intended; the design and the selector registry lag them.
+"""
+disposition = "design-wrong"
+response = """
+The design and the selector registry lag in-scope edits. Reconciliation Brief: `doctrine slice selector add` for the five paths (load-bearing for conformance), mirrored in design sec-5 — a src/topics.ts row (IndexReader, storedEntry over a shared own-key helper) and the bullet corrected to "through readIndex and storedEntry"; a note that test/{topics,conversations,daemon}.test.ts lost helpers lifted into harness-fixture.ts.
+"""
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "design-wrong"
+response = """
+The design and the selector registry lag in-scope edits. Reconciliation Brief: `doctrine slice selector add` for the five paths (load-bearing for conformance), mirrored in design sec-5 — a src/topics.ts row (IndexReader, storedEntry over a shared own-key helper) and the bullet corrected to "through readIndex and storedEntry"; a note that test/{topics,conversations,daemon}.test.ts lost helpers lifted into harness-fixture.ts.
+"""
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+
+[[finding]]
+id = "F-2"
+status = "verified"
+severity = "minor"
+title = "Design sec-3 hook type: (target) => Promise<ExecutionEnv> vs pi-durable's (target, context) => ExecutionEnv | undefined | Promise<…>"
+detail = """
+Expected (design sec-3): SessionOptions.env widens to "pi-durable's own hook type, `(target: EnvTarget) => Promise<ExecutionEnv>` (harness/types.d.ts:566)".
+Observed: types.d.ts:566 is `(target, context) => ExecutionEnv | undefined | Promise<ExecutionEnv | undefined>`. src/session.ts:33 types it `NonNullable<HarnessOptions["env"]>` — the hook itself, admitting an undefined env; both daemonEnv arms always return one. Callers pass `(target, context)`. Intent (use pi-durable's own type) holds; the quoted signature is wrong. Notes Harvest > Produced names this deviation.
+"""
+disposition = "design-wrong"
+response = """
+Code is right: it takes pi-durable's hook type as the design intends. Reconciliation Brief: design sec-3 quotes the signature as `(target: EnvTarget, context) => ExecutionEnv | undefined | Promise<…>`, typed `NonNullable<HarnessOptions["env"]>` in session.ts, both arms always returning an env.
+"""
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "design-wrong"
+response = """
+Code is right: it takes pi-durable's hook type as the design intends. Reconciliation Brief: design sec-3 quotes the signature as `(target: EnvTarget, context) => ExecutionEnv | undefined | Promise<…>`, typed `NonNullable<HarnessOptions["env"]>` in session.ts, both arms always returning an env.
+"""
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+
+[[finding]]
+id = "F-3"
+status = "verified"
+severity = "nit"
+title = "PHASE-03 EX-2 predicted four broken assertions; three broke"
+detail = """
+Expected (plan PHASE-03 EX-2): four exact assertions in test/daemon-sections.test.ts updated (~87, ~117, ~128, the sequence from ~140).
+Observed: three failed and were updated (:120-126, :156, :182). The ~128 `before` harness declares only persona+skills, so its replay has no `conversation` section (phase-03 sheet F1). The criterion's operative clause — update what the new key breaks, nothing else changes order — holds.
+"""
+disposition = "tolerated"
+response = """
+plan.toml criteria are immutable and off the reconcile surface. The count was a prediction; the operative clause holds and the ~128 case is explained (phase-03 sheet F1, notes Harvest). The deviation stays recorded in notes Harvest and this ledger; no plan edit.
+"""
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "tolerated"
+response = """
+plan.toml criteria are immutable and off the reconcile surface. The count was a prediction; the operative clause holds and the ~128 case is explained (phase-03 sheet F1, notes Harvest). The deviation stays recorded in notes Harvest and this ledger; no plan edit.
+"""
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+
+[[finding]]
+id = "F-4"
+status = "verified"
+severity = "nit"
+title = "PHASE-01 VT-2 keyword openTestHarness absent: verify-vt FAIL"
+detail = """
+Expected: `doctrine slice verify-vt 004` passes every VT.
+Observed: PHASE-01 VT-2 FAIL — "keyword `openTestHarness` absent from test/conversation-context.test.ts". The contextOf cases (:120-154) use `openIndexedHarness`, which wraps `openTestHarness` + `closing` (test/harness-fixture.ts), lifted in PHASE-01's refactor. The behaviour VT-2 names (root in default, a fork's parent, no entry for an unindexed id) is asserted. All other 8 VTs pass.
+"""
+disposition = "tolerated"
+response = """
+The keyword is a proxy for the behaviour, and the behaviour is asserted through openIndexedHarness, which is openTestHarness plus closing. Keywords are immutable plan criteria; gaming the file with a dead reference would be worse. verify-vt reports this one FAIL until the plan is superseded.
+"""
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "tolerated"
+response = """
+The keyword is a proxy for the behaviour, and the behaviour is asserted through openIndexedHarness, which is openTestHarness plus closing. Keywords are immutable plan criteria; gaming the file with a dead reference would be worse. verify-vt reports this one FAIL until the plan is superseded.
+"""
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+
+[[finding]]
+id = "F-5"
+status = "verified"
+severity = "nit"
+title = "PHASE-04 VT-2 is a source-token check, not a behavioural test"
+detail = """
+Expected: a VT criterion is evidenced by a test.
+Observed: PHASE-04 VT-2's test_file is src/room/connection.ts with keywords `shellEnv?:`/`shellEnv` — it checks the signature exists. Its behaviour (observedEnv passes shellEnv to RemoteExecutionEnv) is proven by PHASE-04 VT-1's room tests (test/daemon-env.test.ts "room conversation env": own values, masking, per-exec wins over a real pi-env daemon).
+"""
+disposition = "aligned"
+response = """
+Authored that way in the plan (RV-013 F-3 split the room half into PHASE-04, VT-1 as the behavioural proof). VT-1 exercises observedEnv's shellEnv through a real pi-env daemon: own values, masking, per-exec precedence. No gap.
+"""
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "aligned"
+response = """
+Authored that way in the plan (RV-013 F-3 split the room half into PHASE-04, VT-1 as the behavioural proof). VT-1 exercises observedEnv's shellEnv through a real pi-env daemon: own values, masking, per-exec precedence. No gap.
+"""
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+
+[[finding]]
+id = "F-6"
+status = "verified"
+severity = "nit"
+title = "New conversationExtension tests leave their harnesses open"
+detail = """
+Expected: a test closes the harness it opens (`closing` exists in test/harness-fixture.ts since PHASE-01).
+Observed: test/daemon-sections.test.ts:52-81 opens three harnesses (two openTestHarness, one resuming openFauxHarness) and closes none. The sibling `cwdExtension` describe (:38-50, pre-existing) does the same, so this follows the file's local pattern; memory storage only, `just check` exits clean (no hanging handles). Found by the delegate pass.
+"""
+disposition = "fix-now"
+response = """
+Three-line fix in this unit: wrap the three new harnesses in `closing(...)`. The pre-existing cwdExtension tests are outside SL-004's diff and stay as they are.
+"""
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+response = """
+Three-line fix in this unit: wrap the three new harnesses in `closing(...)`. The pre-existing cwdExtension tests are outside SL-004's diff and stay as they are.
+"""
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "closing(...) on all three; just check green on host (71 files, 2083 tests)"
+
+# Findings are append-only `[[finding]]` tables, added by `review raise`.
+# Empty here at creation — a fresh review is Active, awaiting the raiser.

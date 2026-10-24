@@ -78,7 +78,7 @@ run (user direction). Outcomes:
 
 ## Harvest
 <!-- single-copy: updated in place each harvest; ids only, never restated content -->
-fresh-as-of: 2026-10-24 · PHASE-03 (all phases implemented; next /audit) · 9d996b2
+fresh-as-of: 2026-10-25 · /audit (RV-014 concluded; next /reconcile) · 9d996b2 + F-6 fix
 
 ### Produced
 
@@ -89,6 +89,7 @@ fresh-as-of: 2026-10-24 · PHASE-03 (all phases implemented; next /audit) · 9d9
 - PHASE-01 conversation context, 0a80895; PHASE-02 host shellEnv, 51c5dfb; PHASE-04 room shellEnv, 322cfdb; PHASE-03 prompt section + docs, 9d996b2. `just check` green on host at 9d996b2 (2083 tests); no `gate` recipe, so `doctrine check gate` is unconfigured.
 - Plan deviations for /audit + /reconcile: PHASE-03 EX-2 predicted four assertion updates, but three were needed (the re-send case's `before` harness declares only persona+skills); PHASE-02 env hook type is pi-durable's wider `NonNullable<HarnessOptions["env"]>`; PHASE-04 VT-2 is a source-token check, its behavioural proof is VT-1. Beyond plan: test helpers lifted into `test/harness-fixture.ts`; `IndexReader`/`storedEntry` added to `src/topics.ts`; host and room env tests share one fixture.
 - minted: IMP-011 — route topics.ts's remaining index reads through the own-key helpers
+- RV-014 (reconciliation audit): F-1/F-2 design-wrong → its Reconciliation Brief; F-3/F-4 tolerated plan deviations; F-5 aligned; F-6 fixed (test harnesses closed in test/daemon-sections.test.ts)
 
 ### Learned
 
@@ -100,5 +101,5 @@ fresh-as-of: 2026-10-24 · PHASE-03 (all phases implemented; next /audit) · 9d9
 
 ### Open
 
-- VH-1 (room runtime, user at the terminal) — design sec-6.
+- VH-1 (room runtime, user at the terminal) — design sec-6; /close confirms or records it outstanding (RV-014 Synthesis).
 - satan side, out of scope: the `q spawn` reminder in `~/satan-corpus/prompts/env/room.txt`.

@@ -20,6 +20,7 @@ import {
 import { type Skill, skillsExtension } from "../src/skills.ts";
 import { tempDir } from "./fixtures.ts";
 import {
+  closing,
   FAUX_MODEL,
   openFauxHarness,
   openTestHarness,
@@ -55,6 +56,7 @@ describe("conversationExtension", () => {
     const sections = conversationExtension.sections ?? [];
     expect(sections.map(({ key, tag }) => [key, tag])).toEqual([["conversation", false]]);
     const test = await openTestHarness([conversationExtension]);
+    closing(test.harness);
     expect(await systemPromptSections(test)).toEqual([
       { conversation: `Conversation: ${String(test.root.id)} (topic: ${DEFAULT_TOPIC})` },
     ]);
@@ -64,6 +66,7 @@ describe("conversationExtension", () => {
     const test = await openTestHarness(
       daemonExtensions({ personaFiles: [], projectContext: undefined, skills: [] }),
     );
+    closing(test.harness);
     await test.root.configure({ cwd: "/work" }, context);
     // An empty persona list still renders its section (empty text); skills render none.
     expect((await systemPromptSections(test)).map(keysOf)).toEqual([
@@ -75,6 +78,7 @@ describe("conversationExtension", () => {
     const test = await openFauxHarness(new MemoryStorage(), {
       extensions: [conversationExtension],
     });
+    closing(test.harness);
     expect(await systemPromptSections(test)).toEqual([
       { conversation: `Conversation: ${String(test.root.id)}` },
     ]);
