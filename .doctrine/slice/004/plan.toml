@@ -1,0 +1,91 @@
+# Implementation plan for SL-004 — the authored, durable phase plan.
+#
+# This is the single source of each phase's objective, criteria, verification,
+# and links. Runtime status lives separately under .doctrine/state/ (phase
+# tracking) — never record progress here. Hand-edit freely: the tool reads this
+# file but does not rewrite it.
+schema  = "doctrine.plan.overview"
+version = 1
+slice   = "SL-004"
+
+# Canonical spec/requirement links — cite ids, never restate what they say. The
+# plan reader does not model these yet, so nothing downstream consumes them.
+[specs]
+primary       = []
+collaborators = []
+
+[requirements]
+targets      = []
+dependencies = []
+
+# One [[phase]] per ordered phase, in execution order — the authored array order
+# IS the order; never sort by id. Ids are PHASE-NN (zero-padded), immutable and
+# never reused once authored — edits append, they never renumber.
+[[phase]]
+id        = "PHASE-01"
+name      = "The conversation context: index read and pure mapping"
+objective = "New module `src/conversation-context.ts` (DEC-018): `ConversationContext {id, entry?}`; `contextOf(read, id)`, the one index read, an own-key lookup over `readIndex` (`src/topics.ts` stays the index's only owner); pure `conversationVars(profile, cwd, context)` giving all six `SATAN_*` names, empty when absent (DEC-021), with the comment that no key may be omitted (RV-012 F-1); pure `conversationLine(context)` (DEC-019 wording). No consumer wired yet (design sec-2, sec-5)."
+entrance_criteria = [
+  { id = "EN-1", text = "Design locked (run rev 36, commit 546b74f); SL-003 done." },
+  { id = "EN-2", text = "Gate baseline at the base commit: `just check` green on the host at 67208d0 (2026-10-24: 70 files, 2062 tests, exit 0). In an agent container, red only in the `test/runner/*` set `mem.fact.malebolge.runner-suite-red-in-agent-container` names is the baseline, not this slice's regression." },
+]
+exit_criteria = [
+  { id = "EX-1", text = "`conversationVars` returns a `Record<string, string>` with exactly the six names on every input: no key omitted, no `undefined` value — the room half of RV-012 F-1 (pi-env drops `undefined`, so an omitted key cannot mask an inherited one)." },
+  { id = "EX-2", text = "Values: `SATAN_HARNESS=malebolge`; `SATAN_PROFILE` as given; ids decimal strings; topic and parent from the entry; empty parent for a non-fork; empty topic and parent with no entry (DEC-021); `SATAN_CWD` as given (the caller resolves DEC-022's fallback)." },
+  { id = "EX-3", text = "`contextOf` reads root in `default` (DEC-015), a fork's parent, and no entry for an id the index lacks; the lookup is own-key (`constructor`-safe, as `storedTopic`)." },
+  { id = "EX-4", text = "`conversationLine` gives `Conversation: <id> (topic: <t>)`, or `Conversation: <id>` with no entry." },
+  { id = "EX-5", text = "`just check` green (baseline reds excepted, per EN-2); eslint zero warnings; biome format clean." },
+]
+verification = [
+  { id = "VT-1", expects = "design VT-1: the mapping table — fork, non-fork, no entry; every row has all six keys, string values (RV-012 F-1)", test_file = "test/conversation-context.test.ts", keywords = ["conversationVars", "SATAN_PARENT_CONVERSATION", "SATAN_TOPIC", "malebolge"], waived = false },
+  { id = "VT-2", expects = "design VT-2: contextOf over openTestHarness reads root in default, a fork's parent, and no entry for an unindexed id", test_file = "test/conversation-context.test.ts", keywords = ["contextOf", "openTestHarness", "fork", "default"], waived = false },
+  { id = "VT-3", expects = "conversationLine with and without a topic", test_file = "test/conversation-context.test.ts", keywords = ["conversationLine", "Conversation: "], waived = false },
+]
+specs        = []
+requirements = []
+
+[[phase]]
+id        = "PHASE-02"
+name      = "Tool environment: shellEnv on both profiles"
+objective = "Wire the variables into every exec (DEC-020, design sec-3): `SessionOptions.env` widens to pi-durable's `(target: EnvTarget) => ExecutionEnv | Promise<ExecutionEnv>`; `daemon-env.ts` host and room arms share `conversationEnv(profile, defaultCwd, target)` (resolves `target.cwd ?? default` once, DEC-022) and pass `shellEnv`; `observedEnv` gains optional `shellEnv`, the room env id stays `pi-env:daemon-room` (RFC-002, RV-012 F-4); `test/harness-fixture.ts`'s `openTestHarness` hook takes `EnvTarget` and can run through the real `daemonEnv` (RV-012 F-9). `src/runner/` untouched."
+entrance_criteria = [
+  { id = "EN-1", text = "PHASE-01 completed." },
+  { id = "EN-2", text = "Re-read in the installed dist before writing against them: `NodeExecutionEnv`'s env merge order (`env/node.js` ~205-212), `RemoteExecutionEnv`'s `shellEnv` handling (`pi-env/dist/remote-env.js` ~767), bash tool's `{env: {}, inheritEnv: true}` (`tools/bash.js` ~36)." },
+]
+exit_criteria = [
+  { id = "EX-1", text = "Host: a bash tool call in conversation A prints A's six values, in B prints B's (two conversations, different values)." },
+  { id = "EX-2", text = "Host: with `SATAN_TOPIC` set in the daemon's process environment, an unindexed conversation's bash prints `[${SATAN_TOPIC}]` as `[]` — empty, distinguished from absent (RV-012 F-1 demonstrate, host half)." },
+  { id = "EX-3", text = "A caller's explicit per-exec `env` wins over `shellEnv` on the host." },
+  { id = "EX-4", text = "Room: over the existing fixture (fake `ssh` running pi-env's local daemon, which inherits the test process's environment), `observedEnv` builds `RemoteExecutionEnv` with id `pi-env:daemon-room` for every conversation, and an exec prints the conversation's values; an inherited `SATAN_TOPIC` is masked to `[]` for an unindexed conversation (RV-012 F-1 demonstrate, room half). If the fixture's daemon proves not to inherit the test's environment, STOP and /consult rather than weakening the criterion." },
+  { id = "EX-5", text = "Existing `daemon-env.test.ts` cases updated to the `EnvTarget` call shape; `daemon-start.ts` compiles unchanged or with only the type follow-through." },
+  { id = "EX-6", text = "`just check` green (baseline reds excepted); eslint zero warnings; biome format clean." },
+]
+verification = [
+  { id = "VT-1", expects = "design VT-3: host bash sees its own conversation's SATAN_*; inherited SATAN_TOPIC overridden with empty ([]); per-exec env wins (RV-012 F-1)", test_file = "test/daemon-env.test.ts", keywords = ["callThenAnswer", "toolResults", "SATAN_CONVERSATION", "[${SATAN_TOPIC}]"], waived = false },
+  { id = "VT-2", expects = "design VT-4, strengthened: room env keeps id pi-env:daemon-room, carries shellEnv, masks an inherited SATAN_TOPIC (RV-012 F-1, F-4)", test_file = "test/daemon-env.test.ts", keywords = ["pi-env:daemon-room", "shellEnv", "SATAN_TOPIC"], waived = false },
+  { id = "VT-3", expects = "observedEnv passes shellEnv to RemoteExecutionEnv", test_file = "src/room/connection.ts", keywords = ["shellEnv"], waived = false },
+  { id = "VT-4", expects = "harness fixture hook takes EnvTarget (RV-012 F-9)", test_file = "test/harness-fixture.ts", keywords = ["EnvTarget"], waived = false },
+]
+specs        = []
+requirements = []
+
+[[phase]]
+id        = "PHASE-03"
+name      = "System prompt section and docs"
+objective = "`conversationExtension` in `src/conversation-context.ts`: one untagged section `conversation` rendering `conversationLine(await contextOf(input.read, input.conversationId))` (DEC-019); registered in `daemonExtensions` right after `cwdExtension`. No other extension declares the key (RV-012 F-6). Docs: the `conversation` section in `docs/internals.md`'s section tree; the six variables in `README.md` beside the daemon's own `SATAN_*` table, marked as what tools receive, not daemon configuration (RV-012 F-2). Then VH-1."
+entrance_criteria = [
+  { id = "EN-1", text = "PHASE-02 completed." },
+]
+exit_criteria = [
+  { id = "EX-1", text = "`systemPromptSections` shows `conversation` untagged, directly after `cwd`, with `Conversation: <id> (topic: <t>)`; and `Conversation: <id>` for an unindexed conversation." },
+  { id = "EX-2", text = "Existing `daemon-sections.test.ts` order assertions updated for the new key; nothing else changes order." },
+  { id = "EX-3", text = "README and docs/internals.md updated as in the objective." },
+  { id = "EX-4", text = "`just check` green (baseline reds excepted); eslint zero warnings; biome format clean." },
+]
+verification = [
+  { id = "VT-1", expects = "design VT-5: the conversation section, untagged, after cwd, with and without a topic", test_file = "test/daemon-sections.test.ts", keywords = ["conversation", "Conversation: ", "systemPromptSections"], waived = false },
+  { id = "VT-2", expects = "conversationExtension registered after cwdExtension", test_file = "src/daemon-extensions.ts", keywords = ["conversationExtension"], patterns = ["^\\s*conversationExtension,"], waived = false },
+  { id = "VH-1", expects = "design VH-1: after the user deploys this build to the room, from a malebolge conversation `env | grep SATAN_` shows all six with this conversation's values and `~/db/q who` shows a mem.origin row with them. User at the terminal." },
+]
+specs        = []
+requirements = []
