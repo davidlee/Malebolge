@@ -1,0 +1,358 @@
+id    = 10
+slug  = "code-review-review-of-sl-003"
+title = "code-review review of SL-003"
+# no status — a review's status is DERIVED from its findings, so
+# it is never stored (the storage rule forbids derived data in authored files).
+
+[review]
+facet     = "code-review"     # scope|design|plan|phase-plan|implementation|code-review|reconciliation
+raiser    = "claude-reviewer"
+responder = "responder"
+rounds_base = 0
+contests_base = 0
+concluded = true
+
+[[review.turn]]
+act = "conclude"
+role = "raiser"
+note = """
+Full-depth pass over `git diff a7ec48f..b053e1f -- src test` against design.md sec-2..sec-6, README topics/skew sections and docs/internals.md §Protocol. Four Claude reviewers, one per handover focus area (topics/backfill; request path; protocol parse + sec-4 refusal texts; attach CLI matrix + resolveHere + test fidelity); orchestrator re-read the cited lines for every major and minor and reproduced F-1. Behavioural claims backed by scratchpad scripts against real memory harnesses / real sockets (proto.mts, probe.ts, race.ts, pairs.ts) and focused vitest runs (all green). Known drift in SL-003 notes Harvest/Open not re-raised.
+"""
+
+[target]                   # the outbound `reviews` edge: RV-NNN ──reviews──▶ <ref>
+ref   = "SL-003"
+
+[[finding]]
+id = "F-1"
+status = "open"
+severity = "major"
+title = "Expected an unwritten topic named `constructor` refused like any other; observed it passes the existence check, creates an orphaned conversation, and can never be written"
+detail = """
+`topicNameOf` (src/protocol.ts:138) accepts `constructor`, the one lowercase own-key of Object.prototype. Lookups read inherited keys:
+- src/conversations.ts:127 `index.topics[name] === undefined` → `Object`, so the DEC-016 existence check passes
+- src/conversations.ts:139 `index.topics[target.name]?.cwd`
+- src/topics.ts:143 `index.topics[name] ?? {}` → spreads a function into the record
+
+Reproduced (scratchpad proto.mts, real memory harness, fresh store):
+- `list {topic:constructor}` → `{"ids":[],"truncated":false}` (expected `no topic constructor`)
+- `attach {topic:constructor}` → creates conversation 8; index `conversations.8 = {topic:"constructor"}`, `topics` stays `{}` — a topic created implicitly (DEC-016 breach) and never listed by `--topics`
+- `topic {name:constructor}` → pi-durable `Value contains a non-JSON function; expected strict JSON`; the topic can never be made, so conversation 8 is orphaned.
+
+Fix: `Object.hasOwn` at every `index.topics[...]` read (or null-prototype maps); add `constructor` to the name tests.
+"""
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding]]
+id = "F-2"
+status = "open"
+severity = "major"
+title = 'Expected backfill to write `{topic:"default", parent?}` (design backfill step 2); observed it never writes `parent`, so pre-index forks lose their lineage'
+detail = """
+design.md:124 — backfill writes `{topic: "default", parent?}` for every ownerless record the index lacks.
+src/topics.ts:157-159 `writeTopic(index, record.id, DEFAULT_TOPIC)` — `record.parent` is in scope and dropped.
+
+Reproduced (scratchpad probe.ts): pre-index store with a fork + 200 conversations → fork's entry is `{"topic":"default"}`.
+
+Live impact: the room daemon restarted on this code 2026-10-24 19:35, so backfill has already run on the production room store; its pre-index forks are indexed parentless. Because backfill only writes entries the index lacks, a fix to `unindexed` alone will not repair them. pi-durable's records still carry `parent`, so a repair is possible: the fix should also merge a missing `parent` into existing default entries (merge-never-replace holds).
+
+Nothing reads `parent` today; D4 builds on it.
+"""
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding]]
+id = "F-3"
+status = "open"
+severity = "major"
+title = "Expected `--topic NAME` with `--dir`/`--no-dir` refused at parse (exit 2, like bare `--dir`); observed both accepted and the flag silently dropped"
+detail = """
+src/attach-invocation.ts:228-237 `targetFrom` returns the `--topic`/`--here` branches (:229-234) before the `dir needs set-topic` check (:235). `checkAlone` does not cover it.
+
+Verified: `attachInvocationOf(["--topic","a","--dir","/d"])` → `{kind:"topic",name:"a",new:false}`; `node src/attach-main.ts --topic a --new --dir /d` (socket absent) gets past parsing to the connect wait (exit 124), not exit 2. All 55 other flag pairs refuse as README/sec-5 say (scratchpad pairs.ts).
+
+Failure: `--topic work --new --dir ~/repo` (confusing --dir with --cwd) silently starts a conversation in the topic's/daemon's directory. Under the host profile the tools write in the user's tree, so the wrong directory is not cosmetic.
+
+Test gap: test/attach-invocation.test.ts:74-75 covers only bare `--dir`/`--no-dir`.
+Fix: hoist the dir/no-dir check above the topic branches; add both pairs to the refusal table.
+"""
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding]]
+id = "F-4"
+status = "open"
+severity = "minor"
+title = "Expected a request to settle once — an error refuses it; observed an error followed by a matching reply resolves (exit 0 with `[error: …]` on stderr)"
+detail = """
+src/request.ts:137-156 `handleRequestFrame` has no `state.failure`/`state.answered` guard: `failRequest` sets `failure`, a later reply calls `resolve`, and the promise settles resolved before `close` rejects. Reply-then-error also prints the error after a resolved reply.
+The interactive path guards this (src/attach.ts:166-168 `if (state.failure !== undefined) return;`) — the two paths now disagree on settle-once.
+
+Reachability: today's daemon `finish()` (src/daemon.ts:75-84) sends exactly one terminal frame, so not reachable from this daemon; reachable from any proxy/older/newer daemon sending two frames. `request` now backs three modes plus `resolveHere`.
+Verified by reviewer script against a fake daemon (both orders resolved).
+Fix: early-return in `handleRequestFrame` when failure is set or already answered.
+"""
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding]]
+id = "F-5"
+status = "open"
+severity = "minor"
+title = 'Expected a malformed daemon line to end the client with one error line and exit 1 (README:140-147 "never a stack trace"); observed an uncaught SyntaxError'
+detail = """
+src/request.ts:179 `handleRequestFrame(state, JSON.parse(line))` inside the `data` listener, unguarded. A line `not json` kills the process with `SyntaxError … at request.ts:179` (reviewer script).
+Carried over, not introduced: a7ec48f src/attach.ts:549 (listing path) had the same unguarded parse; src/attach.ts still has it on the interactive path.
+Fix: parse in a try; on failure treat as a failed request (notice + RequestFailedError). Consider fixing the interactive path in the same change.
+"""
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding]]
+id = "F-6"
+status = "open"
+severity = "minor"
+title = "Expected attaching to a topic with no conversations to start exactly one; observed two concurrent attaches each start one"
+detail = """
+src/conversations.ts `openTopic`: the index read (`indexOfTopic` → `latestIn`) is one commit, `create` is a second; nothing re-checks between. Design sec-3 accepts the two-commit gap only for a stale topic directory, not a duplicate first conversation.
+Reproduced (scratchpad race.ts): `Promise.all` of two `open({kind:"topic",name:"work",new:false})` → ids 8 and 14, topic holds [14, 8].
+Failure: two terminals/Emacs + terminal `--topic work` at once on an empty topic bind different conversations; the older one is no longer "latest".
+Fix: an in-process per-topic mutex around the find-or-create (one daemon owns the store), or record the gap as accepted in sec-3.
+"""
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding]]
+id = "F-7"
+status = "open"
+severity = "minor"
+title = "Expected the backfill test to exercise paging and forks; observed 3 conversations (< BACKFILL_PAGE=64) and no fork"
+detail = """
+test/topics.test.ts:248-296 creates 3 conversations; BACKFILL_PAGE is 64 (src/topics.ts:47), so the cursor loop never takes a second page, and no fork exists — the gap that let the dropped-`parent` finding through.
+Reviewer script confirmed paging works at 203 conversations: a coverage gap, not a paging bug.
+Fix: >64 conversations including a fork; assert the fork's `parent` and that a second run commits nothing.
+"""
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding]]
+id = "F-8"
+status = "open"
+severity = "minor"
+title = "Expected the BACKFILL_PAGE comment to be true; observed it claims one commit never reads the whole store, while backfill reads every page inside one commit"
+detail = """
+src/topics.ts:46 "small, so one commit never reads the whole store at once". backfillIndex (:153-161) collects every page into `waiting` inside a single `session.commit`, holding every ConversationRecord (task-owned filtered after reading).
+Consequence: each daemon start scans the whole conversations table (subagent conversations included) before `resume()` — O(N) startup work, even when nothing is unindexed. Acceptable, but the comment states the opposite of the mechanism.
+Fix: correct the comment (paging bounds each storage read, not the commit); optionally keep ids, not records.
+"""
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding]]
+id = "F-9"
+status = "open"
+severity = "minor"
+title = "Expected the default `--here` git-root wiring to be tested; observed every resolveHere test injects the gitRoot seam"
+detail = """
+src/attach-invocation.ts:391 default `gitRoot = () => gitRootOf(process.cwd())`. Every resolveHere test passes `rootAt(...)` (test/attach-invocation.test.ts:210-213); nothing runs attach-main `--here`.
+The past bug (lookup returning cwd) is now covered at unit level — `gitRootOf` tests from a subdirectory, the root, and no .git (test/project-context.test.ts:237-255). But a regression of line 391 itself (e.g. back to `() => process.cwd()`) passes the suite — exactly the shape mem.pattern.malebolge.injected-seam-needs-real-test names.
+Fix: one test that chdirs into a temp repo subdirectory and calls resolveHere without the seam.
+"""
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding]]
+id = "F-10"
+status = "open"
+severity = "minor"
+title = "Expected `--here` matching to be documented as exact physical-path equality; observed a topic dir written with a trailing slash or via a symlink silently never matches"
+detail = """
+src/attach-invocation.ts:356 `topic.cwd === root`. `gitRootOf` returns the physical path (process.cwd() resolves symlinks); `--dir` is stored as typed (src/topics.ts:14, DEC-107 opaque string).
+Verified by reviewer script: topic dir `.../repo/` or `.../link/repo` → `no topic has directory .../real/repo`.
+This follows the design/README "exactly" rule, so it is not a code defect, but the trap is undocumented. The client cannot normalise (room paths are not the client's).
+Fix: README sentence — `--here` compares the symlink-resolved git root; `--set-topic NAME --here` writes one that matches.
+"""
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding]]
+id = "F-11"
+status = "open"
+severity = "minor"
+title = "Expected the usage text to describe accepted attach forms; observed `--new [--cwd DIR]` twice, implying `--conversation N --new` is valid"
+detail = """
+src/attach-main.ts:21 `[--conversation N | --new [--cwd DIR] | --topic NAME | --here] [--new [--cwd DIR]] [--emacs]`. The trailing group suggests `--conversation N --new`, which is refused. Seen live in VH-1 output.
+Fix: `[--conversation N | [--topic NAME | --here] [--new [--cwd DIR]] | --new [--cwd DIR]] [--emacs]`, or one line per mode.
+"""
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding]]
+id = "F-12"
+status = "open"
+severity = "minor"
+title = "Expected a test that a `topic` write frame on a bound connection is refused and writes nothing; observed only `list` frames tested"
+detail = """
+test/daemon.test.ts:762-775 sends `{type:"list"}` and `{type:"list",page:2}` after binding. sec-4's later-line rule covers every first-line frame; `topic` is the only one that mutates state.
+Behaviour is correct today (`isFirstLineFrame` derives from `FIRST_LINE` via Object.hasOwn), but a narrowing of that check would let a later `topic` line write the index with no test failing.
+Fix: add `{type:"topic",name:"work"}` and `{type:"attach",topic:"work"}` to the loop and assert the index's topics are unchanged.
+"""
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding]]
+id = "F-13"
+status = "open"
+severity = "nit"
+title = "Expected README skew contract to cover sec-5 skew shapes; observed it names only `unknown message type` for `attach`/`list`"
+detail = """
+README:222-229 describes `unknown message type "<frame>"` naming `attach` or `list`; omits the `topic` frame and the unknown-key form (`<frame>: unknown key topic[s]`) that `skewOf` also recognises, and the hint now names a feature (`topic`/`topics`). README:144-145 still "a daemon that predates `list`". The hint string itself matches (src/request.ts:74-75).
+Fix: add the unknown-key shape; say `<feature>` not `<frame>`.
+"""
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding]]
+id = "F-14"
+status = "open"
+severity = "nit"
+title = "Expected `attach --here` to wait for a starting daemon like a plain attach (10 s); observed resolveHere uses the 1 s listing wait"
+detail = """
+src/attach-invocation.ts:400-402 resolves with `LIST_WAIT` (:417, 1 s); a plain attach uses DEFAULT_WAIT (src/attach.ts:266, 10 s). Right after `malebolge-start`, `attach --here` can fail where `attach --topic X` would have waited. Read, not run.
+Fix: pass the attach's wait when resolving `--here` for an attach.
+"""
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding]]
+id = "F-15"
+status = "open"
+severity = "nit"
+title = "Expected `--topics` output to be one `NAME<TAB>DIR` record per line; observed a directory containing newline or tab breaks the records"
+detail = '''
+`cwd` is an opaque string (DEC-107; docs/internals.md:133-137); src/render.ts prints `name\tcwd` raw. A directory with `\n`/`\t` yields extra/broken lines on a stdout README says scripts can read. Names are constrained, directories not. Low likelihood (only a deliberate `--dir`).
+Fix: refuse control characters in `cwd` at the `topic` frame parse, or escape on output.
+'''
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding]]
+id = "F-16"
+status = "open"
+severity = "nit"
+title = "Expected one line-wiring helper and distinct names; observed wireRequest cloning attach wire, two different `frameOf`s, and a hard-wired stderr"
+detail = """
+- src/request.ts:172-185 `wireRequest` clones src/attach.ts:221-234 `wire` (destroy on error, split lines, settle on close) — a shared `wireLines(socket, onLine, onClose)` removes it.
+- `frameOf` (request.ts:81, invocation→wire frame) vs private `frameOf` (attach.ts:48, stdin line→command): same name, different concepts.
+- `resolveHere` hard-wires `process.stderr` (attach-invocation.ts:402) where every other path takes `errors`.
+- the socket `error` handler drops the cause, so ECONNRESET surfaces only as "closed before the request was answered".
+"""
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding]]
+id = "F-17"
+status = "open"
+severity = "nit"
+title = "Expected loose result typing to be tight; observed `answer` takes `Promise<unknown>`, `ListResult` discriminated by Array.isArray, `cwd` type check duplicated"
+detail = """
+- src/daemon.ts:204 `answer(state, produce: () => Promise<unknown>)` — any value compiles as a reply; type it `ConversationsMessage | TopicsMessage`.
+- src/conversations.ts `ListResult = ConversationPage | readonly NamedTopic[]` told apart by `Array.isArray`; tag it like `ListQuery`, or split a `topics()` method.
+- src/protocol.ts:183 and :209 each check `typeof cwd !== "string"` → `cwd must be a string`; one helper.
+"""
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding]]
+id = "F-18"
+status = "open"
+severity = "nit"
+title = "Expected design sec-5 step 1 git-root mechanism to match code; observed `.git` directory walk instead of `git rev-parse --show-toplevel`"
+detail = """
+design.md:330 names `git rev-parse --show-toplevel`; src/project-context.ts:137-140 `gitRootOf` walks up for `.git`. Same result for repos, worktrees, submodules; differs under GIT_DIR/GIT_WORK_TREE or a stray `.git`. Amend the design text at reconcile.
+"""
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding]]
+id = "F-19"
+status = "open"
+severity = "nit"
+title = "Expected test names to match what they assert; observed several that overstate"
+detail = """
+- test/attach-invocation.test.ts:227 "the frame carries its name" checks only the `--list` frame.
+- :268, :284 set MALEBOLGE_PROFILE, which resolveHere never reads — the assertions prove nothing about the named behaviour (lives in attach-main, unexercised).
+- :366-368 "lookup is silent" asserts unrelated renderer output.
+- test/daemon.test.ts:893 "not the client's" — no client profile to contrast.
+- test/topics.test.ts:156-168 hook-throw test installs its own throwing hook: it proves pi-durable's rollback contract, not `indexConversation`; name it as a contract test.
+"""
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding]]
+id = "F-20"
+status = "open"
+severity = "nit"
+title = "Expected one storage owner per file in tests; observed backfill test opening a second harness while the first is open"
+detail = """
+test/topics.test.ts:259 opens `before`; :274 and :285 open the same SQLite path while `before` stays open until :290. pi-durable README: "One process owns a storage at a time". Works under WAL today; relies on unpromised behaviour.
+Fix: close `before.harness` before `openSession`.
+"""
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding]]
+id = "F-21"
+status = "open"
+severity = "nit"
+title = "Expected parseFirstLineFrame tests to add coverage; observed they largely repeat the parseConnectionMessage table"
+detail = """
+test/protocol.test.ts:259-319 repeats the list/topic/refusal rows of :111-160. Keep the cases specific to the `undefined` (not-a-first-line-frame) return; drop the copies.
+"""
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+# Findings are append-only `[[finding]]` tables, added by `review raise`.
+# Empty here at creation — a fresh review is Active, awaiting the raiser.
