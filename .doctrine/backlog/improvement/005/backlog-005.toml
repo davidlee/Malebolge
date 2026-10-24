@@ -5,10 +5,10 @@ id = 5
 slug = "justfile-has-no-gate-recipe-so-doctrine-check-gate-and-check-commits-default-cannot-run"
 title = "justfile has no gate recipe, so doctrine check gate (and check commit's default) cannot run"
 kind = "improvement"
-status = "open"
-resolution = ""                 # seeded empty so `backlog edit` sets it in place
+status = "resolved"
+resolution = "duplicate"
 created = "2026-10-23"
-updated = "2026-10-23"
+updated = "2026-10-24"
 tags = []
 
 # outbound-only. Cross-kind structural edges (e.g. references with a role

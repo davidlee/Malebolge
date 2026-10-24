@@ -315,9 +315,23 @@ untouched: no `src/` change. `verify-vt 2` green on every phase.
 
 ## Harvest
 <!-- single-copy: updated in place each harvest; ids only, never restated content -->
-fresh-as-of: 2026-10-24 · PHASE-04 complete (all four) · code `2ef6487`, doctrine `a7626a2`
+fresh-as-of: 2026-10-24 · audit (RV-007) · `a21cbb3`
 
 ### Produced
+- `RV-007` — the reconciliation audit: 8 findings, no code defect; 1 major
+  (DEC-009 still prescribes merged stderr and a ten-second listing bound while the
+  design leans on an unrecorded five-second picker bound), 5 minor, 2 nit; the
+  reconciliation brief names three per-slice edits (design sec-4, design sec-5,
+  README), one selector-registry change (`test/fixtures.ts`) and one REV (DEC-009).
+- audit gate re-measured: format/eslint/tsc clean, `just ert` 38/38, `just smoke`
+  4/4, vitest 1824 passed / 11 red — the same three `test/runner/` files, re-derived
+  under `GIT_GUARD=off` (7 red, 1235 passed) so the reds are the container's, not
+  the slice's.
+- `IMP-008` — the documented page limit, waits and truncation text have no test
+  behind them (RV-007 F-8).
+- `IMP-005` resolved as a **duplicate** of `CHR-001` (both filed 2026-10-23 for the
+  missing `gate` recipe); IMP-005's Detail and Options were folded into CHR-001's
+  prose first, so one chore owns it.
 - PHASE-04 done — the docs: `docs/internals.md` §Protocol (the `list` frame, its
   `conversations`/`truncated` reply, the clean close, the first-line table, the
   unprefixed bound-connection message for both frames) and `README.md`
@@ -388,6 +402,10 @@ fresh-as-of: 2026-10-24 · PHASE-04 complete (all four) · code `2ef6487`, doctr
   the room side and both must land as one output.
 
 ### Learned
+- `mem.pattern.malebolge.criterion-sweep-must-include-governance` — a criterion
+  that says "no document claims X" must sweep the governance corpus (DEC, design,
+  plan), not only README and docs: PHASE-04 EX-5 passed while DEC-009 still carried
+  the ten-second claim it was written to retire.
 - A VT keyword is matched literally against the whole file, so prose wrapping
   breaks the gate: `already attached to` / `conversation N` on two lines reads
   as an absent fact. Rewrap, don't reword — and expect the failure only after
@@ -429,16 +447,19 @@ fresh-as-of: 2026-10-24 · PHASE-04 complete (all four) · code `2ef6487`, doctr
   not a trailing phase.
 
 ### Open
-- `/audit` next: all four phases are `completed` and `verify-vt 2` is green, so
-  the slice moves to `audit` and the audit/reconcile/close arc owns it from here.
+- `/reconcile` next: RV-007 is `done · await=none`; the brief's three per-slice
+  edits, one selector change and one REV (DEC-009) are its work, then `/close`.
 - IMP-007 (above) is the terminal-path fix for a cut listing, the sibling of
-  IMP-006; neither is this slice's to land.
+  IMP-006 and IMP-008; none is this slice's to land.
 - VH-1 (the optional user read of README §"Which conversation") is unexercised:
   the docs were reviewed by the agent's own prose pass (VA-1), not by the user.
+  Tolerated in RV-007 (F-7) — every factual claim in the section was verified live
+  against a fake daemon; the readability half is the user's, and the section is
+  short.
 - Doc drift with no test behind it: 50, one second, five seconds and the
   truncation line's exact text are prose constants now. Any change to
   `LIST_PAGE`, `LIST_WAIT`, `malebolge--list-timeout` or `TRUNCATED_HINT` should
-  grep the two documents.
+  grep the two documents. Owned by `IMP-008` (audit).
 - The stdout-completeness sharp edge (IMP-007) and the unbounded reply (IMP-006)
   share one shape: the client's terminal path is not a data path, and both fixes
   want the same commit in `src/attach-main.ts` / `src/attach.ts`.

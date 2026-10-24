@@ -1,0 +1,367 @@
+id    = 7
+slug  = "sl-002-reconciliation-audit-list-conversations-and-attach-to-one-from-emacs"
+title = "SL-002 reconciliation audit: list conversations and attach to one from Emacs"
+# no status — a review's status is DERIVED from its findings, so
+# it is never stored (the storage rule forbids derived data in authored files).
+
+[review]
+facet     = "reconciliation"     # scope|design|plan|phase-plan|implementation|code-review|reconciliation
+raiser    = "raiser"
+responder = "responder"
+rounds_base = 0
+contests_base = 0
+concluded = true
+
+[[review.turn]]
+act = "conclude"
+role = "raiser"
+note = """
+Conformance audit of SL-002 at a21cbb3 (four phases completed), against the locked design at rev 37, plan.toml, DEC-007..DEC-010, and the two prior passes (RV-005, RV-006).
+
+Examined: `slice conformance` (0 undeclared / 1 undelivered / 16 conformant), `verify-vt` 16/16, `check gate` (unavailable — no `gate` recipe), `just check`'s components (biome format clean over 168 files, eslint 0 warnings, tsc clean), `npx vitest run` 1824 passed / 11 failed with the red set re-derived under GIT_GUARD=off (7, 1235 passed), `just ert` 38/38, `just smoke` 4/4, all four commits diff-read against design sec-1..sec-6 and the criteria that prescribe them, DEC-007..DEC-010 read as governance, and the shipped CLI driven against four fake daemons (a 50-id page, a pre-`list` skew, no daemon, and a daemon that never answers).
+
+Result: no code defect. Eight findings — 1 major (DEC-009 still prescribes merged stderr and a ten-second listing bound, while the design leans on an unrecorded five-second picker bound), 5 minor, 2 nit. Dispositions: 2 design-wrong, 3 fix-now (one fixed in-pass: IMP-005 resolved as a duplicate of CHR-001), 1 follow-up (IMP-008), 2 tolerated (the container's eleven runner reds; PHASE-04's optional VH-1). Reconciliation brief written with three per-slice direct edits (design sec-4, design sec-5, README), one selector-registry change (test/fixtures.ts), and one REV amendment (DEC-009).
+"""
+
+[target]                   # the outbound `reviews` edge: RV-NNN ──reviews──▶ <ref>
+ref   = "SL-002"
+
+[[finding]]
+id = "F-1"
+status = "verified"
+severity = "major"
+title = "DEC-009 still prescribes a merged stderr and a ten-second listing bound; the picker's real bound is unrecorded in the design"
+detail = """
+Expected: an accepted decision and a locked design describe what the code ships, and a mechanism the design leans on for a user-facing guarantee is named somewhere a reader can find it.
+
+Observed: DEC-009's Choice still says "The listing is a synchronous subprocess into a temporary buffer, stderr merged, bounded by the client's own 10 s connect wait." Three of those clauses are no longer true, and only one has an amendment that covers it.
+
+- "stderr merged" contradicts design sec-5 step 1 ("stderr kept in its own buffer rather than merged") and the code: `malebolge--list-conversations` runs the client with `make-process :stderr <pipe-process>` (emacs/malebolge.el:238-262), pinned by the ERT case `malebolge-listing-keeps-stdout-and-stderr-apart`, which runs a real `sh`. The separation is what keeps truncation prose out of the candidate list (RV-005 F-12).
+- "bounded by the client's own 10 s connect wait" is false twice over. DEC-008's amendment moved the listing onto `LIST_WAIT` (1 s, src/attach.ts:255), and that wait bounds *connecting*, not answering: the listing client settles on the socket's close. Measured today against a fake daemon that accepts `{"type":"list"}` and never answers, `malebolge-attach --list` was still running when `timeout 20` killed it (exit 124). Measured against no daemon: exit 1 after 1059 ms.
+
+What actually bounds the pause in Emacs is a mechanism neither DEC-009 nor design sec-5 names: `malebolge--list-timeout` (5.0 s, emacs/malebolge.el:220) with `malebolge--await-listing` (:271-282), which delete the client and signal `user-error`. Design sec-5 step 1 claims the `message` + `redisplay` announcement means "a stopped daemon does not freeze the editor silently" — true, but only because of that unrecorded bound; without it the editor waits on the socket indefinitely.
+
+Consequence: PHASE-04 EX-5 ("No shipped document claims the listing waits ten seconds") was checked against README and docs/internals.md only. Both are clean. The accepted decision the slice descends from still carries the ten-second and merged-stderr claims, and the design omits the one mechanism that makes its own guarantee true.
+"""
+disposition = "design-wrong"
+response = """
+Confirmed, and the asymmetry is the finding. DEC-008 got the "its amendment supersedes it" treatment (design sec-4 says so in as many words). DEC-009 got amendments for the buffer-local record and for following, but none for the listing's streams or its wait, so its Choice still tells a reader that stderr is merged and that ten seconds bounds the listing.
+
+The measurement settles the wait: 1 s bounds connecting, the reply is unbounded (>=20 s against a daemon that accepts the frame and says nothing), and only `malebolge--list-timeout` (5 s) plus `malebolge--await-listing` keeps Emacs responsive — a mechanism design sec-5 leans on without naming.
+
+Delegated to /reconcile. Per-slice direct edit: design.md sec-5 names `malebolge--list-timeout` and `malebolge--await-listing` as the bound that makes "a stopped daemon does not freeze the editor silently" true, and notes that IMP-006 owns the client-side reply bound. Governance: REV amend DEC-009 — stderr kept separate (and why: the truncation prose must not become a candidate, RV-005 F-12), the reply unbounded and measured (2026-10-24, IMP-006), the picker's five-second bound as the defence. No code change: the code is right and the prose is behind it.
+"""
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "design-wrong"
+response = """
+Confirmed, and the asymmetry is the finding. DEC-008 got the "its amendment supersedes it" treatment (design sec-4 says so in as many words). DEC-009 got amendments for the buffer-local record and for following, but none for the listing's streams or its wait, so its Choice still tells a reader that stderr is merged and that ten seconds bounds the listing.
+
+The measurement settles the wait: 1 s bounds connecting, the reply is unbounded (>=20 s against a daemon that accepts the frame and says nothing), and only `malebolge--list-timeout` (5 s) plus `malebolge--await-listing` keeps Emacs responsive — a mechanism design sec-5 leans on without naming.
+
+Delegated to /reconcile. Per-slice direct edit: design.md sec-5 names `malebolge--list-timeout` and `malebolge--await-listing` as the bound that makes "a stopped daemon does not freeze the editor silently" true, and notes that IMP-006 owns the client-side reply bound. Governance: REV amend DEC-009 — stderr kept separate (and why: the truncation prose must not become a candidate, RV-005 F-12), the reply unbounded and measured (2026-10-24, IMP-006), the picker's five-second bound as the defence. No code change: the code is right and the prose is behind it.
+"""
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+
+[[finding]]
+id = "F-2"
+status = "verified"
+severity = "minor"
+title = "design sec-4's listConversations signature cannot write the stderr line the same section requires"
+detail = """
+Expected: the design's signature can express what the same section requires of it.
+
+Observed: design sec-4 prints
+
+    listConversations(socketPath, output, wait, presentation = "terminal"): Promise<void>
+
+and, two paragraphs later, requires that "a truncation line goes to stderr". That signature carries one output stream, so it cannot. The shipped seam is
+
+    listConversations(socketPath, output, errors: Writable, wait: ConnectWait,
+                      presentation: Presentation = "terminal")   [src/attach.ts:563-569]
+
+with `attach-main` supplying `process.stdout` and `process.stderr` (src/attach-main.ts:31-37) so the module stays off `process.*`.
+
+PHASE-02 recorded the deviation as deliberate and behaviour-preserving (notes §PHASE-02; the phase sheet's D2), and plan.toml PHASE-02 EX-2 repeats the same four-parameter list. So the defect is upstream of the code: a reader implementing from the design writes a seam that cannot write its mandated truncation line. Plan criteria are immutable-append and off the reconcile write surface; design sec-4 is the reconcilable artefact.
+"""
+disposition = "design-wrong"
+response = """
+Confirmed. The design's signature cannot meet the design's own stderr requirement: one output stream, and a truncation line that must reach stderr. PHASE-02 flagged the deviation rather than silently disagreeing, which is why this is a design defect and not a code one.
+
+Delegated to /reconcile as a per-slice direct edit of design.md sec-4: the signature gains `errors: Writable` between `output` and `wait`, with one clause saying why (the module stays off `process.*`; `attach-main` supplies both streams). plan.toml PHASE-02 EX-2 repeats the four-parameter list and is left alone — plan criteria are immutable-append and off the reconcile write surface.
+"""
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "design-wrong"
+response = """
+Confirmed. The design's signature cannot meet the design's own stderr requirement: one output stream, and a truncation line that must reach stderr. PHASE-02 flagged the deviation rather than silently disagreeing, which is why this is a design defect and not a code one.
+
+Delegated to /reconcile as a per-slice direct edit of design.md sec-4: the signature gains `errors: Writable` between `output` and `wait`, with one clause saying why (the module stays off `process.*`; `attach-main` supplies both streams). plan.toml PHASE-02 EX-2 repeats the four-parameter list and is left alone — plan criteria are immutable-append and off the reconcile write surface.
+"""
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+
+[[finding]]
+id = "F-3"
+status = "verified"
+severity = "minor"
+title = "README says a failed listing prints one line; a pre-list daemon prints two"
+detail = """
+Expected: README's failed-listing sentence is true of both cases it names.
+
+Observed: README.md:142-145 — "A listing that fails — no daemon, or one that predates `list` — prints one line and exits 1, never a stack trace."
+
+- No daemon: exit 1, one line (`[cannot connect to …: ENOENT]`), 1059 ms. True.
+- A daemon that predates `list`: exit 1 and **two** lines — `[error: unknown message type "list"]` then `[the daemon predates list: restart it (malebolge-stop, then malebolge-start)]` — with stdout empty (0 bytes). False as written.
+
+The two-line shape is deliberate and matches attach's shipped skew path: `failListing` writes the daemon's error and then the hint (src/attach.ts:492-500). Verified live against a fake daemon that answers a root snapshot followed by `unknown message type "list"` and keeps the connection open: no snapshot text leaks to stdout or stderr.
+
+The scope doc's "exits 1 with one message (not a stack trace)" reads the same loose way, but README is the user-facing claim and the one a script author will check.
+"""
+disposition = "fix-now"
+response = """
+Confirmed by measurement, not by reading. No daemon: one line, exit 1, 1059 ms. A pre-`list` daemon: two lines — the daemon's `unknown message type "list"` and the restart hint — exit 1, stdout empty. The two-line shape matches attach's shipped skew path and is the right behaviour; the sentence is what is wrong.
+
+Delegated to /reconcile as a per-slice direct edit of README.md:142-145: a failed listing prints the client's one error line and, for a daemon that predates `list`, the restart hint; it exits 1 and never prints a stack trace. No code change.
+"""
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+response = """
+Confirmed by measurement, not by reading. No daemon: one line, exit 1, 1059 ms. A pre-`list` daemon: two lines — the daemon's `unknown message type "list"` and the restart hint — exit 1, stdout empty. The two-line shape matches attach's shipped skew path and is the right behaviour; the sentence is what is wrong.
+
+Delegated to /reconcile as a per-slice direct edit of README.md:142-145: a failed listing prints the client's one error line and, for a daemon that predates `list`, the restart hint; it exits 1 and never prints a stack trace. No code change.
+"""
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+
+[[finding]]
+id = "F-4"
+status = "verified"
+severity = "minor"
+title = "conformance: test/fixtures.ts is a design-target the slice never edited"
+detail = """
+Expected: `doctrine slice conformance` reads 0 undeclared / 0 undelivered, or every non-zero cell is dispositioned.
+
+Observed: `doctrine slice conformance SL-002` today reports
+
+    undeclared (0):
+    undelivered (1):  test/fixtures.ts
+    conformant (16):  README.md, docs/internals.md, emacs/malebolge.el, six src/ files, eight test/ files
+
+`doctrine slice selector list SL-002` confirms `test/fixtures.ts` carries `design-target`. The slice never edited it. The file is the shared test module (`tempDir`, `socketPath`, a minimal MCP fake server); the slice's fake daemons grew their own `list` reply instead — `fakeDaemon` in test/attach.test.ts, and the smoke's own — while one shared fake-daemon fixture is IMP-003, which sits outside this slice.
+
+So the registry over-declares and the code is right. The load-bearing fix is the selector registry, which is what `slice conformance` reads; this project's design template carries no §6 selector mirror to edit alongside it.
+"""
+disposition = "fix-now"
+response = """
+Confirmed: conformance reads 0 undeclared / 1 undelivered / 16 conformant, and the undelivered path is a stale declaration rather than dropped work. `test/fixtures.ts` is the shared test module (temp dirs, socket paths, a minimal MCP fake); SL-002's fake daemons grew their own `list` reply instead, and one shared fake-daemon fixture is IMP-003, outside this slice.
+
+Delegated to /reconcile as a selector-registry change — the load-bearing surface, since that is what `slice conformance` reads: `doctrine slice selector add SL-002 --intent scope-relevant test/fixtures.ts` (the file stays relevant to the slice's tests; it is simply not a declared deliverable). Re-run `doctrine slice conformance SL-002` afterwards; the target shape is 0 undeclared / 0 undelivered / 16 conformant. There is no design §6 selector mirror in this project's template, so no prose edit accompanies it.
+"""
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+response = """
+Confirmed: conformance reads 0 undeclared / 1 undelivered / 16 conformant, and the undelivered path is a stale declaration rather than dropped work. `test/fixtures.ts` is the shared test module (temp dirs, socket paths, a minimal MCP fake); SL-002's fake daemons grew their own `list` reply instead, and one shared fake-daemon fixture is IMP-003, outside this slice.
+
+Delegated to /reconcile as a selector-registry change — the load-bearing surface, since that is what `slice conformance` reads: `doctrine slice selector add SL-002 --intent scope-relevant test/fixtures.ts` (the file stays relevant to the slice's tests; it is simply not a declared deliverable). Re-run `doctrine slice conformance SL-002` afterwards; the target shape is 0 undeclared / 0 undelivered / 16 conformant. There is no design §6 selector mirror in this project's template, so no prose edit accompanies it.
+"""
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+
+[[finding]]
+id = "F-5"
+status = "verified"
+severity = "nit"
+title = "the gate verb is dead here and SL-002 filed a duplicate of the item that already owned the fix"
+detail = """
+Expected: the gate evidence the audit skill names is obtainable by the verb it names, and the finding filed for its absence has one owner.
+
+Observed: `doctrine check gate` → "error: justfile does not contain recipe `gate`" (verified today). PHASE-01 filed IMP-005 for it on 2026-10-23 — but CHR-001, created the same day from RV-004 F-8 (SL-001's audit), already owned exactly that work: "Add a just gate recipe so doctrine check gate runs the project gate". One fix now has two owners, and a future agent can close one of them and believe the gate exists.
+
+The audit therefore took its gate evidence by hand, which is what the slice did per phase: `just check`'s components (biome format clean over 168 files, eslint 0 warnings, tsc clean), `npx vitest run` 1824 passed / 11 failed, `just ert` 38/38, `just smoke` 4/4. Nothing was skipped by the slice; the doctrine-level verb is simply dead here until a `gate` recipe exists.
+"""
+disposition = "fix-now"
+response = """
+Confirmed, and fixed inside this audit's scope rather than deferred.
+
+- `doctrine backlog edit IMP-005 --status resolved --resolution duplicate` — IMP-005 (filed by PHASE-01) duplicated CHR-001 (filed by RV-004 F-8 on 2026-10-23, same day, same work).
+- IMP-005's Detail and Options were folded into CHR-001's prose before resolving it, so the richer content survives under the single surviving owner. CHR-001 is open and is the one item that owns the `gate` recipe.
+- `doctrine supersede` was tried first and correctly refused a cross-family supersession (CHR vs IMP); the duplicate resolution is the honest route.
+
+The gate evidence this audit reports was taken by hand for the same reason the slice took it by hand: `just check` components, `just ert` 38/38, `just smoke` 4/4. Nothing was skipped. The doctrine-level verb stays dead until CHR-001 lands.
+"""
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+response = """
+Confirmed, and fixed inside this audit's scope rather than deferred.
+
+- `doctrine backlog edit IMP-005 --status resolved --resolution duplicate` — IMP-005 (filed by PHASE-01) duplicated CHR-001 (filed by RV-004 F-8 on 2026-10-23, same day, same work).
+- IMP-005's Detail and Options were folded into CHR-001's prose before resolving it, so the richer content survives under the single surviving owner. CHR-001 is open and is the one item that owns the `gate` recipe.
+- `doctrine supersede` was tried first and correctly refused a cross-family supersession (CHR vs IMP); the duplicate resolution is the honest route.
+
+The gate evidence this audit reports was taken by hand for the same reason the slice took it by hand: `just check` components, `just ert` 38/38, `just smoke` 4/4. Nothing was skipped. The doctrine-level verb stays dead until CHR-001 lands.
+"""
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+
+[[finding]]
+id = "F-6"
+status = "verified"
+severity = "nit"
+title = "just check exits 1: the container's eleven runner reds, unchanged by the slice"
+detail = """
+Expected: a green project gate at close.
+
+Observed: `just check` exits 1 in this container. Measured today: format, eslint and tsc clean; `npx vitest run` 1824 passed / 11 failed, the eleven in exactly three files — test/runner/collect.test.ts, test/runner/recovery.test.ts, test/runner/project-context-probe.test.ts — none of them this slice's.
+
+Re-derived rather than taken from the notes: re-running the runner suite with `GIT_GUARD=off` leaves 7 failures (1235 passed), matching `mem.fact.malebolge.runner-suite-red-in-agent-container` — four cleared by turning the `git` guard shim off, seven for the missing room/pi-env. The same eleven reds are recorded at PHASE-01's base-commit baseline (EN-4) and at every phase end, so the slice moved no test from green to red: the count and the file set are identical before, during and after.
+
+The plan anticipated this ("a phase is red only for a failure outside that set"), so this is not a criterion miss. It is the honest statement that this repo has no green gate in an agent container, only a stable red set.
+"""
+disposition = "tolerated"
+response = """
+Tolerated, with the rationale on the record rather than implied.
+
+The eleven failures predate the slice (PHASE-01 EN-4 measured them at the base commit), are identical in count and file set at every phase end and in this audit, and are caused by the container, which I re-derived instead of trusting the notes: `GIT_GUARD=off` takes the runner suite from 11 red to 7 red (1235 passed), exactly the split `mem.fact.malebolge.runner-suite-red-in-agent-container` documents — four from the `git` guard shim, seven from the absent room/pi-env. None of the three failing files is one the slice touched.
+
+So there is no regression to fix here, and the fix is not this slice's: a dev flake and a room (IMP-001, IMP-004, and satan-flake's side of the room) own it. The honest statement for a reader is that this repo has no green gate in an agent container, only a stable red set, and that SL-002 moved nothing into it.
+"""
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "tolerated"
+response = """
+Tolerated, with the rationale on the record rather than implied.
+
+The eleven failures predate the slice (PHASE-01 EN-4 measured them at the base commit), are identical in count and file set at every phase end and in this audit, and are caused by the container, which I re-derived instead of trusting the notes: `GIT_GUARD=off` takes the runner suite from 11 red to 7 red (1235 passed), exactly the split `mem.fact.malebolge.runner-suite-red-in-agent-container` documents — four from the `git` guard shim, seven from the absent room/pi-env. None of the three failing files is one the slice touched.
+
+So there is no regression to fix here, and the fix is not this slice's: a dev flake and a room (IMP-001, IMP-004, and satan-flake's side of the room) own it. The honest statement for a reader is that this repo has no green gate in an agent container, only a stable red set, and that SL-002 moved nothing into it.
+"""
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+
+[[finding]]
+id = "F-7"
+status = "verified"
+severity = "nit"
+title = "PHASE-04's optional VH-1 (a human read of README §Which conversation) is unexercised"
+detail = """
+Expected: PHASE-04's VH-1 — "the user reads README §"Which conversation" and confirms a returning reader can reach a conversation (and root) without being misled by the page limit" — is either exercised or consciously waived.
+
+Observed: unexercised. The section was reviewed by the agent's own VA-1 prose pass only, which is exactly what VH-1 exists to complement. This audit verified every factual claim in the section live: 50 ids on stdout with the truncation line on stderr and exit 0; `--list --new` → one usage line, exit 2, nothing on stdout; no daemon → exit 1 in 1059 ms with one line; a pre-`list` daemon → exit 1, empty stdout, the hint naming `list`; `ROOT_CONVERSATION_ID === 1` (pi-durable dist/types.js:2). So the section's truth is established and its readability is not.
+"""
+disposition = "tolerated"
+response = """
+Tolerated. The plan marks VH-1 optional, and the substitute evidence is stronger than the criterion asked for on the one axis that matters here — truth. Every factual claim in README §"Which conversation" was verified live in this audit (50 ids on stdout with the truncation line on stderr and exit 0; `--list --new` → exit 2 with nothing on stdout; no daemon → exit 1 in 1059 ms; a pre-`list` daemon → exit 1 with the hint and empty stdout), and `ROOT_CONVERSATION_ID` is 1 in the pinned pi-durable.
+
+What remains unverified is readability, which only the human can supply. Nothing is owed at close; the section is short and can be read at leisure, and F-3 changes one sentence in it anyway.
+"""
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "tolerated"
+response = """
+Tolerated. The plan marks VH-1 optional, and the substitute evidence is stronger than the criterion asked for on the one axis that matters here — truth. Every factual claim in README §"Which conversation" was verified live in this audit (50 ids on stdout with the truncation line on stderr and exit 0; `--list --new` → exit 2 with nothing on stdout; no daemon → exit 1 in 1059 ms; a pre-`list` daemon → exit 1 with the hint and empty stdout), and `ROOT_CONVERSATION_ID` is 1 in the pinned pi-durable.
+
+What remains unverified is readability, which only the human can supply. Nothing is owed at close; the section is short and can be read at leisure, and F-3 changes one sentence in it anyway.
+"""
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+
+[[finding]]
+id = "F-8"
+status = "verified"
+severity = "minor"
+title = "the documented page limit, waits and truncation text have no test behind them"
+detail = """
+Expected: a documented constant has something that fails when it drifts.
+
+Observed: README and docs/internals.md state the page limit (50, `LIST_PAGE`), the connect budget (one second, `LIST_WAIT`), the picker's own bound (five seconds, `malebolge--list-timeout`) and the truncation line verbatim ("the listing was truncated: older conversations are not shown"). No test reads any of them: the truncation test asserts that exactly one non-empty stderr line exists, not what it says (test/attach.test.ts, "writes one truncated line to stderr for --list"), and nothing ties the prose numbers to the constants.
+
+Every value is correct today — checked against src/conversations.ts:37, src/attach.ts:255,258, emacs/malebolge.el:220, and the live run. The defect is prospective: changing `LIST_PAGE` or either wait silently falsifies two documents and no test turns red. PHASE-04's sheet recorded this twice ("Stale number drift", "The docs hard-code numbers that no test reads") and deliberately did not fix it; notes §Harvest Open carries it as well. Nothing in the backlog owned it, so on a closing slice it would have died with the slice.
+"""
+disposition = "follow-up"
+response = """
+Confirmed and routed: IMP-008 — "Tie the documented page limit, waits and truncation text to the constants they describe" — files the work, with the four facts, their code homes, the three options and a recommendation (a doc test over the two files, the same shape as `verify-vt`'s literal-keyword check).
+
+The defect is prospective, not present: every documented value is correct today, checked against `LIST_PAGE`, `LIST_WAIT`, `TRUNCATED_HINT`, `malebolge--list-timeout` and the live run. But PHASE-04's own sheet recorded the drift risk twice and left it unstructured, and no backlog item owned it — on a closing slice that is how a known risk dies. IMP-008 is the owner now.
+"""
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "follow-up"
+response = """
+Confirmed and routed: IMP-008 — "Tie the documented page limit, waits and truncation text to the constants they describe" — files the work, with the four facts, their code homes, the three options and a recommendation (a doc test over the two files, the same shape as `verify-vt`'s literal-keyword check).
+
+The defect is prospective, not present: every documented value is correct today, checked against `LIST_PAGE`, `LIST_WAIT`, `TRUNCATED_HINT`, `malebolge--list-timeout` and the live run. But PHASE-04's own sheet recorded the drift risk twice and left it unstructured, and no backlog item owned it — on a closing slice that is how a known risk dies. IMP-008 is the owner now.
+"""
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+
+# Findings are append-only `[[finding]]` tables, added by `review raise`.
+# Empty here at creation — a fresh review is Active, awaiting the raiser.
