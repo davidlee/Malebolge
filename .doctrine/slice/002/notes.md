@@ -264,42 +264,134 @@ failed — all 11 under `test/runner/` (the container set), `just ert` 38/38,
 `just smoke` 4/4, byte-compile clean with `byte-compile-error-on-warn`.
 `test/structure.test.ts` untouched: no `src/` change.
 
+## PHASE-04 — Documentation: the frame, the flag, the page, the corrections (2026-10-24)
+
+One commit, `2ef6487` (amended once inside the phase — below): the `list` frame
+and its reply in `docs/internals.md` §Protocol, and `--list` + the `C-u` prompt,
+the 50-page and both corrections in `README.md` §"Which conversation". No code
+and no test changed: this is the phase that describes what PHASE-01..03 ship.
+
+**What each document gained, at its own altitude.** internals gained a five-row
+table of *first lines* — `attach`, `list`, a command — whose only job is EX-1's
+distinction ("a frame is a frame, not a verb on a bound connection"), then a
+bullet each for the `list` frame and its `conversations` reply, and three
+outcome bullets: parses → one reply then end; read fails → one error then end;
+malformed → one error naming the frame, binding nothing. The bound-connection
+bullet now covers both frames and keeps the *unprefixed* `already attached to
+conversation N` (RV-005 F-1, F-11). README gained `--list` in its code block,
+the `C-u M-x malebolge-attach` prompt with its list → prompt order, the page of
+50 with the stderr line the picker also says, and the three ways a cut page
+leaves everything reachable: a kept id, a plain attach, `ROOT_CONVERSATION_ID`
+(id 1). DEC-010's "the `list` row in the protocol table" is what made the table
+the right shape rather than a sixth bullet.
+
+**TDD in a docs phase, stated honestly.** There is no red-first to show: the red
+is the VT gate, and the gate speaks only after the boundary closes. What was
+done instead — every claim was written from its source line (`protocol.ts`,
+`conversations.ts`, `daemon.ts`, `attach.ts`, `malebolge.el`) rather than from
+the design's prose, and the first `verify-vt 2` was treated as the red. It
+failed: `keyword 'already attached to conversation' absent from
+docs/internals.md` — the sentence was right but the phrase was split across a
+line break. The commit was amended with a rewrap, `record-delta --commit`
+re-pointed the boundary at it, and the second run passed every VT of all four
+phases.
+
+Two decisions a reviewer would otherwise ask about:
+
+- **the page limit is stated twice, deliberately**: internals states `LIST_PAGE`
+  (50) and what `truncated` means on the wire; README states the page a user sees
+  and how to reach past it. One fact, two altitudes — not a paraphrase chain.
+- **the one-second figure is named a *connect* budget**, because IMP-006 records
+  that the reply is unbounded; the picker's own five-second bound is then named
+  as the defence it actually is. Describing `LIST_WAIT` as a listing timeout
+  would have repeated the mistake PHASE-03 caught in the design.
+
+Gate at phase end: biome format clean (168 files), eslint 0 warnings, `tsc
+--noEmit` clean, `npx vitest run` 1824 passed / 11 failed — all 11 under
+`test/runner/` (`collect`, `project-context-probe`, `recovery`), the known
+container set — `just ert` 38/38, byte-compile clean with
+`byte-compile-error-on-warn`, `just smoke` 4/4. `test/structure.test.ts`
+untouched: no `src/` change. `verify-vt 2` green on every phase.
+
 ## Harvest
 <!-- single-copy: updated in place each harvest; ids only, never restated content -->
-fresh-as-of: 2026-10-24 · PHASE-03 complete · code `613c718`, doctrine `d97f24e`
+fresh-as-of: 2026-10-24 · PHASE-04 complete (all four) · code `2ef6487`
 
 ### Produced
+- PHASE-04 done — the docs: `docs/internals.md` §Protocol (the `list` frame, its
+  `conversations`/`truncated` reply, the clean close, the first-line table, the
+  unprefixed bound-connection message for both frames) and `README.md`
+  §"Which conversation" (`--list`, `C-u M-x malebolge-attach`, the 50-page and
+  its truncation line, the three routes to root, both falsified claims corrected)
+  — commit `2ef6487`.
+- gate re-measured at phase end: format/eslint/tsc clean, `just ert` 38/38,
+  `just smoke` 4/4, vitest 11 red, all under `test/runner/` (container);
+  `verify-vt 2` all PASS.
+- IMP-007 — `attach-main` exits before a piped stdout drains, so a long
+  `--list` can be cut for a script or the Emacs picker; the fix is
+  `process.exitCode` plus a drained stream, a change to the shipped client idiom.
+- `mem.fact.malebolge.vt-keyword-must-not-wrap` — a VT keyword is matched
+  literally against the file, so a line-wrapped phrase fails the gate after the
+  boundary closes.
 - PHASE-03 done — the Emacs target picker: `malebolge-attach` under a prefix
   argument in the fixed order list → prompt → draft check → detach → attach,
   `--conversation N` / `--new` argv, the bounded listing seam with its own
   timeout, `malebolge--follow`, and the smoke's `list` reply + targeted-argv
   check (12 new ERT cases, 1 new smoke check).
-- gate re-measured at phase end: lint/tsc/format clean, `just ert` 38/38,
-  `just smoke` 4/4, vitest 11 red, all under `test/runner/` (container).
-- IMP-006 — `--list` bounds its connect but not its reply; the picker's own
-  bound defends Emacs, the client fix is left as work.
-- `mem.fact.malebolge.list-has-no-reply-timeout` — the measurement and its shape.
 - PHASE-02 done — `--list` as its own mode: the renderer's `conversations` case,
   the fourth invocation shape on its own `LIST_WAIT`, the generalised skew
   predicate, `NotListedError` and a reader that accepts exactly two frames
   (9 new tests).
-- gate re-measured at phase end: lint/tsc/format clean, `just ert` 24/24,
-  `just smoke` 3/3, vitest 11 red, all under `test/runner/` (container).
 - PHASE-01 done — the `list` frame, `list()`'s one descending ownerless page,
   `finish`, and the bound-connection refusal (commit `ec6c8c5`; 13 new tests).
-- gate re-measured at phase end: lint/tsc/format clean, `just ert` 24/24,
-  `just smoke` 3/3, vitest 11 red, all under `test/runner/` (container: git-guard
-  shim, no room).
+- gates re-measured at each phase end (01: ert 24/24, smoke 3/3; 02: ert 24/24,
+  smoke 3/3; 03: ert 38/38, smoke 4/4; 04: ert 38/38, smoke 4/4) — vitest 11
+  red throughout, always the same `test/runner/` container set.
 - IMP-005 — `doctrine check gate` cannot run here: the justfile has no `gate`
-  recipe, so the verb dies at `just gate` (`69929b9`); the phase ran the
+  recipe, so the verb dies at `just gate` (`69929b9`); each phase ran the
   components its criteria name instead.
-- DEC-007..DEC-010 — the four dispositions PHASE-02..04 still implement against.
-- `design.md` (locked rev 37, att-1..att-6) and `RV-005` (13 findings; the routed
-  ones land in PHASE-02 F-4/F-2-consumer, PHASE-03 F-5/F-3, PHASE-04 F-2-docs).
-- `plan.toml` / `plan.md` — four phases with EN/EX/VT; `research/research.md`
-  baselined (restamped at phase-plan time, no thread needed refreshing).
+- IMP-006 — `--list` bounds its connect but not its reply; the picker's own
+  bound defends Emacs, the client fix is left as work.
+- `mem.fact.malebolge.list-has-no-reply-timeout` — the measurement and its shape.
+- DEC-007..DEC-010 — `accepted`; the four inquiry dispositions PHASE-01..04
+  implemented against, each with an amendments section carrying the informal
+  pass's nine findings.
+- `design.md` — six sections (sec-1..sec-6), materialised at rev 32, locked at
+  rev 37; attested by att-1..att-6 (adversarial lane).
+- `research/research.md` — two threads + `raw/`, baselined; one cited fact
+  corrected (an old daemon answers an unknown first-line frame with root's
+  snapshot *then* the error). Restamped at phase-plan time, no thread refreshed.
+- RV-005 — design review, 13 findings (6 major), all `fix-now`, verified; the
+  six majors route `demonstrate`, and every one landed as a criterion: F-1/F-11
+  in PHASE-01, F-4/F-2-consumer in PHASE-02, F-5/F-3 in PHASE-03, F-2-docs and
+  F-9 in PHASE-04.
+- RV-006 — the narrow verification round, kept as its own record (3 findings,
+  re-raised on RV-005 so the run's own pass carries them).
+- `slice-002.md` — scope amended twice: to the RFC-002 refresh, then to RV-005.
+- `plan.toml` / `plan.md` — four phases (daemon, client, Emacs, docs) with EN/EX
+  and structured VT mandates; the sequencing rationale plus the critical pass
+  that revised it before materialisation.
+- phase sheets — four, materialised from `plan.toml` via `doctrine slice phases`
+  and each expanded by `/phase-plan` at its own boundary.
+- memories: `mem.pattern.doctrine.mcp-root-follows-session-cwd`,
+  `mem.pattern.doctrine.design-run-one-ledger-per-pass`,
+  `mem.fact.malebolge.biome-binary-needs-glibc-loader`,
+  `mem.fact.malebolge.runner-suite-red-in-agent-container`,
+  `mem.pattern.malebolge.frame-decoder-before-renderer`,
+  `mem.fact.malebolge.verify-vt-needs-phase-close`,
+  `mem.fact.malebolge.attach-exit-truncates-piped-stdout`,
+  `mem.fact.malebolge.list-has-no-reply-timeout`,
+  `mem.fact.malebolge.vt-keyword-must-not-wrap`.
+- IMP-004 — a local dev flake so the gate's toolchain comes from the flake. The
+  `justfile`'s `biome format .` (instead of `npx biome format .`) is the in-place
+  workaround for this slice, not the fix; IMP-001 is the same destination from
+  the room side and both must land as one output.
 
 ### Learned
+- A VT keyword is matched literally against the whole file, so prose wrapping
+  breaks the gate: `already attached to` / `conversation N` on two lines reads
+  as an absent fact. Rewrap, don't reword — and expect the failure only after
+  the boundary closes.
 - A `ConnectWait` bounds connecting, not answering: read which promise a named
   wait is actually handed to before describing it as a timeout for the reply.
 - `malebolge--follow`'s criterion is already satisfied by the erase's marker
@@ -311,73 +403,10 @@ fresh-as-of: 2026-10-24 · PHASE-03 complete · code `613c718`, doctrine `d97f24
 - A test whose process "fails fast" proves the wrong thing: `sleep 30 --list`
   rejects its extra argument immediately, so a bound test on it passes with the
   bound removed. `sh -c "sleep 30"` is what actually hangs.
-- mem.pattern.malebolge.frame-decoder-before-renderer — a reply no renderer
-  knows yet is decoded strictly in its test; do not widen `Printable` early.
-  PHASE-02 closed the loop: the same frame is now a `Printable`, its strict
-  decoding test passes unchanged, and the client narrows the type instead.
-- mem.fact.malebolge.verify-vt-needs-phase-close — VT attribution reads
-  UNATTRIBUTABLE until the phase's conformance boundary closes.
-- mem.fact.malebolge.attach-exit-truncates-piped-stdout — `attach-main` calls
-  `process.exit(0)` right after an awaited write, and stdout to a pipe is
-  asynchronous, so a listing's completeness is something to observe (PHASE-03's
-  ERT case captures the numeric stdout lines) rather than assume.
 - A two-arm union whose arms differ by *absence* (one has `mode`, one does not)
   is what lets a plan's "becomes a union" and "existing shapes unchanged" both
   hold: `mode?: undefined` on the untagged arm buys the call-site reading
   `invocation.mode === "list"` without touching the shipped object.
-
-### Open
-- IMP-006 (above) is the terminal-path fix for the unbounded listing; it also
-  makes the picker's own bound a backstop rather than the only defence.
-- PHASE-04 next, and it is the last phase: `docs/internals.md` sec-Protocol and
-  `README.md` sec-"Which conversation" must describe the frame, `--list`, `C-u
-  M-x malebolge-attach`, the 50-conversation page, and the tree's two README
-  corrections (RV-005 F-9, F-2-docs).
-- No open DEC / QUE / ASM minted by PHASE-02 or PHASE-03.
-- The stdout-completeness sharp edge is recorded, not fixed: if a long listing is
-  ever truncated under `process.exit`, the fix is `process.exitCode` plus a
-  drained stream in `attach-main`, a change to the shipped client idiom that
-  wants its own slice or backlog item rather than a phase.
-- PHASE-03's two inherited seams held as promised: `--list` prints ids and exits
-  0, and every listing failure carries `NOT_LISTED`. The smoke's fake daemon now
-  answers `list` itself; IMP-003 (one shared fake-daemon fixture) still sits
-  outside the slice, so each fake grows its own reply.
-- IMP-004 owns the `justfile`'s `biome` override: until it lands `just fmt-check`
-  needs the devshell's biome on PATH (a shell without it cannot run the gate).
-- satan ISS-053 (SPEC-002 has no row for the client socket) and ISS-055
-  (protocol handshake) remain theirs, not this slice's.
-
-### Produced
-- DEC-007..DEC-010 — `accepted`; the four inquiry dispositions, each with an
-  amendments section carrying the informal pass's nine findings.
-- `design.md` — six sections (sec-1..sec-6), materialised at rev 32, locked at
-  rev 37; attested by att-1..att-6 (adversarial lane).
-- `research/research.md` — two threads + `raw/`, baselined; one cited fact
-  corrected (an old daemon answers an unknown first-line frame with root's
-  snapshot *then* the error).
-- RV-005 — design review, 13 findings (6 major), all `fix-now`, verified; the
-  six majors route `demonstrate` (evidence is the plan's verification).
-- RV-006 — the narrow verification round, kept as its own record (3 findings,
-  re-raised on RV-005 so the run's own pass carries them).
-- `slice-002.md` — scope amended twice: to the RFC-002 refresh, then to RV-005.
-- `plan.toml` — four phases (PHASE-01 daemon, PHASE-02 client, PHASE-03 Emacs,
-  PHASE-04 docs) with EN/EX and structured VT mandates; RV-005's routed findings
-  are cited inline where their evidence lands (F-1, F-11 → 01; F-4, F-2 consumer →
-  02; F-5, F-3 → 03; F-2 docs → 04).
-- `plan.md` — sequencing rationale, plus the critical pass that revised it before
-  materialisation (order preservation, typed composition, stub-able listing seam,
-  two scope criteria given a home: PHASE-03/EX-5 and EX-9).
-- phase sheets — four, materialised from `plan.toml` via `doctrine slice phases`.
-- memories: `mem.pattern.doctrine.mcp-root-follows-session-cwd`,
-  `mem.pattern.doctrine.design-run-one-ledger-per-pass`,
-  `mem.fact.malebolge.biome-binary-needs-glibc-loader`,
-  `mem.fact.malebolge.runner-suite-red-in-agent-container`.
-- IMP-004 — a local dev flake so the gate's toolchain comes from the flake. The
-  `justfile`'s `biome format .` (instead of `npx biome format .`) is the in-place
-  workaround for this slice, not the fix; IMP-001 is the same destination from
-  the room side and both must land as one output.
-
-### Learned
 - Cross-repo ledger writes must use the target repo's `doctrine` binary; the
   MCP tools root at the session cwd (this misfiled ten findings on satan's
   RV-005, since withdrawn).
@@ -394,20 +423,35 @@ fresh-as-of: 2026-10-24 · PHASE-03 complete · code `613c718`, doctrine `d97f24
 - A base that is red for environment reasons must be *measured* before the plan
   claims a green gate. "No new failure beyond the known set" is the honest form
   of the criterion; "all green" would have been quietly weakened later.
+- Docs are the one deliverable no gate reads for truth: the page limit, the waits
+  and the message texts are now copied into prose, and nothing goes red when the
+  code moves. Recorded, not fixed — a doc test over prose is a new mechanism,
+  not a trailing phase.
 
 ### Open
-- No open DEC / QUE / ASM. Every decision is `accepted`; no assumption record
-  was needed.
-- Plan-phase handoff: `/phase-plan` expands the next phase's runtime sheet, then
-  `/execute` (or `/dispatch` for confined workers per phase). PHASE-01 is the
-  entry point; nothing else can start first.
-- IMP-004 (local dev flake) owns the justfile's `biome` override. Until it lands,
-  `just fmt-check` needs the devshell's biome on PATH; a shell without it cannot
-  run the gate, and that is environment, not code.
+- `/audit` next: all four phases are `completed` and `verify-vt 2` is green, so
+  the slice moves to `audit` and the audit/reconcile/close arc owns it from here.
+- IMP-007 (above) is the terminal-path fix for a cut listing, the sibling of
+  IMP-006; neither is this slice's to land.
+- VH-1 (the optional user read of README §"Which conversation") is unexercised:
+  the docs were reviewed by the agent's own prose pass (VA-1), not by the user.
+- Doc drift with no test behind it: 50, one second, five seconds and the
+  truncation line's exact text are prose constants now. Any change to
+  `LIST_PAGE`, `LIST_WAIT`, `malebolge--list-timeout` or `TRUNCATED_HINT` should
+  grep the two documents.
+- The stdout-completeness sharp edge (IMP-007) and the unbounded reply (IMP-006)
+  share one shape: the client's terminal path is not a data path, and both fixes
+  want the same commit in `src/attach-main.ts` / `src/attach.ts`.
+- IMP-003 (one shared fake-daemon fixture) still sits outside the slice, so each
+  fake grew its own `list` reply.
+- IMP-004 owns the `justfile`'s `biome` override: until it lands `just fmt-check`
+  needs the devshell's biome on PATH (a shell without it cannot run the gate).
 - `review_pass RV-005 STALE` still prints in the run's status: the pass concluded
   before the final section amendments were attested. Every section's current
   fingerprint is attested, the edge to `locked` was cleared and the design is
   locked — treat the flag as informational, not as an unreviewed section.
+- No open DEC / QUE / ASM. Every decision is `accepted`; no assumption record
+  was needed.
 - Other repos: satan ISS-053 (SPEC-002 has no row for the client socket, which
   now carries a verb that creates durable state) and ISS-055 (protocol
   handshake) remain theirs.

@@ -1,0 +1,50 @@
+memory_uid = "mem_01a16b4509677f41828b9c5c2bf8084a"
+memory_key = "mem.fact.malebolge.vt-keyword-must-not-wrap"
+schema_version = 1
+memory_type = "fact"
+status = "active"
+title = "A VT keyword is matched literally, so a line-wrapped phrase fails verify-vt"
+summary = "doctrine slice verify-vt greps the plan's keywords against the file: prose wrapping splits a required phrase and the gate reports the fact as missing"
+created = "2026-10-24"
+updated = "2026-10-24"
+
+[scope]
+paths = ["docs/internals.md", "README.md"]
+globs = []
+commands = ["doctrine slice verify-vt"]
+tags = ["malebolge", "doctrine", "verify-vt"]
+workspace = "default"
+repo = "github.com/davidlee/Malebolge"
+repo_id_kind = "remote"
+repo_id_confidence = "high"
+
+[git]
+anchor_kind = "checkout_state"
+commit = ""
+tree = "e016f2b0a09443d2b783989f0658131f2ff39a34"
+ref_name = "refs/heads/main"
+checkout_state_id = "137f8be7959215e7f7a91c725adcf18814fc66fe558477d3a01724eedcde942c"
+base_commit = "2ef648762f67fb105f5af91347b2ce124470b706"
+verified_sha = ""
+normalizer = "forget.checkout.v1"
+
+[review]
+verification_state = "unverified"
+reviewed = ""
+review_by = ""
+
+[trust]
+trust_level = "high"
+
+[ranking]
+severity = "medium"
+weight = 0
+
+[[relation]]
+label = "related"
+target = "mem_01a1687889237562a7929a9f7696b9ff"
+
+[[relation]]
+label = "related"
+target = "mem_01a16b01ab657a52bf887188f100ba5f"
+
