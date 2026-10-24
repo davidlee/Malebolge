@@ -90,6 +90,22 @@ intent = "design-target"
 selector = "test/harness-fixture.ts"
 intent = "design-target"
 
+[[selector]]
+selector = "src/attach-invocation.ts"
+intent = "design-target"
+
+[[selector]]
+selector = "src/request.ts"
+intent = "design-target"
+
+[[selector]]
+selector = "test/attach-invocation.test.ts"
+intent = "design-target"
+
+[[selector]]
+selector = "test/request.test.ts"
+intent = "design-target"
+
 [[relation]]
 label = "related"
 target = "RFC-002"

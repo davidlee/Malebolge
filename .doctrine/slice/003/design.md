@@ -145,8 +145,12 @@ test).
 ## Topics: names, `default`, directories, latest
 
 **Names (inq-9).** A topic name matches `^[a-z0-9][a-z0-9._-]{0,63}$`. One
-validator, `topicNameOf(text)` in `src/topics.ts`, is used by the protocol
-parser and by the client, so the two cannot disagree. A name that fails is
+validator, `topicNameOf(text)` in `src/protocol.ts`, is used by the protocol
+parser and by the client, so the two cannot disagree. It lives with the other
+wire validation rather than with the index: `src/protocol.ts` has no pi
+dependency, so the client and the parser validate a name without loading
+pi-durable, and `src/topics.ts` only ever receives names the parser has
+already checked. A name that fails is
 refused as `<frame>: topic must match [a-z0-9][a-z0-9._-]{0,63}`.
 
 **`default` (DEC-015)** is reserved:
@@ -362,17 +366,20 @@ path both use it, so every skew prints the restart hint.
 
 | file | change |
 |---|---|
-| `src/topics.ts` (new) | `IndexDocument`; `topicNameOf`; `indexConversation` (the hook); `assignTopic(name)` (the `init`); `backfillIndex`; `readIndex` (the one snapshot read, absent → `initial()`); over it `topicsOf`, `latestIn`, `idsIn`; `setTopic` |
+| `src/topics.ts` (new) | `IndexDocument`; `indexConversation` (the hook); `assignTopic(name)` (the `init`); `backfillIndex`; `readIndex` (the one snapshot read, absent → `initial()`); over it `topicsOf`, `latestIn`, `idsIn`; `setTopic` |
 | `src/session.ts` | passes `conversationCreated: indexConversation` to `Harness.open`; runs `backfillIndex` after `root()`, before `resume()` |
 | `src/conversations.ts` | `open` handles a topic target; `list(query)`; `setTopic`. Reads the index only through `topics.ts`. `conversations(session, defaults, profile)` takes the daemon's profile for the `topics` reply |
 | `src/daemon-start.ts` | passes `config.execution.profile` to `conversations` |
-| `src/protocol.ts` | `FirstLineFrame`, `parseFirstLineFrame`, `TopicMessage`, `TopicsMessage` (with `profile`); `attach` and `list` key lists widen; `AttachTarget` gains `topic` |
+| `src/protocol.ts` | `topicNameOf`; `FirstLineFrame`, `parseFirstLineFrame`, `TopicMessage`, `TopicsMessage` (with `profile`); `attach` and `list` key lists widen; `AttachTarget` gains `topic` |
 | `src/daemon.ts` | the `FIRST_LINE` table; `answer` generalises `answerList`; `laterLine` checks "is a first-line frame" |
-| `src/attach.ts` | `Here` and the invocation union; flags; `checkAlone`; `request` (typed reply, no rendering) replaces `listConversations`; `resolveHere`; `skewOf` |
+| `src/attach-invocation.ts` (new, extracted from `src/attach.ts`) | the command line: `Here`, the invocation union, flags, `checkAlone`, `attachInvocationOf`; `resolveHere` |
+| `src/request.ts` (new, extracted from `src/attach.ts`) | `request` (typed reply, no rendering), which replaces `listConversations`; `skewOf`, shared with interactive attach |
+| `src/attach.ts` | keeps the interactive connection only; uses `skewOf` from `src/request.ts` |
 | `src/attach-main.ts` | `USAGE`; awaits `resolveHere`, then dispatches a `ResolvedInvocation` and renders each mode's reply |
 | `src/render.ts` | the `topics` renderer |
 | `test/topics.test.ts` (new) | the index, the hook, backfill, names, latest |
 | `test/conversations.test.ts`, `test/protocol.test.ts`, `test/daemon.test.ts`, `test/attach.test.ts`, `test/render.test.ts`, `test/session.test.ts` | the matrices in section 7 |
+| `test/attach-invocation.test.ts`, `test/request.test.ts` (new) | the invocation table, `resolveHere`, and the request and skew cases, moved with the code they test |
 | `test/harness-fixture.ts` | `indexOf(harness)`, a snapshot read of the index |
 | `test/structure.test.ts` | only if a tier allowlist must name `topics` (it is a root module imported by root modules, so probably no change) |
 | `README.md`, `docs/internals.md` | section 7 |
@@ -381,6 +388,11 @@ path both use it, so every skew prints the restart hint.
   `IndexDocument`. That keeps "the index and the store diverge" a one-file
   question.
 - The daemon module still knows only `Conversations`.
+- The client split happens before the client features: first move invocation
+  parsing to `src/attach-invocation.ts` and the listing lifecycle to
+  `src/request.ts` with no behaviour change, then add the topic flags and
+  `--here` there. `src/attach.ts` stops being the home of every client
+  concern; `src/attach-main.ts` imports from the module that owns each one.
 - `src/runner/` is untouched. Its store is `runner.sqlite`
   (`src/runner/start.ts:65`), which has no index.
 
@@ -414,9 +426,9 @@ looked. It opens a fresh store with `Harness.open` and the hook only (no
 | `list` without a filter matches SL-002's output; with `topic` returns only that topic's ids; `topics` lists `default` first and carries the daemon's `profile` | VT, `test/daemon.test.ts`. The `unknown key topic` test (`:702-712`) is rewritten, and an unknown-key refusal is kept for `page` |
 | `topic` frame: create, idempotent re-create, set, clear, `default` refused, bad name refused | VT, `test/protocol.test.ts` (parse table) and `test/daemon.test.ts` (reply and close) |
 | First-line split: every frame type has a handler; a bound connection refuses each with `already attached` | VT: compile-time through the mapped type; `test/daemon.test.ts` for the three frames on a bound connection |
-| Client flags and exclusivity (DEC-017) | VT, `test/attach.test.ts`: the invocation table, one row per refused pair |
-| `--here`: exact match against a `host` daemon; refusal when the daemon reports `room`, whatever the client's `MALEBOLGE_PROFILE` (both mismatches: profile `host` with a room daemon's socket, and an unset profile with a host daemon's socket, which succeeds); for attach and `--list`, no match and several matches each refuse; `--set-topic --here` succeeds with zero and with several existing matches, and refuses against a `room` daemon. In every refusal no frame follows the listing, and the lookup itself writes nothing to stdout | VT, `test/attach.test.ts` with a stubbed git root and a stub daemon; VH (verified by a human) once against a live `host` daemon |
-| Skew: an old daemon answers each new shape with the restart hint | VT, `test/attach.test.ts`: a stub daemon answering `unknown message type "topic"`, `attach: unknown key topic` and `list: unknown key topics` |
+| Client flags and exclusivity (DEC-017) | VT, `test/attach-invocation.test.ts`: the invocation table, one row per refused pair |
+| `--here`: exact match against a `host` daemon; refusal when the daemon reports `room`, whatever the client's `MALEBOLGE_PROFILE` (both mismatches: profile `host` with a room daemon's socket, and an unset profile with a host daemon's socket, which succeeds); for attach and `--list`, no match and several matches each refuse; `--set-topic --here` succeeds with zero and with several existing matches, and refuses against a `room` daemon. In every refusal no frame follows the listing, and the lookup itself writes nothing to stdout | VT, `test/attach-invocation.test.ts` with a stubbed git root and a stub daemon; VH (verified by a human) once against a live `host` daemon |
+| Skew: an old daemon answers each new shape with the restart hint | VT, `test/request.test.ts`: `skewOf` and `request` against a stub daemon answering `unknown message type "topic"`, `attach: unknown key topic` and `list: unknown key topics`; `test/attach.test.ts` keeps the interactive path's skew assertion (the restart hint before attach) |
 | Live: `--topic` and `--here` against a running daemon | VH, one session, recorded in notes |
 | `just check` and `just ert` green | VT |
 

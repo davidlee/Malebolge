@@ -37,6 +37,7 @@ exit_criteria = [
   { id = "EX-3", text = "Root is indexed by the hook alone: a fresh store opened with `Harness.open` and `indexConversation`, without `backfillIndex`, has root's entry right after `root()` (RV-008 F-5)." },
   { id = "EX-4", text = "Backfill: conversations created through `openFauxHarness` (no hook), root included, are in `default` after reopening the same storage through `openSession`; a second reopen writes nothing (the document's sequence does not move). One commit, every read before any write." },
   { id = "EX-5", text = "`readIndex` over a store whose index was never written returns `initial()`; `latestIn` is the highest id in a topic; `idsIn` is newest first. Nothing outside `src/topics.ts` names `IndexDocument`." },
+  { id = "EX-7", text = "Writes merge into an entry, never replace it: `assignTopic` sets `topic` and the backfill adds missing entries without touching other keys, so fields a later slice adds (D4's titles, archive flags) survive every index write. A test seeds an entry with an extra key and shows `assignTopic` keeps it." },
   { id = "EX-6", text = "`test/harness-fixture.ts` gains `indexOf(harness)`, reading through `readIndex`. `just check` adds no failure beyond EN-3's baseline; `test/structure.test.ts` passes unchanged (`topics` is a root module imported by root modules)." },
 ]
 verification = [
@@ -44,6 +45,7 @@ verification = [
   { id = "VT-2", expects = "root indexed by the hook with no backfill (EX-3)", test_file = "test/topics.test.ts", keywords = ["Harness.open", "root()"], waived = false },
   { id = "VT-3", expects = "backfill of a pre-index store and its idempotence (EX-4)", test_file = "test/topics.test.ts", keywords = ["backfillIndex", "openFauxHarness", "openSession"], waived = false },
   { id = "VT-4", expects = "absent-document read, latest and newest-first ids (EX-5)", test_file = "test/topics.test.ts", keywords = ["readIndex", "latestIn", "idsIn"], waived = false },
+  { id = "VT-5", expects = "an entry's unknown keys survive assignTopic (EX-7)", test_file = "test/topics.test.ts", keywords = ["assignTopic", "keeps"], waived = false },
   { id = "VA-1", text = "Orchestrator diff review: the hook reads documents only (no table read, so no ReadAfterWrite); `src/topics.ts` is the sole owner of `IndexDocument`; the backfill pages with the cursor loop of `src/runner/durable-ids.ts`." },
 ]
 specs        = []
@@ -54,7 +56,7 @@ id        = "PHASE-02"
 name      = "First-line frames: one parser, one dispatch table (behaviour unchanged)"
 objective = "Refactor before feature: `src/protocol.ts` gains `FirstLineFrame` and `parseFirstLineFrame` over today's `attach` and `list`; `parseConnectionMessage` becomes `parseFirstLineFrame(...) ?? parseClientMessage(line)`. `src/daemon.ts` replaces `firstLine`'s per-verb branches with the mapped-type `FIRST_LINE` table, `answer` generalises `answerList`, and `laterLine` refuses any `FirstLineFrame` on a bound connection. No new frame and no wire change (design sec-4 The split; scope objective 6)."
 entrance_criteria = [
-  { id = "EN-1", text = "PHASE-01 complete (or independent: this phase touches neither `src/topics.ts` nor `src/session.ts`, so it may run in parallel on a separate worktree)." },
+  { id = "EN-1", text = "Design locked and the EN-3 baseline of PHASE-01 reproduced at this phase's base. No code dependency on PHASE-01: the two touch disjoint files and may run in parallel." },
   { id = "EN-2", text = "`firstLine`, `laterLine`, `answerList` and `bindTarget` re-read at their sites in `src/daemon.ts` before the table is written." },
 ]
 exit_criteria = [
@@ -66,7 +68,7 @@ exit_criteria = [
 verification = [
   { id = "VT-1", expects = "shipped daemon behaviour unchanged across the refactor, including first-line frames on a bound connection", test_file = "test/daemon.test.ts", keywords = ["already attached to conversation", "conversations"], waived = false },
   { id = "VT-2", expects = "the first-line parser yields attach and list frames and nothing else", test_file = "test/protocol.test.ts", keywords = ["parseFirstLineFrame"], waived = false },
-  { id = "VA-1", text = "Orchestrator diff review: no behaviour change; the table is the only per-verb dispatch; a new verb needs one parser case and one table row." },
+  { id = "VA-1", text = "Orchestrator diff review: no behaviour change; the table is the only per-verb dispatch, and a new verb's dispatch plumbing is one parser case and one table row (its parser, operation, reply, renderer and skew handling remain its own cost); handlers stay thin and `answer` only settles (reply, finish, or fail)." },
 ]
 specs        = []
 requirements = []
@@ -85,8 +87,9 @@ exit_criteria = [
   { id = "EX-3", text = "Attach by topic binds the highest-id conversation; `new` creates; a topic with no conversations creates its first; `default` binds its latest; plain `attach` still binds root." },
   { id = "EX-4", text = "`list` with no key returns exactly SL-002's reply on the same store; `{topic}` returns that topic's ids newest first, cut at `LIST_PAGE` with `truncated`; `{topics:true}` returns `default` first then by name, with the daemon's `profile`; a `topic` write replies `topics` with the one record and the same `profile`." },
   { id = "EX-5", text = "`topic` without `cwd` creates or leaves unchanged (idempotent); a string sets; `null` clears. The rewritten unknown-key test asserts the topic filter, and `{\"type\":\"list\",\"page\":2}` keeps the shipped refusal shape." },
+  { id = "EX-8", text = "`Conversations` returns plain values, not wire replies: `list` gives `{ids, truncated}` for `all` and `topic` and the topic records for `topics`; `setTopic` gives the written record. Each `FIRST_LINE` handler builds its reply (`conversations` or `topics`, adding the daemon's `profile`), as `answerList` builds the `conversations` reply today." },
   { id = "EX-6", text = "`src/daemon.ts` imports nothing from `src/topics.ts`: it knows only `Conversations`. `just check` adds no failure beyond the baseline." },
-  { id = "EX-7", text = "Topic names: one validator, `topicNameOf`, accepts `^[a-z0-9][a-z0-9._-]{0,63}$` and refuses anything else as `<frame>: topic must match [a-z0-9][a-z0-9._-]{0,63}`; the protocol parser uses it, and PHASE-04's client uses the same function (design sec-3 Names)." },
+  { id = "EX-7", text = "Topic names: one validator, `topicNameOf` in `src/protocol.ts` (no pi import), accepts `^[a-z0-9][a-z0-9._-]{0,63}$` and refuses anything else as `<frame>: topic must match [a-z0-9][a-z0-9._-]{0,63}`; the protocol parser uses it, and PHASE-04's client uses the same function (design sec-3 Names)." },
 ]
 verification = [
   { id = "VT-1", expects = "D1 and the cwd precedence (EX-2)", test_file = "test/conversations.test.ts", keywords = ["setTopic", "cwd"], waived = false },
@@ -101,12 +104,13 @@ requirements = []
 [[phase]]
 id        = "PHASE-04"
 name      = "Client: one request path, topic flags, topics renderer, skew"
-objective = "`src/attach.ts`: `listConversations` becomes `request(socketPath, frame, replyType, errors, wait)`, resolving to the typed reply and printing nothing to stdout; callers render. The invocation union gains `--topic`, `--list --topic`, `--topics` and `--set-topic NAME [--dir | --no-dir]`; `checkAlone` generalises `checkListAlone`; `skewOf` replaces `skewFrameOf` and matches both skew shapes. `src/render.ts` gains the `topics` renderer; `src/attach-main.ts` gains `USAGE` and dispatch. `--here` is PHASE-05 (design sec-5; DEC-017)."
+objective = "Split first, with no behaviour change: invocation parsing (types, `attachInvocationOf`, `checkAlone`) moves to `src/attach-invocation.ts`, and the listing lifecycle to `src/request.ts`, with their tests moving to `test/attach-invocation.test.ts` and `test/request.test.ts`; `src/attach.ts` keeps the interactive connection (design sec-6). Then: `listConversations` becomes `request(socketPath, frame, replyType, errors, wait)`, resolving to the typed reply and printing nothing to stdout; callers render. The invocation union gains `--topic`, `--list --topic`, `--topics` and `--set-topic NAME [--dir | --no-dir]`; `checkAlone` generalises `checkListAlone`; `skewOf` replaces `skewFrameOf` and matches both skew shapes. `src/render.ts` gains the `topics` renderer; `src/attach-main.ts` gains `USAGE` and dispatch. `--here` is PHASE-05 (design sec-5; DEC-017)."
 entrance_criteria = [
   { id = "EN-1", text = "PHASE-03 complete: the wire shapes the client sends and reads exist." },
-  { id = "EN-2", text = "`listConversations`, `failBeforeAttach`, `skewFrameOf` and `attach-main.ts`'s coded-error exit path re-read at their sites." },
+  { id = "EN-2", text = "`listConversations`, `failBeforeAttach`, `skewFrameOf` and `attach-main.ts`'s coded-error exit path re-read at their sites. `test/attach.test.ts` already defines a local helper `skewOf()` that builds a skew message (`:718`); rename it before `src/request.ts` exports `skewOf`." },
 ]
 exit_criteria = [
+  { id = "EX-6", text = "The extraction lands before any feature and changes no behaviour: every shipped attach test passes after only moving files and imports. `src/attach.ts` no longer parses the command line or runs the listing lifecycle; `skewOf` has one home, `src/request.ts`, used by both `request` and interactive attach. `test/structure.test.ts` passes." },
   { id = "EX-1", text = "`request` resolves to the typed reply; a `FrameRefused`, a skew reply, or a close without a reply rejects; stray traffic from an older daemon that bound root is ignored. `--list` output is byte-identical to SL-002's." },
   { id = "EX-2", text = "Flags and exclusivity per design sec-5 (except `--here`): one invocation-table test row per accepted form and per refused pair, each refusal a `UsageError` (exit 2, usage line)." },
   { id = "EX-3", text = "`--topics` prints `name<TAB>cwd` lines; `--set-topic` prints the written record and exits 0; `--topic NAME [--new [--cwd]]` attaches." },
@@ -114,7 +118,9 @@ exit_criteria = [
   { id = "EX-5", text = "`just check` adds no failure beyond the baseline; `just ert` and `just smoke` green (the Emacs client's `--list` and attach paths are untouched)." },
 ]
 verification = [
-  { id = "VT-1", expects = "invocation table, exclusivity refusals, request contract and skew (EX-1, EX-2, EX-4)", test_file = "test/attach.test.ts", keywords = ["request", "checkAlone", "skewOf", "--set-topic", "--topics"], waived = false },
+  { id = "VT-1", expects = "invocation table and exclusivity refusals (EX-2)", test_file = "test/attach-invocation.test.ts", keywords = ["attachInvocationOf", "checkAlone", "--set-topic", "--topics"], waived = false },
+  { id = "VT-3", expects = "request contract and both skew shapes (EX-1, EX-4)", test_file = "test/request.test.ts", keywords = ["request", "skewOf", "unknown key topic"], waived = false },
+  { id = "VT-4", expects = "the interactive path prints the restart hint for a topic skew (EX-4)", test_file = "test/attach.test.ts", keywords = ["the daemon predates topic"], waived = false },
   { id = "VT-2", expects = "topics renderer output", test_file = "test/render.test.ts", keywords = ["topics"], waived = false },
   { id = "VA-1", text = "Orchestrator diff review: one request path serves `--list`, `--topics` and `--set-topic`; there is no second listing client; nothing but the public mode's caller writes the reply to stdout." },
 ]
@@ -136,7 +142,7 @@ exit_criteria = [
   { id = "EX-5", text = "`--here` is exclusive with `--topic`, `--conversation`, `--dir` and `--no-dir` (`UsageError`, exit 2). `just check` adds no failure beyond the baseline." },
 ]
 verification = [
-  { id = "VT-1", expects = "resolveHere with a stubbed git root and a stub daemon: match, room refusal in both mismatch directions, none, several, set-topic cases, silent lookup (EX-1..EX-4)", test_file = "test/attach.test.ts", keywords = ["resolveHere", "--here", "profile", "have directory"], waived = false },
+  { id = "VT-1", expects = "resolveHere with a stubbed git root and a stub daemon: match, room refusal in both mismatch directions, none, several, set-topic cases, silent lookup (EX-1..EX-4)", test_file = "test/attach-invocation.test.ts", keywords = ["resolveHere", "--here", "profile", "have directory"], waived = false },
   { id = "VA-1", text = "Orchestrator diff review: the client's `MALEBOLGE_PROFILE` selects the default socket and nothing else; an unresolved `Here` cannot reach a frame (the dispatch takes `ResolvedInvocation`)." },
 ]
 specs        = []

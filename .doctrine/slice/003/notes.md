@@ -107,10 +107,11 @@ If a later pass is wanted, it should probe the client's `resolveHere` and
 
 ## Harvest
 <!-- single-copy: updated in place each harvest; ids only, never restated content -->
-fresh-as-of: 2026-10-24 · design locked (run rev 41; RV-008 done); slice → plan · 5970b67 (all SL-003 work uncommitted)
+fresh-as-of: 2026-10-24 · design regressed to reviewing for the planning-time amendment (sec-3, sec-6; RV-009); plan drafted (53c9cdd + revisions) · 5970b67 (all SL-003 work uncommitted)
 
 ### Produced
 - design locked 2026-10-24 on the user's section review, `conducted` RV-008, and acceptance
+- CHR-003: revise RFC-001 against the current tree (carries the architectural review's RFC findings)
 - research round: `research/research.md` (cross-repo, shell route)
 - design run `dr-01a16bce-…`: 10 inquiries resolved; 7 sections; `design.md` materialised; review policy adversarial-then-human
 - RV-008: Codex adversarial pass, F-1..F-6 verified; adversarial lane attested sec-1..sec-7
@@ -125,5 +126,6 @@ fresh-as-of: 2026-10-24 · design locked (run rev 41; RV-008 done); slice → pl
 
 ### Open
 - DEC-007, DEC-008, DEC-010 — amendments owed at reconcile (design sec-7)
+- the top-level-`acceptance` trap fired twice (revs 38, 42) → mem.fact.doctrine.design-apply-top-level-acceptance-records-design-accepted
 - run rev 38 recorded a `design-accepted` act in error (a top-level `acceptance` on a declare-only submission records one). `review-disposed` did not stale it; the lock at rev 41 invalidated it and recorded the user's acceptance
 - quotient `pi_agent` still refuses: server reads quotient-policy/1, policy file is /2 (retested 2026-10-24, after restart)

@@ -1,0 +1,42 @@
+memory_uid = "mem_01a16c764abb74d1ba598dba082736fe"
+memory_key = "mem.fact.doctrine.design-apply-top-level-acceptance-records-design-accepted"
+schema_version = 1
+memory_type = "fact"
+status = "active"
+title = "A top-level acceptance on a design apply submission records a design-accepted act"
+summary = "In doctrine design apply, a top-level acceptance block records design-accepted with user authority, whatever else the submission does; never add one unless the user accepted the design"
+created = "2026-10-24"
+updated = "2026-10-24"
+
+[scope]
+paths = []
+globs = []
+commands = ["doctrine design apply"]
+tags = ["doctrine", "design-run"]
+workspace = "default"
+repo = "github.com/davidlee/Malebolge"
+repo_id_kind = "remote"
+repo_id_confidence = "high"
+
+[git]
+anchor_kind = "checkout_state"
+commit = ""
+tree = "4fac19886d2e9f6268f489b77bc2f8fd94415e42"
+ref_name = "refs/heads/main"
+checkout_state_id = "1bf836acecb64aaf7849f04e14d2b70f9449bc89e32751015243f209b0265d1e"
+base_commit = "53c9cddedeecf9ea38f86c5e190ff6b41a10a950"
+verified_sha = ""
+normalizer = "forget.checkout.v1"
+
+[review]
+verification_state = "unverified"
+reviewed = ""
+review_by = ""
+
+[trust]
+trust_level = "high"
+
+[ranking]
+severity = "high"
+weight = 0
+

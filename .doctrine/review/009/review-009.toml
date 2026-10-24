@@ -1,0 +1,52 @@
+id    = 9
+slug  = "design-review-of-sl-003"
+title = "design review of SL-003"
+# no status — a review's status is DERIVED from its findings, so
+# it is never stored (the storage rule forbids derived data in authored files).
+
+[review]
+facet     = "design"     # scope|design|plan|phase-plan|implementation|code-review|reconciliation
+raiser    = "raiser"
+responder = "responder"
+rounds_base = 0
+contests_base = 0
+concluded = true
+
+[[review.turn]]
+act = "conclude"
+role = "raiser"
+note = "Completed the narrow adversarial pass over SL-003 design sec-3 and sec-6, comparing current src/attach.ts, src/attach-main.ts, src/protocol.ts, test/structure.test.ts and test/attach.test.ts; read sec-2, sec-4, sec-5 and sec-7 only for amendment consistency. Raised F-1 (minor) for contradictory prospective test locations. Source inspection supports protocol.ts as a pi-durable-free validator owner (protocol imports fields/json; render's pi imports are type-only). Inference from proposed ownership: attach-invocation -> request -> protocol plus attach -> request permits an acyclic runtime graph, including shared skewOf and resolveHere's request call; extraction of current shared notice/connect helpers must avoid request importing attach, but no such reverse edge is required by this design. Root-to-root edges are allowed by test/structure.test.ts:65-70, so these new files require no tier allowlist change. sec-2/sec-4 ownership remains consistent; sec-5's existing-source references describe the pre-extraction baseline. No implementation changes, builds, tests or live verification performed; this is design evidence only. RV-008 findings were not reopened."
+
+[target]                   # the outbound `reviews` edge: RV-NNN ──reviews──▶ <ref>
+ref   = "SL-003"
+
+[[finding]]
+id = "F-1"
+status = "verified"
+severity = "minor"
+title = "Test relocation in sec-6 contradicts sec-7's verification locations"
+detail = "VERIFIED textual contradiction introduced by the amendment: .doctrine/slice/003/design.md:375-382 assigns invocation parsing and resolveHere to src/attach-invocation.ts, request/skew to src/request.ts, and their tests to test/attach-invocation.test.ts and test/request.test.ts. However sec-6 still delegates the matrices to section 7 (:381), where :429-431 explicitly requires the invocation table, resolveHere stub-daemon matrix and all new skew cases in test/attach.test.ts. These are prospective verification instructions, unlike sec-5's references to current source locations. Current test/attach.test.ts:592-635 contains the invocation/list parsing cases, :716-727 the interactive skew assertion, and :793-827 the listing skew/error assertions, so the promised relocation really does cross the existing verification boundaries. Inference: implementers can follow the new ownership table or the old acceptance locations and produce conflicting evidence expectations; putting every skew case in request.test.ts would also omit the interactive renderer assertion unless explicitly retained. Repair: reconcile the location instructions with the split, mapping invocation/resolveHere to attach-invocation tests, request transport/skew to request tests, and retaining interactive presentation coverage in attach tests. No behavioural failure is asserted."
+disposition = "fix-now"
+response = """
+Agreed: sec-7 still placed the moved tests in test/attach.test.ts. Sec-7 now maps the invocation table and the resolveHere matrix to test/attach-invocation.test.ts, skewOf and request skew cases to test/request.test.ts, and keeps the interactive path's skew assertion (restart hint before attach) in test/attach.test.ts. The plan's VT mandates already name these files.
+"""
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+response = """
+Agreed: sec-7 still placed the moved tests in test/attach.test.ts. Sec-7 now maps the invocation table and the resolveHere matrix to test/attach-invocation.test.ts, skewOf and request skew cases to test/request.test.ts, and keeps the interactive path's skew assertion (restart hint before attach) in test/attach.test.ts. The plan's VT mandates already name these files.
+"""
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "VERIFIED the materialised design repair at .doctrine/slice/003/design.md:429-431: invocation/exclusivity and resolveHere now name test/attach-invocation.test.ts; skewOf/request cases name test/request.test.ts; interactive attach explicitly retains its restart-hint assertion in test/attach.test.ts. These locations agree with sec-6 (:375-382) and preserve the interactive verification boundary identified in F-1. No new defect found in this repair. Design-text verification only; no implementation/runtime checks. Existing pass conclusion remains valid; no raise or reopen."
+
+# Findings are append-only `[[finding]]` tables, added by `review raise`.
+# Empty here at creation — a fresh review is Active, awaiting the raiser.
