@@ -1,0 +1,46 @@
+memory_uid = "mem_01a16b726c767cf383c2009031a72275"
+memory_key = "mem.pattern.doctrine.decision-is-not-a-revision-target"
+schema_version = 1
+memory_type = "pattern"
+status = "active"
+title = "A DEC is not a revision target: amend its prose body, not a REV"
+summary = "revision change add --target refuses anything outside SPEC/PRD/REQ/ADR/POL/STD; decisions, assumptions, questions and constraints are knowledge records whose bodies are amended with knowledge edit."
+created = "2026-10-24"
+updated = "2026-10-24"
+
+[scope]
+paths = []
+globs = []
+commands = []
+tags = ["doctrine", "reconcile"]
+workspace = "default"
+repo = "github.com/davidlee/Malebolge"
+repo_id_kind = "remote"
+repo_id_confidence = "high"
+
+[git]
+anchor_kind = "checkout_state"
+commit = ""
+tree = "c12f3133bd06841ba021dca87a8022d183697b12"
+ref_name = "refs/heads/main"
+checkout_state_id = "7511fcf9b3807bec7d113d8eef69e492f3c9a86113e7d084f13a752bbbbe5c33"
+base_commit = "fcc7cb35b8acc3652d7ea78a4ad18dd80c99fdfa"
+verified_sha = ""
+normalizer = "forget.checkout.v1"
+
+[review]
+verification_state = "unverified"
+reviewed = ""
+review_by = ""
+
+[trust]
+trust_level = "medium"
+
+[ranking]
+severity = "none"
+weight = 0
+
+[[relation]]
+label = "related"
+target = "mem_01a16b50d3ad76d28685f3d1e31e596f"
+

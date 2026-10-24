@@ -1,7 +1,7 @@
 id = 2
 slug = "attach-list-conversations"
 title = "List conversations and attach to one from Emacs"
-status = "reconcile"
+status = "done"
 created = "2026-10-23"
 updated = "2026-10-24"
 tags = ["durable", "emacs", "protocol"]

@@ -315,9 +315,15 @@ untouched: no `src/` change. `verify-vt 2` green on every phase.
 
 ## Harvest
 <!-- single-copy: updated in place each harvest; ids only, never restated content -->
-fresh-as-of: 2026-10-24 · audit (RV-007) · `a21cbb3`
+fresh-as-of: 2026-10-24 · done · `fcc7cb3`
 
 ### Produced
+- slice closed: `reconcile` (fcc7cb3) wrote the brief's three direct edits — design
+  sec-4's signature, design sec-5's picker bound, README's failed-listing sentence —
+  repointed `test/fixtures.ts` to `scope-relevant` (conformance 0 / 0 / 16), and
+  amended DEC-009; `close` landed the memory below. Re-verified after the writes:
+  `validate` clean, `verify-vt` 16/16, no source or test file touched since the
+  audit's measurement.
 - `RV-007` — the reconciliation audit: 8 findings, no code defect; 1 major
   (DEC-009 still prescribes merged stderr and a ten-second listing bound while the
   design leans on an unrecorded five-second picker bound), 5 minor, 2 nit; the
@@ -402,6 +408,10 @@ fresh-as-of: 2026-10-24 · audit (RV-007) · `a21cbb3`
   the room side and both must land as one output.
 
 ### Learned
+- `mem.pattern.doctrine.decision-is-not-a-revision-target` — a DEC is not a REV
+  target (a revision revises SPEC/PRD/REQ/ADR/POL/STD only): amend the decision's
+  prose body with `knowledge edit … --body-mode append`, and abandon a row-less REV
+  rather than leaving it `started`.
 - `mem.pattern.malebolge.criterion-sweep-must-include-governance` — a criterion
   that says "no document claims X" must sweep the governance corpus (DEC, design,
   plan), not only README and docs: PHASE-04 EX-5 passed while DEC-009 still carried
@@ -447,8 +457,9 @@ fresh-as-of: 2026-10-24 · audit (RV-007) · `a21cbb3`
   not a trailing phase.
 
 ### Open
-- `/reconcile` next: RV-007 is `done · await=none`; the brief's three per-slice
-  edits, one selector change and one REV (DEC-009) are its work, then `/close`.
+- SL-002 is `done` (4/4, rollup in agreement). SL-003 — RFC-002 step 2, topics and
+  the index — is unblocked and is the natural next slice; whether it also takes the
+  client-side reply bound (IMP-006) is its scope's call.
 - IMP-007 (above) is the terminal-path fix for a cut listing, the sibling of
   IMP-006 and IMP-008; none is this slice's to land.
 - VH-1 (the optional user read of README §"Which conversation") is unexercised:
