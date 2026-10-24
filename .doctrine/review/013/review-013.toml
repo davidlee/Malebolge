@@ -10,13 +10,21 @@ raiser    = "raiser"
 responder = "responder"
 rounds_base = 0
 contests_base = 0
+concluded = true
+
+[[review.turn]]
+act = "conclude"
+role = "raiser"
+note = """
+Three pi review probes (deepseek-flash, quotient run-20261024T111155349Z-9, -10, -11): room masking chain (pi-env client/daemon merge, launch path, fixture), env-hook timing/visibility/failure in pi-durable, plan executability (type ripple, fixtures, VT mandates, sizing, docs). Orchestrator checked each claim at the cited lines before raising; two pi claims rejected (runner conversations — separate store/env hook; hook re-entrancy — pi-durable's own buildEnv does the same read) and one not raised (fork of an unindexed parent, SL-003 behaviour). Design edited in place at the user's direction (no design-run reopen). Raisers re-verified in resumed sessions (-12, -13, -14); their four residual slips fixed in the same commit as this conclusion.
+"""
 
 [target]                   # the outbound `reviews` edge: RV-NNN ──reviews──▶ <ref>
 ref   = "SL-004"
 
 [[finding]]
 id = "F-1"
-status = "answered"
+status = "verified"
 severity = "major"
 title = "Design sec-2 room masking evidence cites a launch path malebolge does not use"
 detail = """
@@ -39,9 +47,16 @@ response = """
 Design sec-2 Masking rewritten (design.md edited directly, user 2026-10-24): room daemon launched directly (connection.ts:57,238, SendEnv=-*), sshd's non-login env; inherited SATAN_* only via sshd/PAM (inference); masking is defence in depth; merge order daemon < shellEnv < per-exec checked by running the shipped daemon; scope limited to env (BASH_ENV) and inheritEnv: false noted. Plan PHASE-04 EX-2 states the fixture over-approximates production. DEC-021 unchanged.
 """
 
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = """
+Raiser verified (pi, run-20261024T114716368Z-12). Follow-up: design sec-2 now says sshd runs the command through $SHELL -c, no login shell.
+"""
+
 [[finding]]
 id = "F-2"
-status = "answered"
+status = "verified"
 severity = "major"
 title = "Env-build failure semantics unspecified: a failed index read now fails the tool call"
 detail = """
@@ -64,9 +79,16 @@ response = """
 User decision 2026-10-24: a failed index read propagates; the tool call fails with the error's message, no fallback to an empty context (would write a wrong mem.origin attribution silently). Design sec-3 "Failure" bullet and new design VT-6; plan PHASE-02 EX-7 + VT-5.
 """
 
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = """
+Raiser verified (pi, run-20261024T114728170Z-13). Follow-up: design sec-3 Failure now says the tool task ends failed with the error's message, not 'the conversation carries on'.
+"""
+
 [[finding]]
 id = "F-3"
-status = "answered"
+status = "verified"
 severity = "major"
 title = "PHASE-02 bundles the type change, host, room and fixture; the room masking risk is not isolated"
 detail = """
@@ -89,9 +111,16 @@ response = """
 PHASE-02 split: PHASE-02 = hook type, fixture option, host arm, failure propagation; new PHASE-04 (executes before PHASE-03) = room arm, observedEnv optional shellEnv, room masking and room per-exec precedence. Retired PHASE-02 EX-4/VT-2/VT-3 ids; plan.md sequencing updated; PHASE-04 sheet materialised.
 """
 
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = """
+Raiser verified (pi, run-20261024T114736090Z-14). Follow-up: plan.toml comment records PHASE-02 EX-4/VT-2/VT-3 retired.
+"""
+
 [[finding]]
 id = "F-4"
-status = "answered"
+status = "verified"
 severity = "major"
 title = "Harness fixture contract unspecified; the EnvTarget keyword mandate is vacuous"
 detail = """
@@ -114,9 +143,16 @@ response = """
 PHASE-02 objective/EX-1: openTestHarness gains an optional env hook, test passes daemonEnv({profile:"host",cwd},log).env; second conversation via createConversation({ownership:{kind:"ownerless"}, init: assignTopic(name)}) and toolResults(harness, conversation). EnvTarget keyword mandate dropped; VT-4 now keys on openTestHarness + daemonEnv in daemon-env.test.ts. Design sec-5 fixture row reworded.
 """
 
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = """
+Raiser verified (pi, run-20261024T114736090Z-14). Follow-up: PHASE-02 EX-1 says the test closes the DaemonEnv in afterEach.
+"""
+
 [[finding]]
 id = "F-5"
-status = "answered"
+status = "verified"
 severity = "major"
 title = "PHASE-03: order pattern cannot prove order; section test ripple under-scoped"
 detail = '''
@@ -139,9 +175,16 @@ response = """
 PHASE-03 VT-2 (pattern) removed; order asserted by VT-1's key-order keyword "cwd", "conversation" in daemon-sections.test.ts. EX-2 enumerates the breaking assertions (~87, ~117, re-send case ~128/~140). conversationExtension pinned as a constant like cwdExtension.
 """
 
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = """
+Raiser verified (pi, run-20261024T114736090Z-14). Follow-up: PHASE-03 VT-1 keyword '"cwd", "conversation"' (false red if biome wraps the array) replaced by conversationExtension; order asserted by the test's key list. Design sec-6 VT-6 row moved after VT-5.
+"""
+
 [[finding]]
 id = "F-6"
-status = "answered"
+status = "verified"
 severity = "minor"
 title = "observedEnv has two more callers; 'src/runner/ untouched' needs the optional-shellEnv invariant stated"
 detail = """
@@ -164,9 +207,16 @@ response = """
 PHASE-04 objective + EX-4: shellEnv optional on observedEnv; src/runner/env.ts and src/room/shell.ts unchanged; src/runner/ untouched.
 """
 
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = """
+Raiser verified (pi, run-20261024T114736090Z-14).
+"""
+
 [[finding]]
 id = "F-7"
-status = "answered"
+status = "verified"
 severity = "minor"
 title = "PHASE-01 VT keywords guess literals the code may spell as constants"
 detail = """
@@ -189,9 +239,16 @@ response = """
 PHASE-01 VT-1 keywords now conversationVars, SATAN_HARNESS, SATAN_PARENT_CONVERSATION, SATAN_TOPIC; VT-2 contextOf, openTestHarness, assignTopic, DEFAULT_TOPIC.
 """
 
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = """
+Raiser verified (pi, run-20261024T114736090Z-14).
+"""
+
 [[finding]]
 id = "F-8"
-status = "answered"
+status = "verified"
 severity = "minor"
 title = "Docs: wrong README home for the six variables; internals.md env diagram goes stale"
 detail = """
@@ -214,9 +271,16 @@ response = """
 PHASE-03 objective: the six variables in their own README subsection, not the config table (README.md:274-291); internals.md section tree + env diagram (~36-37) with shellEnv. Design sec-5 docs row reworded.
 """
 
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = """
+Raiser verified (pi, run-20261024T114736090Z-14).
+"""
+
 [[finding]]
 id = "F-9"
-status = "answered"
+status = "verified"
 severity = "minor"
 title = "Masking tests: process.env mutation against a lazy shared daemon"
 detail = """
@@ -239,9 +303,16 @@ response = """
 PHASE-02 EX-2 and PHASE-04 EX-2: set SATAN_TOPIC before the first exec on a fresh connection (lazy daemon spawn), restore in afterEach; plan.md note updated.
 """
 
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = """
+Raiser verified (pi, run-20261024T114716368Z-12).
+"""
+
 [[finding]]
 id = "F-10"
-status = "answered"
+status = "verified"
 severity = "nit"
 title = "Design sec-3 cost: env is built per request as well as per tool attempt"
 detail = """
@@ -262,6 +333,13 @@ role = "responder"
 disposition = "fix-now"
 response = """
 Design sec-3 Cost bullet: env built per tool attempt, nested executeTool and per request's prompt preparation (generation.js:60).
+"""
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = """
+Raiser verified (pi, run-20261024T114728170Z-13).
 """
 
 # Findings are append-only `[[finding]]` tables, added by `review raise`.

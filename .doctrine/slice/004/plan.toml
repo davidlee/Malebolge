@@ -44,6 +44,7 @@ verification = [
 specs        = []
 requirements = []
 
+# PHASE-02 EX-4, VT-2, VT-3 moved to PHASE-04 (RV-013 F-3); those ids are retired.
 [[phase]]
 id        = "PHASE-02"
 name      = "Tool environment, host: the hook type, the fixture, shellEnv"
@@ -53,7 +54,7 @@ entrance_criteria = [
   { id = "EN-2", text = "Re-read in the installed dist before writing against them: `NodeExecutionEnv`'s env merge (`env/node.js` ~205-212), bash tool's `{env: {}, inheritEnv: true}` (`tools/bash.js` ~36), env-build rejection handling (`harness/tool.js` ~309-329)." },
 ]
 exit_criteria = [
-  { id = "EX-1", text = "Host, through `openTestHarness` with `env: daemonEnv({profile: \"host\", cwd}, log).env`: a bash tool call in root (topic `default`) prints root's six values; a second conversation created with `harness.createConversation({ownership: {kind: \"ownerless\"}, init: assignTopic(<name>)}, context)` prints its own id and `<name>`; results read with `toolResults(harness, conversation)` (RV-013 F-4)." },
+  { id = "EX-1", text = "Host, through `openTestHarness` with `env: daemonEnv({profile: \"host\", cwd}, log).env`: a bash tool call in root (topic `default`) prints root's six values; a second conversation created with `harness.createConversation({ownership: {kind: \"ownerless\"}, init: assignTopic(<name>)}, context)` prints its own id and `<name>`; results read with `toolResults(harness, conversation)`; the test closes the `DaemonEnv` in `afterEach` (RV-013 F-4)." },
   { id = "EX-2", text = "Host: with `SATAN_TOPIC` set in the daemon's process environment, an unindexed conversation's bash prints `[${SATAN_TOPIC}]` as `[]` — empty, distinguished from absent (RV-012 F-1 demonstrate, host half). The test restores `process.env` in `afterEach` (RV-013 F-9)." },
   { id = "EX-3", text = "A caller's explicit per-exec `env` wins over `shellEnv` on the host." },
   { id = "EX-5", text = "Existing `daemon-env.test.ts` cases updated to the `EnvTarget` call shape and `await`; `daemon-start.ts` compiles unchanged or with only the type follow-through; `openTestHarness`'s callers without `env` behave as before." },
@@ -104,7 +105,7 @@ exit_criteria = [
   { id = "EX-4", text = "`just check` green (baseline reds excepted); eslint zero warnings; biome format clean." },
 ]
 verification = [
-  { id = "VT-1", expects = "design VT-5: the conversation section, untagged, after cwd (asserted by key order), with and without a topic", test_file = "test/daemon-sections.test.ts", keywords = ["\"cwd\", \"conversation\"", "Conversation: ", "systemPromptSections"], waived = false },
+  { id = "VT-1", expects = "design VT-5: the conversation section, untagged, after cwd (asserted by key order), with and without a topic", test_file = "test/daemon-sections.test.ts", keywords = ["conversationExtension", "Conversation: ", "systemPromptSections"], waived = false },
   { id = "VH-1", expects = "design VH-1: after the user deploys this build to the room, from a malebolge conversation `env | grep SATAN_` shows all six with this conversation's values and `~/db/q who` shows a mem.origin row with them. User at the terminal." },
 ]
 specs        = []

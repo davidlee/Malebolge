@@ -50,8 +50,8 @@ conversation, which malebolge does not create today.
 under `shellEnv`: host `{...process.env, ...shellEnv, ...options.env}`
 (`pi-durable/dist/env/node.js:205-212`), room the pi-env daemon's environment
 (daemon env < `shellEnv` < per-exec `env`; checked by running the shipped
-daemon, RV-013 F-1). The room daemon is launched directly, not through a login
-shell: `[ssh, …sshArguments, daemon]` (`src/room/connection.ts:57,238`) with
+daemon, RV-013 F-1). The room daemon is launched without a login shell (sshd runs
+the command through the room user's `$SHELL -c`): `[ssh, …sshArguments, daemon]` (`src/room/connection.ts:57,238`) with
 `SendEnv=-*` (`pi-env/dist/ssh.js:65`), so it inherits sshd's non-login
 environment for the room user. An inherited `SATAN_*` there can come only from
 sshd or PAM (e.g. `pam_env`, `~/.ssh/environment`; inference): masking is
@@ -111,8 +111,8 @@ env: async (target) => { const { cwd, vars } = await conversationEnv("room", hom
   document at each build (`harness/harness.js:48`); this adds one more
   in-process document read. No memoisation unless measured.
 - Failure (RV-013 F-2): a failed index read propagates. The env build
-  rejects, and pi-durable fails that tool call with the error's message
-  (`harness/tool.js:309-329`); the conversation carries on. A failed index
+  rejects, and pi-durable ends that tool task `failed`, its result
+  carrying the error's message (`harness/tool.js:309-329`). A failed index
   read means the daemon's storage is faulty, and degrading to an empty topic
   would write a wrong attribution into `mem.origin` without a trace. The
   prompt path needs nothing: pi-durable already reports a failed build and
@@ -174,8 +174,8 @@ can name `$SATAN_CONVERSATION` and `$SATAN_TOPIC` knowing they are set.
 | VT-2. `contextOf` reads root in `default`, a fork's parent, and no entry for an unindexed id | VT, same file, over `openTestHarness` (hook installed) |
 | VT-3. Host: a bash tool call in conversation A prints A's `SATAN_*`, in B prints B's; an inherited `SATAN_TOPIC` in the daemon's environment is overridden with empty for an unindexed conversation (the command prints `[${SATAN_TOPIC}]`, asserted `[]`, so empty is distinguished from absent); a per-exec `env` wins | VT, `test/daemon-env.test.ts` with `callThenAnswer` + `toolResults` (`test/harness-fixture.ts`) |
 | VT-4. Room: `observedEnv` builds `RemoteExecutionEnv` with the given `shellEnv` and id `pi-env:daemon-room` | VT, `test/daemon-env.test.ts`, existing room fixture |
-| VT-6. A reader whose index read rejects fails the env build with that error, so the tool call fails with its message (RV-013 F-2) | VT, `test/daemon-env.test.ts` |
 | VT-5. The `conversation` section renders `Conversation: <id> (topic: <t>)`, untagged, right after `cwd` | VT, `test/daemon-sections.test.ts` via `systemPromptSections` |
+| VT-6. A reader whose index read rejects fails the env build with that error, so the tool call fails with its message (RV-013 F-2) | VT, `test/daemon-env.test.ts` |
 | VH-1. In the room, from a malebolge conversation: `env \| grep SATAN_` shows all six with this conversation's values; `~/db/q who` shows a `mem.origin` row with them | VH, user at the terminal |
 
 `just check` green, lint clean, at every phase end.
