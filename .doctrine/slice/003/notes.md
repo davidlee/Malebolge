@@ -107,7 +107,7 @@ If a later pass is wanted, it should probe the client's `resolveHere` and
 
 ## Harvest
 <!-- single-copy: updated in place each harvest; ids only, never restated content -->
-fresh-as-of: 2026-10-24 · PHASE-01..03 committed (capsule-driver via quotient `pi_agent`, deepseek-flash) · next: PHASE-04
+fresh-as-of: 2026-10-24 · PHASE-01..05 committed, PHASE-06 docs committed (capsule-driver via quotient `pi_agent`, deepseek-flash) · next: PHASE-06 VH-1 live session, then /audit
 
 ### Produced
 - design locked 2026-10-24 (RV-008), regressed for the planning-time amendment, relocked (RV-009, rev 49) — each on the user's section review, `conducted` disposition and acceptance
@@ -131,4 +131,5 @@ fresh-as-of: 2026-10-24 · PHASE-01..03 committed (capsule-driver via quotient `
 - run rev 38 recorded a `design-accepted` act in error (a top-level `acceptance` on a declare-only submission records one). `review-disposed` did not stale it; the lock at rev 41 invalidated it and recorded the user's acceptance
 - design sec-3:176 says `attach: no topic <name>`; sec-4's table and PHASE-03 EX-1 say `no topic X` (unprefixed, like `no conversation N`). Code follows sec-4 — amend sec-3 at reconcile (PHASE-03 review)
 - `{"type":"attach","topic":T,"new":false}` refuses `attach: new must be true`; sec-4's attach-by-topic cell does not list it — add at reconcile
+- design sec-5's flag table omits `--set-topic NAME --here`, which the code accepts and PHASE-05 EX-3 requires — add at reconcile (PHASE-06 docs pass)
 - IMP-010 — share the `scanConversations` pager (PHASE-01 copied `durable-ids`'s loop)

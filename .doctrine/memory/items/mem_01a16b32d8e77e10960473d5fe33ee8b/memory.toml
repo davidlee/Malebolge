@@ -4,9 +4,9 @@ schema_version = 1
 memory_type = "fact"
 status = "active"
 title = "A --list connection has no reply timeout: it settles only when the daemon closes"
-summary = "listConversations bounds only the connect (LIST_WAIT); a daemon that accepts and never answers leaves --list hanging until the socket closes."
+summary = "request (src/request.ts; listConversations before SL-003) bounds only the connect (LIST_WAIT); a daemon that accepts and never answers leaves --list, --topics and --set-topic hanging until the socket closes."
 created = "2026-10-23"
-updated = "2026-10-23"
+updated = "2026-10-24"
 
 [scope]
 paths = ["src/attach.ts", "emacs/malebolge.el"]

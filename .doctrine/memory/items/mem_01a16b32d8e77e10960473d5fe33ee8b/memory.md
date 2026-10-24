@@ -11,7 +11,7 @@ answering. The reader settles in `settle(state)` — on the socket's `close`
 A fake server that accepted `{"type":"list"}` and wrote nothing kept the
 client alive for **19 s**, until the server itself closed the socket (and
 would have kept it alive indefinitely). The client then reported
-`the daemon closed before the listing completed` through `NOT_LISTED`.
+`the daemon closed before the listing completed` through `NOT_LISTED` (since SL-003 PHASE-04: `REQUEST_FAILED`, from `request` in `src/request.ts`).
 
 # Why it matters to Emacs
 

@@ -83,36 +83,58 @@ lock is not excluded.
 
 One JSON message per line on the daemon socket. A connection's first line is
 either a **first-line frame** — `attach`, which names the conversation the
-connection binds to, or `list`, which asks what this store holds — or a
-command, which binds the connection to root (`src/daemon.ts`). Every later
-line acts on that binding.
+connection binds to, `list`, which asks what this store holds, or `topic`,
+which writes one topic's directory — or a command, which binds the connection
+to root (`src/daemon.ts`). Every later line acts on that binding.
 
 | first line | answered with | the connection after |
 |---|---|---|
 | `attach`, well-formed | `attached`, then the snapshot | bound to that conversation |
 | `attach`, refused | one `error` | ended, binding nothing |
-| `list`, well-formed | `conversations` | ended cleanly: reply, then end, no error |
-| `list`, malformed | one `error` | ended, binding nothing |
+| `list`, well-formed | `conversations`, or `topics` for a `topics:true` query | ended cleanly: reply, then end, no error |
+| `list`, refused | one `error` | ended, binding nothing |
+| `topic`, well-formed | `topics`, the one record written | ended cleanly |
+| `topic`, refused | one `error` | ended, binding nothing |
 | a command | its own events, no `attached` | bound to root, stays open |
 
-Neither frame is a verb a bound connection can use: a `list` sent later is
-refused by the rule below, not served.
+No frame is a verb a bound connection can use: one sent later is refused by the
+rule below, not served.
 
 - client → daemon, the `attach` frame, valid only as the first line:
   `{"type":"attach"}` (root), `{"type":"attach","conversation":N}`,
-  `{"type":"attach","new":true}`, `{"type":"attach","new":true,"cwd":S}`.
-  Strict: `conversation` with `new`, `cwd` without `new`, `new` other than
-  `true`, a `conversation` that is not a safe positive integer, a non-string
-  `cwd`, or an unknown key is refused before anything is created
-  (`src/protocol.ts`). `cwd` is handed to pi uninterpreted; a new conversation
-  is ownerless and carries the daemon's model and cwd as its defaults
-  (`src/conversations.ts`).
+  `{"type":"attach","new":true}`, `{"type":"attach","new":true,"cwd":S}`,
+  and the topic forms `{"type":"attach","topic":"NAME"}` and
+  `{"type":"attach","topic":"NAME","new":true,"cwd":S}`. Strict:
+  `conversation` with `new` or with `topic`, `cwd` without `new`, `new` other
+  than `true`, a `conversation` that is not a safe positive integer, a name
+  that does not match `[a-z0-9][a-z0-9._-]{0,63}`, a non-string `cwd`, or an
+  unknown key is refused before anything is created (`src/protocol.ts`). `cwd`
+  is handed to pi uninterpreted; a new conversation is ownerless and carries
+  the daemon's model and cwd as its defaults (`src/conversations.ts`).
+- client → daemon, the `attach` frame with a `topic`: a topic target binds
+  that topic's latest conversation — the highest id in the index, since pi
+  mints ids in creation order — or creates its first when it has none or
+  `new` asks for one, with `init: assignTopic(name)`. Its directory is the
+  client's `cwd`, else the topic's, else the daemon's, read once at creation;
+  after that the conversation's own `cwd` governs. A topic no frame has
+  written is `no topic NAME` (`src/conversations.ts`): nothing creates a topic
+  implicitly. `default` is not reserved here — attaching to it is how a client
+  reaches root by name.
 - client → daemon, the `list` frame, valid only as the first line:
-  `{"type":"list"}`. Strict too: any key it does not know is refused before
-  anything is read, so `{"type":"list","topic":"x"}` answers
-  `list: unknown key topic` and ends the connection, binding nothing
-  (`src/protocol.ts`). It takes no argument and names no target: the page size
-  is the daemon's, not the client's.
+  `{"type":"list"}` (this store's page), `{"type":"list","topic":"NAME"}`
+  (that topic's ids from the index, newest first), or
+  `{"type":"list","topics":true}` (the topic records). Strict too: any key it
+  does not know is refused before anything is read, so `{"type":"list","page":2}`
+  answers `list: unknown key page` and ends the connection, binding nothing
+  (`src/protocol.ts`). `topic` and `topics` are exclusive, `topics` must be
+  `true`, and a `topic` no write made is `no topic NAME`. The page size is the
+  daemon's, not the client's.
+- client → daemon, the `topic` frame, valid only as the first line:
+  `{"type":"topic","name":"NAME"}` creates the topic, or leaves an existing
+  record exactly as it is, so the frame is idempotent;
+  `{"type":"topic","name":"NAME","cwd":S}` sets its directory and
+  `"cwd":null` clears it. Refused: a bad name, `topic: default is reserved`,
+  `cwd` that is neither a string nor `null`, an unknown key.
 - client → daemon, later lines:
   `{"type":"input","content":…,"requestId"?:…}`, `{"type":"abort"}`,
   `{"type":"compact","instructions"?:…}`
@@ -123,7 +145,17 @@ refused by the rule below, not served.
   absent, since an attach to one is refused. The page is `LIST_PAGE` (50,
   `src/conversations.ts`), and `truncated: true` says the oldest conversations
   are not in this page — not that some pager exists. `malebolge-attach --list`
-  is this frame's client: ids on stdout, one truncation line on stderr.
+  is this frame's client: ids on stdout, one truncation line on stderr. A
+  `{"type":"list","topic":"NAME"}` reply is the same shape from the index
+  instead of a scan, so it cuts at `LIST_PAGE` too.
+- daemon → client, the `topics` reply, to a `topics` query and to a `topic`
+  write alike: `{"type":"topics","profile":"host","topics":[{"name":"default"},…]}`
+  — `default` first, then the rest by name, a topic's directory present when
+  it has one. `profile` is the answering daemon's own, `host` or `room`
+  (`config.execution.profile`), because a topic directory is a path in that
+  profile's space and the client cannot learn it from its own environment:
+  `MALEBOLGE_SOCKET` can point it at any daemon (`src/config.ts`).
+  `malebolge-attach --topics` and `--set-topic` are this reply's clients.
 - daemon → client, an attached connection:
   `{"type":"attached","conversation":N}` once, after a successful attach and
   before the snapshot; then pi-durable `watchEvents` agent events, first a
@@ -132,21 +164,21 @@ refused by the rule below, not served.
 The first line's outcome:
 
 - a refused `attach` — an unknown id, a conversation a task owns,
-  `conversation` with `new` — or a malformed `list`: one `{"type":"error"}`
-  naming the frame, and the daemon ends the connection, dropping the lines
-  queued behind it.
-- a `list` that parses: one `conversations` reply, then the daemon ends the
-  connection. A listing writes no error and leaves nothing behind — no
-  binding, nothing created, no durable state.
+  `conversation` with `new`, an unknown topic, a bad name — or a malformed
+  `list` or `topic`: one `{"type":"error"}` naming the frame, and the daemon
+  ends the connection, dropping the lines queued behind it.
+- a `list` or `topic` that parses: one `conversations` or `topics` reply, then
+  the daemon ends the connection. A listing or a write writes no error and
+  leaves nothing behind but a topic record.
 - a `list` whose read fails: one `{"type":"error"}` and the connection ends,
   rather than an error left on a connection that would then stay silent.
 - a first line that is a command: root is bound, the line is acted on, and
   no `attached` is sent.
-- on a bound connection, any line that parses as a first-line frame — `attach`
-  or `list`, valid or refused — answers the unprefixed message
-  `already attached to conversation N`, and the connection stays open with its
-  binding unchanged; a line that is not JSON or not an object, or any other bad
-  line, gets its ordinary error.
+- on a bound connection, any line that parses as a first-line frame —
+  `attach`, `list` or `topic`, valid or refused — answers the unprefixed
+  message `already attached to conversation N`, and the connection stays open
+  with its binding unchanged; a line that is not JSON or not an object, or any
+  other bad line, gets its ordinary error.
 - a line that is not JSON, or neither frame nor a valid command, binds root,
   answers the error, and stays open.
 
@@ -154,6 +186,47 @@ A connection that sends nothing is never bound and receives nothing
 (`probeUnix` connects and leaves). An id names a conversation only within
 this profile's store and socket; a client that persists one persists the
 profile with it.
+
+**The index.** One session-scoped document, `malebolge.index` version 1
+(`src/topics.ts`), holds both halves of the model:
+
+```
+{ topics: { NAME: { cwd? } }, conversations: { "ID": { topic, parent? } } }
+```
+
+An entry files one conversation under a topic and, for a fork, names the
+conversation it came from, from which it inherits the parent's topic.
+`conversations` is keyed by conversation id as a string, since JSON has no
+other keys; `topics` holds only topics a `topic` frame wrote, never `default`,
+which always exists and has no directory. Task-owned conversations are not
+indexed — an attach to one is refused anyway.
+
+- **Written in the creating commit.** `conversationCreated` writes the entry,
+  so a commit that creates or forks a conversation cannot land without one;
+  a throw fails that commit. `conversationCreated` reads documents only, never
+  a table, so no read-after-write can fire.
+- **Merged, never replaced.** A write spreads the existing entry, so keys a
+  later slice adds survive every write.
+- **Session scope**, so a fork never copies it, and the document is
+  checkpointed every 50 deltas rather than per write.
+- **Backfill.** Opening a store whose conversations predate the index puts
+  every ownerless conversation the document does not know, root included, into
+  `default`: one commit, paged reads of 64, every read before the first write.
+  A second start finds nothing to do and writes nothing.
+- **One reader.** `readIndex` is the only read; a store whose index was never
+  written reads as the empty document, because a snapshot does not apply a
+  document's `initial()`.
+
+**One dispatch table.** `src/protocol.ts` parses a first-line frame into
+`FirstLineFrame = AttachMessage | ListMessage | TopicMessage`, strictly; a
+`type` that names none falls through to `parseClientMessage`. `src/daemon.ts`
+holds one table, `FIRST_LINE`, keyed by `FirstLineFrame["type"]` with a
+handler per key: `attach` binds the target, `list` and `topic` answer through
+`answer(state, produce)`, which sends one reply and `finish`es, or sends any
+rejection through `fail` (a failed read closes, DEC-007). The mapped type
+makes a frame without a row a compile error, so **a new first-line verb costs
+one parser case and one table row**, and `laterLine` needs no edit: it asks
+whether the line is a `FirstLineFrame` at all instead of naming each type.
 
 ## Design notes
 

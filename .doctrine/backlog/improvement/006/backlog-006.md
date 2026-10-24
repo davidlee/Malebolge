@@ -28,8 +28,9 @@ connection.
   (`malebolge--list-timeout`, 5 s, with `malebolge--await-listing`), which
   defends Emacs but not the terminal path: `malebolge-attach --list` against a
   hung daemon still waits forever.
-- The fix belongs in `src/attach.ts`: a reply bound in the listing's settle path,
-  producing `NOT_LISTED` with a message naming the daemon that did not answer —
+- The fix belongs in `src/request.ts` (`request`, since SL-003 PHASE-04; it
+  serves `--list`, `--topics` and `--set-topic`): a reply bound in its settle path,
+  producing `REQUEST_FAILED` (was `NOT_LISTED`) with a message naming the daemon that did not answer —
   then the picker's own bound becomes a backstop rather than the only defence.
 - `mem.fact.malebolge.list-has-no-reply-timeout` records the shape and the
   measurement so this is not rediscovered.

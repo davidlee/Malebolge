@@ -138,8 +138,9 @@ node src/attach-main.ts --new --cwd DIR    # a new one whose cwd is DIR
 ```
 
 `--list` prints ids only, one per line, on standard output, and exits 0. It
-takes no other flag: `--list` with `--conversation`, `--new`, `--cwd` or
-`--emacs` is one usage line and exit 2, before any connection is made. A
+takes `--topic NAME` or `--here` to narrow it, and nothing else: `--list` with
+`--conversation`, `--new`, `--cwd` or `--emacs` is one usage line and exit 2,
+before any connection is made. A
 listing that fails — no daemon, or one that predates `list` — prints the
 client's error line and, for a daemon that predates `list`, the restart hint;
 it exits 1, never a stack trace. Its connect budget is one second, not the
@@ -164,6 +165,47 @@ prints one line and the usage, and exits 2 before connecting. A refused attach �
 conversation a task owns — prints one error line and exits 1, and so does a
 daemon that closes before attaching. An id names a conversation only inside
 one profile's store and socket: keep the profile with any id you keep.
+
+**Topics.** Every conversation is filed in one topic. A conversation created
+with no topic named goes to `default`: it always exists, has no directory, and
+cannot be created or given one. A topic exists once something wrote it, so
+`--topic` names a topic somebody made, and attaching to one nobody wrote is
+refused rather than silently starting a separate line of work.
+
+```sh
+node src/attach-main.ts --set-topic NAME               # create it, no directory
+node src/attach-main.ts --set-topic NAME --dir DIR     # create it, or re-point it
+node src/attach-main.ts --set-topic NAME --no-dir      # clear its directory
+node src/attach-main.ts --topic NAME                   # its latest conversation
+node src/attach-main.ts --topic NAME --new [--cwd DIR] # a fresh one in that topic
+node src/attach-main.ts --topics                       # topics, one per line
+node src/attach-main.ts --list --topic NAME            # that topic's ids
+```
+
+A name matches `[a-z0-9][a-z0-9._-]{0,63}`. `--set-topic` writes one record and
+prints it; without `--dir` it leaves the directory as it was, and on a topic it
+has to create, that means none. `--topics` prints `default` first, then the
+rest by name, as `NAME<TAB>DIR`, the tab and empty directory included, so a
+script can read it. A topic's directory is only a default: it reaches
+conversations created in that topic afterwards, and a conversation already made
+keeps the directory it was created with. `--topic NAME` binds the topic's
+latest conversation (highest id), starts its first when it has none, and
+`--new` always starts a fresh one. `--topics` takes no other flag, `--set-topic`
+takes neither an attach nor a list flag, `--topic` and `--conversation` are
+exclusive, and `--dir` and `--no-dir` are exclusive: each is one usage line and
+exit 2. A refused topic — an unwritten name, a bad name, `default` written to —
+is one error line and exit 1.
+
+`--here` stands where a topic's name would (`--topic`) or where a directory
+would (`--set-topic --dir`). With `--set-topic` it writes this git root as the
+topic's directory; otherwise it finds the one topic whose directory is exactly
+this git root and names it — no match, or more than one, is one error line and
+exit 1, because names are unique and directories are not. It is **host-only**:
+the client asks the answering daemon which profile it runs under and refuses
+anything but `host`. Topic directories are paths in the daemon's profile space,
+and a room daemon's paths are not this shell's, so a `room` daemon's `--here`
+would compare a host path with room paths and mean nothing. Nothing is created
+by the lookup, including when it refuses.
 
 **Stop** with `M-x malebolge-stop`. Starting again reopens root; the profile's
 other conversations stay in its store. `M-x malebolge-start` on a running unit
