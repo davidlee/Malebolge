@@ -63,10 +63,20 @@ present with this conversation's values, and a `mem.origin` row from
 
 ## Harvest
 <!-- single-copy: updated in place each harvest; ids only, never restated content -->
-fresh-as-of: <yyyy-mm-dd> · <PHASE-NN | stage> · <head-commit>
+fresh-as-of: 2026-10-24 · design locked (rev 36), slice → plan · 546b74f
 
 ### Produced
 
+- DEC-018, DEC-019, DEC-020, DEC-021 (amended RV-012 F-1), DEC-022
+- RV-012 (adversarial design pass, done)
+- IDE-002 (task-owned conversations' variables)
+
 ### Learned
 
+- Consumer contract: room `~/db/q` (see Triage above); `q spawn` is the session-start verb.
+- pi-env drops undefined `shellEnv` values (RV-012 F-1) — basis of DEC-021.
+
 ### Open
+
+- VH-1 (room runtime, user at the terminal) — design sec-6.
+- satan side, out of scope: the `q spawn` reminder in `~/satan-corpus/prompts/env/room.txt`.
