@@ -100,11 +100,31 @@ export function assignTopic(name: string): ConversationInit {
 }
 
 /**
- * `name`'s stored record, or undefined when nobody wrote it. An own-key read:
- * `constructor` is a valid name and every object literal inherits one.
+ * What every read of the index needs: a session's snapshots, unchanged, so an
+ * `EnvTarget`'s reader (or a stub) passes as it is.
  */
+export type IndexReader = Pick<Session, "snapshot">;
+
+/**
+ * `record[key]` when `record` owns the key. An own-key read, not an inherited
+ * one: `constructor` is a valid topic name, and every object literal inherits
+ * it.
+ */
+function ownKey<T>(record: Record<string, T>, key: string): T | undefined {
+  return Object.hasOwn(record, key) ? record[key] : undefined;
+}
+
+/** `name`'s stored record, or undefined when nobody wrote it. */
 export function storedTopic(index: IndexDoc, name: string): TopicRecord | undefined {
-  return Object.hasOwn(index.topics, name) ? index.topics[name] : undefined;
+  return ownKey(index.topics, name);
+}
+
+/**
+ * `id`'s index entry, or undefined when nobody wrote one: a task-owned
+ * conversation, which is no topic's (DEC-012).
+ */
+export function storedEntry(index: IndexDoc, id: ConversationId): IndexEntry | undefined {
+  return ownKey(index.conversations, String(id));
 }
 
 /**
@@ -112,7 +132,7 @@ export function storedTopic(index: IndexDoc, name: string): TopicRecord | undefi
  * absent index — a store no hook ever wrote — reads as the initial document
  * here, once, for every topic listing.
  */
-export async function readIndex(session: Pick<Session, "snapshot">): Promise<IndexDoc> {
+export async function readIndex(session: IndexReader): Promise<IndexDoc> {
   return (await session.snapshot(IndexDocument, context)) ?? IndexDocument.definition.initial();
 }
 

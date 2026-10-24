@@ -13,6 +13,9 @@ import {
 import {
   type JsonObject,
   type Conversation,
+  type ConversationId,
+  type ConversationInit,
+  defineTask,
   type Extension,
   Harness,
   type HarnessOptions,
@@ -24,13 +27,14 @@ import {
   ToolResultEntry,
 } from "@earendil-works/pi-durable";
 import { NodeExecutionEnv } from "@earendil-works/pi-durable/env/node";
+import { onTestFinished } from "vitest";
 import { context } from "../src/context.ts";
 import { conversations } from "../src/conversations.ts";
 import { type Daemon, serve } from "../src/daemon.ts";
 import { isRecord } from "../src/json.ts";
 import { registryOf } from "../src/registry.ts";
 import { openSession } from "../src/session.ts";
-import { type IndexDoc, readIndex } from "../src/topics.ts";
+import { type IndexDoc, type IndexReader, readIndex } from "../src/topics.ts";
 
 export const FAUX_MODEL = { provider: "faux", modelId: "faux-1" } as const;
 
@@ -113,8 +117,67 @@ export async function openFauxHarness(
 }
 
 /** The conversation index of `harness`: what the creating commits wrote, read the one way. */
-export function indexOf(harness: Pick<Harness, "snapshot">): Promise<IndexDoc> {
+export function indexOf(harness: IndexReader): Promise<IndexDoc> {
   return readIndex(harness);
+}
+
+/** `harness`, closed when the test ends. */
+export function closing<T extends Harness>(harness: T): T {
+  onTestFinished(() => harness.close(context));
+  return harness;
+}
+
+/** A session harness — the creating hook and the backfill ran — closed when the test ends. */
+export async function openIndexedHarness(
+  extensions: readonly Extension[] = [],
+): Promise<TestHarness> {
+  const test = await openTestHarness(extensions);
+  closing(test.harness);
+  return test;
+}
+
+/** One ownerless conversation through the harness's own creating path. */
+export function createConversation(
+  harness: Harness,
+  init?: ConversationInit,
+): Promise<Conversation> {
+  return harness.createConversation(
+    { ownership: { kind: "ownerless" }, ...(init === undefined ? {} : { init }) },
+    context,
+  );
+}
+
+/** A task whose only phase waits: a stub, never run on a passive harness. */
+export const stubTask = defineTask({
+  name: "stub",
+  version: 1,
+  initial: () => ({ phase: "waiting" as const }),
+  phases: { waiting: () => Promise.resolve() },
+  abort: () => Promise.resolve(),
+});
+
+/** A conversation owned by a task, so no topic's and never in the index (DEC-012). */
+export function createTaskOwned(test: TestHarness): Promise<ConversationId> {
+  return test.harness.commit(async (tx) => {
+    const taskId = await tx.createTask(
+      stubTask,
+      {},
+      { ownership: { kind: "conversation" }, conversationId: test.root.id },
+    );
+    return (await tx.createConversation({ ownership: { kind: "task", taskId } })).id;
+  }, context);
+}
+
+/** A fork of `parent` at a note entry: the recipe a client forks by. */
+export async function forkConversation(
+  harness: Pick<Harness, "commit">,
+  parent: Conversation,
+): Promise<Conversation> {
+  const entry = await harness.commit(
+    (tx) => tx.appendEntry(parent.id, { kind: "test.note", data: { note: "fork here" } }),
+    context,
+  );
+  return parent.fork(entry.id, { ownership: { kind: "ownerless" } }, context);
 }
 
 /** The name rule's refusal, quoted so a test cannot drift from the text users see. */

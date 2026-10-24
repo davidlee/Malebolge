@@ -11,7 +11,6 @@ import { getCurrentTools } from "@earendil-works/pi-ai/utils/transcript";
 import {
   type AgentEventStream,
   type Conversation,
-  defineTask,
   type EntryRecord,
   MemoryStorage,
 } from "@earendil-works/pi-durable";
@@ -42,6 +41,7 @@ import {
   tempDir,
 } from "./fixtures.ts";
 import {
+  createTaskOwned,
   FAUX_MODEL,
   NAME_RULE,
   indexOf,
@@ -174,15 +174,6 @@ const noteTool: FakeTool = {
   description: "Read a note",
   call: () => ({ text: "note" }),
 };
-
-/** A task whose only phase waits: a stub, never run on a passive harness. */
-const stubTask = defineTask({
-  name: "stub",
-  version: 1,
-  initial: () => ({ phase: "waiting" as const }),
-  phases: { waiting: () => Promise.resolve() },
-  abort: () => Promise.resolve(),
-});
 
 const noGate = (): Promise<void> => Promise.resolve();
 const noLog = (): void => undefined;
@@ -615,14 +606,7 @@ describe("daemon", () => {
 
   it("refuses an attach frame naming a task-owned conversation (V-1)", async () => {
     await start(openFauxHarness(new MemoryStorage(), { resume: false }));
-    const owned = await test.harness.commit(async (tx) => {
-      const taskId = await tx.createTask(
-        stubTask,
-        {},
-        { ownership: { kind: "conversation" }, conversationId: test.root.id },
-      );
-      return (await tx.createConversation({ ownership: { kind: "task", taskId } })).id;
-    }, context);
+    const owned = await createTaskOwned(test);
     const client = await lineClient(socketPath, toPrintable);
     clients.push(client);
     client.send({ type: "attach", conversation: owned });

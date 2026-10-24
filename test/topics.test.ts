@@ -5,16 +5,10 @@
 
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import {
-  type Conversation,
-  type ConversationInit,
-  defineTask,
-  type Harness,
-  MemoryStorage,
-} from "@earendil-works/pi-durable";
+import { type Harness, MemoryStorage } from "@earendil-works/pi-durable";
 import { NodeExecutionEnv } from "@earendil-works/pi-durable/env/node";
 import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite/node";
-import { expect, it, onTestFinished } from "vitest";
+import { expect, it } from "vitest";
 import { context } from "../src/context.ts";
 import { registryOf } from "../src/registry.ts";
 import { openSession, type Session, type SessionOptions } from "../src/session.ts";
@@ -35,13 +29,17 @@ import {
 import { DEFAULT_TOPIC } from "../src/protocol.ts";
 import { tempDir } from "./fixtures.ts";
 import {
+  closing,
+  createConversation,
+  createTaskOwned,
   FAUX_MODEL,
   countingCommits as countingCommitsOf,
   fauxModels,
   type FauxHarnessOptions,
+  forkConversation,
   indexOf,
   openFauxHarness,
-  openTestHarness,
+  openIndexedHarness,
   type TestHarness,
 } from "./harness-fixture.ts";
 
@@ -55,32 +53,12 @@ const SESSION_OPTIONS: SessionOptions = {
   env: nodeEnv,
 };
 
-/** `harness`, closed when the test ends. */
-const closing = <T extends Harness>(harness: T): T => {
-  onTestFinished(() => harness.close(context));
-  return harness;
-};
-
-/** A session opened through `openSession`: the hook and the backfill ran. */
-const sessioned = async (): Promise<TestHarness> => {
-  const test = await openTestHarness([]);
-  closing(test.harness);
-  return test;
-};
-
 /** A harness with no hook at all: a store from before this slice, unless `options` says otherwise. */
 const preIndex = async (options: FauxHarnessOptions = {}): Promise<TestHarness> => {
   const test = await openFauxHarness(new MemoryStorage(), { resume: false, ...options });
   closing(test.harness);
   return test;
 };
-
-/** One ownerless conversation through the harness's own creating path. */
-const createConversation = (harness: Harness, init?: ConversationInit): Promise<Conversation> =>
-  harness.createConversation(
-    { ownership: { kind: "ownerless" }, ...(init === undefined ? {} : { init }) },
-    context,
-  );
 
 /** The ids of every conversation in the store, oldest first. */
 const conversationIds = async (harness: Harness): Promise<number[]> => {
@@ -91,20 +69,11 @@ const conversationIds = async (harness: Harness): Promise<number[]> => {
   return page.items.map((record) => record.id);
 };
 
-/** A task whose only phase waits: a stub, never run on a passive harness. */
-const stubTask = defineTask({
-  name: "stub",
-  version: 1,
-  initial: () => ({ phase: "waiting" as const }),
-  phases: { waiting: () => Promise.resolve() },
-  abort: () => Promise.resolve(),
-});
-
 /** The entry the index writes for a conversation no topic was named for. */
 const DEFAULT = { topic: "default" };
 
 it("indexes a created conversation, and root, in the default topic", async () => {
-  const test = await sessioned();
+  const test = await openIndexedHarness();
   const created = await createConversation(test.harness);
   const index = await indexOf(test.harness);
   expect(index.conversations[String(created.id)]).toEqual(DEFAULT);
@@ -112,7 +81,7 @@ it("indexes a created conversation, and root, in the default topic", async () =>
 });
 
 it("files a conversation created with a topic under that topic", async () => {
-  const test = await sessioned();
+  const test = await openIndexedHarness();
   const created = await createConversation(test.harness, assignTopic("work"));
   expect((await indexOf(test.harness)).conversations[String(created.id)]).toEqual({
     topic: "work",
@@ -120,13 +89,9 @@ it("files a conversation created with a topic under that topic", async () => {
 });
 
 it("records a fork's parent's topic and its parent's id", async () => {
-  const test = await sessioned();
+  const test = await openIndexedHarness();
   const parent = await createConversation(test.harness, assignTopic("work"));
-  const entry = await test.harness.commit(
-    (tx) => tx.appendEntry(parent.id, { kind: "test.note", data: { note: "fork here" } }),
-    context,
-  );
-  const forked = await parent.fork(entry.id, { ownership: { kind: "ownerless" } }, context);
+  const forked = await forkConversation(test.harness, parent);
   expect((await indexOf(test.harness)).conversations[String(forked.id)]).toEqual({
     topic: "work",
     parent: parent.id,
@@ -134,7 +99,7 @@ it("records a fork's parent's topic and its parent's id", async () => {
 });
 
 it("indexes a conversation created by a raw transaction in the default topic", async () => {
-  const test = await sessioned();
+  const test = await openIndexedHarness();
   const created = await test.harness.commit(
     (tx) => tx.createConversation({ ownership: { kind: "ownerless" } }),
     context,
@@ -143,15 +108,8 @@ it("indexes a conversation created by a raw transaction in the default topic", a
 });
 
 it("leaves a task-owned conversation out of the index", async () => {
-  const test = await sessioned();
-  const owned = await test.harness.commit(async (tx) => {
-    const taskId = await tx.createTask(
-      stubTask,
-      {},
-      { ownership: { kind: "conversation" }, conversationId: test.root.id },
-    );
-    return (await tx.createConversation({ ownership: { kind: "task", taskId } })).id;
-  }, context);
+  const test = await openIndexedHarness();
+  const owned = await createTaskOwned(test);
   expect((await indexOf(test.harness)).conversations[String(owned)]).toBeUndefined();
 });
 
@@ -171,7 +129,7 @@ it("pi-durable fails the creating commit when its conversationCreated hook throw
 });
 
 it("persists neither the conversation nor its entry when an init throws", async () => {
-  const test = await sessioned();
+  const test = await openIndexedHarness();
   const before = await indexOf(test.harness);
   await expect(
     createConversation(test.harness, () => {
@@ -193,7 +151,7 @@ it("reads a store whose index was never written as the initial document", async 
 });
 
 it("finds a topic's latest conversation and its ids newest first", async () => {
-  const test = await sessioned();
+  const test = await openIndexedHarness();
   const first = await createConversation(test.harness, assignTopic("work"));
   await createConversation(test.harness, assignTopic("other"));
   const last = await createConversation(test.harness, assignTopic("work"));
@@ -218,7 +176,7 @@ it("lists default first, then the stored topics by name, each with its directory
 });
 
 it("refuses to store the reserved default topic (DEC-015)", async () => {
-  const test = await sessioned();
+  const test = await openIndexedHarness();
   await expect(writeTopicRecord(test.harness, DEFAULT_TOPIC, undefined)).rejects.toThrow(
     "topic: default is reserved",
   );
@@ -226,7 +184,7 @@ it("refuses to store the reserved default topic (DEC-015)", async () => {
 });
 
 it("merges the topic into an entry, keeping a key a later slice wrote", async () => {
-  const test = await sessioned();
+  const test = await openIndexedHarness();
   const created = await createConversation(test.harness);
   await test.harness.commit(async (tx) => {
     const index = await tx.doc(IndexDocument);
@@ -262,11 +220,7 @@ const populate = async (harness: Harness, count: number): Promise<Populated> => 
   while (created.length < count) {
     created.push((await createConversation(harness)).id);
   }
-  const at = await harness.commit(
-    (tx) => tx.appendEntry(parent.id, { kind: "test.note", data: { note: "fork here" } }),
-    context,
-  );
-  const fork = await parent.fork(at.id, { ownership: { kind: "ownerless" } }, context);
+  const fork = await forkConversation(harness, parent);
   return { created, parent: parent.id, fork: fork.id };
 };
 
@@ -285,14 +239,7 @@ it("backfills a pre-index store across pages, forks with their parent, and write
     const before = await openFauxHarness(await openNodeSqliteStorage(path), { resume: false });
     const root = before.root.id;
     const { created, parent, fork } = await populate(before.harness, BACKFILL_PAGE + 1);
-    const owned = await before.harness.commit(async (tx) => {
-      const taskId = await tx.createTask(
-        stubTask,
-        {},
-        { ownership: { kind: "conversation" }, conversationId: root },
-      );
-      return (await tx.createConversation({ ownership: { kind: "task", taskId } })).id;
-    }, context);
+    const owned = await createTaskOwned(before);
     expect(await indexOf(before.harness)).toEqual({ topics: {}, conversations: {} });
     await before.harness.close(context);
 

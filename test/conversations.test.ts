@@ -3,7 +3,7 @@
 // The reopen case proves a created conversation is never reconfigured.
 
 import { join } from "node:path";
-import { type Conversation, defineTask, MemoryStorage } from "@earendil-works/pi-durable";
+import { type Conversation, MemoryStorage } from "@earendil-works/pi-durable";
 import { NodeExecutionEnv } from "@earendil-works/pi-durable/env/node";
 import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite/node";
 import { CodingTools } from "@earendil-works/pi-durable/tools";
@@ -21,6 +21,7 @@ import { indexConversation, IndexDocument } from "../src/topics.ts";
 import { tempDir } from "./fixtures.ts";
 import {
   callThenAnswer,
+  createTaskOwned,
   FAUX_MODEL,
   fauxModels,
   type FauxHarnessOptions,
@@ -35,15 +36,6 @@ const DEFAULTS: ConversationDefaults = { model: FAUX_MODEL, cwd: "/daemon-defaul
 
 const nodeEnv = ({ cwd }: { cwd?: string }): NodeExecutionEnv =>
   new NodeExecutionEnv({ cwd: cwd ?? process.cwd() });
-
-/** A task whose only phase waits: a stub, never run on a passive harness. */
-const stubTask = defineTask({
-  name: "stub",
-  version: 1,
-  initial: () => ({ phase: "waiting" as const }),
-  phases: { waiting: () => Promise.resolve() },
-  abort: () => Promise.resolve(),
-});
 
 describe("conversations", () => {
   let test: TestHarness | undefined;
@@ -101,14 +93,7 @@ describe("conversations", () => {
 
   it("refuses a conversation that belongs to a task", async () => {
     const session = await passive();
-    const id = await session.harness.commit(async (tx) => {
-      const taskId = await tx.createTask(
-        stubTask,
-        {},
-        { ownership: { kind: "conversation" }, conversationId: session.root.id },
-      );
-      return (await tx.createConversation({ ownership: { kind: "task", taskId } })).id;
-    }, context);
+    const id = await createTaskOwned(session);
     const open = conversations(session, DEFAULTS, "host").open({ kind: "existing", id });
     await expect(open).rejects.toThrow(`conversation ${String(id)} belongs to a task`);
   });
@@ -237,14 +222,7 @@ describe("conversations", () => {
   it("keeps a task-owned conversation out of the listing", async () => {
     const session = await passive();
     const api = conversations(session, DEFAULTS, "host");
-    const owned = await session.harness.commit(async (tx) => {
-      const taskId = await tx.createTask(
-        stubTask,
-        {},
-        { ownership: { kind: "conversation" }, conversationId: session.root.id },
-      );
-      return (await tx.createConversation({ ownership: { kind: "task", taskId } })).id;
-    }, context);
+    const owned = await createTaskOwned(session);
     const created = await api.open({ kind: "new" });
     const { ids } = await api.list({ kind: "all" });
     expect(ids).toContain(created.id);
