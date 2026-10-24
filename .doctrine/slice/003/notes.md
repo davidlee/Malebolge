@@ -105,9 +105,30 @@ sec-7 criteria own:
 If a later pass is wanted, it should probe the client's `resolveHere` and
 `request` code once written, not this prose.
 
+## VH-1 live session (2026-10-24, user at the terminal)
+
+Host daemon `MALEBOLGE_PROFILE=host node src/daemon-main.ts` from `~/dev/malebolge`;
+room daemon `malebolge-room` restarted 19:35 onto the live tree (head b895f5a).
+
+| step | observed | verdict |
+|---|---|---|
+| host: `--set-topic vh1 --here` | `vh1<TAB>/home/david/dev/malebolge` | pass |
+| host: `--here --new` | attached new conversations 204, 219 in `vh1` | pass |
+| host: tools run in topic dir | topic `vh1b --dir ~/dev/satan` (≠ daemon launch dir), `--topic vh1b --new` → conv 242, `pwd` → `/home/david/dev/satan` | pass |
+| host: `--topics` | `default`, `vh1  …/malebolge`, `vh1b  …/satan` | pass |
+| host: `--list --topic vh1` | `219`, `204` | pass |
+| room: `--here` | `--here needs a host daemon: this daemon runs under room, so its topic directories are room paths, not this shell's`; exit 1 | pass |
+| skew check | no older daemon at hand (room unit already restarted) | not run |
+
+Incidental:
+- First host start refused: `no environment prompt for profile host: ~/satan-corpus/prompts/env/host.txt`. The corpus had no host env prompt; the user authored it. Refusal is as designed (§4.8).
+- `host.txt`'s "working directory is the directory the daemon was launched from" misleads: the model attributed `/home/david/dev/satan` to the launch dir. Corpus wording, user's to fix.
+- Conversation ids jump (204 → 219 → 242): pi-durable allocates conversation, entry, task and submission ids from one counter, so each turn's entries consume ids. Not a defect.
+- The orchestrator's first command sketch (`--topic --here`) was wrong; the client's refusals (`argument is ambiguous`, `here and topic are exclusive`) were correct.
+
 ## Harvest
 <!-- single-copy: updated in place each harvest; ids only, never restated content -->
-fresh-as-of: 2026-10-24 · PHASE-01..05 completed, PHASE-06 in_progress (docs done, VH-1 owed) · head b053e1f · next: VH-1, cross-model /code-review, then /audit
+fresh-as-of: 2026-10-24 · PHASE-01..06 completed (VH-1 passed, § VH-1 live session) · head b895f5a · next: cross-model /code-review, then /audit
 
 ### Produced
 - design locked 2026-10-24 (RV-008), regressed for the planning-time amendment, relocked (RV-009, rev 49) — each on the user's section review, `conducted` disposition and acceptance
@@ -135,6 +156,7 @@ fresh-as-of: 2026-10-24 · PHASE-01..05 completed, PHASE-06 in_progress (docs do
 - design sec-3:176 says `attach: no topic <name>`; sec-4's table and PHASE-03 EX-1 say `no topic X` (unprefixed, like `no conversation N`). Code follows sec-4 — amend sec-3 at reconcile (PHASE-03 review)
 - `{"type":"attach","topic":T,"new":false}` refuses `attach: new must be true`; sec-4's attach-by-topic cell does not list it — add at reconcile
 - design sec-5's flag table omits `--set-topic NAME --here`, which the code accepts and PHASE-05 EX-3 requires — add at reconcile (PHASE-06 docs pass)
-- PHASE-06 VH-1 — live session owed: needs a running `host` daemon and the room daemon redeployed on this code (the deployed `malebolge-room.service` predates topics)
+- `~/satan-corpus/prompts/env/host.txt` (user-authored at VH-1) states the working directory as the daemon's launch dir; it is the conversation's (set at creation from `--cwd` or the topic's directory, else the launch dir). Corpus fix, user's call
+- VH-1 skew check not run (no older daemon at hand) — dispose at audit
 - review depth: all code by deepseek-flash; orchestrator review was VA-1-targeted, not line-by-line. A dedicated cross-model `/code-review` before `/audit` is recommended (user agreed 2026-10-24)
 - IMP-010 — share the `scanConversations` pager (PHASE-01 copied `durable-ids`'s loop)
