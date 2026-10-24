@@ -315,7 +315,7 @@ untouched: no `src/` change. `verify-vt 2` green on every phase.
 
 ## Harvest
 <!-- single-copy: updated in place each harvest; ids only, never restated content -->
-fresh-as-of: 2026-10-24 · PHASE-04 complete (all four) · code `2ef6487`
+fresh-as-of: 2026-10-24 · PHASE-04 complete (all four) · code `2ef6487`, doctrine `a7626a2`
 
 ### Produced
 - PHASE-04 done — the docs: `docs/internals.md` §Protocol (the `list` frame, its
