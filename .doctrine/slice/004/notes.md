@@ -78,10 +78,11 @@ run (user direction). Outcomes:
 
 ## Harvest
 <!-- single-copy: updated in place each harvest; ids only, never restated content -->
-fresh-as-of: 2026-10-25 · /audit (RV-014 concluded; next /reconcile) · 9d996b2 + F-6 fix
+fresh-as-of: 2026-10-25 · /close (VH-1 passed; slice done) · 07541f9
 
 ### Produced
 
+- VH-1 passed 2026-10-25 (room, root conversation, reported by the user): `env | grep SATAN_` showed HARNESS=malebolge, PROFILE=room, CONVERSATION=1, CWD=/home/satan, TOPIC=default, PARENT_CONVERSATION empty; `~/db/q who` → `13|malebolge|room|default|1|/home/satan`.
 - DEC-018, DEC-019, DEC-020, DEC-021 (amended RV-012 F-1), DEC-022
 - RV-012 (adversarial design pass, done)
 - plan.toml / plan.md (four phases); RV-013 (plan+design pass, concluded); design VT-6
@@ -101,5 +102,5 @@ fresh-as-of: 2026-10-25 · /audit (RV-014 concluded; next /reconcile) · 9d996b2
 
 ### Open
 
-- VH-1 (room runtime, user at the terminal) — design sec-6; /close confirms or records it outstanding (RV-014 Synthesis).
+- Unverified end to end: a forked conversation's `SATAN_PARENT_CONVERSATION` in the room. VT-1/VT-2 cover the mapping and `contextOf` on a fork; the exec tests use a non-fork second conversation.
 - satan side, out of scope: the `q spawn` reminder in `~/satan-corpus/prompts/env/room.txt`.
