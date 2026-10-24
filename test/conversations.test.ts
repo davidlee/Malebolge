@@ -3,7 +3,7 @@
 // The reopen case proves a created conversation is never reconfigured.
 
 import { join } from "node:path";
-import { defineTask, MemoryStorage } from "@earendil-works/pi-durable";
+import { type Conversation, defineTask, MemoryStorage } from "@earendil-works/pi-durable";
 import { NodeExecutionEnv } from "@earendil-works/pi-durable/env/node";
 import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite/node";
 import { CodingTools } from "@earendil-works/pi-durable/tools";
@@ -11,12 +11,9 @@ import { afterEach, describe, expect, it } from "vitest";
 import { context } from "../src/context.ts";
 import {
   type ConversationDefaults,
-  type ConversationPage,
   conversations,
   isConversationKey,
-  isTopicListing,
   LIST_PAGE,
-  type ListResult,
 } from "../src/conversations.ts";
 import { registryOf } from "../src/registry.ts";
 import { openSession, type Session } from "../src/session.ts";
@@ -35,14 +32,6 @@ import {
 } from "./harness-fixture.ts";
 
 const DEFAULTS: ConversationDefaults = { model: FAUX_MODEL, cwd: "/daemon-default" };
-
-/** The page a `list` that asked for one answered with, read the way `ConversationPage` expects. */
-const pageOf = (listing: ListResult): ConversationPage => {
-  if (isTopicListing(listing)) {
-    throw new Error("expected a page, read the topics");
-  }
-  return listing;
-};
 
 const nodeEnv = ({ cwd }: { cwd?: string }): NodeExecutionEnv =>
   new NodeExecutionEnv({ cwd: cwd ?? process.cwd() });
@@ -231,7 +220,7 @@ describe("conversations", () => {
 
   it("lists root alone in a fresh store", async () => {
     const session = await passive();
-    expect(pageOf(await conversations(session, DEFAULTS, "host").list({ kind: "all" }))).toEqual({
+    expect(await conversations(session, DEFAULTS, "host").list({ kind: "all" })).toEqual({
       ids: [session.root.id],
       truncated: false,
     });
@@ -242,11 +231,7 @@ describe("conversations", () => {
     const api = conversations(session, DEFAULTS, "host");
     const first = await api.open({ kind: "new" });
     const second = await api.open({ kind: "new" });
-    expect(pageOf(await api.list({ kind: "all" })).ids).toEqual([
-      second.id,
-      first.id,
-      session.root.id,
-    ]);
+    expect((await api.list({ kind: "all" })).ids).toEqual([second.id, first.id, session.root.id]);
   });
 
   it("keeps a task-owned conversation out of the listing", async () => {
@@ -261,7 +246,7 @@ describe("conversations", () => {
       return (await tx.createConversation({ ownership: { kind: "task", taskId } })).id;
     }, context);
     const created = await api.open({ kind: "new" });
-    const { ids } = pageOf(await api.list({ kind: "all" }));
+    const { ids } = await api.list({ kind: "all" });
     expect(ids).toContain(created.id);
     expect(ids).not.toContain(owned);
   });
@@ -273,7 +258,7 @@ describe("conversations", () => {
         await tx.createConversation({ ownership: { kind: "ownerless" } });
       }
     }, context);
-    const page = pageOf(await conversations(session, DEFAULTS, "host").list({ kind: "all" }));
+    const page = await conversations(session, DEFAULTS, "host").list({ kind: "all" });
     expect(page.ids).toHaveLength(LIST_PAGE);
     expect(page.truncated).toBe(true);
   });
@@ -299,6 +284,16 @@ describe("conversations", () => {
     expect((await api.open({ kind: "topic", name: "work", new: false })).id).toBe(second.id);
   });
 
+  it("starts one conversation when two attaches race on an empty topic", async () => {
+    const session = await passive();
+    const api = conversations(session, DEFAULTS, "host");
+    await api.setTopic({ name: "work" });
+    const open = (): Promise<Conversation> => api.open({ kind: "topic", name: "work", new: false });
+    const [one, two] = await Promise.all([open(), open()]);
+    expect(one.id).toBe(two.id);
+    expect((await api.list({ kind: "topic", name: "work" })).ids).toEqual([one.id]);
+  });
+
   it("refuses a topic whose latest entry is not a conversation key, creating nothing", async () => {
     const session = await passive();
     const api = conversations(session, DEFAULTS, "host");
@@ -317,17 +312,34 @@ describe("conversations", () => {
     ]);
   });
 
-  it("refuses a topic nobody wrote, creating neither topic nor conversation (DEC-016)", async () => {
+  // `constructor` is the one valid name an object literal already answers to.
+  it.each(["nope", "constructor"])(
+    "refuses a topic nobody wrote, creating neither topic nor conversation: %s (DEC-016)",
+    async (name) => {
+      const session = await passive();
+      const api = conversations(session, DEFAULTS, "host");
+      for (const fresh of [false, true]) {
+        await expect(api.open({ kind: "topic", name, new: fresh })).rejects.toThrow(
+          `no topic ${name}`,
+        );
+      }
+      await expect(api.list({ kind: "topic", name })).rejects.toThrow(`no topic ${name}`);
+      const index = await indexOf(session.harness);
+      expect(index.topics).toEqual({});
+      expect(Object.keys(index.conversations)).toEqual([String(session.root.id)]);
+    },
+  );
+
+  it("writes, lists and attaches a topic named like an object's own key", async () => {
     const session = await passive();
     const api = conversations(session, DEFAULTS, "host");
-    for (const fresh of [false, true]) {
-      await expect(api.open({ kind: "topic", name: "nope", new: fresh })).rejects.toThrow(
-        "no topic nope",
-      );
-    }
-    const index = await indexOf(session.harness);
-    expect(index.topics).toEqual({});
-    expect(Object.keys(index.conversations)).toEqual([String(session.root.id)]);
+    expect(await api.setTopic({ name: "constructor", cwd: "/c" })).toEqual({
+      name: "constructor",
+      cwd: "/c",
+    });
+    const created = await api.open({ kind: "topic", name: "constructor", new: false });
+    expect((await created.agent(context)).cwd).toBe("/c");
+    expect(await api.topics()).toEqual([{ name: "default" }, { name: "constructor", cwd: "/c" }]);
   });
 
   it("keeps an existing conversation's directory when the topic's changes (D1, EX-2)", async () => {
@@ -399,12 +411,12 @@ describe("conversations", () => {
     const first = await api.open({ kind: "topic", name: "work", new: true });
     const elsewhere = await api.open({ kind: "new" });
     const second = await api.open({ kind: "topic", name: "work", new: true });
-    expect(pageOf(await api.list({ kind: "topic", name: "work" }))).toEqual({
+    expect(await api.list({ kind: "topic", name: "work" })).toEqual({
       ids: [second.id, first.id],
       truncated: false,
     });
     // The conversation outside the topic is not in the page, whatever its id.
-    expect(pageOf(await api.list({ kind: "topic", name: "work" })).ids).not.toContain(elsewhere.id);
+    expect((await api.list({ kind: "topic", name: "work" })).ids).not.toContain(elsewhere.id);
   });
 
   it("stops a topic listing at LIST_PAGE and reports the cut (EX-4)", async () => {
@@ -414,7 +426,7 @@ describe("conversations", () => {
     for (let made = 0; made < LIST_PAGE + 1; made += 1) {
       await api.open({ kind: "topic", name: "many", new: true });
     }
-    const page = pageOf(await api.list({ kind: "topic", name: "many" }));
+    const page = await api.list({ kind: "topic", name: "many" });
     expect(page.ids).toHaveLength(LIST_PAGE);
     expect(page.truncated).toBe(true);
   });
@@ -430,7 +442,7 @@ describe("conversations", () => {
     const api = conversations(session, DEFAULTS, "host");
     await api.setTopic({ name: "work", cwd: "/w" });
     await api.setTopic({ name: "bare" });
-    expect(await api.list({ kind: "topics" })).toEqual([
+    expect(await api.topics()).toEqual([
       { name: "default" },
       { name: "bare" },
       { name: "work", cwd: "/w" },

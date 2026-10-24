@@ -134,7 +134,9 @@ rule below, not served.
   record exactly as it is, so the frame is idempotent;
   `{"type":"topic","name":"NAME","cwd":S}` sets its directory and
   `"cwd":null` clears it. Refused: a bad name, `topic: default is reserved`,
-  `cwd` that is neither a string nor `null`, an unknown key.
+  `cwd` that is neither a string nor `null`, a `cwd` holding a control
+  character (`topic: cwd must not contain a control character`, so a
+  `--topics` line stays one `NAME<TAB>DIR` record), an unknown key.
 - client → daemon, later lines:
   `{"type":"input","content":…,"requestId"?:…}`, `{"type":"abort"}`,
   `{"type":"compact","instructions"?:…}`

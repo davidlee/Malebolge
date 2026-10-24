@@ -11,7 +11,7 @@ import { encodeLine } from "../src/ndjson.ts";
 import type { ConversationsMessage, TopicsMessage } from "../src/protocol.ts";
 import { createRenderer } from "../src/render.ts";
 import {
-  frameOf,
+  requestFrameOf,
   replyTypeOf,
   request,
   type ReplyMessage,
@@ -34,7 +34,7 @@ function requested(
   }
   const reply = request(
     path,
-    frameOf(invocation),
+    requestFrameOf(invocation),
     replyTypeOf(invocation),
     errors,
     invocation.wait,
@@ -122,6 +122,40 @@ describe("request --list", () => {
     expect(await rejection(reply)).toBeInstanceOf(RequestFailedError);
     expect(errors()).toBe("[error: listing failed]\n");
     // The old daemon leaves the connection open: waiting for its close would hang.
+    await fake.closed;
+  });
+
+  it("stays refused when a reply follows the error: one request, one outcome", async () => {
+    const path = await socketPath();
+    await fakeDaemon(path, (socket) => {
+      socket.write(encodeLine({ type: "error", message: "listing failed" }));
+      socket.write(encodeLine({ type: "conversations", conversations: [1], truncated: false }));
+    });
+    const { reply, errors } = requested(path, ["--list"]);
+    expect(await rejection(reply)).toBeInstanceOf(RequestFailedError);
+    expect(errors()).toBe("[error: listing failed]\n");
+  });
+
+  it("ignores an error after the reply: the request was already answered", async () => {
+    const path = await socketPath();
+    await fakeDaemon(path, (socket) => {
+      socket.write(encodeLine({ type: "conversations", conversations: [1], truncated: false }));
+      socket.write(encodeLine({ type: "error", message: "late" }));
+      socket.end();
+    });
+    const { reply, errors } = requested(path, ["--list"]);
+    expect(await reply).toMatchObject({ conversations: [1] });
+    expect(errors()).toBe("");
+  });
+
+  it("refuses a line that is not JSON with one stderr line, never a stack trace", async () => {
+    const path = await socketPath();
+    const fake = await fakeDaemon(path, (socket) => {
+      socket.write("not json\n");
+    });
+    const { reply, errors } = requested(path, ["--list"]);
+    expect(await rejection(reply)).toMatchObject({ code: "REQUEST_FAILED" });
+    expect(errors()).toBe("[the daemon sent a line that is not JSON]\n");
     await fake.closed;
   });
 

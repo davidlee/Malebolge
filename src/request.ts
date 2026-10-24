@@ -6,6 +6,7 @@ import type { Socket } from "node:net";
 import type { Writable } from "node:stream";
 import type { RequestInvocation } from "./attach-invocation.ts";
 import { isRecord, type JsonRecord } from "./json.ts";
+import { messageOf } from "./message-of.ts";
 import { encodeLine, lineSplitter } from "./ndjson.ts";
 import type { ConversationsMessage, ErrorMessage, TopicsMessage } from "./protocol.ts";
 import { type ClientNotice, createRenderer, type Printable, toPrintable } from "./render.ts";
@@ -46,6 +47,42 @@ export async function connectOrExplain(
   }
 }
 
+/** What a client says when the daemon breaks the line protocol itself. */
+export const MALFORMED_LINE = "the daemon sent a line that is not JSON";
+
+/** How a client connection reacts: to each parsed line, to a line that is not JSON, to the close. */
+export interface ClientWiring {
+  value: (value: unknown) => void;
+  malformed: () => void;
+  /** `cause` is the socket error that closed the connection, if one did. */
+  close: (cause?: unknown) => void;
+}
+
+/** Wire a client socket: a reset destroys it, each line parses once, and close settles. */
+export function wireClient(socket: Socket, wiring: ClientWiring): void {
+  let cause: unknown;
+  socket.on("error", (error) => {
+    cause = error;
+    socket.destroy();
+  });
+  socket.on(
+    "data",
+    lineSplitter((line) => {
+      let value: unknown;
+      try {
+        value = JSON.parse(line);
+      } catch {
+        wiring.malformed();
+        return;
+      }
+      wiring.value(value);
+    }),
+  );
+  socket.on("close", () => {
+    wiring.close(cause);
+  });
+}
+
 /** A daemon that does not know a first-line frame answers `unknown message type "<frame>"`. */
 const UNKNOWN_TYPE = /^unknown message type "([^"]+)"$/;
 
@@ -78,7 +115,7 @@ export const skewHint = (feature: string): string =>
 export type ReplyMessage = ConversationsMessage | TopicsMessage;
 
 /** The frame a request-reply invocation sends, as it goes on the wire (design sec-4). */
-export function frameOf(invocation: RequestInvocation): JsonRecord {
+export function requestFrameOf(invocation: RequestInvocation): JsonRecord {
   switch (invocation.mode) {
     case "list":
       return invocation.topic === undefined
@@ -124,10 +161,22 @@ function failRequest<K extends ReplyMessage["type"]>(
   if (feature !== undefined) {
     state.errors.write(noticeText(state.render, skewHint(feature)));
   }
-  state.failure = new RequestFailedError(event.message);
+  leaveFailed(state, event.message);
+}
+
+/** Record the request's one failure and end the connection. */
+function leaveFailed<K extends ReplyMessage["type"]>(
+  state: RequestState<K>,
+  message: string,
+): void {
+  state.failure = new RequestFailedError(message);
   // The old daemon bound root and left the connection open: its close will not come.
   state.socket.end();
 }
+
+/** Whether the request has its one outcome: answered, or failed. */
+const isSettled = <K extends ReplyMessage["type"]>(state: RequestState<K>): boolean =>
+  state.answered || state.failure !== undefined;
 
 /**
  * One frame on a request connection. Only two are its own — the reply it asked
@@ -138,7 +187,7 @@ function handleRequestFrame<K extends ReplyMessage["type"]>(
   state: RequestState<K>,
   value: unknown,
 ): void {
-  if (!isRecord(value) || typeof value["type"] !== "string") {
+  if (isSettled(state) || !isRecord(value) || typeof value["type"] !== "string") {
     return;
   }
   const event = toPrintable(value);
@@ -156,31 +205,40 @@ function handleRequestFrame<K extends ReplyMessage["type"]>(
   }
 }
 
-/** The daemon closed: a failure rejects; a close with no reply is its own failure. */
-function settleRequest<K extends ReplyMessage["type"]>(state: RequestState<K>): void {
+/** The daemon closed: a failure rejects; a close with no reply is its own failure, cause named. */
+function settleRequest<K extends ReplyMessage["type"]>(
+  state: RequestState<K>,
+  cause: unknown,
+): void {
   if (state.failure !== undefined) {
     state.reject(state.failure);
     return;
   }
   if (!state.answered) {
-    state.errors.write(noticeText(state.render, CLOSED_BEFORE_REPLY));
-    state.reject(new RequestFailedError(CLOSED_BEFORE_REPLY));
+    const text =
+      cause === undefined
+        ? CLOSED_BEFORE_REPLY
+        : `${CLOSED_BEFORE_REPLY}: ${messageOf(codeOf(cause) ?? cause)}`;
+    state.errors.write(noticeText(state.render, text));
+    state.reject(new RequestFailedError(text));
   }
 }
 
-/** Wire the socket: a reset destroys it; each accepted frame is handled; close settles. */
+/** Wire the socket: each frame is handled, a line that is not JSON fails, close settles. */
 function wireRequest<K extends ReplyMessage["type"]>(state: RequestState<K>): void {
-  state.socket.on("error", () => {
-    state.socket.destroy();
-  });
-  state.socket.on(
-    "data",
-    lineSplitter((line) => {
-      handleRequestFrame(state, JSON.parse(line));
-    }),
-  );
-  state.socket.on("close", () => {
-    settleRequest(state);
+  wireClient(state.socket, {
+    value: (value) => {
+      handleRequestFrame(state, value);
+    },
+    malformed: () => {
+      if (!isSettled(state)) {
+        state.errors.write(noticeText(state.render, MALFORMED_LINE));
+        leaveFailed(state, MALFORMED_LINE);
+      }
+    },
+    close: (cause) => {
+      settleRequest(state, cause);
+    },
   });
 }
 

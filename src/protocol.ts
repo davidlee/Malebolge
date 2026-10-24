@@ -175,14 +175,17 @@ function newTarget(message: JsonRecord): AttachTarget {
   if (message["conversation"] !== undefined) {
     attachRefused("conversation and new are exclusive");
   }
+  const cwd = attachCwd(message);
+  return cwd === undefined ? { kind: "new" } : { kind: "new", cwd };
+}
+
+/** An attach frame's `cwd`, untrimmed and as sent: absent, or a string. */
+function attachCwd(message: JsonRecord): string | undefined {
   const cwd = message["cwd"];
-  if (cwd === undefined) {
-    return { kind: "new" };
-  }
-  if (typeof cwd !== "string") {
+  if (cwd !== undefined && typeof cwd !== "string") {
     attachRefused("cwd must be a string");
   }
-  return { kind: "new", cwd };
+  return cwd;
 }
 
 /** The target of a `conversation: N` frame, N a safe positive integer. */
@@ -198,17 +201,10 @@ function existingTarget(conversation: unknown): AttachTarget {
  * because a directory makes sense only for a conversation being created.
  */
 function topicDirectory(message: JsonRecord): string | undefined {
-  const cwd = message["cwd"];
-  if (cwd === undefined) {
-    return undefined;
-  }
-  if (message["new"] !== true) {
+  if (message["cwd"] !== undefined && message["new"] !== true) {
     attachRefused("cwd needs new");
   }
-  if (typeof cwd !== "string") {
-    attachRefused("cwd must be a string");
-  }
-  return cwd;
+  return attachCwd(message);
 }
 
 /**
@@ -282,6 +278,9 @@ function listFrame(message: JsonRecord): ListMessage {
   return { type: "list", query: listQuery(message) };
 }
 
+/** C0 controls and DEL: what would split or corrupt a tab-separated line. */
+const CONTROL_CHARACTER = /[\u0000-\u001f\u007f]/u;
+
 /**
  * The `topic` frame, parsed strictly. `cwd` absent creates or leaves the topic
  * unchanged (so the frame is idempotent), a string sets it, `null` clears it.
@@ -298,6 +297,10 @@ function topicFrame(message: JsonRecord): TopicMessage {
   const cwd = message["cwd"];
   if (cwd === undefined) {
     return { type: "topic", name };
+  }
+  if (typeof cwd === "string" && CONTROL_CHARACTER.test(cwd)) {
+    // `--topics` prints `NAME<TAB>DIR` lines, so a directory is one field of one line.
+    frameRefused("topic", "cwd must not contain a control character");
   }
   if (cwd === null || typeof cwd === "string") {
     return { type: "topic", name, cwd };

@@ -44,6 +44,7 @@ import {
 import {
   FAUX_MODEL,
   NAME_RULE,
+  indexOf,
   openFauxHarness,
   openTestHarness,
   type TestHarness,
@@ -759,16 +760,24 @@ describe("daemon", () => {
     expect(await conversationIds()).toEqual([test.root.id, first.id, second.id]);
   });
 
-  it("refuses a list frame on a bound connection, keeping its binding (EX-5, F-11)", async () => {
+  it("refuses every first-line frame on a bound connection, writing nothing (EX-5, F-11)", async () => {
     await start();
     test.faux.setResponses([fauxAssistantMessage([fauxText("hello")])]);
     const client = await attach();
     // Well-formed and malformed alike: the rule is about the connection, not the frame.
-    for (const frame of [{ type: "list" }, { type: "list", page: 2 }]) {
+    const later = [
+      { type: "list" },
+      { type: "list", page: 2 },
+      { type: "topic", name: "work", cwd: "/w" },
+      { type: "attach", topic: "work" },
+    ];
+    for (const frame of later) {
       client.send(frame);
       const error = await client.next(isType("error"));
       expect(error.message).toBe("already attached to conversation 1");
     }
+    // `topic` is the one first-line frame that writes: refused, it wrote no topic.
+    expect((await indexOf(test.harness)).topics).toEqual({});
     // The control: the binding survived, so an input still lands on it.
     client.send({ type: "input", content: "hi" });
     await client.next(isType("run_end"));
@@ -890,7 +899,7 @@ describe("daemon", () => {
     });
   });
 
-  it("names the profile its own daemon runs under, not the client's (EX-4)", async () => {
+  it("names the profile its own conversations were built for, room here (EX-4)", async () => {
     test = await openTestHarness([]);
     daemon = await serve({
       socketPath,
@@ -1122,6 +1131,7 @@ describe("daemon", () => {
       },
       watch: (conversation) => api.watch(conversation),
       list: (query) => api.list(query),
+      topics: () => api.topics(),
       setTopic: (topic) => api.setTopic(topic),
     };
     daemon = await serve({

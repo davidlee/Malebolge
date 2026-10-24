@@ -4,9 +4,9 @@
 import type { Socket } from "node:net";
 import { createInterface, type Interface } from "node:readline";
 import type { Readable, Writable } from "node:stream";
-import type { InputMode } from "./attach-invocation.ts";
+import { ATTACH_WAIT, type InputMode } from "./attach-invocation.ts";
 import { isRecord } from "./json.ts";
-import { encodeLine, lineSplitter } from "./ndjson.ts";
+import { encodeLine } from "./ndjson.ts";
 import {
   type AttachTarget,
   type ClientMessage,
@@ -14,7 +14,15 @@ import {
   parseClientMessage,
 } from "./protocol.ts";
 import { createRenderer, type Presentation, type Printable, toPrintable } from "./render.ts";
-import { connectOrExplain, noticeText, type Render, skewHint, skewOf } from "./request.ts";
+import {
+  connectOrExplain,
+  MALFORMED_LINE,
+  noticeText,
+  type Render,
+  skewHint,
+  skewOf,
+  wireClient,
+} from "./request.ts";
 import type { ConnectWait } from "./unix-socket.ts";
 
 /** A connection the daemon never confirmed as attached; `attach-main` exits 1. */
@@ -99,7 +107,6 @@ export interface AttachOptions {
 
 const ROOT: AttachTarget = { kind: "root" };
 const REFUSED_FRAME = "the client refused that frame";
-const DEFAULT_WAIT: ConnectWait = { intervalMs: 200, timeoutMs: 10_000 };
 const CLOSED_BEFORE_ATTACH = "the daemon closed before attach completed";
 /** The first line's frame: the conversation this connection asks for. */
 function attachFrameOf(target: AttachTarget): unknown {
@@ -221,19 +228,18 @@ function settle(state: AttachState): void {
   state.resolve(undefined);
 }
 
-/** Wire the socket: a reset destroys it; each event renders; close settles the promise. */
+/** Wire the socket: each event renders, a line that is not JSON is said and skipped, close settles. */
 function wire(state: AttachState): void {
-  state.socket.on("error", () => {
-    state.socket.destroy();
-  });
-  state.socket.on(
-    "data",
-    lineSplitter((line) => {
-      handleEvent(state, toPrintable(JSON.parse(line)));
-    }),
-  );
-  state.socket.on("close", () => {
-    settle(state);
+  wireClient(state.socket, {
+    value: (value) => {
+      handleEvent(state, toPrintable(value));
+    },
+    malformed: () => {
+      notice(state, MALFORMED_LINE);
+    },
+    close: () => {
+      settle(state);
+    },
   });
 }
 
@@ -263,7 +269,7 @@ export async function attach(
   options: AttachOptions = {},
 ): Promise<void> {
   const target = options.target ?? ROOT;
-  const wait = options.wait ?? DEFAULT_WAIT;
+  const wait = options.wait ?? ATTACH_WAIT;
   // Made before connecting, so a connect failure is told in the same voice.
   const render = createRenderer({ presentation: options.presentation ?? "terminal" });
   const socket = await connectOrExplain(socketPath, output, render, wait);

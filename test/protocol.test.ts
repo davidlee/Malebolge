@@ -107,6 +107,8 @@ describe("parseConnectionMessage", () => {
     expect(() => parseConnectionMessage(JSON.stringify(message))).toThrow(FrameRefused);
   });
 
+  const CONTROL_REFUSAL = "topic: cwd must not contain a control character";
+
   /** Every refusal of the widened frames, in design sec-4's words (PHASE-03 EX-1). */
   it.each([
     ['{"type":"attach","conversation":0}', "attach: conversation must be a positive integer"],
@@ -128,6 +130,10 @@ describe("parseConnectionMessage", () => {
     ['{"type":"topic","name":"default","cwd":"/tmp"}', "topic: default is reserved"],
     ['{"type":"topic","name":"work","cwd":1}', "topic: cwd must be a string or null"],
     ['{"type":"topic","name":"work","cwd":false}', "topic: cwd must be a string or null"],
+    // A directory is one field of a `--topics` line: no tab, newline or other control.
+    ['{"type":"topic","name":"work","cwd":"/a\\tb"}', CONTROL_REFUSAL],
+    ['{"type":"topic","name":"work","cwd":"/a\\nb"}', CONTROL_REFUSAL],
+    ['{"type":"topic","name":"work","cwd":"/a\\u007fb"}', CONTROL_REFUSAL],
     ['{"type":"topic","name":"A"}', `topic: ${NAME_RULE}`],
     ['{"type":"topic"}', `topic: ${NAME_RULE}`],
     ['{"type":"topic","name":"work","conversation":3}', "topic: unknown key conversation"],
@@ -260,23 +266,6 @@ describe("parseFirstLineFrame", () => {
     });
   });
 
-  it.each([
-    [
-      { type: "list", topic: "work" },
-      { type: "list", query: { kind: "topic", name: "work" } },
-    ],
-    [
-      { type: "list", topics: true },
-      { type: "list", query: { kind: "topics" } },
-    ],
-    [
-      { type: "topic", name: "work", cwd: null },
-      { type: "topic", name: "work", cwd: null },
-    ],
-  ])("parses the %j frame", (message, expected) => {
-    expect(parseFirstLineFrame(message)).toEqual(expected);
-  });
-
   it("parses the topic frame", () => {
     expect(parseFirstLineFrame({ type: "topic", name: "work" })).toEqual({
       type: "topic",
@@ -291,14 +280,10 @@ describe("parseFirstLineFrame", () => {
     },
   );
 
-  it.each([
-    [{ type: "attach", topic: "Work" }, `attach: ${NAME_RULE}`],
-    [{ type: "attach", conversation: 0 }, "attach: conversation must be a positive integer"],
-    [{ type: "list", topic: "Work" }, `list: ${NAME_RULE}`],
-    [{ type: "list", page: 2 }, "list: unknown key page"],
-    [{ type: "topic", name: "default" }, "topic: default is reserved"],
-    [{ type: "topic", name: "work", cwd: 1 }, "topic: cwd must be a string or null"],
-  ])("refuses %j strictly", (message, refusal) => {
-    expect(errorOf(() => parseFirstLineFrame(message))).toBe(refusal);
+  // parseConnectionMessage's table covers every refusal; this proves the path is shared.
+  it("refuses a malformed first-line frame strictly rather than leaving it to the client", () => {
+    expect(errorOf(() => parseFirstLineFrame({ type: "list", page: 2 }))).toBe(
+      "list: unknown key page",
+    );
   });
 });

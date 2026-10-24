@@ -107,6 +107,22 @@ describe("attach: leaves before attached", () => {
   });
 });
 
+describe("attach: a line that is not JSON", () => {
+  it("says so once and keeps the session, never a stack trace", async () => {
+    const path = await socketPath();
+    const fake = await fakeDaemon(path, (socket) => {
+      socket.write("not json\n");
+    });
+    const s = session(path);
+    await s.until("[the daemon sent a line that is not JSON]\n");
+    fake.send({ type: "attached", conversation: 1 });
+    await s.until("attached");
+    s.input.end();
+    await s.done;
+    expect(s.printed()).toContain("[detached]");
+  });
+});
+
 describe("attach: failures before attached", () => {
   it("rejects when the daemon reports an error before attached", async () => {
     const path = await socketPath();

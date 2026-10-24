@@ -1,20 +1,30 @@
 // The command line as parsed: what each flag combination asks for, and what is
 // refused before any socket is opened (SL-003 EX-2's table, EX-6's split).
 
+import { mkdir, realpath } from "node:fs/promises";
+import { join } from "node:path";
+import { PassThrough, type Writable } from "node:stream";
 import { describe, expect, it, onTestFinished, vi } from "vitest";
 import {
   attachInvocationOf,
   attachTargetOf,
   HereRefusedError,
   resolveHere,
+  type ResolvedInvocation,
   UsageError,
 } from "../src/attach-invocation.ts";
 import { messageOf } from "../src/message-of.ts";
 import { encodeLine } from "../src/ndjson.ts";
 import type { AttachTarget, TopicsMessage } from "../src/protocol.ts";
-import { createRenderer } from "../src/render.ts";
-import { frameOf } from "../src/request.ts";
-import { fakeDaemon, type FakeDaemon, rejection, socketPath } from "./fixtures.ts";
+import { requestFrameOf } from "../src/request.ts";
+import {
+  collect,
+  fakeDaemon,
+  type FakeDaemon,
+  rejection,
+  socketPath,
+  tempDir,
+} from "./fixtures.ts";
 
 /** `--here`, as parsing leaves it: resolved against the daemon later (design sec-5, DEC-014). */
 const HERE = { here: true } as const;
@@ -73,6 +83,11 @@ describe("attachTargetOf", () => {
     // A directory without a topic write names no target at all.
     [["--dir", "/x"]],
     [["--no-dir"]],
+    // ...and beside a topic target it is still not one: `--cwd` is the attach's directory.
+    [["--topic", "work", "--dir", "/x"]],
+    [["--topic", "work", "--new", "--dir", "/x"]],
+    [["--topic", "work", "--no-dir"]],
+    [["--here", "--dir", "/x"]],
   ])("%j is a usage error", (args) => {
     expect(() => attachTargetOf(args)).toThrow(UsageError);
   });
@@ -198,8 +213,11 @@ const topicsReply = (
 ): TopicsMessage => ({ type: "topics", profile, topics });
 
 /** A stub daemon answering every connection's lookup with `reply`, and what it heard. */
-async function answering(reply: TopicsMessage): Promise<{ path: string; fake: FakeDaemon }> {
-  const path = await socketPath();
+async function answering(
+  reply: TopicsMessage,
+  at?: string,
+): Promise<{ path: string; fake: FakeDaemon }> {
+  const path = at ?? (await socketPath());
   const fake = await fakeDaemon(path, (socket) => {
     socket.write(encodeLine(reply));
   });
@@ -211,6 +229,14 @@ const rootAt =
   (root: string | undefined): (() => string | undefined) =>
   () =>
     root;
+
+/** `args`'s `--here` resolved against the daemon at `path`, the git root stubbed to `root`. */
+const resolvedHere = (
+  args: string[],
+  path: string,
+  root: string | undefined,
+  errors: Writable = new PassThrough(),
+): Promise<ResolvedInvocation> => resolveHere(attachInvocationOf(args), path, errors, rootAt(root));
 
 /** What `resolveHere` refuses with: the one line `attach-main` prints, then exit 1. */
 const refusalOf = async (run: Promise<unknown>): Promise<string> => messageOf(await rejection(run));
@@ -224,7 +250,7 @@ async function framesHeard(fake: FakeDaemon): Promise<readonly string[]> {
 }
 
 describe("resolveHere: one exact match (EX-1)", () => {
-  it("substitutes the one topic at the git root, and the frame carries its name", async () => {
+  it("substitutes the one topic at the git root, for an attach and for a listing", async () => {
     const { path } = await answering(
       topicsReply("host", [
         { name: "default" },
@@ -232,20 +258,16 @@ describe("resolveHere: one exact match (EX-1)", () => {
         { name: "nested", cwd: "/repo/sub" },
       ]),
     );
-    const attaching = await resolveHere(attachInvocationOf(["--here"]), path, rootAt("/repo"));
+    const attaching = await resolvedHere(["--here"], path, "/repo");
     expect(attaching).toMatchObject({
       target: { kind: "topic", name: "work", new: false },
       inputMode: "lines",
     });
 
-    const listing = await resolveHere(
-      attachInvocationOf(["--list", "--here"]),
-      path,
-      rootAt("/repo"),
-    );
+    const listing = await resolvedHere(["--list", "--here"], path, "/repo");
     expect(listing.mode).toBe("list");
     if (listing.mode === "list") {
-      expect(frameOf(listing)).toEqual({ type: "list", topic: "work" });
+      expect(requestFrameOf(listing)).toEqual({ type: "list", topic: "work" });
     }
   });
 
@@ -253,50 +275,36 @@ describe("resolveHere: one exact match (EX-1)", () => {
     // No daemon listens at this path: a lookup would fail, so this proves none was made.
     const path = await socketPath();
     const invocation = attachInvocationOf(["--topic", "work"]);
-    expect(await resolveHere(invocation, path, rootAt("/repo"))).toEqual(invocation);
+    expect(await resolveHere(invocation, path, new PassThrough(), rootAt("/repo"))).toEqual(
+      invocation,
+    );
   });
 });
 
 describe("resolveHere: refusals (EX-2)", () => {
   it("refuses outside a git repository, and sends nothing at all", async () => {
     const path = await socketPath();
-    expect(
-      await refusalOf(resolveHere(attachInvocationOf(["--here"]), path, rootAt(undefined))),
-    ).toBe("--here needs a git repository: none is above this directory");
+    expect(await refusalOf(resolvedHere(["--here"], path, undefined))).toBe(
+      "--here needs a git repository: none is above this directory",
+    );
   });
 
-  it("refuses a room daemon's topics, whatever the client's own MALEBOLGE_PROFILE says", async () => {
-    // The client's profile picks the default socket and nothing else: here it would pick host.
-    vi.stubEnv("MALEBOLGE_PROFILE", "host");
-    onTestFinished(() => {
-      vi.unstubAllEnvs();
-    });
+  it("refuses a room daemon's topics: the answering daemon's own profile decides", async () => {
     const { path, fake } = await answering(
       topicsReply("room", [{ name: "work", cwd: "/home/room/repo" }]),
     );
-    const refusal = refusalOf(resolveHere(attachInvocationOf(["--here"]), path, rootAt("/repo")));
+    const refusal = refusalOf(resolvedHere(["--here"], path, "/repo"));
     expect(await refusal).toBe(
       "--here needs a host daemon: this daemon runs under room, so its topic directories are room paths, not this shell's",
     );
     expect(await framesHeard(fake)).toHaveLength(1);
   });
 
-  it("succeeds against a host daemon with no MALEBOLGE_PROFILE set", async () => {
-    vi.stubEnv("MALEBOLGE_PROFILE", undefined);
-    onTestFinished(() => {
-      vi.unstubAllEnvs();
-    });
-    const { path } = await answering(topicsReply("host", [{ name: "work", cwd: "/repo" }]));
-    expect(await resolveHere(attachInvocationOf(["--here"]), path, rootAt("/repo"))).toMatchObject({
-      target: { kind: "topic", name: "work" },
-    });
-  });
-
   it("refuses when no topic has the git root as its directory", async () => {
     const { path, fake } = await answering(
       topicsReply("host", [{ name: "default" }, { name: "work", cwd: "/elsewhere" }]),
     );
-    const run = resolveHere(attachInvocationOf(["--list", "--here"]), path, rootAt("/repo"));
+    const run = resolvedHere(["--list", "--here"], path, "/repo");
     await expect(run).rejects.toBeInstanceOf(HereRefusedError);
     expect(await refusalOf(run)).toBe("no topic has directory /repo");
     expect(await framesHeard(fake)).toHaveLength(1);
@@ -309,7 +317,7 @@ describe("resolveHere: refusals (EX-2)", () => {
         { name: "beta", cwd: "/repo" },
       ]),
     );
-    const refusal = refusalOf(resolveHere(attachInvocationOf(["--here"]), path, rootAt("/repo")));
+    const refusal = refusalOf(resolvedHere(["--here"], path, "/repo"));
     expect(await refusal).toBe("topics alpha, beta have directory /repo; name one with --topic");
     expect(await framesHeard(fake)).toHaveLength(1);
   });
@@ -328,44 +336,63 @@ describe("resolveHere: --set-topic --here (EX-3)", () => {
     ],
   ])("writes the git root as the directory, with %s", async (_case, topics) => {
     const { path } = await answering(topicsReply("host", topics));
-    const resolved = await resolveHere(
-      attachInvocationOf(["--set-topic", "fresh", "--here"]),
-      path,
-      rootAt("/repo"),
-    );
+    const resolved = await resolvedHere(["--set-topic", "fresh", "--here"], path, "/repo");
     expect(resolved.mode).toBe("set-topic");
     if (resolved.mode === "set-topic") {
       expect(resolved.cwd).toBe("/repo");
-      expect(frameOf(resolved)).toEqual({ type: "topic", name: "fresh", cwd: "/repo" });
+      expect(requestFrameOf(resolved)).toEqual({ type: "topic", name: "fresh", cwd: "/repo" });
     }
   });
 
   it("refuses against a room daemon, writing nothing", async () => {
     const { path, fake } = await answering(topicsReply("room", []));
-    const refusal = refusalOf(
-      resolveHere(attachInvocationOf(["--set-topic", "fresh", "--here"]), path, rootAt("/repo")),
-    );
+    const refusal = refusalOf(resolvedHere(["--set-topic", "fresh", "--here"], path, "/repo"));
     expect(await refusal).toContain("--here needs a host daemon");
     expect(await framesHeard(fake)).toHaveLength(1);
   });
 });
 
 describe("resolveHere: the lookup is silent (EX-4)", () => {
-  it("--list --here writes nothing to stdout: its caller renders only the ids", async () => {
+  it("--list --here writes to neither stdout nor stderr: its caller renders the reply", async () => {
     const write = vi.spyOn(process.stdout, "write");
     onTestFinished(() => {
       write.mockRestore();
     });
     const { path } = await answering(topicsReply("host", [{ name: "work", cwd: "/repo" }]));
-    const resolved = await resolveHere(
-      attachInvocationOf(["--list", "--here"]),
-      path,
-      rootAt("/repo"),
-    );
+    const errors = new PassThrough();
+    const errorText = collect(errors);
+    const resolved = await resolvedHere(["--list", "--here"], path, "/repo", errors);
     expect(write).not.toHaveBeenCalled();
-    expect(
-      createRenderer()({ type: "conversations", conversations: [7, 3], truncated: false }),
-    ).toBe("7\n3\n");
+    expect(errorText()).toBe("");
     expect(resolved.mode).toBe("list");
+  });
+});
+
+describe("resolveHere: the real git root (EX-1)", () => {
+  it("finds the repository above the shell's directory when no lookup is injected", async () => {
+    const tmp = await tempDir();
+    onTestFinished(tmp.cleanup);
+    // The physical path: `process.cwd()` resolves symlinks, so the topic must name it that way.
+    const repo = await realpath(tmp.dir);
+    await mkdir(join(repo, ".git"));
+    await mkdir(join(repo, "sub"));
+    const before = process.cwd();
+    process.chdir(join(repo, "sub"));
+    onTestFinished(() => {
+      process.chdir(before);
+    });
+    const { path } = await answering(topicsReply("host", [{ name: "work", cwd: repo }]));
+    const resolved = await resolveHere(attachInvocationOf(["--here"]), path, new PassThrough());
+    expect(resolved).toMatchObject({ target: { kind: "topic", name: "work" } });
+  });
+});
+
+describe("resolveHere: the lookup's wait", () => {
+  it("waits for a starting daemon as long as an attach would, not a listing's second", async () => {
+    const path = await socketPath();
+    const resolving = resolvedHere(["--here"], path, "/repo");
+    await new Promise((resolve) => setTimeout(resolve, 1_500));
+    await answering(topicsReply("host", [{ name: "work", cwd: "/repo" }]), path);
+    expect(await resolving).toMatchObject({ target: { kind: "topic", name: "work" } });
   });
 });

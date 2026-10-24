@@ -43,8 +43,8 @@ export type IndexDoc = {
 /** A topic as a listing shows it: the name it is filed under, and its directory. */
 export type NamedTopic = TopicRecord & { name: string };
 
-/** Conversations read per backfill page: small, so one commit never reads the whole store at once. */
-const BACKFILL_PAGE = 64;
+/** Conversations per backfill read: bounds each storage read, not the commit, which reads every page. */
+export const BACKFILL_PAGE = 64;
 
 /** The index document: session scope, so a fork never copies it, and one checkpoint every 50 deltas. */
 export const IndexDocument = defineDoc<IndexDoc>({
@@ -100,6 +100,14 @@ export function assignTopic(name: string): ConversationInit {
 }
 
 /**
+ * `name`'s stored record, or undefined when nobody wrote it. An own-key read:
+ * `constructor` is a valid name and every object literal inherits one.
+ */
+export function storedTopic(index: IndexDoc, name: string): TopicRecord | undefined {
+  return Object.hasOwn(index.topics, name) ? index.topics[name] : undefined;
+}
+
+/**
  * The one read of the document. `snapshot` does not apply `initial()`, so an
  * absent index — a store no hook ever wrote — reads as the initial document
  * here, once, for every topic listing.
@@ -140,7 +148,7 @@ export async function writeTopicRecord(
   }
   return session.commit(async (tx) => {
     const index = await tx.doc(IndexDocument);
-    const record = writtenRecord(index.topics[name] ?? {}, cwd);
+    const record = writtenRecord(storedTopic(index, name) ?? {}, cwd);
     index.topics[name] = record;
     return { name, ...record };
   }, context);
@@ -148,30 +156,35 @@ export async function writeTopicRecord(
 
 /**
  * Index the conversations created before this slice (D7), root included: one
- * commit, paged reads, and every read before the first write.
+ * commit, paged reads, and every read before the first write. A fork's entry
+ * carries its parent; an entry an earlier backfill wrote without one gets it,
+ * merged, so its topic and every other key survive.
  */
 export async function backfillIndex(session: Pick<Session, "commit">): Promise<void> {
   await session.commit(async (tx) => {
     const index = await tx.doc(IndexDocument);
-    const waiting = await unindexed(tx, index);
-    for (const record of waiting) {
-      writeTopic(index, record.id, DEFAULT_TOPIC);
+    for (const record of await unbackfilled(tx, index)) {
+      const topic = index.conversations[String(record.id)]?.topic ?? DEFAULT_TOPIC;
+      writeTopic(index, record.id, topic, record.parent?.conversationId);
     }
   }, context);
 }
 
-/** Every ownerless conversation the index does not know yet, oldest first. */
-async function unindexed(tx: Tx, index: IndexDoc): Promise<readonly ConversationRecord[]> {
+/** Whether `record`'s entry is missing, or lacks the parent the record carries. */
+function needsBackfill(index: IndexDoc, record: ConversationRecord): boolean {
+  const entry = index.conversations[String(record.id)];
+  return entry === undefined || (record.parent !== undefined && entry.parent === undefined);
+}
+
+/** Every ownerless conversation whose entry the backfill must write, oldest first. */
+async function unbackfilled(tx: Tx, index: IndexDoc): Promise<readonly ConversationRecord[]> {
   const waiting: ConversationRecord[] = [];
   let cursor: Cursor | undefined;
   // The cursor loop of `runner/durable-ids.ts`: page until `next` is undefined.
   do {
     const page = await tx.scanConversations({ order: "ascending" }, BACKFILL_PAGE, cursor);
     waiting.push(
-      ...page.items.filter(
-        (record) =>
-          record.owner === undefined && index.conversations[String(record.id)] === undefined,
-      ),
+      ...page.items.filter((record) => record.owner === undefined && needsBackfill(index, record)),
     );
     cursor = page.next;
   } while (cursor !== undefined);

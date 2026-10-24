@@ -20,6 +20,8 @@ import { registryOf } from "../src/registry.ts";
 import { openSession, type Session, type SessionOptions } from "../src/session.ts";
 import {
   assignTopic,
+  BACKFILL_PAGE,
+  backfillIndex,
   idsIn,
   IndexDocument,
   indexConversation,
@@ -153,7 +155,8 @@ it("leaves a task-owned conversation out of the index", async () => {
   expect((await indexOf(test.harness)).conversations[String(owned)]).toBeUndefined();
 });
 
-it("fails the creating commit when the hook throws", async () => {
+// pi-durable's contract the index relies on, with a stand-in hook: not `indexConversation` itself.
+it("pi-durable fails the creating commit when its conversationCreated hook throws", async () => {
   let created = 0;
   const test = await preIndex({
     conversationCreated: () => {
@@ -245,7 +248,29 @@ it("keeps IndexDocument to src/topics.ts", () => {
   expect(naming).toEqual([]);
 });
 
-it("backfills a pre-index store and writes nothing on the next start", async () => {
+/** A pre-index store's conversations: `count` ownerless ones oldest first, then a fork of the first. */
+interface Populated {
+  created: number[];
+  parent: number;
+  fork: number;
+}
+
+/** `count` (at least one) ownerless conversations, then a fork of the first. */
+const populate = async (harness: Harness, count: number): Promise<Populated> => {
+  const parent = await createConversation(harness);
+  const created = [parent.id];
+  while (created.length < count) {
+    created.push((await createConversation(harness)).id);
+  }
+  const at = await harness.commit(
+    (tx) => tx.appendEntry(parent.id, { kind: "test.note", data: { note: "fork here" } }),
+    context,
+  );
+  const fork = await parent.fork(at.id, { ownership: { kind: "ownerless" } }, context);
+  return { created, parent: parent.id, fork: fork.id };
+};
+
+it("backfills a pre-index store across pages, forks with their parent, and writes nothing on the next start", async () => {
   const tmp = await tempDir();
   const path = join(tmp.dir, "index.sqlite");
   let session: Session | undefined;
@@ -256,41 +281,57 @@ it("backfills a pre-index store and writes nothing on the next start", async () 
     session = undefined;
   };
   try {
+    // One storage owner at a time: the pre-index harness closes before the session opens.
     const before = await openFauxHarness(await openNodeSqliteStorage(path), { resume: false });
-    const created: number[] = [];
-    try {
-      created.push((await createConversation(before.harness)).id);
-      created.push((await createConversation(before.harness)).id);
-      const owned = await before.harness.commit(async (tx) => {
-        const taskId = await tx.createTask(
-          stubTask,
-          {},
-          { ownership: { kind: "conversation" }, conversationId: before.root.id },
-        );
-        return (await tx.createConversation({ ownership: { kind: "task", taskId } })).id;
-      }, context);
-      expect(await indexOf(before.harness)).toEqual({ topics: {}, conversations: {} });
-
-      const first = countingCommitsOf(await openNodeSqliteStorage(path));
-      session = await openSession(first.storage, SESSION_OPTIONS);
-      const index = await indexOf(session.harness);
-      const entries = Object.fromEntries(
-        [session.root.id, ...created].map((id) => [String(id), DEFAULT]),
+    const root = before.root.id;
+    const { created, parent, fork } = await populate(before.harness, BACKFILL_PAGE + 1);
+    const owned = await before.harness.commit(async (tx) => {
+      const taskId = await tx.createTask(
+        stubTask,
+        {},
+        { ownership: { kind: "conversation" }, conversationId: root },
       );
-      expect(index).toEqual({ topics: {}, conversations: entries });
-      expect(index.conversations[String(owned)]).toBeUndefined();
-      expect(first.commits()).toBeGreaterThan(0);
-      await close();
+      return (await tx.createConversation({ ownership: { kind: "task", taskId } })).id;
+    }, context);
+    expect(await indexOf(before.harness)).toEqual({ topics: {}, conversations: {} });
+    await before.harness.close(context);
 
-      const second = countingCommitsOf(await openNodeSqliteStorage(path));
-      session = await openSession(second.storage, SESSION_OPTIONS);
-      expect(await indexOf(session.harness)).toEqual(index);
-      expect(second.commits()).toBe(0);
-    } finally {
-      await before.harness.close(context);
-    }
+    const first = countingCommitsOf(await openNodeSqliteStorage(path));
+    session = await openSession(first.storage, SESSION_OPTIONS);
+    const index = await indexOf(session.harness);
+    const entries: Record<string, IndexEntry> = Object.fromEntries(
+      [root, ...created].map((id) => [String(id), DEFAULT]),
+    );
+    entries[String(fork)] = { ...DEFAULT, parent };
+    expect(index).toEqual({ topics: {}, conversations: entries });
+    expect(index.conversations[String(owned)]).toBeUndefined();
+    expect(first.commits()).toBeGreaterThan(0);
+    await close();
+
+    const second = countingCommitsOf(await openNodeSqliteStorage(path));
+    session = await openSession(second.storage, SESSION_OPTIONS);
+    expect(await indexOf(session.harness)).toEqual(index);
+    expect(second.commits()).toBe(0);
   } finally {
     await close();
     await tmp.cleanup();
   }
+});
+
+it("restores a backfilled fork's missing parent, keeping its topic and every other key", async () => {
+  const test = await preIndex();
+  const { parent, fork } = await populate(test.harness, 1);
+  // What a backfill that dropped `parent` left behind, plus a key a later slice wrote.
+  await test.harness.commit(async (tx) => {
+    const index = await tx.doc(IndexDocument);
+    index.conversations[String(parent)] = DEFAULT;
+    const titled: IndexEntry & { title: string } = { topic: "work", title: "kept" };
+    index.conversations[String(fork)] = titled;
+  }, context);
+  await backfillIndex(test.harness);
+  expect((await indexOf(test.harness)).conversations[String(fork)]).toEqual({
+    topic: "work",
+    title: "kept",
+    parent,
+  });
 });

@@ -2,13 +2,20 @@
 // before any socket exists. Parsing only, except `--here`, which is left as a
 // marker for `resolveHere` to resolve against the answering daemon.
 
+import type { Writable } from "node:stream";
 import { parseArgs } from "node:util";
 import { messageOf } from "./message-of.ts";
 import { gitRootOf } from "./project-context.ts";
 import { type AttachTarget, type TopicSummary, topicNameOf } from "./protocol.ts";
 import type { Presentation } from "./render.ts";
-import { frameOf, request } from "./request.ts";
+import { requestFrameOf, request } from "./request.ts";
 import type { ConnectWait } from "./unix-socket.ts";
+
+/** A request runs against a daemon that is already up, and Emacs calls a listing synchronously. */
+const LIST_WAIT: ConnectWait = { intervalMs: 200, timeoutMs: 1_000 };
+
+/** An attach may race `malebolge-start`, so it waits for the daemon to begin listening. */
+export const ATTACH_WAIT: ConnectWait = { intervalMs: 200, timeoutMs: 10_000 };
 
 /** A refused command line: `attach-main` prints the usage and exits 2. */
 export class UsageError extends Error {
@@ -226,14 +233,15 @@ function newTargetFrom({ conversation, cwd }: AttachArgs): AttachTarget {
 
 /** The target the parsed flags name; every refusal is a `UsageError`. */
 function targetFrom(args: AttachArgs): AttachTarget<string | Here> {
+  // Before any target: a topic's directory is written only by `--set-topic`, never by an attach.
+  if (args.dir !== undefined || args.noDir) {
+    throw new UsageError("dir needs set-topic");
+  }
   if (args.here) {
     return topicTargetFrom<Here>(HERE, args);
   }
   if (args.topic !== undefined) {
     return topicTargetFrom(topicNamed(args.topic), args);
-  }
-  if (args.dir !== undefined || args.noDir) {
-    throw new UsageError("dir needs set-topic");
   }
   if (args.isNew) {
     return newTargetFrom(args);
@@ -388,6 +396,7 @@ function withTopic(invocation: AttachInvocation, name: string): ResolvedInvocati
 export async function resolveHere(
   invocation: AttachInvocation,
   socketPath: string,
+  errors: Writable,
   gitRoot: GitRoot = () => gitRootOf(process.cwd()),
 ): Promise<ResolvedInvocation> {
   if (isResolved(invocation)) {
@@ -397,9 +406,13 @@ export async function resolveHere(
   if (root === undefined) {
     throw new HereRefusedError("--here needs a git repository: none is above this directory");
   }
-  const inquiry: TopicsInvocation = { mode: "topics", wait: LIST_WAIT };
+  // The lookup waits as the invocation would: an attach may race the daemon's start.
+  const inquiry: TopicsInvocation = {
+    mode: "topics",
+    wait: invocation.mode === undefined ? ATTACH_WAIT : invocation.wait,
+  };
   // Silent: the reply is the caller's to render, and the errors are the client's own.
-  const reply = await request(socketPath, frameOf(inquiry), "topics", process.stderr, inquiry.wait);
+  const reply = await request(socketPath, requestFrameOf(inquiry), "topics", errors, inquiry.wait);
   if (reply.profile !== "host") {
     throw new HereRefusedError(
       `--here needs a host daemon: this daemon runs under ${reply.profile}, ` +
@@ -412,6 +425,3 @@ export async function resolveHere(
   }
   return withTopic(invocation, topicAt(reply.topics, root));
 }
-
-/** A request runs against a daemon that is already up, and Emacs calls a listing synchronously. */
-const LIST_WAIT: ConnectWait = { intervalMs: 200, timeoutMs: 1_000 };

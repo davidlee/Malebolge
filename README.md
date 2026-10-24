@@ -141,9 +141,9 @@ node src/attach-main.ts --new --cwd DIR    # a new one whose cwd is DIR
 takes `--topic NAME` or `--here` to narrow it, and nothing else: `--list` with
 `--conversation`, `--new`, `--cwd` or `--emacs` is one usage line and exit 2,
 before any connection is made. A
-listing that fails — no daemon, or one that predates `list` — prints the
-client's error line and, for a daemon that predates `list`, the restart hint;
-it exits 1, never a stack trace. Its connect budget is one second, not the
+listing that fails — no daemon, one that predates `list` or topics, or a reply
+that is not JSON — prints the client's error line and, for a daemon that
+predates the feature, the restart hint; it exits 1, never a stack trace. Its connect budget is one second, not the
 attach client's ten seconds: a listing runs against a daemon already up.
 
 One page is **50 conversations**. When the store holds more, `--list` writes
@@ -193,8 +193,9 @@ latest conversation (highest id), starts its first when it has none, and
 `--new` always starts a fresh one. `--topics` takes no other flag, `--set-topic`
 takes neither an attach nor a list flag, `--topic` and `--conversation` are
 exclusive, and `--dir` and `--no-dir` are exclusive: each is one usage line and
-exit 2. A refused topic — an unwritten name, a bad name, `default` written to —
-is one error line and exit 1.
+exit 2. A refused topic — an unwritten name, a bad name, `default` written to, a
+directory holding a tab, newline or other control character — is one error
+line and exit 1.
 
 `--here` stands where a topic's name would (`--topic`) or where a directory
 would (`--set-topic --dir`). With `--set-topic` it writes this git root as the
@@ -205,7 +206,11 @@ the client asks the answering daemon which profile it runs under and refuses
 anything but `host`. Topic directories are paths in the daemon's profile space,
 and a room daemon's paths are not this shell's, so a `room` daemon's `--here`
 would compare a host path with room paths and mean nothing. Nothing is created
-by the lookup, including when it refuses.
+by the lookup, including when it refuses. "Exactly" is string equality with the
+git root as the shell resolves it — symlinks followed, no trailing slash — so a
+directory written through a symlink or with a trailing `/` never matches;
+`--set-topic NAME --here` writes one that does. An attach's lookup waits for a
+starting daemon as the attach would (10 s); a listing's waits one second.
 
 **Stop** with `M-x malebolge-stop`. Starting again reopens root; the profile's
 other conversations stay in its store. `M-x malebolge-start` on a running unit
@@ -221,10 +226,12 @@ to start listening.
 
 **After an upgrade, restart the daemon.** It is a long-lived user unit and
 `malebolge-start` does not restart a running one, so a fresh client can meet
-a daemon older than the frame it sent. That daemon answers `unknown message
-type "<frame>"` — naming whichever first-line frame it did not know, `attach`
-or `list` — and the client prints
-`[the daemon predates <frame>: restart it (malebolge-stop, then malebolge-start)]`.
+a daemon older than the frame it sent. That daemon answers in one of two ways:
+`unknown message type "<frame>"`, naming a first-line frame it did not know
+(`attach`, `list`, `topic`), or `<frame>: unknown key <key>`, refusing a key a
+newer client added (`topic`, `topics`). Either way the client prints
+`[the daemon predates <feature>: restart it (malebolge-stop, then malebolge-start)]`,
+naming the frame or the key.
 Restart the daemon (`M-x malebolge-stop`, then `M-x malebolge-start`) and the
 same command works.
 

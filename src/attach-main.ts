@@ -12,13 +12,13 @@ import {
 } from "./attach-invocation.ts";
 import { attachSocket } from "./config.ts";
 import { createRenderer } from "./render.ts";
-import { frameOf, replyTypeOf, request } from "./request.ts";
+import { requestFrameOf, replyTypeOf, request } from "./request.ts";
 import { codeOf } from "./unix-socket.ts";
 
 const USAGE = [
   "usage: malebolge-attach [--list [--topic NAME | --here]] | [--topics]",
   " | [--set-topic NAME [--dir DIR | --no-dir | --here]]",
-  " | [--conversation N | --new [--cwd DIR] | --topic NAME | --here] [--new [--cwd DIR]] [--emacs]",
+  " | [--conversation N | --new [--cwd DIR] | (--topic NAME | --here) [--new [--cwd DIR]]] [--emacs]",
 ].join("\n");
 
 /** The invocation the command line names; a refusal is one line and exit 2, before any connect. */
@@ -40,7 +40,7 @@ async function resolved(
   socketPath: string,
 ): Promise<ResolvedInvocation> {
   try {
-    return await resolveHere(invocation, socketPath);
+    return await resolveHere(invocation, socketPath, process.stderr);
   } catch (error) {
     if (!(error instanceof HereRefusedError)) {
       throw error;
@@ -60,7 +60,7 @@ try {
     // Every request-reply mode: one frame through `request`, and its reply on stdout.
     const reply = await request(
       socketPath,
-      frameOf(invocation),
+      requestFrameOf(invocation),
       replyTypeOf(invocation),
       process.stderr,
       invocation.wait,

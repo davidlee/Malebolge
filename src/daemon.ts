@@ -7,7 +7,7 @@
 import type { Socket } from "node:net";
 import type { AgentEventStream, Conversation } from "@earendil-works/pi-durable";
 import { context } from "./context.ts";
-import { type ConversationPage, type Conversations, isTopicListing } from "./conversations.ts";
+import { type ConversationPage, type Conversations } from "./conversations.ts";
 import { encodeLine, lineSplitter } from "./ndjson.ts";
 import {
   type AttachMessage,
@@ -201,8 +201,11 @@ const topicsReply = (
  * no binding, nothing created, no durable state (DEC-007). A rejection goes through
  * `fail`, because an error left on an open connection strands the client.
  */
-async function answer(state: Connection, produce: () => Promise<unknown>): Promise<void> {
-  let reply: unknown;
+async function answer(
+  state: Connection,
+  produce: () => Promise<ConversationsMessage | TopicsMessage>,
+): Promise<void> {
+  let reply: ConversationsMessage | TopicsMessage;
   try {
     reply = await produce();
   } catch (error) {
@@ -228,8 +231,10 @@ const FIRST_LINE: { [K in FirstLineFrame["type"]]: FrameHandler<K> } = {
   attach: (state, conversations, frame) => bindTarget(state, conversations, frame.target),
   list: (state, conversations, frame) =>
     answer(state, async () => {
-      const listed = await conversations.list(frame.query);
-      return isTopicListing(listed) ? topicsReply(conversations, listed) : listReply(listed);
+      const { query } = frame;
+      return query.kind === "topics"
+        ? topicsReply(conversations, await conversations.topics())
+        : listReply(await conversations.list(query));
     }),
   // One write, one record back, the same reply shape a topics listing uses.
   topic: (state, conversations, frame) =>

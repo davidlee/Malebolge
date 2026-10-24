@@ -31,6 +31,7 @@ import {
   latestIn,
   type NamedTopic,
   readIndex,
+  storedTopic,
   topicsOf,
   writeTopicRecord,
 } from "./topics.ts";
@@ -53,20 +54,18 @@ export interface Conversations {
   /** The event stream of `conversation`: the transport's only route to the Harness. */
   watch(conversation: Conversation): Promise<AgentEventStream>;
   /**
-   * One page of this store's conversations (`all`, or one `topic`'s), or the
-   * topics themselves; plain values, never a wire reply (design sec-4, EX-8).
+   * One page of this store's conversations, `all` or one `topic`'s; a plain
+   * value, never a wire reply (design sec-4, EX-8).
    */
-  list(query: ListQuery): Promise<ListResult>;
+  list(query: PageQuery): Promise<ConversationPage>;
+  /** Every topic, `default` first, then by name (design sec-4, EX-8). */
+  topics(): Promise<readonly NamedTopic[]>;
   /** Create one topic, set its directory, or leave it unchanged; the record written. */
   setTopic(topic: TopicWrite): Promise<NamedTopic>;
 }
 
-/** A `list` answer: a page of ids, or the topic records a `topics` query asks for. */
-export type ListResult = ConversationPage | readonly NamedTopic[];
-
-/** Whether `list` answered with the topics themselves rather than one page of ids. */
-export const isTopicListing = (result: ListResult): result is readonly NamedTopic[] =>
-  Array.isArray(result);
+/** A listing that answers with one page of ids; `topics` answers with records instead. */
+export type PageQuery = Exclude<ListQuery, { kind: "topics" }>;
 
 /** Conversations read per listing page: small, so a listing never stalls the turn chain. */
 export const LIST_PAGE = 50;
@@ -124,7 +123,7 @@ function create(
 /** The index, with `name` known: `default` always is, a topic nobody wrote is refused. */
 async function indexOfTopic(session: Session, name: string): Promise<IndexDoc> {
   const index = await readIndex(session.harness);
-  if (name !== DEFAULT_TOPIC && index.topics[name] === undefined) {
+  if (name !== DEFAULT_TOPIC && storedTopic(index, name) === undefined) {
     throw noTopic(name);
   }
   return index;
@@ -136,7 +135,7 @@ function creationCwd(
   target: Extract<AttachTarget, { kind: "topic" }>,
   defaults: ConversationDefaults,
 ): string {
-  return target.cwd ?? index.topics[target.name]?.cwd ?? defaults.cwd;
+  return target.cwd ?? storedTopic(index, target.name)?.cwd ?? defaults.cwd;
 }
 
 /** The conversation a `topic` target binds: its latest, or a first one in that topic. */
@@ -154,6 +153,18 @@ async function openTopic(
     return resolveExisting(session, latest);
   }
   return create(session, defaults, creationCwd(index, target, defaults), assignTopic(target.name));
+}
+
+/** `run`, one call at a time: each starts once the one before it settles, failed or not. */
+function serially<A extends readonly unknown[], R>(
+  run: (...args: A) => Promise<R>,
+): (...args: A) => Promise<R> {
+  let tail: Promise<unknown> = Promise.resolve();
+  return (...args) => {
+    const result = tail.then(() => run(...args));
+    tail = result.catch(() => undefined);
+    return result;
+  };
 }
 
 /** One page of this store's ownerless conversations, newest first (the SL-002 read). */
@@ -181,6 +192,9 @@ export function conversations(
   defaults: ConversationDefaults,
   profile: Profile,
 ): Conversations {
+  // The find and the create are two commits: two attaches to an empty topic must
+  // not each find it empty. One daemon owns the store, so in-process order suffices.
+  const openTopicSerially = serially(openTopic);
   return {
     root: session.root,
     profile,
@@ -198,20 +212,19 @@ export function conversations(
         case "new":
           return create(session, defaults, target.cwd ?? defaults.cwd);
         case "topic":
-          return openTopic(session, defaults, target);
+          return openTopicSerially(session, defaults, target);
       }
     },
     watch: (conversation) => watchEvents(session.harness, conversation.id, context),
-    list: async (query): Promise<ListResult> => {
+    list: async (query): Promise<ConversationPage> => {
       switch (query.kind) {
         case "all":
           return scanPage(session);
         case "topic":
           return topicPage(session, query.name);
-        case "topics":
-          return topicsOf(await readIndex(session.harness));
       }
     },
+    topics: async () => topicsOf(await readIndex(session.harness)),
     setTopic: (topic) => writeTopicRecord(session.harness, topic.name, topic.cwd),
   };
 }
