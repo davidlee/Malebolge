@@ -147,19 +147,37 @@ function listFrame(message: JsonRecord): ListMessage {
 }
 
 /**
- * A connection's line: a first-line frame parsed strictly, or any other message
- * exactly as `parseClientMessage` parses it, errors included.
+ * A connection's first line: `attach`, which binds the connection to one
+ * conversation, or `list`, which answers and closes it.
  */
-export function parseConnectionMessage(line: string): AttachMessage | ListMessage | ClientMessage {
-  const message = parseObject(line);
+export type FirstLineFrame = AttachMessage | ListMessage;
+
+/**
+ * `message` as a first-line frame, parsed strictly; `undefined` when its `type`
+ * names none, so the caller can read it as a client message instead.
+ */
+export function parseFirstLineFrame(message: JsonRecord): FirstLineFrame | undefined {
   switch (message["type"]) {
     case "attach":
       return { type: "attach", target: attachTarget(message) };
     case "list":
       return listFrame(message);
     default:
-      return parseClientMessage(line);
+      return undefined;
   }
+}
+
+/**
+ * A connection's line: a first-line frame parsed strictly, or any other message
+ * exactly as `parseClientMessage` parses it, errors included.
+ */
+export function parseConnectionMessage(line: string): FirstLineFrame | ClientMessage {
+  const message = parseObject(line);
+  return parseFirstLineFrame(message) ?? clientMessage(message);
+}
+
+export function parseClientMessage(line: string): ClientMessage {
+  return clientMessage(parseObject(line));
 }
 
 function inputMessage(message: JsonRecord): ClientMessage {
@@ -174,8 +192,8 @@ function inputMessage(message: JsonRecord): ClientMessage {
   );
 }
 
-export function parseClientMessage(line: string): ClientMessage {
-  const message = parseObject(line);
+/** A message a bound connection acts on, from a line already parsed as an object. */
+function clientMessage(message: JsonRecord): ClientMessage {
   const type = message["type"];
   switch (type) {
     case "input":

@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { FrameRefused, parseClientMessage, parseConnectionMessage } from "../src/protocol.ts";
+import {
+  FrameRefused,
+  parseClientMessage,
+  parseConnectionMessage,
+  parseFirstLineFrame,
+} from "../src/protocol.ts";
 
 describe("parseClientMessage", () => {
   it.each([
@@ -133,5 +138,41 @@ describe("parseConnectionMessage", () => {
   it("leaves parseClientMessage unaware of the first-line frames", () => {
     expect(() => parseClientMessage('{"type":"attach"}')).toThrow('unknown message type "attach"');
     expect(() => parseClientMessage('{"type":"list"}')).toThrow('unknown message type "list"');
+  });
+});
+
+/** The daemon's dispatch table has one row per frame here (SL-003 PHASE-02, design sec-4). */
+describe("parseFirstLineFrame", () => {
+  it.each([
+    [{ type: "attach" }, { kind: "root" }],
+    [
+      { type: "attach", conversation: 3 },
+      { kind: "existing", id: 3 },
+    ],
+    [
+      { type: "attach", new: true, cwd: "/tmp/work" },
+      { kind: "new", cwd: "/tmp/work" },
+    ],
+  ])("parses the attach frame %j", (message, target) => {
+    expect(parseFirstLineFrame(message)).toEqual({ type: "attach", target });
+  });
+
+  it("parses the list frame", () => {
+    expect(parseFirstLineFrame({ type: "list" })).toEqual({ type: "list" });
+  });
+
+  it.each([[{ type: "input", content: "hi" }], [{ type: "abort" }], [{ type: "warp" }], [{}]])(
+    "leaves %j to the client parser",
+    (message) => {
+      expect(parseFirstLineFrame(message)).toBeUndefined();
+    },
+  );
+
+  it.each([
+    [{ type: "attach", topic: "x" }, "attach: unknown key topic"],
+    [{ type: "attach", conversation: 0 }, "attach: conversation must be a positive integer"],
+    [{ type: "list", topic: "x" }, "list: unknown key topic"],
+  ])("refuses %j strictly", (message, refusal) => {
+    expect(errorOf(() => parseFirstLineFrame(message))).toBe(refusal);
   });
 });

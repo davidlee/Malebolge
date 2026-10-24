@@ -14,8 +14,8 @@ import {
   type ClientMessage,
   type ConversationsMessage,
   type ErrorMessage,
+  type FirstLineFrame,
   FrameRefused,
-  type ListMessage,
   parseConnectionMessage,
 } from "./protocol.ts";
 import { serveUnix, type UnixServer } from "./unix-socket.ts";
@@ -177,34 +177,62 @@ async function bindTarget(
   }
 }
 
+/** The `list` frame's reply: one page of this store's ids, and whether the page was cut. */
+const listReply = (page: ConversationPage): ConversationsMessage => ({
+  type: "conversations",
+  conversations: page.ids,
+  truncated: page.truncated,
+});
+
 /**
- * Answer a `list` frame with one page of this store's ids, then close cleanly:
- * no binding, nothing created, no durable state (DEC-007). A failed listing goes
- * through `fail`, because an error left on an open connection strands the client.
+ * Answer a first-line frame with the one reply `produce` builds, then close cleanly:
+ * no binding, nothing created, no durable state (DEC-007). A rejection goes through
+ * `fail`, because an error left on an open connection strands the client.
  */
-async function answerList(state: Connection, conversations: Conversations): Promise<void> {
-  let page: ConversationPage;
+async function answer(state: Connection, produce: () => Promise<unknown>): Promise<void> {
+  let reply: unknown;
   try {
-    page = await conversations.list();
+    reply = await produce();
   } catch (error) {
     fail(state, error);
     return;
   }
-  const reply: ConversationsMessage = {
-    type: "conversations",
-    conversations: page.ids,
-    truncated: page.truncated,
-  };
   finish(state, reply);
 }
 
-/** The first line binds: an attach frame's target, root for any other valid line. */
+/** One row of `FIRST_LINE`: what one first-line frame does to this connection. */
+type FrameHandler<K extends FirstLineFrame["type"]> = (
+  state: Connection,
+  conversations: Conversations,
+  frame: Extract<FirstLineFrame, { type: K }>,
+) => Promise<void>;
+
+/**
+ * The one per-verb dispatch: a new first-line frame costs one parser case in
+ * `src/protocol.ts` and one row here, and the mapped type makes a frame without a
+ * row a compile error. Each row stays thin; `answer` settles.
+ */
+const FIRST_LINE: { [K in FirstLineFrame["type"]]: FrameHandler<K> } = {
+  attach: (state, conversations, frame) => bindTarget(state, conversations, frame.target),
+  list: (state, conversations) => answer(state, async () => listReply(await conversations.list())),
+};
+
+/** Whether `message` is a first-line frame: the table's keys answer it, so a row is a frame. */
+const isFirstLineFrame = (message: FirstLineFrame | ClientMessage): message is FirstLineFrame =>
+  Object.hasOwn(FIRST_LINE, message.type);
+
+/** The row that settles `frame`, looked up by its own `type`, so handler and frame agree. */
+const handlerOf = <K extends FirstLineFrame["type"]>(
+  frame: Extract<FirstLineFrame, { type: K }>,
+): FrameHandler<K> => FIRST_LINE[frame.type];
+
+/** The first line binds: a first-line frame's row, root for any other valid line. */
 async function firstLine(
   state: Connection,
   conversations: Conversations,
   line: string,
 ): Promise<void> {
-  let message: AttachMessage | ListMessage | ClientMessage;
+  let message: FirstLineFrame | ClientMessage;
   try {
     message = parseConnectionMessage(line);
   } catch (error) {
@@ -218,17 +246,13 @@ async function firstLine(
     }
     return;
   }
-  if (message.type === "list") {
-    await answerList(state, conversations);
-    return;
-  }
-  if (message.type !== "attach") {
+  if (!isFirstLineFrame(message)) {
     if (await bindRoot(state, conversations)) {
       await act(state, conversations.root, message);
     }
     return;
   }
-  await bindTarget(state, conversations, message.target);
+  await handlerOf(message)(state, conversations, message);
 }
 
 /** A bound connection: a first-line frame is refused, anything else acts on the binding. */
@@ -237,19 +261,19 @@ async function laterLine(
   conversation: Conversation,
   line: string,
 ): Promise<void> {
-  let message: AttachMessage | ListMessage | ClientMessage;
+  let message: FirstLineFrame | ClientMessage;
   try {
     message = parseConnectionMessage(line);
   } catch (error) {
-    // A well-formed attach frame is still refused here: this connection is bound already.
+    // A well-formed first-line frame is still refused here: this connection is bound already.
     write(
       state,
       error instanceof FrameRefused ? alreadyAttached(conversation) : errorMessage(error),
     );
     return;
   }
-  if (message.type === "attach" || message.type === "list") {
-    // Neither frame is actionable for the bound conversation, so neither reaches `act`.
+  if (isFirstLineFrame(message)) {
+    // No frame is actionable for the bound conversation, so none reaches `act`.
     write(state, alreadyAttached(conversation));
     return;
   }
