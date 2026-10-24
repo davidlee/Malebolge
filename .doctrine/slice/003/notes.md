@@ -128,7 +128,7 @@ Incidental:
 
 ## Harvest
 <!-- single-copy: updated in place each harvest; ids only, never restated content -->
-fresh-as-of: 2026-10-24 · PHASE-01..06 completed; RV-010 code review done (21 findings, all fixed/verified) · next: restart both daemons onto the fixes, then /audit
+fresh-as-of: 2026-10-24 · PHASE-01..06 completed; RV-010 code review done (21 findings, all fixed/verified) · head 17a5171 · room daemon restarted onto the fixes · next: /audit
 
 ### Produced
 - design locked 2026-10-24 (RV-008), regressed for the planning-time amendment, relocked (RV-009, rev 49) — each on the user's section review, `conducted` disposition and acceptance
@@ -160,6 +160,6 @@ fresh-as-of: 2026-10-24 · PHASE-01..06 completed; RV-010 code review done (21 f
 - `~/satan-corpus/prompts/env/host.txt` (user-authored at VH-1) states the working directory as the daemon's launch dir; it is the conversation's (set at creation from `--cwd` or the topic's directory, else the launch dir). Corpus fix, user's call
 - VH-1 skew check not run (no older daemon at hand) — dispose at audit
 - RV-010 drift owed at reconcile: design sec-4 `topic` row gains `cwd must not contain a control character` (F-15); sec-5 step 1 names `.git` walk, not `git rev-parse` (F-18); backfill step 2 also merges a missing `parent` into existing entries (F-2 repair); sec-3 records topic opens serialised daemon-wide (F-6)
-- after the RV-010 fix commit: restart `malebolge-room` (repairs the room store's parentless pre-index forks at backfill) and the host daemon
+- `malebolge-room` restarted onto 8e0534e (backfill repair of parentless pre-index forks ran); host daemon restart was the user's, unconfirmed
 - ISS-001 — interactive attach throws on a JSON line that is not an event (pre-existing; found at RV-010 F-5)
 - IMP-010 — share the `scanConversations` pager (PHASE-01 copied `durable-ids`'s loop)
