@@ -1,0 +1,271 @@
+id    = 8
+slug  = "design-review-of-sl-003"
+title = "design review of SL-003"
+# no status — a review's status is DERIVED from its findings, so
+# it is never stored (the storage rule forbids derived data in authored files).
+
+[review]
+facet     = "design"     # scope|design|plan|phase-plan|implementation|code-review|reconciliation
+raiser    = "raiser"
+responder = "responder"
+rounds_base = 0
+contests_base = 0
+concluded = true
+
+[[review.turn]]
+act = "conclude"
+role = "raiser"
+note = """
+Examined SL-003 design.md sec-1 through sec-7 (lines 1-398), slice-003.md, research/research.md and relevant raw code-map evidence; DEC-011 through DEC-017 and the existing DEC-007, DEC-008 and DEC-010 contracts; src/session.ts, conversations.ts, protocol.ts, daemon.ts, daemon-start.ts, attach.ts, attach-main.ts, config.ts, render.ts, cwd.ts and runner/durable-ids.ts; the relevant harness, conversation, session, protocol, daemon, attach, renderer and structure tests. Checked pi-durable against the exact local pi v1.4.0 tag as well as current checkout source and the installed 1.3.0 distribution, distinguishing those versions. Inspected Harness creation/root/fork order, the transaction hook and ReadAfterWrite guard, document acquisition/snapshot behavior, session-scoped fork exclusion, mutation-line serialization, scan continuation and monotonic-id contracts/implementations.
+
+Raised F-1/F-2 as major and F-3/F-4/F-5 as minor. Source verification and small in-memory probes support the facts; predicted behavior of unimplemented SL-003 code is expressly inference in each finding.
+
+Checked areas with no additional finding: the hook seam covers root, raw creation and forks; agent and init run after the hook, and init can overwrite the topic within that transaction; document-only hook access avoids ReadAfterWrite; session scope excludes the index from fork copies; the specified full cursor loop and stored-id ordering are supported. The single-document approach has no demonstrated personal-scale defect. Choices 1-3 are explicit coherent contracts: empty-topic attach creates its first conversation, concurrent directory updates may leave an overlapping attach using the earlier observed default, and a topic frame with no cwd only ensures existence. Choice 4 has the endpoint/profile mismatch in F-2.
+
+Checked both wire-skew directions: new topic keys are strictly refused by the shipped old daemon with the shapes named in the design; unknown topic frames follow the existing root-snapshot/error fallback that the request client must ignore; new daemon legacy attach/list shapes and bare numeric list elements are retained. No independent wire-shape compatibility finding was established. The design generally states its policies without requiring reconstruction from DEC/inq/F identifiers; F-3 identifies the remaining client integration contract that a reader would have to invent.
+
+Verification limits: no SL-003 code exists yet; no implementation/build/integration/live-daemon claim is made. Ran only read-only inspection and an in-memory Node probe (installed 1.3.0) confirming absent snapshot=undefined, socket override/profile independence and duplicate-directory match multiplicity. The 1.4.0 behavioral conclusions are tagged-source checks, not execution of the 1.4.0 runtime. No design, scope, decision, code or test edits and no commits; only RV-008 was authored. This concludes the raiser pass; findings remain open for the responder."""
+
+[[review.turn]]
+act = "conclude"
+role = "raiser"
+note = """
+Follow-up adversarial raiser pass after the responder's five fix-now dispositions. Read RV-008 --full including every response and route. Re-read the re-materialised design.md sec-1 through sec-7, focusing on changed sec-2/4/5/6/7 and their unchanged siblings; inspected the updated slice scope, DEC-014/DEC-016 and sibling DEC-017, and relevant research context. Rechecked the current attach parser, listing/request transport, renderer, main dispatch, profile/socket config, conversations factory, daemon-start and harness fixtures/tests against the proposed changes. Re-inspected exact pi v1.4.0 snapshot and creation/root/hook/init source and the installed distribution's corresponding paths.
+
+Verified F-1 through F-5. F-1/F-2 carry route review and are settled by the revised design commitments, not deferred instrument criteria. Their design now refuses multiple lookup matches, trusts daemon-reported profile, threads that profile from config.execution.profile, represents unresolved Here, returns silent typed request replies, and adds specific override/silence/root-without-backfill/rollback checks. The absent-document fallback is now explicitly the application's readIndex policy. F-5's isolated root test and throwing-init rollback obligation discriminate the original faults without requiring a storage-batch recorder.
+
+Raised new minor F-6: the scope and DEC-014 state no-match/multiple-match refusals without qualifying attach/list lookup, while the resolver intentionally bypasses cardinality for --set-topic --here to supply a directory. The verification row should distinguish these modes as well. This is a conflict between current governing texts, not a claim about unimplemented runtime behavior.
+
+No other supported new finding from the repaired passages. Rechecked that profile metadata is additive, legacy list numeric element/attach shapes remain intact, room refusal now correctly follows a connection, and the earlier empty-topic/default/directory-update contracts are not changed by these repairs. Some wording summarises startup via the fresh-root hook; the existing-root migration path is still explicitly handled by backfill and was accounted for in verifying F-4. Research and old DECs awaiting the explicitly scheduled reconcile amendments were not mistaken for new implementation claims.
+
+Verification is design/source-level only: no SL-003 implementation or live/end-to-end/build proof, and no test suite run for unimplemented repairs. Changed only RV-008 via review acts; no edits to design, scope, decisions, code or tests and no commits. Pass concluded after the new raise; F-6 remains open for the responder."""
+
+[target]                   # the outbound `reviews` edge: RV-NNN ──reviews──▶ <ref>
+ref   = "SL-003"
+
+[[finding]]
+id = "F-1"
+status = "verified"
+severity = "major"
+title = "--here has no rule for multiple topics with the same directory"
+detail = """
+Expected: --here must resolve a git root to an unambiguous topic before it attaches, creates a conversation, or produces a filtered listing.
+
+Observed: .doctrine/slice/003/design.md:4-5 makes the name unique, while :199-203 permits setting any topic's cwd without directory uniqueness. Section 5 (:301-305) says to take 'the one' whose cwd equals the git root, but specifies only the zero-match failure. The acceptance row at :378 also omits multiple matches.
+
+Reproduction of the permitted state: topic alpha cwd=/work/project; topic beta cwd=/work/project; run --here in /work/project. Both records satisfy the exact-match predicate. The :198 ordering would make alpha the first match, but that ordering is not a choice of the user's intended topic.
+
+Verified: the design allows this state and defines no ambiguity policy. Inference: a first-match implementation silently attaches to the wrong conversation/topic, and --here --new persists the new conversation in that topic. No SL-003 implementation exists to execute.
+
+Repair: explicitly reject multiple matches with the matching names and require --topic, or define another deliberate disambiguation policy. Directory need not become the identity. Add a two-topics/one-cwd test that checks no attach/create frame is sent on ambiguity."""
+disposition = "fix-now"
+route = "review"
+response = """
+Verified: topic names are unique and directories are not, and the design defined only the zero-match case. Repaired in design sec-5: resolveHere collects every topic whose cwd equals the git root; several matches refuse with the matching names and the hint to use --topic, exit 1, and no frame follows the listing. Sec-7 adds the several-matches refusal to the --here criterion. DEC-014 amended to say --here never picks among several.
+"""
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+route = "review"
+response = """
+Verified: topic names are unique and directories are not, and the design defined only the zero-match case. Repaired in design sec-5: resolveHere collects every topic whose cwd equals the git root; several matches refuse with the matching names and the hint to use --topic, exit 1, and no frame follows the listing. Sec-7 adds the several-matches refusal to the --here criterion. DEC-014 amended to say --here never picks among several.
+"""
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "VERIFIED at design-review depth. design.md:336-343 now collects all exact cwd matches, rejects several with names/--topic guidance and sends no subsequent frame; :416 requires ambiguity/no-side-effect coverage. DEC-014's amended choice also rejects picking among matches. This settles lookup-mode ambiguity without imposing directory uniqueness. The separate --set-topic directory-supply mode is explicit at :335; a remaining overbroad scope/DEC statement about that mode is raised separately, not a failure of this lookup repair. No SL-003 runtime claim."
+
+[[finding]]
+id = "F-2"
+status = "verified"
+severity = "major"
+title = "The local profile variable does not establish the overridden socket's daemon profile"
+detail = """
+Expected: DEC-014's host-only --here rule must apply to the daemon whose topic directories will actually be read or written.
+
+Observed: .doctrine/slice/003/design.md:308-313 treats MALEBOLGE_PROFILE (default room) as the profile even with a socket override. src/config.ts:76-89 selects MALEBOLGE_SOCKET independently of that profile; the existing protocol replies in src/protocol.ts:43-63 do not report daemon profile. Daemon-side socket/profile directory validation at src/config.ts:92-98,148 does not validate a client's environment.
+
+Verified in-memory reproduction using the actual attachSocket function: attachSocket({MALEBOLGE_PROFILE:'host', MALEBOLGE_SOCKET:'/tmp/room/durable.sock'}) returns '/tmp/room/durable.sock'. The reverse mismatch is possible too, including an unset profile and a host socket override.
+
+Inference for the proposed code: MALEBOLGE_PROFILE=host MALEBOLGE_SOCKET=<room daemon socket> malebolge-attach --set-topic work --here passes the proposed guard and writes a host git root as a room topic directory. Conversely, a valid host daemon selected only through MALEBOLGE_SOCKET is refused as room. Reading the variable is internally consistent with attachSocket, but does not enforce the path-space premise that justifies --here.
+
+Repair: specify how the selected endpoint's profile is established (daemon metadata, a validated endpoint/profile contract, or refusal when an override cannot be verified). If the environment is deliberately only a caller assertion, document that limitation explicitly rather than claiming it establishes host execution. Test both mismatch directions and --set-topic --here."""
+disposition = "fix-now"
+route = "review"
+response = """
+Verified: attachSocket honours MALEBOLGE_SOCKET independently of MALEBOLGE_PROFILE (src/config.ts:76-89), so the client environment does not establish the reached daemon's profile. Repaired with the daemon as the source: the topics reply now carries profile, the answering daemon's execution profile (sec-4; conversations takes config.execution.profile, sec-6). resolveHere fetches topics first and refuses unless profile is host, so neither mismatch direction passes; MALEBOLGE_PROFILE only picks the default socket. The room refusal now follows a connection, so it exits 1, not 2. Sec-7 tests both mismatch directions and set-topic with here. DEC-014 and DEC-016 amended with the user's assent.
+"""
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+route = "review"
+response = """
+Verified: attachSocket honours MALEBOLGE_SOCKET independently of MALEBOLGE_PROFILE (src/config.ts:76-89), so the client environment does not establish the reached daemon's profile. Repaired with the daemon as the source: the topics reply now carries profile, the answering daemon's execution profile (sec-4; conversations takes config.execution.profile, sec-6). resolveHere fetches topics first and refuses unless profile is host, so neither mismatch direction passes; MALEBOLGE_PROFILE only picks the default socket. The room refusal now follows a connection, so it exits 1, not 2. Sec-7 tests both mismatch directions and set-topic with here. DEC-014 and DEC-016 amended with the user's assent.
+"""
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "VERIFIED at design-review depth (route review). design.md:204,212-220 makes profile daemon-authored in the topics reply; :328-335 checks that profile after the silent fetch. :365-367 explicitly threads config.execution.profile through conversations and TopicsMessage; DEC-014/DEC-016 and scope objective 7/done-when now name the answering daemon. :416 tests both override mismatches, including success with an unset local profile and a host socket, and the set-topic path. Current src/config.ts:76-89 proves why this is needed; src/config.ts:21-32 and src/daemon-start.ts:68-70,94-112 expose the proposed profile source and wiring point. Replies remain additive and legacy conversations elements remain numeric. New code/tests are planned, not executed."
+
+[[finding]]
+id = "F-3"
+status = "verified"
+severity = "minor"
+title = "--here needs an unresolved invocation and a typed, silent topic lookup"
+detail = """
+Expected: the client design should show how command-line parsing reaches the asynchronous topic lookup and how that internal lookup returns records without printing them.
+
+Observed: .doctrine/slice/003/design.md:261-265 contains only resolved AttachCommand/list topic names and a resolved set-topic cwd. It has no representation of a pending --here. Section 5 (:286-294) generalises the existing listing function into a request that renders the reply to stdout, while :301-304 needs topic data to choose the name before sending another frame. Section 6 (:338-339) specifies neither a resolver boundary nor the request's data-return contract.
+
+Verified current code: src/attach.ts:172-181 synchronously returns the final invocation; src/attach-main.ts:16-30 consumes it synchronously before dispatch. listConversations returns Promise<void> (src/attach.ts:563-577), and the reply handler prints records rather than returning them (:511-524).
+
+Inference: an implementer must invent an extra invocation/state transition and a way to recover structured records. Reusing the proposed request's stdout behavior for --list --here would also print the preliminary topics table before the ids, violating the ids-only listing contract; capturing and parsing rendered TSV would introduce an unstated second protocol.
+
+Repair: define an unresolved --here form and an async resolution step before final dispatch, and have the shared request return a typed reply with rendering performed by the public mode's caller (or specify an equivalent silent structured-data path). Test --here attach/list/set-topic, including that the preliminary lookup produces no stdout."""
+disposition = "fix-now"
+response = """
+Verified: parsing and dispatch are synchronous today (src/attach.ts:172-181, src/attach-main.ts:16-30) and listConversations prints rather than returns. Repaired in sec-5: a Here marker in a parameterised AttachInvocation; attach-main awaits resolveHere and dispatches only a ResolvedInvocation; request resolves to the typed reply and never writes stdout, and each public mode's caller renders. Sec-7 asserts the lookup writes nothing to stdout; sec-6 names Here, resolveHere and the request contract.
+"""
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+response = """
+Verified: parsing and dispatch are synchronous today (src/attach.ts:172-181, src/attach-main.ts:16-30) and listConversations prints rather than returns. Repaired in sec-5: a Here marker in a parameterised AttachInvocation; attach-main awaits resolveHere and dispatches only a ResolvedInvocation; request resolves to the typed reply and never writes stdout, and each public mode's caller renders. Sec-7 asserts the lookup writes nothing to stdout; sec-6 names Here, resolveHere and the request contract.
+"""
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "VERIFIED at design-review depth. design.md:274-282 represents unresolved Here and ResolvedInvocation; :303-306 keeps parsing synchronous and introduces the awaited resolution boundary; :310-318 returns typed replies without stdout and leaves public rendering to callers. resolveHere(:323-343) distinguishes attach/list name resolution from set-topic directory supply. Code-impact rows :369-370 name the affected APIs and main dispatch. :416 requires a silent preliminary lookup. These changes address the actual synchronous-parser/Promise<void> limitations in src/attach.ts:172-181,483-577 and src/attach-main.ts:16-39. No implementation proof is claimed."
+
+[[finding]]
+id = "F-4"
+status = "verified"
+severity = "minor"
+title = "snapshot does not return initial() for an absent index document"
+detail = """
+Expected: the design's dependency contract must distinguish snapshot reads from transactional document acquisition.
+
+Observed: .doctrine/slice/003/design.md:134-136 states that harness.snapshot(IndexDocument, context) reads an absent document as initial(). In the exact v1.4.0 source (git -C ~/.local/src/pi show v1.4.0:packages/durable/src/session/session.ts, lines 305-322), snapshot returns undefined at line 319 when the document is absent. initial() is used by transaction document acquisition, not snapshot. The installed 1.3.0 dist/session/session.js:190-208 has the same absence behavior.
+
+Verified reproduction: opened a Harness over new MemoryStorage, defined a session-scoped document with initial() returning {topics:{},conversations:{}}, and called harness.snapshot before any tx.doc access. The result was undefined. This execution used the installed 1.3.0 distribution; the 1.4.0 conclusion is verified by tagged-source inspection, not a 1.4.0 runtime test.
+
+Impact/inference: readers implemented against the stated contract may dereference undefined, and the proposed indexOf fixture cannot assume snapshot itself manufactures an empty index on a pre-index harness. Normal openSession hook/backfill should ensure a persisted document, so this is not a demonstrated daemon-start failure.
+
+Repair: state the real return type and explicitly choose a topics.ts fallback or an invariant check after startup; keep that policy separate from pi-durable's API behavior. Add an absent-document read assertion for whichever behavior is chosen."""
+disposition = "fix-now"
+response = """
+Verified against pi v1.4.0 packages/durable/src/session/session.ts:305-322: snapshot returns undefined for an absent document. Sec-2 now states this and adds one reader, readIndex in src/topics.ts, which maps undefined to initial(); every listing and the test fixture indexOf read through it. Sec-7 adds a criterion for readIndex over a store whose index was never written.
+"""
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+response = """
+Verified against pi v1.4.0 packages/durable/src/session/session.ts:305-322: snapshot returns undefined for an absent document. Sec-2 now states this and adds one reader, readIndex in src/topics.ts, which maps undefined to initial(); every listing and the test fixture indexOf read through it. Sec-7 adds a criterion for readIndex over a store whose index was never written.
+"""
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "VERIFIED at design-review depth. design.md:134-142 now states snapshot returns undefined and assigns the initial() fallback explicitly to readIndex in topics.ts. :363 centralises the reader, :394-396 routes indexOf through it, and :411 requires the never-written-index case. Rechecked exact pi v1.4.0 packages/durable/src/session/session.ts:305-322 (undefined at :319), consistent with installed dist/session/session.js. The chosen fallback is an application policy, not a pi API claim. On a legacy store existing root does not rerun the hook (tagged harness.ts:404-405); the already specified startup backfill is what establishes the index there. This does not undermine the corrected absence contract."
+
+[[finding]]
+id = "F-5"
+status = "verified"
+severity = "minor"
+title = "The verification matrix can miss root being indexed only by backfill"
+detail = """
+Expected: D7's 'in the creating commit' guarantee must have a test that fails if fresh root is indexed later by startup backfill.
+
+Observed: .doctrine/slice/003/design.md:357-361 makes openTestHarness go through openSession, including backfill. The creating-commit row at :370 names createConversation, fork, raw creation, task ownership and a throwing hook, but no fresh-root observation before backfill or storage-batch assertion. The root-specific check at :371 deliberately observes a pre-index store after backfill. This does not distinguish correct fresh-root hook coverage from a hook that accidentally skips root.
+
+Verified source context: test/harness-fixture.ts:53-64 calls openSession, whose proposed order in design.md:115-132 is root creation then backfill then return. Exact pi-durable v1.4.0 packages/durable/src/harness/harness.ts:401-431 does support root through the hook, so this finding concerns the promised verification, not a defect in pi's implementation.
+
+Inferred regression/control: change indexConversation to skip the root id. A post-open indexOf sees root repaired by backfill; all creation paths explicitly listed at :370 can still pass, while the first commit violated D7. Similarly, a final snapshot alone cannot identify the storage commit that first contained the entry.
+
+Repair: require a fresh-store test before backfill (or record Storage.commit batches) that shows the root conversation and its index entry in the same durable batch. For the other creation paths, observe the entry from the same transaction/init or assert batch co-membership, and after an injected init failure assert that neither the new conversation nor its staged index entry persisted."""
+disposition = "fix-now"
+response = """
+Agreed: openSession's backfill would repair a hook that skipped root before any test observed it. Sec-7 adds a test that opens a fresh store with Harness.open and the hook only (no backfillIndex), calls root(), and asserts root's entry; and one where an init that throws persists neither the conversation nor its entry. Batch co-membership on Storage.commit is not adopted: the hook runs inside the creating transaction and a throwing hook already fails the commit, so these two tests discriminate the named faults.
+"""
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+response = """
+Agreed: openSession's backfill would repair a hook that skipped root before any test observed it. Sec-7 adds a test that opens a fresh store with Harness.open and the hook only (no backfillIndex), calls root(), and asserts root's entry; and one where an init that throws persists neither the conversation nor its entry. Batch co-membership on Storage.commit is not adopted: the hook runs inside the creating transaction and a throwing hook already fails the commit, so these two tests discriminate the named faults.
+"""
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "VERIFIED at design-review depth. design.md:398-401 now requires a fresh Harness.open with index hook installed and no backfill, then root() and an entry assertion; :407 also requires a throwing init to persist neither the conversation nor its index entry. A hook that skips root can no longer be repaired before the named test observes it. Rechecked v1.4.0 harness.ts:401-431: hook and init run inside the same creating commit. A Storage.commit recorder is therefore not required to settle this particular design finding; the isolated root check and rollback control discriminate the faults named in the finding. These are authored verification obligations, not tests already run."
+
+[[finding]]
+id = "F-6"
+status = "verified"
+severity = "minor"
+title = "The scope and DEC-014 apply lookup refusals to --set-topic --here as well"
+detail = """
+Expected: the binding scope, amended decision and resolver must agree about --here's two intents: looking up a topic for attach/list, and supplying a directory for --set-topic.
+
+Observed: .doctrine/slice/003/design.md:291 explicitly permits --set-topic NAME --here. resolveHere at :335 returns the git root as that mode's directory before the zero/one/several-match branch (:336-341); a host daemon therefore allows setting a topic even with no matching directory or with several matches. This is useful: it allows creating the first directory-associated topic. But the updated scope .doctrine/slice/003/slice-003.md:94-98 says unqualified --here outside any topic directory or in one shared by several says so 'without creating anything'. Amended DEC-014's choice (.doctrine/knowledge/decision/014/record-014.toml:15; doctrine show DEC-014) also unconditionally says that several matching topics cause refusal, without exempting --set-topic. The design's broad criterion at design.md:416 likewise needs its match-cardinality cases tied to the lookup modes.
+
+Concrete design trace, not an executed SL-003 reproduction: on a host daemon with no topics, run --set-topic work --here in git root /work/project. The resolver passes the host check, sets cwd=/work/project at step 4, and dispatches a topic write. The scope's literal no-match done-when forbids that creation. With alpha and beta already at /work/project, --set-topic gamma --here has the same conflict with the scope and DEC-014's several-match refusal. Verified: these texts and branch order conflict; inference: implementers/test authors following the scope or DEC can incorrectly reject the intended directory-supply mode, or write acceptance tests contradicting the resolver.
+
+Repair: qualify no-match/ambiguity rules in the scope, DEC-014 and verification row as applying to attach/list topic lookup. State explicitly that --set-topic --here only supplies the git root after checking the daemon profile and does not require or disambiguate a matching topic. Add success cases for --set-topic --here with zero and several existing directory matches, while keeping lookup modes' refusals and the room-daemon refusal. If a different policy is intended, reconcile all three owners instead."""
+disposition = "fix-now"
+response = """
+Agreed: the resolver's intent was that set-topic with here only supplies the git root, and the scope and DEC-014 overstated the refusals. Repaired in all three owners: design sec-5 step 4 states no topic need match and others may share the directory, and step 5 names attach and list; sec-7 adds set-topic with here succeeding with zero and several existing matches and refusing against a room daemon; slice-003.md's done-when and DEC-014's choice limit the no-match and several-match refusals to attach and list.
+"""
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+response = """
+Agreed: the resolver's intent was that set-topic with here only supplies the git root, and the scope and DEC-014 overstated the refusals. Repaired in all three owners: design sec-5 step 4 states no topic need match and others may share the directory, and step 5 names attach and list; sec-7 adds set-topic with here succeeding with zero and several existing matches and refusing against a room daemon; slice-003.md's done-when and DEC-014's choice limit the no-match and several-match refusals to attach and list.
+"""
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "VERIFIED at design-review depth. Read the responder's fix-now response and checked every named owner. design.md:335-343 now explicitly separates directory supply (--set-topic, zero or several existing matches allowed) from topic lookup (attach/--list, exact single match required); :329-334 still applies the daemon-reported host check before either branch. The verification criterion at :418 now requires set-topic success with zero and several matches plus refusal against a room daemon, while keeping lookup-mode no-match/ambiguity refusals and silent preliminary lookup. slice-003.md:94-100 qualifies the no-match/several-match rule as attaching or listing and explicitly permits set-topic directory supply. DEC-014's current choice makes the same mode distinction and preserves the shared profile check. No new supported contradiction or regression found in the repaired passages and immediate siblings. These are reconciled design commitments and authored test obligations, not executed implementation/runtime proof. Only this ledger was changed; no new finding, so the existing concluded marker remains valid."
+
+# Findings are append-only `[[finding]]` tables, added by `review raise`.
+# Empty here at creation — a fresh review is Active, awaiting the raiser.

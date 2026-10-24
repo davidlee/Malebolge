@@ -1,0 +1,33 @@
+schema = "doctrine.knowledge"
+version = 1
+
+id = 15
+slug = "latest-highest-id-default-reserved"
+title = "A topic's latest conversation is its highest id; `default` is reserved and holds root first"
+record_kind = "decision"
+status = "accepted"
+created = "2026-10-24"
+updated = "2026-10-24"
+tags = []
+
+[facet]                         # every field typed; seeded empty (captured later)
+context = "SL-003 OQ-2 and OQ-4. Root is re-configured with the daemon's agent on every open (src/session.ts:41-42); RFC-002 calls root the default topic's first conversation; pi-durable mints ids greater than every id before (Storage.mintId)."
+choice = "Latest = highest conversation id in the topic, no extra state. `default` always exists implicitly, cannot be created or given a directory, and has root as its first conversation. A plain attach still binds root; --topic default binds default's latest."
+alternatives = ["Most recently attached (needs stored state)", "An ordinary default topic that can carry a directory"]
+rationale = "Highest id needs no state; a directory on default could never reach root or legacy attach new, so D1 would hold only halfway."
+consequences = ["The topic frame refuses `default`"]
+decided_by = "user (accepted agent proposal, 2026-10-24)"
+decided_on = "2026-10-24"
+
+[evidence]                      # free-text citations (supports / contradicts / notes)
+supports    = []
+contradicts = []
+notes       = []
+
+[relationships]                 # verb-written edges (set by doctrine supersede)
+supersedes    = []   # record ids this one replaces (set by doctrine supersede)
+superseded_by = []   # set on superseded predecessor (verb-written)
+
+[[relation]]
+label = "shapes"
+target = "SL-003"

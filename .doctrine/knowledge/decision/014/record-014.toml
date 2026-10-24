@@ -1,0 +1,33 @@
+schema = "doctrine.knowledge"
+version = 1
+
+id = 14
+slug = "here-host-profile-only"
+title = "--here works under the host profile only; under room it refuses and says why"
+record_kind = "decision"
+status = "accepted"
+created = "2026-10-24"
+updated = "2026-10-24"
+tags = []
+
+[facet]                         # every field typed; seeded empty (captured later)
+context = "DEC-010 refused --here because under the room profile (the client default, src/config.ts:86-89) a conversation's cwd is a room path and a shell's git root is a host path. RFC-002 D1 has the client resolve --here."
+choice = "The client resolves --here by exact match of the shell's git root against topic directories, only when the answering daemon reports profile host in its topics reply. Under a room daemon it refuses with a message naming the path-space mismatch, and creates nothing. For attach and --list, no matching topic or several matching topics each refuse (naming the matches); it never picks one. With --set-topic, --here only supplies the git root as the directory, after the same profile check, and needs no matching topic. Amended 2026-10-24 (RV-008 F-1, F-2, F-6): the profile was the client's MALEBOLGE_PROFILE, which a MALEBOLGE_SOCKET override decouples from the daemon actually reached."
+alternatives = ["Client-side host match under every profile", "Daemon resolves a path", "Store a second host-side key on the topic (breaks D3)", "Drop --here from SL-003", "Trust the client's MALEBOLGE_PROFILE as a caller assertion (rejected at RV-008 F-2)"]
+rationale = "Under host the two path spaces are one, so the match is exact; a room-to-host mapping is its own design. Only the daemon knows its own profile for certain, and the topics reply --here already fetches can carry it at no extra round trip."
+consequences = ["DEC-010 is amended: --here moves from refused to host-only", "A room/host path mapping goes to the backlog (IMP-009)", "The topics reply carries the daemon's profile (DEC-016)"]
+decided_by = "user (accepted agent proposal, 2026-10-24)"
+decided_on = "2026-10-24"
+
+[evidence]                      # free-text citations (supports / contradicts / notes)
+supports    = []
+contradicts = []
+notes       = []
+
+[relationships]                 # verb-written edges (set by doctrine supersede)
+supersedes    = []   # record ids this one replaces (set by doctrine supersede)
+superseded_by = []   # set on superseded predecessor (verb-written)
+
+[[relation]]
+label = "shapes"
+target = "SL-003"

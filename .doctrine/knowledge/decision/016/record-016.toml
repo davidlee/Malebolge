@@ -1,0 +1,33 @@
+schema = "doctrine.knowledge"
+version = 1
+
+id = 16
+slug = "topic-protocol-frames"
+title = "Topic protocol: a topic frame, list gains topic and topics keys, attach gains topic, first-line frames dispatch by table"
+record_kind = "decision"
+status = "accepted"
+created = "2026-10-24"
+updated = "2026-10-24"
+tags = []
+
+[facet]                         # every field typed; seeded empty (captured later)
+context = "SL-003 objectives 3-6. DEC-007: keys widen additively, an element type does not; every first-line frame refuses with one frame-named FrameRefused. SL-002 shipped `list: unknown key topic` (test/daemon.test.ts:702-712). firstLine grows one branch per verb (src/daemon.ts:202-232)."
+choice = "{type:'topic', name, cwd?: string|null} creates the topic or sets/clears its directory and replies {type:'topics', profile, topics:[{name, cwd?}]}, then closes; profile is the answering daemon's execution profile (host or room), added 2026-10-24 for --here (RV-008 F-2, DEC-014). list gains topic? (filtered conversations reply) and topics: true (the topics reply). attach gains topic, exclusive with conversation; an unknown topic is refused, never created implicitly. In the daemon one handler table for first-line frames replaces firstLine's per-verb branches."
+alternatives = ["A separate topics frame for listing", "Implicit topic creation on attach"]
+rationale = "New keys and a new reply type keep DEC-007's widening rule; one reply shape serves both topic writes and listings."
+consequences = ["DEC-007 is amended; the unknown-key-topic test is rewritten", "Older daemons refuse the new keys as `<frame>: unknown key topic[s]`, which the client maps to the restart hint"]
+decided_by = "user (accepted agent proposal, 2026-10-24)"
+decided_on = "2026-10-24"
+
+[evidence]                      # free-text citations (supports / contradicts / notes)
+supports    = []
+contradicts = []
+notes       = []
+
+[relationships]                 # verb-written edges (set by doctrine supersede)
+supersedes    = []   # record ids this one replaces (set by doctrine supersede)
+superseded_by = []   # set on superseded predecessor (verb-written)
+
+[[relation]]
+label = "shapes"
+target = "SL-003"

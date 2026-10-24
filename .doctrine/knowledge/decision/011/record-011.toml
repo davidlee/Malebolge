@@ -1,0 +1,33 @@
+schema = "doctrine.knowledge"
+version = 1
+
+id = 11
+slug = "pi-1-4-upgrade-chore-before-sl-003"
+title = "pi 1.4.0 lands as a chore before SL-003, not as a phase of it"
+record_kind = "decision"
+status = "accepted"
+created = "2026-10-24"
+updated = "2026-10-24"
+tags = []
+
+[facet]                         # every field typed; seeded empty (captured later)
+context = "User proposal 2026-10-24: upgrade pi-durable as prep for SL-003. 1.4.0 makes checkpointWhen mandatory on defineDoc (the index is malebolge's first), migrates SQLite stores to schema v2 one way, and ships different pi-env daemon binaries (linux-x64 145eacb3 -> 46dde0e2) though pi-env source changed only a test."
+choice = "A separate chore moves @earendil-works/pi-ai, pi-durable, pi-env and pi-mcp to exactly 1.4.0 (not the Unreleased line) and lands before SL-003; SL-003 needs it. The chore owns the rollout: the runner's flake pin moves in the same rollout so the pinned runner and the live-tree daemon ship the same pi-env daemon bytes."
+alternatives = ["PHASE-01 of SL-003", "Stay on 1.3.0 and add checkpointWhen later"]
+rationale = "Its risks (one-way migration, runner pin, room daemon churn) and its blast radius (the runner, which SL-003 never touches) are not about topics; keeping them apart keeps SL-003's audit about topics and lets the index be written once against 1.4.0."
+consequences = ["SL-003 needs the chore", "No rollback past 1.4.0 for either store", "While versions differ in one room, each start deletes the other's pi-env daemon binary (churn, not breakage)"]
+decided_by = "user (accepted agent proposal, 2026-10-24)"
+decided_on = "2026-10-24"
+
+[evidence]                      # free-text citations (supports / contradicts / notes)
+supports    = []
+contradicts = []
+notes       = []
+
+[relationships]                 # verb-written edges (set by doctrine supersede)
+supersedes    = []   # record ids this one replaces (set by doctrine supersede)
+superseded_by = []   # set on superseded predecessor (verb-written)
+
+[[relation]]
+label = "shapes"
+target = "SL-003"

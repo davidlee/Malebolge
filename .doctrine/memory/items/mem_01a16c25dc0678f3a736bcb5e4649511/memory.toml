@@ -1,0 +1,42 @@
+memory_uid = "mem_01a16c25dc0678f3a736bcb5e4649511"
+memory_key = "mem.fact.deps.pi-durable-conversation-created-covers-root"
+schema_version = 1
+memory_type = "fact"
+status = "active"
+title = "pi-durable conversationCreated fires for every creation path, root included"
+summary = "pi-durable's conversationCreated hook runs for root, forks and raw tx.createConversation, before agent and init"
+created = "2026-10-24"
+updated = "2026-10-24"
+
+[scope]
+paths = []
+globs = ["src/**"]
+commands = []
+tags = ["pi-durable", "deps"]
+workspace = "default"
+repo = "github.com/davidlee/Malebolge"
+repo_id_kind = "remote"
+repo_id_confidence = "high"
+
+[git]
+anchor_kind = "checkout_state"
+commit = ""
+tree = "010c5da879824ce2dd0fee15ee4b1bf5f19ef637"
+ref_name = "refs/heads/main"
+checkout_state_id = "93f46021822b65e91f418c22570ed28d943d47e93d4ef56230e210263c3ec0e2"
+base_commit = "5970b670fb6a23e24cd1da9c8a4c4db8e4c3a72f"
+verified_sha = ""
+normalizer = "forget.checkout.v1"
+
+[review]
+verification_state = "unverified"
+reviewed = ""
+review_by = ""
+
+[trust]
+trust_level = "high"
+
+[ranking]
+severity = "none"
+weight = 0
+

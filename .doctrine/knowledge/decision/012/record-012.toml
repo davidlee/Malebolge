@@ -1,0 +1,33 @@
+schema = "doctrine.knowledge"
+version = 1
+
+id = 12
+slug = "index-seam-conversation-created-hook"
+title = "The conversation index is written by the conversationCreated hook, with init setting the caller's topic"
+record_kind = "decision"
+status = "accepted"
+created = "2026-10-24"
+updated = "2026-10-24"
+tags = []
+
+[facet]                         # every field typed; seeded empty (captured later)
+context = "SL-003 objective 1 and RFC-002 D7: every ownerless conversation is in the index from its creating commit. pi-durable's HarnessOptions.conversationCreated(tx, record) runs in every commit that creates or forks a conversation, raw tx.createConversation and root included (durable src/harness/harness.ts:394-425, src/session/transaction.ts:292-345), before agent and init; record carries parent and owner. Table reads there throw ReadAfterWrite; document access is allowed."
+choice = "The hook writes the entry: a task-owned conversation is skipped; a fork takes its parent's topic (read from the index) and records its parent; anything else joins `default`. A caller that names a topic passes an init, later in the same commit, that sets it."
+alternatives = ["init alone at every creation call site", "Startup backfill as the only safety net"]
+rationale = "The hook makes a conversation the index lacks impossible by construction rather than repaired at the next start; init alone depends on every call site remembering it."
+consequences = ["Startup backfill remains only for conversations that predate the index", "A fork test is new work (no fork code exists yet)", "satan DEC-104's rejection of this hook concerned agent defaults and does not apply"]
+decided_by = "user (accepted agent proposal, 2026-10-24)"
+decided_on = "2026-10-24"
+
+[evidence]                      # free-text citations (supports / contradicts / notes)
+supports    = []
+contradicts = []
+notes       = []
+
+[relationships]                 # verb-written edges (set by doctrine supersede)
+supersedes    = []   # record ids this one replaces (set by doctrine supersede)
+superseded_by = []   # set on superseded predecessor (verb-written)
+
+[[relation]]
+label = "shapes"
+target = "SL-003"

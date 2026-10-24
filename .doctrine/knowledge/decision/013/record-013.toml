@@ -1,0 +1,33 @@
+schema = "doctrine.knowledge"
+version = 1
+
+id = 13
+slug = "index-one-session-document"
+title = "The index is one session-scoped document holding topics and conversation entries"
+record_kind = "decision"
+status = "accepted"
+created = "2026-10-24"
+updated = "2026-10-24"
+tags = []
+
+[facet]                         # every field typed; seeded empty (captured later)
+context = "RFC-002 I-1 allows one document or a family plus a key list. pi-durable serialises every commit on one mutation line and has no document-conflict errors (dist/session/session.d.ts:20-34), so contention does not decide it. 1.4.0 requires checkpointWhen on every definition."
+choice = "One defineDoc({scope:'session'}) document: {topics: {name: {cwd?}}, conversations: {id: {topic, parent?}}}, checkpointing when deltasSinceBase >= 50."
+alternatives = ["A document family per topic plus a key list"]
+rationale = "A family adds a key list and a second write per creation for no gain once contention is ruled out; at personal scale the document stays small."
+consequences = ["The scope's concurrent-writes risk is retired", "Topic listing and topic-filtered conversation listing read this document, not scanConversations"]
+decided_by = "user (accepted agent proposal, 2026-10-24)"
+decided_on = "2026-10-24"
+
+[evidence]                      # free-text citations (supports / contradicts / notes)
+supports    = []
+contradicts = []
+notes       = []
+
+[relationships]                 # verb-written edges (set by doctrine supersede)
+supersedes    = []   # record ids this one replaces (set by doctrine supersede)
+superseded_by = []   # set on superseded predecessor (verb-written)
+
+[[relation]]
+label = "shapes"
+target = "SL-003"

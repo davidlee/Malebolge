@@ -1,0 +1,42 @@
+memory_uid = "mem_01a16c25dbde7983a2ebcd5836dedc3e"
+memory_key = "mem.fact.malebolge.pi-env-version-skew-churns-room-daemon"
+schema_version = 1
+memory_type = "fact"
+status = "active"
+title = "A pi-env version mismatch between room clients churns the room's daemon binary"
+summary = "Host and room on different pi-env versions delete each other's uploaded daemon binary at every start"
+created = "2026-10-24"
+updated = "2026-10-24"
+
+[scope]
+paths = ["src/room/connection.ts"]
+globs = []
+commands = []
+tags = ["pi-env", "room", "deps"]
+workspace = "default"
+repo = "github.com/davidlee/Malebolge"
+repo_id_kind = "remote"
+repo_id_confidence = "high"
+
+[git]
+anchor_kind = "checkout_state"
+commit = ""
+tree = "010c5da879824ce2dd0fee15ee4b1bf5f19ef637"
+ref_name = "refs/heads/main"
+checkout_state_id = "bb5e8313f29d634bd0d645d2fb0598ba37339ff096123a35050b746fa151f713"
+base_commit = "5970b670fb6a23e24cd1da9c8a4c4db8e4c3a72f"
+verified_sha = ""
+normalizer = "forget.checkout.v1"
+
+[review]
+verification_state = "unverified"
+reviewed = ""
+review_by = ""
+
+[trust]
+trust_level = "high"
+
+[ranking]
+severity = "none"
+weight = 0
+

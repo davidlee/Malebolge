@@ -1,0 +1,33 @@
+schema = "doctrine.knowledge"
+version = 1
+
+id = 17
+slug = "attach-topic-flags"
+title = "malebolge-attach topic flags: --topic, --topics, --set-topic, --here, extending DEC-008's exclusivity"
+record_kind = "decision"
+status = "accepted"
+created = "2026-10-24"
+updated = "2026-10-24"
+tags = []
+
+[facet]                         # every field typed; seeded empty (captured later)
+context = "SL-003 objective 7. DEC-008 makes --list exclusive with --conversation, --new, --cwd and --emacs; client invocations are a tagged union with UsageError refusals (src/attach.ts:113-146)."
+choice = "--topic NAME attaches to the topic's latest (with --new and --cwd); --list --topic NAME filters; --topics lists topics; --set-topic NAME [--dir PATH | --no-dir] creates or re-points a topic, then exits; --here stands in for --topic NAME (or --dir with --set-topic), host profile only. --topic is exclusive with --conversation; --topics and --set-topic are each exclusive with every attach flag."
+alternatives = ["One --topic flag overloaded to set directories"]
+rationale = "One invocation per intent keeps the tagged union and DEC-008's closed set legible."
+consequences = ["DEC-008 is amended with the new flags"]
+decided_by = "user (accepted agent proposal, 2026-10-24)"
+decided_on = "2026-10-24"
+
+[evidence]                      # free-text citations (supports / contradicts / notes)
+supports    = []
+contradicts = []
+notes       = []
+
+[relationships]                 # verb-written edges (set by doctrine supersede)
+supersedes    = []   # record ids this one replaces (set by doctrine supersede)
+superseded_by = []   # set on superseded predecessor (verb-written)
+
+[[relation]]
+label = "shapes"
+target = "SL-003"
