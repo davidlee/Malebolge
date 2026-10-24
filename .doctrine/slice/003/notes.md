@@ -107,10 +107,11 @@ If a later pass is wanted, it should probe the client's `resolveHere` and
 
 ## Harvest
 <!-- single-copy: updated in place each harvest; ids only, never restated content -->
-fresh-as-of: 2026-10-24 · design regressed to reviewing for the planning-time amendment (sec-3, sec-6; RV-009); plan drafted (53c9cdd + revisions) · 5970b67 (all SL-003 work uncommitted)
+fresh-as-of: 2026-10-24 · design relocked (run rev 49; RV-008, RV-009 done) · plan: 6 phases materialised · slice `ready` · next: CHR-002 (pi 1.4.0), then /phase-plan PHASE-01 · 5970b67 (all SL-003 work uncommitted)
 
 ### Produced
-- design locked 2026-10-24 on the user's section review, `conducted` RV-008, and acceptance
+- design locked 2026-10-24 (RV-008), regressed for the planning-time amendment, relocked (RV-009, rev 49) — each on the user's section review, `conducted` disposition and acceptance
+- plan: `plan.toml`/`plan.md`, PHASE-01..06; phase sheets materialised
 - CHR-003: revise RFC-001 against the current tree (carries the architectural review's RFC findings)
 - research round: `research/research.md` (cross-repo, shell route)
 - design run `dr-01a16bce-…`: 10 inquiries resolved; 7 sections; `design.md` materialised; review policy adversarial-then-human
