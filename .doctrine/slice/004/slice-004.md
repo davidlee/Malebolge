@@ -45,8 +45,8 @@ Evidence (checked 2026-10-24, pi-durable 1.4.0, pi-env as pinned):
    | `SATAN_PARENT_CONVERSATION` | the parent conversation id; unset when not a fork |
 
 2. **Tool environment.** Every exec a conversation's tools make carries those
-   variables, on both profiles, through one wrapper over the environment
-   `daemonEnv` builds. An explicit `options.env` from the caller wins.
+   variables, on both profiles: passed as `shellEnv` where `daemonEnv` builds
+   each env (research X-1). An explicit `options.env` from the caller wins.
 3. **System prompt.** A prompt section states the conversation id and topic,
    so the model can name its thread without running a command.
 
@@ -54,7 +54,7 @@ Evidence (checked 2026-10-24, pi-durable 1.4.0, pi-env as pinned):
 EnvTarget{conversationId, cwd, read} ─┬─ index → {topic, parent}
                                        ▼
                              conversationVars(...)   (pure)
-                                ├─► exec wrapper  → tool processes (host, room)
+                                ├─► shellEnv      → tool processes (host, room)
                                 └─► prompt section → system prompt
 ```
 
@@ -70,8 +70,8 @@ EnvTarget{conversationId, cwd, read} ─┬─ index → {topic, parent}
 ## Affected surface
 
 - `src/session.ts` — the env hook's type widens to `EnvTarget`.
-- `src/daemon-env.ts` — host and room envs gain the wrapper.
-- A new module for the variables and the wrapper; `src/cwd.ts` or a sibling
+- `src/daemon-env.ts`, `src/room/connection.ts` — host and room envs take `shellEnv`.
+- A new module for the variables; `src/cwd.ts` or a sibling
   for the prompt section.
 - `src/topics.ts` — read-only use of the index.
 - Tests under `test/`.
