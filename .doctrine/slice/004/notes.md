@@ -61,20 +61,38 @@ runtime behaviour, which no reading can settle; VH-1 probes it (all six
 present with this conversation's values, and a `mem.origin` row from
 `q who`). A second desk pass would re-read the same pi-durable/pi-env sources.
 
+## Plan review (RV-013)
+
+Adversarial plan+design pass, 2026-10-24: three pi `review` probes
+(quotient run-20261024T111155349Z-9/-10/-11), each claim checked by the
+orchestrator before raising. 10 findings, all verified by the raisers'
+resumed sessions (-12/-13/-14). Design edited in place, not via the design
+run (user direction). Outcomes:
+
+- The room daemon is launched without a login shell; masking (DEC-021) is
+  defence in depth, and the test fixture over-approximates production.
+- A failed index read propagates and fails the tool task (user decision).
+- PHASE-02 split; new PHASE-04 (room) runs before PHASE-03.
+- Rejected: runner conversations (separate store and env hook); hook
+  re-entrancy (pi-durable's buildEnv does the same read).
+
 ## Harvest
 <!-- single-copy: updated in place each harvest; ids only, never restated content -->
-fresh-as-of: 2026-10-24 · design locked (rev 36), slice → plan · 546b74f
+fresh-as-of: 2026-10-24 · plan reviewed (RV-013), slice ready · 794caf8
 
 ### Produced
 
 - DEC-018, DEC-019, DEC-020, DEC-021 (amended RV-012 F-1), DEC-022
 - RV-012 (adversarial design pass, done)
+- plan.toml / plan.md (four phases); RV-013 (plan+design pass, concluded); design VT-6
 - IDE-002 (task-owned conversations' variables)
 
 ### Learned
 
 - Consumer contract: room `~/db/q` (see Triage above); `q spawn` is the session-start verb.
 - pi-env drops undefined `shellEnv` values (RV-012 F-1) — basis of DEC-021.
+- Merge order daemon env < `shellEnv` < per-exec `env` holds in the shipped pi-env daemon; empty strings survive transport (RV-013 F-1, by running it).
+- An env-build throw ends the tool task `failed` (`harness/tool.js:309-329`); the prompt path degrades on its own.
 
 ### Open
 
