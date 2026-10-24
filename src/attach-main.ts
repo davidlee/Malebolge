@@ -1,14 +1,10 @@
 #!/usr/bin/env node
 // malebolge-attach: a line client of the running daemon.
 
-import {
-  attach,
-  type AttachInvocation,
-  attachInvocationOf,
-  listConversations,
-  UsageError,
-} from "./attach.ts";
+import { attach } from "./attach.ts";
+import { type AttachInvocation, attachInvocationOf, UsageError } from "./attach-invocation.ts";
 import { attachSocket } from "./config.ts";
+import { listConversations } from "./request.ts";
 import { codeOf } from "./unix-socket.ts";
 
 const USAGE = "usage: malebolge-attach [--list] | [--conversation N | --new [--cwd DIR]] [--emacs]";

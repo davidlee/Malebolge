@@ -1,64 +1,25 @@
 import { chmod } from "node:fs/promises";
-import type { Socket } from "node:net";
 import { join } from "node:path";
 import { PassThrough } from "node:stream";
 import { fauxAssistantMessage, fauxText } from "@earendil-works/pi-ai/providers/faux";
 import { afterEach, beforeEach, describe, expect, it, onTestFinished } from "vitest";
-import {
-  attach,
-  type AttachOptions,
-  attachInvocationOf,
-  attachTargetOf,
-  commandOf,
-  listConversations,
-  NotListedError,
-  UsageError,
-} from "../src/attach.ts";
+import { attach, type AttachOptions, commandOf } from "../src/attach.ts";
 import { context } from "../src/context.ts";
-import { conversations } from "../src/conversations.ts";
-import { type Daemon, serve } from "../src/daemon.ts";
-import { type AttachTarget, parseClientMessage } from "../src/protocol.ts";
+import type { Daemon } from "../src/daemon.ts";
+import type { AttachTarget } from "../src/protocol.ts";
 import { type ConnectWait, serveUnix } from "../src/unix-socket.ts";
-import { encodeLine, lineSplitter } from "../src/ndjson.ts";
-import { messageOf } from "../src/message-of.ts";
+import { encodeLine } from "../src/ndjson.ts";
 import {
-  type Recorder,
-  recorder,
+  type FakeDaemon,
+  collect,
+  fakeDaemon,
   rejection,
+  skewMessage,
   socketPath,
   staleSocket,
   tempDir,
 } from "./fixtures.ts";
-import { FAUX_MODEL, openTestHarness, type TestHarness } from "./harness-fixture.ts";
-
-describe("attachTargetOf", () => {
-  it.each<[string[], AttachTarget]>([
-    [[], { kind: "root" }],
-    [["--conversation", "3"], { kind: "existing", id: 3 }],
-    [["--conversation=3"], { kind: "existing", id: 3 }],
-    [["--new"], { kind: "new" }],
-    [["--new", "--cwd", "/tmp/a b"], { kind: "new", cwd: "/tmp/a b" }],
-    [["--new", "--cwd", ""], { kind: "new", cwd: "" }],
-  ])("%j → %j", (args, target) => {
-    expect(attachTargetOf(args)).toEqual(target);
-  });
-
-  it.each<string[][]>([
-    [["--conversation", "3", "--new"]],
-    [["--cwd", "/x"]],
-    [["--conversation", "0"]],
-    [["--conversation=-1"]],
-    [["--conversation", "1.5"]],
-    [["--conversation", "1e3"]],
-    [["--conversation", "9007199254740992"]],
-    [["--wat"]],
-    [["x"]],
-    [["--conversation"]],
-    [["--new", "--cwd"]],
-  ])("%j is a usage error", (args) => {
-    expect(() => attachTargetOf(args)).toThrow(UsageError);
-  });
-});
+import { openTestHarness, serveTest, type TestHarness } from "./harness-fixture.ts";
 
 describe("commandOf", () => {
   it.each([
@@ -73,20 +34,6 @@ describe("commandOf", () => {
   });
 });
 
-/** What a listing client wrote to each of its two streams, and its completion. */
-interface Listing {
-  done: Promise<void>;
-  printed: () => string;
-  errors: () => string;
-}
-
-/** A listing client of `path`: ids on stdout, prose on stderr. */
-const listing = (path: string, wait: ConnectWait): Listing => {
-  const [output, errors] = [new PassThrough(), new PassThrough()];
-  const [printed, errorText] = [collect(output), collect(errors)];
-  return { done: listConversations(path, output, errors, wait), printed, errors: errorText };
-};
-
 interface Session {
   input: PassThrough;
   done: Promise<void>;
@@ -94,26 +41,6 @@ interface Session {
   until: (text: string) => Promise<void>;
   printed: () => string;
 }
-
-/** The daemon over `test`, on `path`, with the tests' creation defaults. */
-const serveTest = (test: TestHarness, path: string): Promise<Daemon> =>
-  serve({
-    socketPath: path,
-    conversations: Promise.resolve(
-      conversations(test, { model: FAUX_MODEL, cwd: process.cwd() }, "host"),
-    ),
-    beforeInput: () => Promise.resolve(),
-  });
-
-/** A stream's text as it arrives; the reader answers with what has arrived so far. */
-const collect = (stream: PassThrough): (() => string) => {
-  stream.setEncoding("utf8");
-  let text = "";
-  stream.on("data", (chunk: string) => {
-    text += chunk;
-  });
-  return () => text;
-};
 
 /** An attach client of `path`, collecting what it prints. */
 const session = (path: string, options: AttachOptions = {}): Session => {
@@ -215,7 +142,7 @@ describe("attach: failures before attached", () => {
 describe("attach: version skew", () => {
   it("prints the restart hint when the daemon predates attach", async () => {
     const path = await socketPath();
-    const skew = skewOf();
+    const skew = skewMessage();
     const fake = await fakeDaemon(path, (socket) => {
       socket.write(
         encodeLine({
@@ -497,60 +424,6 @@ describe("attach: waits for the daemon (design §4.2)", () => {
   });
 });
 
-interface FakeDaemon {
-  lines: Recorder<string>;
-  send: (value: unknown) => void;
-  destroy: () => void;
-  closed: Promise<void>;
-}
-
-/** The message a daemon that predates `frame` answers a `frame` first line with. */
-const skewOf = (frame = "attach"): string => {
-  try {
-    parseClientMessage(JSON.stringify({ type: frame }));
-  } catch (error) {
-    return messageOf(error);
-  }
-  throw new Error(`parseClientMessage accepted ${frame}`);
-};
-
-/** A raw NDJSON daemon at `path`, recording what the client sends. */
-const fakeDaemon = async (
-  path: string,
-  onConnect?: (socket: Socket) => void,
-): Promise<FakeDaemon> => {
-  const lines = recorder<string>();
-  let accepted: Socket | undefined;
-  let markClosed = (): void => undefined;
-  const closed = new Promise<void>((resolve) => {
-    markClosed = resolve;
-  });
-  const server = await serveUnix(path, (socket) => {
-    accepted = socket;
-    socket.on("close", () => {
-      markClosed();
-    });
-    socket.on(
-      "data",
-      lineSplitter((line) => {
-        lines.push(line);
-      }),
-    );
-    onConnect?.(socket);
-  });
-  onTestFinished(server.close);
-  return {
-    lines,
-    send: (value): void => {
-      accepted?.write(encodeLine(value));
-    },
-    destroy: (): void => {
-      accepted?.destroy();
-    },
-    closed,
-  };
-};
-
 // ---------------------------------------------------------------------------
 // PHASE-02 (SL-001): frame input mode and Emacs presentation.
 //
@@ -590,51 +463,6 @@ const attachedSession = async (
   await s.until("[status] attached to conversation 7\n");
   return { path, fake, s };
 };
-
-describe("attachInvocationOf", () => {
-  it.each<[string[], unknown]>([
-    [[], { target: { kind: "root" }, inputMode: "lines", presentation: "terminal" }],
-    [["--emacs"], { target: { kind: "root" }, inputMode: "frames", presentation: "emacs" }],
-    [
-      ["--emacs", "--conversation", "3"],
-      { target: { kind: "existing", id: 3 }, inputMode: "frames", presentation: "emacs" },
-    ],
-    [
-      ["--emacs", "--new", "--cwd", "/x"],
-      { target: { kind: "new", cwd: "/x" }, inputMode: "frames", presentation: "emacs" },
-    ],
-  ])("%j → %j", (args, invocation) => {
-    expect(attachInvocationOf(args)).toEqual(invocation);
-  });
-
-  it("still refuses an unknown flag", () => {
-    expect(() => attachInvocationOf(["--emacs", "--wat"])).toThrow(UsageError);
-  });
-});
-
-describe("--list", () => {
-  it("refuses --list combined with an attach flag as a UsageError", () => {
-    for (const args of [
-      ["--list", "--conversation", "3"],
-      ["--list", "--new"],
-      ["--list", "--new", "--cwd", "/x"],
-      ["--list", "--cwd", "/x"],
-      ["--list", "--emacs"],
-      ["--emacs", "--list"],
-    ]) {
-      expect(() => attachInvocationOf(args)).toThrow(UsageError);
-    }
-    // It names no attach target either, so that parse refuses it too.
-    expect(() => attachTargetOf(["--list"])).toThrow(UsageError);
-  });
-
-  it("is a list invocation on its own LIST_WAIT, not the attach wait", () => {
-    expect(attachInvocationOf(["--list"])).toEqual({
-      mode: "list",
-      wait: { intervalMs: 200, timeoutMs: 1_000 },
-    });
-  });
-});
 
 describe("attach: frame input mode", () => {
   it("sends a draft with newlines and a slash line as one input message", async () => {
@@ -717,7 +545,7 @@ describe("attach: frame input mode", () => {
 describe("attach: emacs presentation of client notices", () => {
   it("labels the version-skew hint `[status]`", async () => {
     const path = await socketPath();
-    const skew = skewOf();
+    const skew = skewMessage();
     await fakeDaemon(path, (socket) => {
       socket.write(encodeLine({ type: "error", message: skew }));
     });
@@ -748,111 +576,5 @@ describe("attach: emacs presentation of client notices", () => {
     s.input.end();
     await s.done;
     expect(s.printed()).toContain("[detached]\n");
-  });
-});
-
-// ---------------------------------------------------------------------------
-// `malebolge-attach --list`: one frame, ids on stdout, its own wait (DEC-008).
-// ---------------------------------------------------------------------------
-
-describe("attach --list", () => {
-  const wait: ConnectWait = { intervalMs: 20, timeoutMs: 200 };
-
-  it("prints the ids one per line, prints no notice, and sends exactly one list frame", async () => {
-    const path = await socketPath();
-    const test = await openTestHarness([]);
-    onTestFinished(() => test.harness.close(context));
-    const daemon = await serveTest(test, path);
-    onTestFinished(daemon.close);
-    const api = conversations(test, { model: FAUX_MODEL, cwd: process.cwd() }, "host");
-    const first = await api.open({ kind: "new" });
-    const second = await api.open({ kind: "new" });
-    const l = listing(path, wait);
-    await l.done;
-    // Newest first, the shared reply type either side of the wire.
-    expect(l.printed()).toBe(
-      `${String(second.id)}\n${String(first.id)}\n${String(test.root.id)}\n`,
-    );
-    expect(l.errors()).toBe("");
-  });
-
-  it("writes one truncated line to stderr for --list, leaving stdout ids only", async () => {
-    const path = await socketPath();
-    await fakeDaemon(path, (socket) => {
-      socket.end(encodeLine({ type: "conversations", conversations: [9, 7], truncated: true }));
-    });
-    const l = listing(path, wait);
-    await l.done;
-    expect(l.printed()).toBe("9\n7\n");
-    expect(
-      l
-        .errors()
-        .split("\n")
-        .filter((line) => line !== ""),
-    ).toHaveLength(1);
-  });
-
-  it("ignores the snapshot a pre-list daemon sends first, names `unknown message type` and exits 1 through NOT_LISTED", async () => {
-    const path = await socketPath();
-    const skew = skewOf("list");
-    const fake = await fakeDaemon(path, (socket) => {
-      socket.write(
-        encodeLine({
-          type: "snapshot",
-          entries: [{ kind: "pi.user", model: [{ role: "user", content: "earlier" }] }],
-        }),
-      );
-      socket.write(encodeLine({ type: "error", message: skew }));
-    });
-    const l = listing(path, wait);
-    expect(await rejection(l.done)).toMatchObject({ code: "NOT_LISTED" });
-    // The old daemon bound root and sent its whole transcript first: none of it prints.
-    expect(l.printed()).toBe("");
-    expect(l.errors()).not.toContain("» earlier");
-    expect(l.errors()).toContain(`[error: ${skew}]\n`);
-    expect(l.errors()).toContain(
-      "[the daemon predates list: restart it (malebolge-stop, then malebolge-start)]\n",
-    );
-    await fake.closed;
-  });
-
-  it("answers an error frame with one line on stderr, ends its own socket, and exits 1", async () => {
-    const path = await socketPath();
-    const fake = await fakeDaemon(path, (socket) => {
-      socket.write(encodeLine({ type: "error", message: "listing failed" }));
-    });
-    const l = listing(path, wait);
-    expect(await rejection(l.done)).toBeInstanceOf(NotListedError);
-    expect(l.printed()).toBe("");
-    expect(l.errors()).toBe("[error: listing failed]\n");
-    // The old daemon leaves the connection open: waiting for its close would hang.
-    await fake.closed;
-  });
-
-  it("reports a close before any reply through NOT_LISTED", async () => {
-    const path = await socketPath();
-    const fake = await fakeDaemon(path);
-    const l = listing(path, wait);
-    await fake.lines.next((line) => line.includes('"list"'));
-    fake.destroy();
-    expect(await rejection(l.done)).toMatchObject({ code: "NOT_LISTED" });
-    expect(l.printed()).toBe("");
-    expect(l.errors()).not.toBe("");
-  });
-
-  it("gives up on its own short LIST_WAIT, not the attach wait", async () => {
-    const path = await socketPath();
-    const invocation = attachInvocationOf(["--list"]);
-    const listingWait = invocation.mode === "list" ? invocation.wait : undefined;
-    expect(listingWait).toEqual({ intervalMs: 200, timeoutMs: 1_000 });
-    const started = Date.now();
-    if (listingWait === undefined) {
-      throw new Error("--list is not a list invocation");
-    }
-    const l = listing(path, listingWait);
-    expect(await rejection(l.done)).toMatchObject({ code: "ENOENT" });
-    expect(Date.now() - started).toBeLessThan(2_000);
-    expect(l.printed()).toBe("");
-    expect(l.errors()).toContain(`cannot connect to ${path}`);
   });
 });

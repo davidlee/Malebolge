@@ -25,6 +25,8 @@ import {
 } from "@earendil-works/pi-durable";
 import { NodeExecutionEnv } from "@earendil-works/pi-durable/env/node";
 import { context } from "../src/context.ts";
+import { conversations } from "../src/conversations.ts";
+import { type Daemon, serve } from "../src/daemon.ts";
 import { isRecord } from "../src/json.ts";
 import { registryOf } from "../src/registry.ts";
 import { openSession } from "../src/session.ts";
@@ -189,3 +191,13 @@ export async function systemPromptSections(
     .filter((message) => message["role"] === "system")
     .map((message) => message["sections"]);
 }
+
+/** The daemon over `test`, on `path`, with the tests' creation defaults. */
+export const serveTest = (test: TestHarness, path: string): Promise<Daemon> =>
+  serve({
+    socketPath: path,
+    conversations: Promise.resolve(
+      conversations(test, { model: FAUX_MODEL, cwd: process.cwd() }, "host"),
+    ),
+    beforeInput: () => Promise.resolve(),
+  });

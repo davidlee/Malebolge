@@ -5,12 +5,15 @@ import { spawn } from "node:child_process";
 import { once } from "node:events";
 import { mkdtemp, rm } from "node:fs/promises";
 import { createServer, type Server, type Socket } from "node:net";
+import type { PassThrough } from "node:stream";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { onTestFinished } from "vitest";
 import { isRecord, type JsonRecord } from "../src/json.ts";
+import { messageOf } from "../src/message-of.ts";
 import { encodeLine, lineSplitter } from "../src/ndjson.ts";
-import { connectUnix, listenUnix } from "../src/unix-socket.ts";
+import { parseClientMessage } from "../src/protocol.ts";
+import { connectUnix, listenUnix, serveUnix } from "../src/unix-socket.ts";
 
 export interface FakeTool {
   name: string;
@@ -339,3 +342,67 @@ export async function fakeMcpServer(
     },
   };
 }
+
+/** The message a daemon that predates `frame` answers a `frame` first line with. */
+export const skewMessage = (frame = "attach"): string => {
+  try {
+    parseClientMessage(JSON.stringify({ type: frame }));
+  } catch (error) {
+    return messageOf(error);
+  }
+  throw new Error(`parseClientMessage accepted ${frame}`);
+};
+
+export interface FakeDaemon {
+  lines: Recorder<string>;
+  send: (value: unknown) => void;
+  destroy: () => void;
+  closed: Promise<void>;
+}
+
+/** A raw NDJSON daemon at `path`, recording what the client sends. */
+export const fakeDaemon = async (
+  path: string,
+  onConnect?: (socket: Socket) => void,
+): Promise<FakeDaemon> => {
+  const lines = recorder<string>();
+  let accepted: Socket | undefined;
+  let markClosed = (): void => undefined;
+  const closed = new Promise<void>((resolve) => {
+    markClosed = resolve;
+  });
+  const server = await serveUnix(path, (socket) => {
+    accepted = socket;
+    socket.on("close", () => {
+      markClosed();
+    });
+    socket.on(
+      "data",
+      lineSplitter((line) => {
+        lines.push(line);
+      }),
+    );
+    onConnect?.(socket);
+  });
+  onTestFinished(server.close);
+  return {
+    lines,
+    send: (value): void => {
+      accepted?.write(encodeLine(value));
+    },
+    destroy: (): void => {
+      accepted?.destroy();
+    },
+    closed,
+  };
+};
+
+/** A stream's text as it arrives; the reader answers with what has arrived so far. */
+export const collect = (stream: PassThrough): (() => string) => {
+  stream.setEncoding("utf8");
+  let text = "";
+  stream.on("data", (chunk: string) => {
+    text += chunk;
+  });
+  return () => text;
+};
