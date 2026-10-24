@@ -63,8 +63,10 @@ On a connection that is already bound, a `list` frame is refused with the unpref
 Listing is its own reader in `src/attach.ts`, not a mode of `attach()`. `attach()` prints `[connected]` (`src/attach.ts:401`) and `[detached]` (`:409`), rejects on a close before `attached` (`:328-339`) and hands every frame to the renderer; a listing must print ids and nothing else. So:
 
 ```ts
-listConversations(socketPath, output, wait, presentation = "terminal"): Promise<void>
+listConversations(socketPath, output, errors, wait, presentation = "terminal"): Promise<void>
 ```
+
+The two streams are explicit parameters rather than `process.*`: `attach-main` supplies `process.stdout` and `process.stderr`, which is what keeps a connect failure off the ids stream.
 
 It connects through `connectOrExplain` (`src/attach.ts:247-262`), which needs the renderer it is given, sends one `{"type":"list"}` frame and reads lines with `lineSplitter`. It accepts exactly two frames — `conversations` and `error` — and **ignores every other frame**, because an older daemon binds root and sends root's whole snapshot *before* its error (`src/daemon.ts:176-185`; `test/daemon.test.ts:563-574`; the attach skew fake at `test/attach.test.ts:195-205` sends exactly that). Ids go to stdout through the renderer's new `conversations` case (one output path, `src/render.ts:15`); a truncation line goes to stderr.
 
@@ -78,7 +80,7 @@ The skew rule generalises from a literal to a predicate. An error whose message 
 
 `M-x malebolge-attach` keeps its behaviour with no argument: root, or the live client if one is attached. With a prefix argument it prompts, in a fixed order — **list, prompt, draft check, detach, attach** — so nothing is torn down before the decisions that could refuse it have been taken.
 
-1. Run `malebolge-attach-command` with `--list` synchronously into a temporary buffer, stderr kept in its own buffer rather than merged, announced first with a `message` and a `redisplay` so a stopped daemon does not freeze the editor silently. Non-zero exit — daemon down, daemon predating `list` — raises `user-error` carrying that output; the attach is abandoned, never silently redirected to root.
+1. Run `malebolge-attach-command` with `--list` synchronously into a temporary buffer, stderr kept in its own buffer rather than merged, announced first with a `message` and a `redisplay` so a stopped daemon does not freeze the editor silently. That announcement is not the bound: `LIST_WAIT` (1 s) bounds connecting and the listing's reply is unbounded (IMP-006), so the picker bounds itself with `malebolge--list-timeout` (5 s) and `malebolge--await-listing`, which delete the client and raise `user-error`. Non-zero exit — daemon down, daemon predating `list` — raises `user-error` carrying that output; the attach is abandoned, never silently redirected to root.
 2. `completing-read` over the numeric lines of stdout — newest first — plus a final `new` candidate. Candidates are bare numbers: RFC-002 D4 puts labels at step 4. stderr is prose, never a candidate: its presence is the truncation signal, and it is shown as a minibuffer message.
 3. If the draft holds any non-whitespace text, refuse now — with the client still attached — and tell the user to submit or clear it. The draft is shared, so a switch would otherwise post one conversation's text into another.
 4. Only then detach a live client (`malebolge-quit`'s `quit` frame, then a bounded wait for the process, then `delete-process` if it survives) and attach with argv for the chosen target: `--conversation N` or `--new`, then `--emacs`.

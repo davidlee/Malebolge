@@ -77,3 +77,24 @@ text.
   synchronous subprocess, so that a stopped daemon — the ordinary case when a
   targeted attach is requested — does not freeze Emacs silently; DEC-008's short
   wait bounds the pause.
+
+## Amendments (2026-10-24, reconciliation after RV-007 F-1)
+
+- **The listing's streams are separate, and the client's wait is not the picker's
+  bound.** The Choice above says "stderr merged, bounded by the client's own 10 s
+  connect wait"; both clauses are superseded. stderr is kept in its own buffer —
+  the truncation prose must never become a picker candidate (RV-005 F-12) — and
+  the command's `LIST_WAIT` (1 s) bounds the *connect* only: the listing settles
+  when the daemon closes. Measured 2026-10-24 against a daemon that accepts
+  `{"type":"list"}` and never answers, the client was still running at 20 s, so
+  the client-side reply bound is IMP-006's work, not this slice's.
+- **The picker bounds itself.** `malebolge--list-timeout` (5 s) with
+  `malebolge--await-listing` deletes the client and raises `user-error`, and that
+  is what keeps `C-u M-x malebolge-attach` from freezing the editor. Design sec-5's
+  "so a stopped daemon does not freeze the editor silently" is true because of that
+  bound, not because of the client's wait.
+- **Nothing else in the Choice changes.** The prefix argument, the bare-number
+  candidates, the fixed list → prompt → draft check → detach → attach order, the
+  argv shape, the refusal of a draft-bearing switch and the empty-transcript rule
+  on a failed second attach are what shipped (design sec-5; PHASE-03
+  EX-2..EX-7).

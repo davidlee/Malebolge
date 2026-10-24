@@ -140,8 +140,9 @@ node src/attach-main.ts --new --cwd DIR    # a new one whose cwd is DIR
 `--list` prints ids only, one per line, on standard output, and exits 0. It
 takes no other flag: `--list` with `--conversation`, `--new`, `--cwd` or
 `--emacs` is one usage line and exit 2, before any connection is made. A
-listing that fails — no daemon, or one that predates `list` — prints one line
-and exits 1, never a stack trace. Its connect budget is one second, not the
+listing that fails — no daemon, or one that predates `list` — prints the
+client's error line and, for a daemon that predates `list`, the restart hint;
+it exits 1, never a stack trace. Its connect budget is one second, not the
 attach client's ten seconds: a listing runs against a daemon already up.
 
 One page is **50 conversations**. When the store holds more, `--list` writes

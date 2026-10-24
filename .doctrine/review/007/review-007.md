@@ -165,3 +165,53 @@ surface that will actually be touched.
   so it stays as written; the design is the reconcilable artefact.
 - IMP-005 (F-5), IMP-008 (F-8) and CHR-001 are backlog state, already reconciled
   in this pass.
+
+## Reconciliation Outcome
+
+### Direct edits applied
+
+- **`design.md` sec-4** (F-2): the `listConversations` signature gains
+  `errors: Writable` between `output` and `wait`, with a clause saying why the two
+  streams are explicit parameters rather than `process.*`. Now matches
+  `src/attach.ts:563-569` and `src/attach-main.ts:31-37`.
+- **`design.md` sec-5 step 1** (F-1): after the `message` + `redisplay` sentence,
+  the design now says that announcement is not the bound — `LIST_WAIT` (1 s) bounds
+  connecting and the reply is unbounded (IMP-006) — and names
+  `malebolge--list-timeout` (5 s) with `malebolge--await-listing` as the picker's
+  own bound.
+- **`README.md`** (F-3): a failed listing prints the client's error line and, for a
+  daemon that predates `list`, the restart hint; it exits 1 and never prints a
+  stack trace.
+
+### Selector registry (F-4)
+
+- `doctrine slice selector add 002 --intent scope-relevant test/fixtures.ts`, with a
+  note recording that the shared fake-daemon fixture is IMP-003. Re-ran the algebra:
+  `doctrine slice conformance SL-002` now reads **0 undeclared / 0 undelivered /
+  16 conformant**.
+
+### Decision amended — surface corrected
+
+- The brief named a REV for DEC-009. That surface does not exist for a decision:
+  `doctrine revision change add --target DEC-009` is refused ("`revises` target must
+  be one of [SPEC, PRD, REQ, ADR, POL, STD]"). The amendment landed instead in
+  DEC-009's prose body via `doctrine knowledge edit DEC-009 --body - --body-mode
+  append` — the same mechanism the 2026-10-23 amendment used — recording the stderr
+  separation, the unbounded reply (measured, IMP-006) and the picker's five-second
+  bound.
+- REV-001 (`reconcile-sl-002`) was created before that refusal was known and had no
+  change rows: it is now `abandoned`, so no half-applied revision blocks the close
+  gate. **Correction for future briefs:** decisions, assumptions, questions and
+  constraints are knowledge records, not REV surfaces; amend their prose body.
+
+### Not reconciled on purpose
+
+- `plan.toml` PHASE-02 EX-2 repeats the four-parameter signature. Plan criteria are
+  immutable-append and off the reconcile surface; the design is the reconcilable
+  artefact.
+- F-6 (container runner reds) and F-7 (optional VH-1) stay tolerated; F-5 (duplicate
+  backlog item, resolved as IMP-005 → CHR-001) and F-8 (IMP-008) were reconciled in
+  the audit pass.
+
+Handoff to `/close`: every brief item is resolved, conformance is 0/0/16, and no
+revision is left half-applied.

@@ -76,7 +76,8 @@ intent = "design-target"
 
 [[selector]]
 selector = "test/fixtures.ts"
-intent = "design-target"
+intent = "scope-relevant"
+note = "declared, not edited: the shared fake-daemon fixture is IMP-003 (RV-007 F-4)"
 
 [[selector]]
 selector = "test/malebolge-ert.el"
