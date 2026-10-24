@@ -66,6 +66,7 @@ EnvTarget{conversationId, cwd, read} ─┬─ index → {topic, parent}
 - The variables in other harnesses (gptel, pi, jailed-pi): each sets its own.
   This slice fixes the names and enum values malebolge emits.
 - Labels, titles, archiving (SL-003 non-goal D4).
+- Task-owned conversations' owner and task variables (IDE-002).
 
 ## Affected surface
 
@@ -80,10 +81,10 @@ EnvTarget{conversationId, cwd, read} ─┬─ index → {topic, parent}
 
 - **A-1.** The env hook is called at each use, so the topic read there is
   current. Topic is fixed at creation (SL-003), so staleness is moot.
-- **Q-1.** One `conversation` section beside `cwd`, or fold cwd into it?
-  Design.
-- **Q-2 (settled).** Index miss: leave `SATAN_TOPIC` unset, never guess
-  `default` — `q` stores unset as NULL, by design.
+- **Q-1 (settled, DEC-019).** A separate untagged `conversation` section
+  after `cwd`.
+- **Q-2 (settled, DEC-021).** Index miss: leave `SATAN_TOPIC` unset, never
+  guess `default` — `q` stores unset as NULL, by design.
 - **Q-3 (settled, user 2026-10-24).** The parent variable is
   `SATAN_PARENT_CONVERSATION`, the name `q` reads.
 - **R-1.** System prompt text varies per conversation but is stable within

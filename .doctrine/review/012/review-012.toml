@@ -8,9 +8,233 @@ title = "design review of SL-004"
 facet     = "design"     # scope|design|plan|phase-plan|implementation|code-review|reconciliation
 raiser    = "raiser"
 responder = "responder"
+rounds_base = 0
+contests_base = 0
+concluded = true
+
+[[review.turn]]
+act = "conclude"
+role = "raiser"
+note = "Adversarial pass by pi review profile (deepseek-flash, quotient run-20261024T101840336Z-7); 9 findings raised, all disposed; F-1 design change accepted by user."
 
 [target]                   # the outbound `reviews` edge: RV-NNN ──reviews──▶ <ref>
 ref   = "SL-004"
+
+[[finding]]
+id = "F-1"
+status = "verified"
+severity = "major"
+title = "Room path cannot mask an inherited SATAN_* value"
+detail = "pi-env drops undefined shellEnv values (remote-env.js:767-769); the room daemon starts via the login shell (ssh.js:421). An absent value cannot mask an inherited one. VH-1 cannot observe it. (pi review, deepseek-flash, quotient run-20261024T101840336Z-7)"
+disposition = "design-wrong"
+response = "Accepted by user 2026-10-24: all six always set, empty when absent (DEC-021 amended); q maps empty to NULL. sec-2 Masking, VT-1/VT-3."
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "design-wrong"
+response = "Accepted by user 2026-10-24: all six always set, empty when absent (DEC-021 amended); q maps empty to NULL. sec-2 Masking, VT-1/VT-3."
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "Raiser (pi review session f466c739…, run-20261024T102815816Z-8) verified against revised design.md."
+
+[[finding]]
+id = "F-2"
+status = "verified"
+severity = "minor"
+title = "'SATAN_* names live once' is false at repo level"
+detail = "The daemon already reads SATAN_CORPUS_ROOT, SATAN_MCP_SOCKET (src/config.ts:144,147) and the runner SATAN_RUNNER_CONFIG."
+disposition = "fix-now"
+response = "sec-2: the six names live once; daemon-config SATAN_* named as disjoint."
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+response = "sec-2: the six names live once; daemon-config SATAN_* named as disjoint."
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "Raiser (pi review session f466c739…, run-20261024T102815816Z-8) verified against revised design.md."
+
+[[finding]]
+id = "F-3"
+status = "verified"
+severity = "minor"
+title = "Index read cost understated"
+detail = "The env is built per task attempt and per nested executeTool (scheduler.js:1984, tool.js:309); one index snapshot per build."
+disposition = "fix-now"
+response = "sec-3 Cost states per-build count (task attempt, nested executeTool); no memo unless measured."
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+response = "sec-3 Cost states per-build count (task attempt, nested executeTool); no memo unless measured."
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "Raiser (pi review session f466c739…, run-20261024T102815816Z-8) verified against revised design.md."
+
+[[finding]]
+id = "F-4"
+status = "verified"
+severity = "major"
+title = "Shared env id with divergent shellEnv unverified"
+detail = "RemoteExecutionEnv id pi-env:daemon-room is shared while shellEnv differs per conversation; RFC-002's serialisation argument assumed identical envs."
+disposition = "aligned"
+response = "Rejected: env id is the file namespace (pi-durable env/index.d.ts:166), unaffected by shellEnv. Stated in sec-3."
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "aligned"
+response = "Rejected: env id is the file namespace (pi-durable env/index.d.ts:166), unaffected by shellEnv. Stated in sec-3."
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "Raiser (pi review session f466c739…, run-20261024T102815816Z-8) verified against revised design.md."
+
+[[finding]]
+id = "F-5"
+status = "verified"
+severity = "minor"
+title = "SATAN_CWD is not necessarily where tools run"
+detail = "A caller can pass a per-exec cwd (tools/bash.js:33-37, remote-env.js:759)."
+disposition = "fix-now"
+response = "DEC-022 and sec-2 reworded: the conversation's working directory, not where every command runs."
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+response = "DEC-022 and sec-2 reworded: the conversation's working directory, not where every command runs."
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "Raiser (pi review session f466c739…, run-20261024T102815816Z-8) verified against revised design.md."
+
+[[finding]]
+id = "F-6"
+status = "verified"
+severity = "minor"
+title = "Section key namespace is global, last-wins"
+detail = "Duplicate section keys across extensions collapse last-wins (harness/prompt.js:100-104); design should note the key is unique."
+disposition = "fix-now"
+response = "sec-4 notes the global key namespace; no other extension declares conversation (grep src)."
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+response = "sec-4 notes the global key namespace; no other extension declares conversation (grep src)."
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "Raiser (pi review session f466c739…, run-20261024T102815816Z-8) verified against revised design.md."
+
+[[finding]]
+id = "F-7"
+status = "verified"
+severity = "nit"
+title = "Citation drift"
+detail = "observedEnv is src/room/connection.ts:178, not :177."
+disposition = "fix-now"
+response = "sec-3 cites connection.ts:178."
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+response = "sec-3 cites connection.ts:178."
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "Raiser (pi review session f466c739…, run-20261024T102815816Z-8) verified against revised design.md."
+
+[[finding]]
+id = "F-8"
+status = "verified"
+severity = "minor"
+title = "satan MCP tools carry no mem.origin attribution"
+detail = "satan-tools.ts runs no exec; the design should say so."
+disposition = "fix-now"
+response = "sec-1 out-of-scope line for satan MCP tools."
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+response = "sec-1 out-of-scope line for satan MCP tools."
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "Raiser (pi review session f466c739…, run-20261024T102815816Z-8) verified against revised design.md."
+
+[[finding]]
+id = "F-9"
+status = "verified"
+severity = "minor"
+title = "test/harness-fixture.ts missing from code impact"
+detail = "openTestHarness builds env with ({cwd}) at test/harness-fixture.ts:66; VT-3 needs an EnvTarget hook."
+disposition = "fix-now"
+response = "sec-5 adds test/harness-fixture.ts (hook at :66)."
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+response = "sec-5 adds test/harness-fixture.ts (hook at :66)."
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "Raiser (pi review session f466c739…, run-20261024T102815816Z-8) verified against revised design.md."
 
 # Findings are append-only `[[finding]]` tables, added by `review raise`.
 # Empty here at creation — a fresh review is Active, awaiting the raiser.

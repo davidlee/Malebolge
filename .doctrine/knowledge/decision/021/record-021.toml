@@ -3,7 +3,7 @@ version = 1
 
 id = 21
 slug = "a-conversation-with-no-index-entry-gets-no-topic-or-parent-variable-the-rest-are-set"
-title = "A conversation with no index entry gets no topic or parent variable; the rest are set"
+title = "A conversation with no index entry gets an empty topic and parent; every variable is always set"
 record_kind = "decision"
 status = "accepted"
 created = "2026-10-24"
@@ -11,12 +11,12 @@ updated = "2026-10-24"
 tags = []
 
 [facet]                         # every field typed; seeded empty (captured later)
-context = "DEC-012 leaves task-owned conversations out of the index; ~/db/q stores an unset variable as NULL."
-choice = "No entry: SATAN_TOPIC and SATAN_PARENT_CONVERSATION unset; SATAN_HARNESS, SATAN_PROFILE, SATAN_CONVERSATION, SATAN_CWD set. Ids are decimal strings. Root resolves to default (DEC-015)."
-alternatives = ["Fall back to topic default", "Read the owner chain for a topic (IDE-002)"]
-rationale = "An honest gap, never a guess; task-owned support waits for a feature that creates them (IDE-002)."
-consequences = ["IDE-002 carries owner and task variables"]
-decided_by = "user (accepted agent proposal, 2026-10-24)"
+context = "DEC-012 leaves task-owned conversations out of the index; ~/db/q reads ${VAR:-} and stores nullif(..,'') so empty and unset both become NULL. RV-012 F-1: pi-env drops undefined shellEnv values, so an absent value cannot mask one the room daemon inherited."
+choice = "All six variables are always set. No entry: SATAN_TOPIC and SATAN_PARENT_CONVERSATION are empty strings; not a fork: SATAN_PARENT_CONVERSATION empty. Ids are decimal strings. Root resolves to default (DEC-015)."
+alternatives = ["Leave absent values unset (original choice; cannot mask an inherited value in the room)", "Fall back to topic default", "Read the owner chain for a topic (IDE-002)"]
+rationale = "Empty overrides any inherited value on both profiles and q records it as NULL, so the gap stays honest; one code path, no host/room asymmetry."
+consequences = ["Consumers treat empty as absent", "IDE-002 carries owner and task variables"]
+decided_by = "user (accepted agent proposal, 2026-10-24; amended on RV-012 F-1, 2026-10-24)"
 decided_on = "2026-10-24"
 
 [evidence]                      # free-text citations (supports / contradicts / notes)
