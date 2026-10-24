@@ -24,6 +24,7 @@ import {
   RemoteExecutionEnv,
   type RemotePlatform,
   type RemoteInfo,
+  type RemoteExecutionEnvOptions,
   type Reply,
   type RequestOptions,
   type SshTarget,
@@ -169,27 +170,47 @@ export class ObservedConnection extends Connection {
 
 /**
  * pi-env's remote environment `id` in `cwd` over `connection`, observed by
- * `observer`, its lost failures through `reword` when given: the one way an
- * observed env is built. `connection` is the daemon connection itself, never
- * another `ObservedConnection` (refused): the trust check reads the inner
- * connection, so a nested wrapper reports a host-key refusal as a loss
- * (design §4.3, RV-035 F-4).
+ * `observer`, its lost failures through `reword` when given, and its commands
+ * run with `shellEnv` when given: the one way an observed env is built.
+ * `shellEnv` merges over the daemon's inherited environment and under a
+ * command's own `env` (pi-env's order), so a set value — an empty one — masks
+ * an inherited variable of that name, which is why the conversation variables
+ * are all six, never fewer. It stays optional: the room shell and a job's env
+ * pass none. `connection` is the daemon connection itself, never another
+ * `ObservedConnection` (refused): the trust check reads the inner connection, so
+ * a nested wrapper reports a host-key refusal as a loss (design §4.3, RV-035
+ * F-4).
  */
 export function observedEnv(
   connection: Connection,
   observer: ConnectionObserver,
-  { id, cwd, reword }: { id: string; cwd: string; reword?: Reword },
+  {
+    id,
+    cwd,
+    reword,
+    shellEnv,
+  }: {
+    id: string;
+    cwd: string;
+    reword?: Reword;
+    shellEnv?: Record<string, string>;
+  },
 ): RemoteExecutionEnv {
   if (connection instanceof ObservedConnection) {
     throw new Error(
       `${id}: an ObservedConnection must wrap the daemon connection, not another ObservedConnection`,
     );
   }
-  return new RemoteExecutionEnv({
-    connection: new ObservedConnection(connection, observer, reword),
-    id,
-    cwd,
-  });
+  return new RemoteExecutionEnv(
+    setDefined<RemoteExecutionEnvOptions>(
+      {
+        connection: new ObservedConnection(connection, observer, reword),
+        id,
+        cwd,
+      },
+      { shellEnv },
+    ),
+  );
 }
 
 /** pi-env's ssh target for the room. */

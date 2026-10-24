@@ -9,7 +9,7 @@
 //
 // A profile is also where a conversation's identity enters its tools (DEC-020):
 // the hook resolves the conversation against the index and passes its `SATAN_*`
-// variables along, the host as the node env's `shellEnv`.
+// variables along as the env's `shellEnv`, both profiles alike.
 
 import { existsSync } from "node:fs";
 import type { EnvTarget } from "@earendil-works/pi-durable";
@@ -148,10 +148,11 @@ const hostEnv = (execution: HostExecution): DaemonEnv => ({
 });
 
 function roomEnv(
-  { room, home }: RoomExecution,
+  execution: RoomExecution,
   log: (text: string) => void,
   helpers?: DaemonHelpers,
 ): DaemonEnv {
+  const { room, home } = execution;
   // pi-env started directly in the room user's home (DEC-081). Lazy: a failed
   // start fails that call, the next call retries. Both paths below wrap this
   // DaemonConnection directly, never an ObservedConnection: the trust check
@@ -160,12 +161,18 @@ function roomEnv(
   const connection = daemonConnection(room, directLaunch, helpers);
   const observer = faultLog(log);
   return {
-    env: (state) =>
-      observedEnv(connection, observer, {
+    env: async (target): Promise<ExecutionEnv> => {
+      const { cwd, vars } = await conversationEnv(execution.profile, home, target);
+      return observedEnv(connection, observer, {
+        // One id for every conversation: it is the file namespace, not the
+        // conversation (RFC-002), and variables do not change which files
+        // are at which paths.
         id: "pi-env:daemon-room",
-        cwd: state.cwd ?? home,
+        cwd,
         reword,
-      }),
+        shellEnv: vars,
+      });
+    },
     cwd: home,
     // The bare connection: roomShell observes it itself (RV-035 F-4).
     readContext: () =>

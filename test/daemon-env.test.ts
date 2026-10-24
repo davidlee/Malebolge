@@ -23,7 +23,7 @@ import {
   RemoteExecutionEnv,
 } from "@earendil-works/pi-env";
 import { afterEach, describe, expect, it } from "vitest";
-import type { Execution } from "../src/config.ts";
+import type { Execution, Profile } from "../src/config.ts";
 import { context } from "../src/context.ts";
 import {
   type DaemonEnv,
@@ -42,7 +42,7 @@ import {
 } from "../src/room/shell.ts";
 import { FETCH_LIMITS, HEAD_LIMITS } from "../src/room/source-reader.ts";
 import { registryOf } from "../src/registry.ts";
-import { openSession } from "../src/session.ts";
+import { openSession, type SessionOptions } from "../src/session.ts";
 import { assignTopic, IndexDocument } from "../src/topics.ts";
 import { tempDir } from "./fixtures.ts";
 import {
@@ -199,6 +199,142 @@ async function recordingSsh(dir: string): Promise<{ ssh: string; argv: () => Pro
   };
 }
 
+/**
+ * A restore for `names`: their values at call time, each unset one deleted again.
+ * Call it once where the values are still pristine, run it in `afterEach`.
+ */
+function preservingEnv(names: readonly string[]): () => void {
+  const saved = names.map((name) => [name, process.env[name]] as const);
+  return () => {
+    for (const [name, value] of saved) {
+      if (value === undefined) {
+        Reflect.deleteProperty(process.env, name);
+      } else {
+        process.env[name] = value;
+      }
+    }
+  };
+}
+
+/** The lifecycle the two conversation describes share. */
+interface EnvFixture {
+  /** A fresh temp directory, removed with the fixture. */
+  dir: () => Promise<string>;
+  /** The `DaemonEnv` `build` makes at a fresh temp directory, closed with the fixture. */
+  at: (build: (dir: string) => DaemonEnv | Promise<DaemonEnv>) => Promise<DaemonEnv>;
+  /** Closes that env, restores the process environment, removes the directories. */
+  reap: () => Promise<void>;
+}
+
+/**
+ * A `DaemonEnv` a case builds at a fresh temp directory, the further directories
+ * it needs, and the process environment a masking case sets — all released by
+ * `reap` in `afterEach`.
+ */
+function envFixture(): EnvFixture {
+  const cleanups: (() => Promise<void>)[] = [];
+  const restoreEnv = preservingEnv(["SATAN_TOPIC", "MALEBOLGE_TEST_INHERITED"]);
+  let environment: DaemonEnv | undefined;
+  const dir = async (): Promise<string> => {
+    const tmp = await tempDir();
+    cleanups.push(tmp.cleanup);
+    return tmp.dir;
+  };
+  return {
+    dir,
+    at: async (build): Promise<DaemonEnv> => {
+      environment = await build(await dir());
+      return environment;
+    },
+    reap: async (): Promise<void> => {
+      environment?.close();
+      environment = undefined;
+      restoreEnv();
+      for (const cleanup of cleanups.splice(0)) {
+        await cleanup();
+      }
+    },
+  };
+}
+
+/** The values a conversation's tools share: this harness, `profile`, its cwd, no parent. */
+const sharedVars = (profile: Profile, cwd: string): Record<string, string> => ({
+  SATAN_HARNESS: "malebolge",
+  SATAN_PROFILE: profile,
+  SATAN_CWD: cwd,
+  SATAN_PARENT_CONVERSATION: "",
+});
+
+/**
+ * Root and a `topic`-tagged second conversation each print their own conversation
+ * and topic, under the values both share, `same`.
+ */
+async function expectOwnConversations(
+  env: SessionOptions["env"],
+  same: Record<string, string>,
+  topic: string,
+): Promise<void> {
+  const test = await openTestHarness([CodingTools], undefined, env);
+  closing(test.harness);
+  const second = await createConversation(test.harness, assignTopic(topic));
+  // Only root gets an agent from `openTestHarness`; the daemon's defaults do this in production.
+  await second.configure({ model: FAUX_MODEL }, context);
+
+  expect(await bashVars(test)).toEqual({
+    ...same,
+    SATAN_CONVERSATION: String(test.root.id),
+    SATAN_TOPIC: DEFAULT_TOPIC,
+  });
+  expect(await bashVars(test, second)).toEqual({
+    ...same,
+    SATAN_CONVERSATION: String(second.id),
+    SATAN_TOPIC: topic,
+  });
+}
+
+/**
+ * `environment`'s tools print an inherited `SATAN_TOPIC` as empty — `[][yes]` —
+ * while the foreign variable still reaches them. A fresh env, before any exec:
+ * the room's daemon inherits this process's env when it starts.
+ */
+async function expectInheritedTopicMasked(environment: DaemonEnv): Promise<void> {
+  process.env["SATAN_TOPIC"] = "inherited";
+  process.env["MALEBOLGE_TEST_INHERITED"] = "yes";
+  // A reader whose index lacks the conversation's id: its topic is empty, not `default`.
+  const test = await openTestHarness([CodingTools], undefined, (target) =>
+    environment.env({ ...target, read: unindexed }, context),
+  );
+  closing(test.harness);
+
+  // Masked, yet inheriting: the foreign variable still reaches the shell.
+  const text = await bashTurn(test, 'echo "[${SATAN_TOPIC}][${MALEBOLGE_TEST_INHERITED}]"');
+
+  expect(text).toContain("[][yes]");
+  expect(text).not.toContain("inherited");
+}
+
+/** `environment`'s env build rejects with `bug`: a failed index read is never an empty context. */
+async function expectFailedRead(environment: DaemonEnv, bug: Error): Promise<void> {
+  const read: EnvTarget["read"] = {
+    snapshot: () => Promise.reject(bug),
+    snapshotAsOf: () => Promise.reject(bug),
+  };
+
+  await expect(environment.env({ ...envTarget(), read }, context)).rejects.toBe(bug);
+}
+
+/** `environment`'s conversation's topic reaches its tools; a per-exec `env` wins over it. */
+async function expectPerExecEnvWins(environment: DaemonEnv): Promise<void> {
+  const test = await openTestHarness([], undefined, environment.env);
+  closing(test.harness);
+  const env = await built(environment, { conversationId: test.root.id, read: test.harness });
+
+  expect(await printed(env, ["printenv", "SATAN_TOPIC"])).toBe(DEFAULT_TOPIC);
+  expect(
+    await printed(env, ["printenv", "SATAN_TOPIC"], { env: { SATAN_TOPIC: "explicit" } }),
+  ).toBe("explicit");
+}
+
 describe("daemonEnv", () => {
   let cleanup: (() => Promise<void>) | undefined;
   let environment: DaemonEnv | undefined;
@@ -273,101 +409,87 @@ describe("daemonEnv", () => {
 });
 
 describe("host conversation env (SL-004 design sec-3)", () => {
-  let cleanup: (() => Promise<void>) | undefined;
-  let environment: DaemonEnv | undefined;
-  // The masking case sets these: the host's tools inherit this process's env.
-  const inherited = (["SATAN_TOPIC", "MALEBOLGE_TEST_INHERITED"] as const).map(
-    (name) => [name, process.env[name]] as const,
-  );
-  afterEach(async () => {
-    environment?.close();
-    environment = undefined;
-    for (const [name, value] of inherited) {
-      if (value === undefined) {
-        Reflect.deleteProperty(process.env, name);
-      } else {
-        process.env[name] = value;
-      }
-    }
-    await cleanup?.();
-  });
+  const fixture = envFixture();
+  afterEach(fixture.reap);
 
-  /** A host `DaemonEnv` at a fresh directory, its fixtures released after the test. */
-  async function hostAt(): Promise<DaemonEnv> {
-    const tmp = await tempDir();
-    cleanup = tmp.cleanup;
-    const host = daemonEnv({ profile: "host", cwd: tmp.dir }, () => undefined);
-    environment = host;
-    return host;
-  }
+  /** A host `DaemonEnv` at a fresh directory. */
+  const hostAt = (): Promise<DaemonEnv> =>
+    fixture.at((dir) => daemonEnv({ profile: "host", cwd: dir }, () => undefined));
 
   it("host: root's and a second conversation's bash each see their own conversation", async () => {
     const host = await hostAt();
-    const test = await openTestHarness([CodingTools], undefined, host.env);
-    closing(test.harness);
-    const second = await createConversation(test.harness, assignTopic("work"));
-    // Only root gets an agent from `openTestHarness`; the daemon's defaults do this in production.
-    await second.configure({ model: FAUX_MODEL }, context);
-    const same = {
-      SATAN_HARNESS: "malebolge",
-      SATAN_PROFILE: "host",
-      SATAN_CWD: host.cwd,
-      SATAN_PARENT_CONVERSATION: "",
-    };
 
-    expect(await bashVars(test)).toEqual({
-      ...same,
-      SATAN_CONVERSATION: String(test.root.id),
-      SATAN_TOPIC: DEFAULT_TOPIC,
-    });
-    expect(await bashVars(test, second)).toEqual({
-      ...same,
-      SATAN_CONVERSATION: String(second.id),
-      SATAN_TOPIC: "work",
-    });
+    await expectOwnConversations(host.env, sharedVars("host", host.cwd), "work");
   });
 
   it("host: an inherited SATAN_TOPIC is masked, printed empty rather than absent", async () => {
-    process.env["SATAN_TOPIC"] = "inherited";
-    process.env["MALEBOLGE_TEST_INHERITED"] = "yes";
-    const host = await hostAt();
-    // A reader whose index lacks the conversation's id: its topic is empty, not `default`.
-    const test = await openTestHarness([CodingTools], undefined, (target) =>
-      host.env({ ...target, read: unindexed }, context),
-    );
-    closing(test.harness);
-
-    // Masked, yet inheriting: the foreign variable still reaches the shell.
-    const text = await bashTurn(test, 'echo "[${SATAN_TOPIC}][${MALEBOLGE_TEST_INHERITED}]"');
-
-    expect(text).toContain("[][yes]");
-    expect(text).not.toContain("inherited");
+    await expectInheritedTopicMasked(await hostAt());
   });
 
   it("host: a failed index read fails the env build, never an empty context", async () => {
-    const bug = new TypeError("bug");
-    const host = await hostAt();
-    const read: EnvTarget["read"] = {
-      snapshot: () => Promise.reject(bug),
-      snapshotAsOf: () => Promise.reject(bug),
-    };
-
-    await expect(host.env({ ...envTarget(), read }, context)).rejects.toBe(bug);
+    await expectFailedRead(await hostAt(), new TypeError("bug"));
   });
 
   it("host: an exec's own env wins over the conversation's", async () => {
-    const host = await hostAt();
-    const test = await openTestHarness([], undefined, host.env);
-    closing(test.harness);
-    const env = await built(host, { conversationId: test.root.id, read: test.harness });
-
-    expect(await printed(env, ["printenv", "SATAN_TOPIC"])).toBe(DEFAULT_TOPIC);
-    expect(
-      await printed(env, ["printenv", "SATAN_TOPIC"], { env: { SATAN_TOPIC: "explicit" } }),
-    ).toBe("explicit");
+    await expectPerExecEnvWins(await hostAt());
   });
 });
 
+describe("room conversation env (SL-004 design sec-3)", () => {
+  const fixture = envFixture();
+  afterEach(fixture.reap);
+
+  /** A room `DaemonEnv` at a fresh directory, over a recording `ssh`. */
+  const roomAt = (): Promise<DaemonEnv> =>
+    fixture.at(async (dir) => {
+      const { ssh } = await recordingSsh(dir);
+      return daemonEnv(roomExecution(dir), () => undefined, fakeHelpers(ssh));
+    });
+
+  it("room: every conversation's env is a RemoteExecutionEnv pi-env:daemon-room", async () => {
+    const room = await roomAt();
+    const captured: ExecutionEnv[] = [];
+    // The hook runs per tool attempt and per prompt preparation: keep them all.
+    const capture: SessionOptions["env"] = async (target) => {
+      const env = await built(room, target);
+      captured.push(env);
+      return env;
+    };
+
+    // No agent cwd on the room's conversations: the room user's home (DEC-022).
+    await expectOwnConversations(capture, sharedVars("room", room.cwd), "work");
+
+    // One id for every conversation: it names the file namespace (RFC-002).
+    expect(new Set(captured.map((env) => env.id))).toEqual(new Set(["pi-env:daemon-room"]));
+    for (const env of captured) {
+      expect(env).toBeInstanceOf(RemoteExecutionEnv);
+    }
+  });
+
+  it("room: the agent's cwd wins over the room user's home", async () => {
+    const room = await roomAt();
+    // A real directory: the daemon execs in this cwd, so it must exist (DEC-022).
+    const elsewhere = await fixture.dir();
+
+    const env = await built(room, envTarget(elsewhere));
+
+    expect(env.cwd).toBe(elsewhere);
+    expect(env.cwd).not.toBe(room.cwd);
+    expect(await printed(env, ["printenv", "SATAN_CWD"])).toBe(elsewhere);
+  });
+
+  it("room: an inherited SATAN_TOPIC is masked, printed empty rather than absent", async () => {
+    await expectInheritedTopicMasked(await roomAt());
+  });
+
+  it("room: a failed index read fails the env build, never an empty context", async () => {
+    await expectFailedRead(await roomAt(), new TypeError("bug"));
+  });
+
+  it("room: an exec's own env wins over the conversation's", async () => {
+    await expectPerExecEnvWins(await roomAt());
+  });
+});
 describe("room faults at the tool seam, the daemon's reword (design §4.4)", () => {
   let environment: DaemonEnv | undefined;
   afterEach(() => {
