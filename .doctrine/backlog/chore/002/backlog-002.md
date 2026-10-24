@@ -47,3 +47,24 @@ DEC-011: lands before SL-003, which needs it. Raised by the user 2026-10-24.
   never on the live store first.
 - The runner pin has moved, and one live room start shows a single
   `pi-env-*` binary in the room.
+
+## Outcome (2026-10-24)
+
+- Five packages, not four: `@earendil-works/chord` moved to exactly 1.4.0
+  too, because pi-durable and pi-env 1.4.0 require exactly `chord@1.4.0`.
+  `npmDepsHash` in `flake.nix` was updated. `just check` passed 1835 tests
+  and `just ert` passed 38.
+- Breaking changes: malebolge never reads pi-durable task states, so the new
+  `sleeping` status needs no case. `restartLimit` is left at its default, so a
+  runner conversation that crash-loops 5 times is now parked, and malebolge
+  does not detect a parked task.
+- Migration: copies of `runner.sqlite` and `durable/{host,room}/session.sqlite`
+  went from schema v1 to v2 under 1.4.0. Counts were unchanged and
+  `integrity_check` passed. Opening them a second time changed nothing.
+- Backups of the live v1 stores, read-only:
+  `~/.local/state/satan/backup-pre-pi-1.4.0/`.
+- Rollout: `satan-runner` and `malebolge-room` were restarted on 1.4.0.
+  `runner.sqlite` and the room `session.sqlite` are now v2. The room holds a
+  single binary, `~/.pi/mobile/tools/pi-env-46dde0e25b5cf1a327a10ddcb25f746f`.
+  The host-profile `session.sqlite` is still v1 and migrates the next time
+  that daemon starts.
