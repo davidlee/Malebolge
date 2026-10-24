@@ -3,6 +3,7 @@
 
 import type { Extension } from "@earendil-works/pi-durable";
 import { CodingTools } from "@earendil-works/pi-durable/tools";
+import { conversationExtension } from "./conversation-context.ts";
 import { cwdExtension } from "./cwd.ts";
 import { grepExtension } from "./grep.ts";
 import { personaExtension } from "./persona.ts";
@@ -25,6 +26,7 @@ export const daemonExtensions = (parts: DaemonParts): Extension[] => [
   projectContextExtension(parts.projectContext),
   skillsExtension(parts.skills),
   cwdExtension,
+  conversationExtension,
   CodingTools,
   grepExtension,
 ];

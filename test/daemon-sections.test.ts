@@ -5,10 +5,12 @@ import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite
 import { afterEach, describe, expect, it } from "vitest";
 import { context } from "../src/context.ts";
 import { conversations } from "../src/conversations.ts";
+import { conversationExtension } from "../src/conversation-context.ts";
 import { cwdExtension } from "../src/cwd.ts";
 import { isRecord } from "../src/json.ts";
 import { daemonExtensions } from "../src/daemon-extensions.ts";
 import { personaExtension } from "../src/persona.ts";
+import { DEFAULT_TOPIC } from "../src/protocol.ts";
 import {
   gitRootDirs,
   nodeSourceReader,
@@ -48,6 +50,37 @@ describe("cwdExtension", () => {
   });
 });
 
+describe("conversationExtension", () => {
+  it("is one untagged section, stating the conversation and its topic", async () => {
+    const sections = conversationExtension.sections ?? [];
+    expect(sections.map(({ key, tag }) => [key, tag])).toEqual([["conversation", false]]);
+    const test = await openTestHarness([conversationExtension]);
+    expect(await systemPromptSections(test)).toEqual([
+      { conversation: `Conversation: ${String(test.root.id)} (topic: ${DEFAULT_TOPIC})` },
+    ]);
+  });
+
+  it("renders directly after cwd", async () => {
+    const test = await openTestHarness(
+      daemonExtensions({ personaFiles: [], projectContext: undefined, skills: [] }),
+    );
+    await test.root.configure({ cwd: "/work" }, context);
+    // An empty persona list still renders its section (empty text); skills render none.
+    expect((await systemPromptSections(test)).map(keysOf)).toEqual([
+      ["persona", "cwd", "conversation"],
+    ]);
+  });
+
+  it("states the conversation alone when the index has no entry for it", async () => {
+    const test = await openFauxHarness(new MemoryStorage(), {
+      extensions: [conversationExtension],
+    });
+    expect(await systemPromptSections(test)).toEqual([
+      { conversation: `Conversation: ${String(test.root.id)}` },
+    ]);
+  });
+});
+
 describe("daemon system prompt sections", () => {
   let cleanup: (() => Promise<void>) | undefined;
   afterEach(async () => {
@@ -70,7 +103,7 @@ describe("daemon system prompt sections", () => {
   const readContext = async (cwd: string): Promise<string | undefined> =>
     renderProjectContext(await readSources(cwd, gitRootDirs(cwd), nodeSourceReader));
 
-  it("renders persona, project context, skills and cwd, in that order, for a fresh conversation", async () => {
+  it("renders persona, project context, skills, cwd and conversation, in that order, for a fresh conversation", async () => {
     const { persona, cwd } = await setup();
     const projectContext = await readContext(cwd);
     expect(projectContext).toContain("be careful");
@@ -84,7 +117,13 @@ describe("daemon system prompt sections", () => {
     await test.root.configure({ cwd }, context);
     const entries = await systemPromptSections(test);
     expect(entries).toHaveLength(1);
-    expect(keysOf(entries[0])).toEqual(["persona", "project_context", "skills", "cwd"]);
+    expect(keysOf(entries[0])).toEqual([
+      "persona",
+      "project_context",
+      "skills",
+      "cwd",
+      "conversation",
+    ]);
     expect(entries[0]).toMatchObject({
       persona: "persona\n",
       project_context: `<project_context>\n${String(projectContext)}\n</project_context>`,
@@ -114,7 +153,7 @@ describe("daemon system prompt sections", () => {
     });
     await test.root.configure({ cwd }, context);
     const entries = await systemPromptSections(test);
-    expect(entries.map(keysOf)).toEqual([["persona", "skills", "cwd"]]);
+    expect(entries.map(keysOf)).toEqual([["persona", "skills", "cwd", "conversation"]]);
   });
 
   it("re-sends every section once, in order, to a conversation that already shows persona and skills", async () => {
@@ -140,7 +179,7 @@ describe("daemon system prompt sections", () => {
     expect(entries.map(keysOf)).toEqual([
       ["persona", "skills"],
       ["persona", "skills"],
-      ["persona", "project_context", "skills", "cwd"],
+      ["persona", "project_context", "skills", "cwd", "conversation"],
     ]);
     expect(entries[1]).toEqual({ persona: null, skills: null });
   });

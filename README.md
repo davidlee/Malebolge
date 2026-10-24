@@ -298,6 +298,25 @@ profile: no network, the room reached through its door socket and the gateway
 through its client socket. It can write only under `durable/room/`, its own
 persisted jail home and `/tmp`. The host profile has no jailed launcher.
 
+### The tools' environment
+
+Each conversation's tools run with six `SATAN_*` variables, describing the
+conversation they are in:
+
+| Variable | Value |
+|---|---|
+| `SATAN_HARNESS` | `malebolge` |
+| `SATAN_PROFILE` | the profile the daemon runs, `room` or `host` |
+| `SATAN_CONVERSATION` | the conversation's id |
+| `SATAN_CWD` | the directory the tools run in |
+| `SATAN_TOPIC` | the conversation's topic, empty when it has none |
+| `SATAN_PARENT_CONVERSATION` | the conversation it forked from, empty when it did not fork or the index has no entry for it |
+
+All six are always set, in both profiles, and each conversation's tools see
+its own values. One with nothing to say is empty, never absent, so an inherited
+`SATAN_*` variable of one of these six names cannot show through. These are what
+the tools receive, not daemon configuration: nothing above sets them.
+
 ## Patch jobs
 
 SATAN submits jobs through `patch_job_create` in Emacs. A job names a

@@ -1,12 +1,17 @@
 // One conversation's context, and the two things built from it: the `SATAN_*`
-// variables its tools run with, and the line its system prompt shows (design
-// sec-2, sec-5; DEC-018, DEC-019, DEC-021).
+// variables its tools run with, and the line, rendered as the `conversation`
+// section of its system prompt (design sec-2, sec-5; DEC-018, DEC-019, DEC-021).
 //
 // The index stays `topics.ts`'s: this module reads it the one way, never
 // writes, and maps the result purely — so a caller may build the mapping as
 // often as it likes (an env per tool attempt) without a second source of truth.
 
-import type { ConversationId } from "@earendil-works/pi-durable";
+import {
+  type ConversationId,
+  defineExtension,
+  type Extension,
+  section,
+} from "@earendil-works/pi-durable";
 import type { Profile } from "./config.ts";
 import { type IndexEntry, type IndexReader, readIndex, storedEntry } from "./topics.ts";
 
@@ -56,3 +61,18 @@ export function conversationLine(context: ConversationContext): string {
   const line = `Conversation: ${String(context.id)}`;
   return context.entry === undefined ? line : `${line} (topic: ${context.entry.topic})`;
 }
+
+/**
+ * The line as a system prompt section, untagged like `cwd`'s: the conversation
+ * speaks for itself, so it needs no `<conversation>` wrapper.
+ */
+export const conversationExtension: Extension = defineExtension({
+  name: "conversation",
+  sections: [
+    section(
+      "conversation",
+      async ({ read, conversationId }) => conversationLine(await contextOf(read, conversationId)),
+      { tag: false },
+    ),
+  ],
+});

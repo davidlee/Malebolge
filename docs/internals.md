@@ -17,6 +17,7 @@ malebolge (daemon, owns the session)                     clients
  ├─ project_context section   AGENTS.md chain, .pi/APPEND_SYSTEM.md (read once)
  ├─ skills section     SKILL.md listings from $MALEBOLGE_SKILLS
  ├─ cwd section        "Current working directory: …"
+ ├─ conversation section   "Conversation: <id> (topic: …)"
  ├─ CodingTools        read · write · edit · bash  ┐ through daemonEnv's
  ├─ grep               ripgrep                     ┘ environment (below)
  ├─ satan extension    pi-mcp client ──unix socket──▶ emacs satan-mcp
@@ -27,12 +28,14 @@ malebolge (daemon, owns the session)                     clients
 
 `resolveConfig` (`src/config.ts`) turns `MALEBOLGE_PROFILE` into an
 `Execution`; `daemonEnv` (`src/daemon-env.ts`) is the one place an
-`Execution` becomes the tools' environment, their cwd and the startup
-project context.
+`Execution` becomes the tools' environment — its `shellEnv`, the conversation's
+`SATAN_*` from `conversationVars` (`src/conversation-context.ts`) — their cwd
+and the startup project context.
 
 ```
-host:  env(state) ─▶ NodeExecutionEnv(cwd = state.cwd ?? launch dir)
-room:  env(state) ─▶ RemoteExecutionEnv "pi-env:daemon-room", cwd = state.cwd ?? home
+host:  env(target) ─▶ NodeExecutionEnv(cwd = target.cwd ?? launch dir, shellEnv = SATAN_*)
+room:  env(target) ─▶ RemoteExecutionEnv "pi-env:daemon-room", cwd = target.cwd ?? home,
+                       shellEnv = SATAN_*
                        └─ ObservedConnection(reword, logs) ─┐
        readContext ─▶ roomShell ─▶ (its own ObservedConnection) ─┤
                                                              DaemonConnection (one, lazy)
