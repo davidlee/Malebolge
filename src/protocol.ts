@@ -1,23 +1,28 @@
 // The daemon socket protocol, one JSON message per line.
 //
 //   client → daemon   ClientMessage, or a first-line frame: `attach`, which names
-//                     the conversation the connection binds to, or `list`, which
-//                     asks for the conversations this store holds
+//                     the conversation the connection binds to, `list`, which
+//                     asks for the conversations this store holds or its topics,
+//                     or `topic`, which writes one topic's directory
 //   daemon → client   AgentEvent (pi-durable `watchEvents`, the first a `snapshot`)
 //                     | AttachedMessage, the reply to a successful attach
 //                     | ConversationsMessage, the reply to a `list` frame
+//                     | TopicsMessage, the reply to a `topics` listing or a `topic` write
 //                     | ErrorMessage, for a line the daemon could not act on
 //
 // A first-line frame is valid only as a connection's first line, and each ends
-// the connection differently: `attach` binds it, `list` answers and closes it. A
+// the connection differently: `attach` binds it, `list` and `topic` answer and
+// close it. A
 // connection whose first line is neither is bound to root and receives no
 // `attached`; a connection that sends nothing is never bound and receives
 // nothing. A conversation id names a conversation only within this profile's
 // store and socket, so a client that persists one must persist the profile
 // with it.
 
+import type { Profile } from "./config.ts";
 import { optionalString, parseObject, withOptional } from "./fields.ts";
 import type { JsonRecord } from "./json.ts";
+import { messageOf } from "./message-of.ts";
 
 export type ClientMessage =
   | { type: "input"; content: string; requestId?: string }
@@ -29,11 +34,16 @@ export interface ErrorMessage {
   message: string;
 }
 
-/** The conversation an `attach` frame names; nothing is created before it parses. */
+/**
+ * The conversation an `attach` frame names; nothing is created before it parses.
+ * A topic target names no id: it binds that topic's latest conversation, or
+ * creates its first when `new` asks for one.
+ */
 export type AttachTarget =
   | { kind: "root" }
   | { kind: "existing"; id: number }
-  | { kind: "new"; cwd?: string };
+  | { kind: "new"; cwd?: string }
+  | { kind: "topic"; name: string; new: boolean; cwd?: string };
 
 export interface AttachMessage {
   type: "attach";
@@ -46,9 +56,21 @@ export interface AttachedMessage {
   conversation: number;
 }
 
-/** The `list` frame: this store's conversation ids, asked for on a fresh connection. */
+/** What a `list` frame asks for: everything, one topic's ids, or the topics themselves. */
+export type ListQuery = { kind: "all" } | { kind: "topic"; name: string } | { kind: "topics" };
+
+/** The `list` frame: this store's conversations, asked for on a fresh connection. */
 export interface ListMessage {
   type: "list";
+  query: ListQuery;
+}
+
+/** The `topic` frame: create one topic, set its directory, or leave it unchanged. */
+export interface TopicMessage {
+  type: "topic";
+  name: string;
+  /** Absent creates or leaves unchanged; a string sets the directory; `null` clears it. */
+  cwd?: string | null;
 }
 
 /**
@@ -60,6 +82,22 @@ export interface ConversationsMessage {
   type: "conversations";
   conversations: number[];
   truncated: boolean;
+}
+
+/** One topic as a `topics` reply shows it: the name it is filed under, and its directory. */
+export interface TopicSummary {
+  name: string;
+  cwd?: string;
+}
+
+/**
+ * The daemon's reply to a `topics` listing and to a `topic` write: the records,
+ * and the profile whose path space their `cwd`s are in (design sec-4).
+ */
+export interface TopicsMessage {
+  type: "topics";
+  profile: Profile;
+  topics: TopicSummary[];
 }
 
 /** A refused first-line frame; `instanceof` tells it from an ordinary parse error. */
@@ -81,10 +119,43 @@ function unknownKey(message: JsonRecord, allowed: readonly string[]): string | u
 }
 
 /** Strict, so a field this daemon does not know fails rather than attaches root. */
-const ATTACH_KEYS: readonly string[] = ["type", "conversation", "new", "cwd"];
+const ATTACH_KEYS: readonly string[] = ["type", "conversation", "new", "cwd", "topic"];
 
-/** Strict too: `{"type":"list","topic":"x"}` is a refusal, not root's transcript. */
-const LIST_KEYS: readonly string[] = ["type"];
+/** Strict too: `{"type":"list","page":2}` is a refusal, not root's transcript. */
+const LIST_KEYS: readonly string[] = ["type", "topic", "topics"];
+
+/** Strict: a `topic` write names the name and the directory, nothing else. */
+const TOPIC_KEYS: readonly string[] = ["type", "name", "cwd"];
+
+/**
+ * The topic every conversation starts in: it always exists and is never stored
+ * in `topics`, so it cannot be created or given a directory (DEC-015).
+ */
+export const DEFAULT_TOPIC = "default";
+
+/** A topic name: a leading letter or digit, then up to 63 more of the same family. */
+const TOPIC_NAME = /^[a-z0-9][a-z0-9._-]{0,63}$/;
+
+/**
+ * The one name rule (design sec-3), for the parser and the client alike: `name`
+ * when it matches, else a refusal naming the rule. The frame prefix is the
+ * caller's, so this module's client can report it without a frame.
+ */
+export function topicNameOf(name: unknown): string {
+  if (typeof name === "string" && TOPIC_NAME.test(name)) {
+    return name;
+  }
+  throw new Error("topic must match [a-z0-9][a-z0-9._-]{0,63}");
+}
+
+/** `name` through `topicNameOf`, the refusal naming `frame` as every refusal does. */
+function topicNamed(frame: string, name: unknown): string {
+  try {
+    return topicNameOf(name);
+  } catch (error) {
+    frameRefused(frame, messageOf(error));
+  }
+}
 
 /** Every refusal of an `attach` frame says which field it read. */
 function attachRefused(problem: string): never {
@@ -121,11 +192,56 @@ function existingTarget(conversation: unknown): AttachTarget {
   return { kind: "existing", id: conversation };
 }
 
+/**
+ * The directory a topic attach asks for: a string, and only alongside `new`,
+ * because a directory makes sense only for a conversation being created.
+ */
+function topicDirectory(message: JsonRecord): string | undefined {
+  const cwd = message["cwd"];
+  if (cwd === undefined) {
+    return undefined;
+  }
+  if (message["new"] !== true) {
+    attachRefused("cwd needs new");
+  }
+  if (typeof cwd !== "string") {
+    attachRefused("cwd must be a string");
+  }
+  return cwd;
+}
+
+/**
+ * The target of a `topic` frame: that topic's latest conversation, or a new one
+ * carrying the client's directory. `default` is not reserved here: attaching to
+ * it is how a client reaches root by name (DEC-015).
+ */
+function topicTarget(message: JsonRecord, topic: unknown): AttachTarget {
+  if (message["conversation"] !== undefined) {
+    attachRefused("conversation and topic are exclusive");
+  }
+  const fresh = message["new"];
+  if (fresh !== undefined && fresh !== true) {
+    attachRefused("new must be true");
+  }
+  const cwd = topicDirectory(message);
+  const name = topicNamed("attach", topic);
+  return {
+    kind: "topic",
+    name,
+    new: fresh === true,
+    ...(cwd === undefined ? {} : { cwd }),
+  };
+}
+
 /** The target an `attach` frame names; every refusal is a `FrameRefused`. */
 function attachTarget(message: JsonRecord): AttachTarget {
   const unknown = unknownKey(message, ATTACH_KEYS);
   if (unknown !== undefined) {
     attachRefused(`unknown key ${unknown}`);
+  }
+  const topic = message["topic"];
+  if (topic !== undefined) {
+    return topicTarget(message, topic);
   }
   if (message["new"] !== undefined) {
     return newTarget(message);
@@ -137,20 +253,62 @@ function attachTarget(message: JsonRecord): AttachTarget {
   return conversation === undefined ? { kind: "root" } : existingTarget(conversation);
 }
 
+/** `topic` and `topics` name different questions, so asking both is a refusal. */
+function listQuery(message: JsonRecord): ListQuery {
+  const topic = message["topic"];
+  const topics = message["topics"];
+  if (topic !== undefined) {
+    if (topics !== undefined) {
+      frameRefused("list", "topic and topics are exclusive");
+    }
+    return { kind: "topic", name: topicNamed("list", topic) };
+  }
+  if (topics === undefined) {
+    return { kind: "all" };
+  }
+  if (topics !== true) {
+    frameRefused("list", "topics must be true");
+  }
+  return { kind: "topics" };
+}
+
 /** The `list` frame, parsed strictly: a field this daemon does not know is a refusal. */
 function listFrame(message: JsonRecord): ListMessage {
   const unknown = unknownKey(message, LIST_KEYS);
   if (unknown !== undefined) {
     frameRefused("list", `unknown key ${unknown}`);
   }
-  return { type: "list" };
+  return { type: "list", query: listQuery(message) };
+}
+
+/**
+ * The `topic` frame, parsed strictly. `cwd` absent creates or leaves the topic
+ * unchanged (so the frame is idempotent), a string sets it, `null` clears it.
+ */
+function topicFrame(message: JsonRecord): TopicMessage {
+  const unknown = unknownKey(message, TOPIC_KEYS);
+  if (unknown !== undefined) {
+    frameRefused("topic", `unknown key ${unknown}`);
+  }
+  const name = topicNamed("topic", message["name"]);
+  if (name === DEFAULT_TOPIC) {
+    frameRefused("topic", "default is reserved");
+  }
+  const cwd = message["cwd"];
+  if (cwd === undefined) {
+    return { type: "topic", name };
+  }
+  if (cwd === null || typeof cwd === "string") {
+    return { type: "topic", name, cwd };
+  }
+  frameRefused("topic", "cwd must be a string or null");
 }
 
 /**
  * A connection's first line: `attach`, which binds the connection to one
- * conversation, or `list`, which answers and closes it.
+ * conversation, or `list` and `topic`, which answer and close it.
  */
-export type FirstLineFrame = AttachMessage | ListMessage;
+export type FirstLineFrame = AttachMessage | ListMessage | TopicMessage;
 
 /**
  * `message` as a first-line frame, parsed strictly; `undefined` when its `type`
@@ -162,6 +320,8 @@ export function parseFirstLineFrame(message: JsonRecord): FirstLineFrame | undef
       return { type: "attach", target: attachTarget(message) };
     case "list":
       return listFrame(message);
+    case "topic":
+      return topicFrame(message);
     default:
       return undefined;
   }

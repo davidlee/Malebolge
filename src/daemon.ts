@@ -7,7 +7,7 @@
 import type { Socket } from "node:net";
 import type { AgentEventStream, Conversation } from "@earendil-works/pi-durable";
 import { context } from "./context.ts";
-import type { ConversationPage, Conversations } from "./conversations.ts";
+import { type ConversationPage, type Conversations, isTopicListing } from "./conversations.ts";
 import { encodeLine, lineSplitter } from "./ndjson.ts";
 import {
   type AttachMessage,
@@ -17,6 +17,8 @@ import {
   type FirstLineFrame,
   FrameRefused,
   parseConnectionMessage,
+  type TopicSummary,
+  type TopicsMessage,
 } from "./protocol.ts";
 import { serveUnix, type UnixServer } from "./unix-socket.ts";
 
@@ -184,6 +186,16 @@ const listReply = (page: ConversationPage): ConversationsMessage => ({
   truncated: page.truncated,
 });
 
+/** The `topics` reply, for a listing or a write: the records, and whose path space they are in. */
+const topicsReply = (
+  conversations: Conversations,
+  topics: readonly TopicSummary[],
+): TopicsMessage => ({
+  type: "topics",
+  profile: conversations.profile,
+  topics: [...topics],
+});
+
 /**
  * Answer a first-line frame with the one reply `produce` builds, then close cleanly:
  * no binding, nothing created, no durable state (DEC-007). A rejection goes through
@@ -214,7 +226,14 @@ type FrameHandler<K extends FirstLineFrame["type"]> = (
  */
 const FIRST_LINE: { [K in FirstLineFrame["type"]]: FrameHandler<K> } = {
   attach: (state, conversations, frame) => bindTarget(state, conversations, frame.target),
-  list: (state, conversations) => answer(state, async () => listReply(await conversations.list())),
+  list: (state, conversations, frame) =>
+    answer(state, async () => {
+      const listed = await conversations.list(frame.query);
+      return isTopicListing(listed) ? topicsReply(conversations, listed) : listReply(listed);
+    }),
+  // One write, one record back, the same reply shape a topics listing uses.
+  topic: (state, conversations, frame) =>
+    answer(state, async () => topicsReply(conversations, [await conversations.setTopic(frame)])),
 };
 
 /** Whether `message` is a first-line frame: the table's keys answer it, so a row is a frame. */

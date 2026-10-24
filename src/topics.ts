@@ -26,6 +26,7 @@ import {
   type Tx,
 } from "@earendil-works/pi-durable";
 import { context } from "./context.ts";
+import { DEFAULT_TOPIC } from "./protocol.ts";
 
 /** One conversation's place in the index; `parent` is the conversation it was forked from. */
 export type IndexEntry = { topic: string; parent?: number };
@@ -41,9 +42,6 @@ export type IndexDoc = {
 
 /** A topic as a listing shows it: the name it is filed under, and its directory. */
 export type NamedTopic = TopicRecord & { name: string };
-
-/** The topic every conversation starts in: it always exists, and is never stored (DEC-015). */
-export const DEFAULT_TOPIC = "default";
 
 /** Conversations read per backfill page: small, so one commit never reads the whole store at once. */
 const BACKFILL_PAGE = 64;
@@ -108,6 +106,44 @@ export function assignTopic(name: string): ConversationInit {
  */
 export async function readIndex(session: Pick<Session, "snapshot">): Promise<IndexDoc> {
   return (await session.snapshot(IndexDocument, context)) ?? IndexDocument.definition.initial();
+}
+
+/** `record` with its directory removed: what a cleared topic keeps. */
+function withoutCwd(record: TopicRecord): TopicRecord {
+  const rest = { ...record };
+  delete rest.cwd;
+  return rest;
+}
+
+/** `current` after a write of `cwd`: unchanged, cleared, or carrying the new directory. */
+function writtenRecord(current: TopicRecord, cwd: string | null | undefined): TopicRecord {
+  if (cwd === undefined) {
+    return current;
+  }
+  return cwd === null ? withoutCwd(current) : { ...current, cwd };
+}
+
+/**
+ * Write `name`'s record in one commit (design sec-4's `topic` frame): absent
+ * `cwd` creates the topic or leaves its record as it is, a string sets its
+ * directory, `null` clears it. Merged, never replaced, so a key a later slice
+ * adds survives; the name is the caller's, already checked by the parser.
+ */
+export async function writeTopicRecord(
+  session: Pick<Session, "commit">,
+  name: string,
+  cwd: string | null | undefined,
+): Promise<NamedTopic> {
+  if (name === DEFAULT_TOPIC) {
+    // DEC-015 restated where the write lands, not only in the parser.
+    throw new Error("topic: default is reserved");
+  }
+  return session.commit(async (tx) => {
+    const index = await tx.doc(IndexDocument);
+    const record = writtenRecord(index.topics[name] ?? {}, cwd);
+    index.topics[name] = record;
+    return { name, ...record };
+  }, context);
 }
 
 /**

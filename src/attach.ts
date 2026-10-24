@@ -12,7 +12,6 @@ import {
   type AttachTarget,
   type ClientMessage,
   type ErrorMessage,
-  type ListMessage,
   parseClientMessage,
 } from "./protocol.ts";
 import {
@@ -268,8 +267,8 @@ function skewFrameOf(message: string): string | undefined {
 const skewHint = (frame: string): string =>
   `the daemon predates ${frame}: restart it (malebolge-stop, then malebolge-start)`;
 
-/** The one line a listing sends: the frame PHASE-01 declared, not a local copy of it. */
-const LIST_FRAME: ListMessage = { type: "list" };
+/** The one line a listing sends: SL-002's exact wire frame, still only `type`. */
+const LIST_FRAME = { type: "list" };
 
 /** The first line's frame: the conversation this connection asks for. */
 function attachFrameOf(target: AttachTarget): unknown {
@@ -282,6 +281,14 @@ function attachFrameOf(target: AttachTarget): unknown {
       return target.cwd === undefined
         ? { type: "attach", new: true }
         : { type: "attach", new: true, cwd: target.cwd };
+    case "topic":
+      // PHASE-04's `--topic` builds this target; the frame is design sec-4's.
+      return {
+        type: "attach",
+        topic: target.name,
+        ...(target.new ? { new: true } : {}),
+        ...(target.cwd === undefined ? {} : { cwd: target.cwd }),
+      };
   }
 }
 

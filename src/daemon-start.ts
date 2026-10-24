@@ -94,7 +94,7 @@ export async function startDaemon(config: Config, deps: StartDeps): Promise<Daem
     const sessionReady = Promise.withResolvers<Session>();
     // Resolved after `openSession`, hence after `resume()`: no client outruns it.
     const conversationsReady: Promise<Conversations> = sessionReady.promise.then((ready) =>
-      conversations(ready, defaults),
+      conversations(ready, defaults, config.execution.profile),
     );
     daemon = await serve({
       socketPath: config.daemonSocket,

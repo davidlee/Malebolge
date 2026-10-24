@@ -115,6 +115,9 @@ export function indexOf(harness: Pick<Harness, "snapshot">): Promise<IndexDoc> {
   return readIndex(harness);
 }
 
+/** The name rule's refusal, quoted so a test cannot drift from the text users see. */
+export const NAME_RULE = "topic must match [a-z0-9][a-z0-9._-]{0,63}";
+
 /**
  * `storage`, counting the commits that carried writes: how a test sees that a
  * start over an unchanged store wrote nothing.

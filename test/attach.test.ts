@@ -99,7 +99,9 @@ interface Session {
 const serveTest = (test: TestHarness, path: string): Promise<Daemon> =>
   serve({
     socketPath: path,
-    conversations: Promise.resolve(conversations(test, { model: FAUX_MODEL, cwd: process.cwd() })),
+    conversations: Promise.resolve(
+      conversations(test, { model: FAUX_MODEL, cwd: process.cwd() }, "host"),
+    ),
     beforeInput: () => Promise.resolve(),
   });
 
@@ -762,7 +764,7 @@ describe("attach --list", () => {
     onTestFinished(() => test.harness.close(context));
     const daemon = await serveTest(test, path);
     onTestFinished(daemon.close);
-    const api = conversations(test, { model: FAUX_MODEL, cwd: process.cwd() });
+    const api = conversations(test, { model: FAUX_MODEL, cwd: process.cwd() }, "host");
     const first = await api.open({ kind: "new" });
     const second = await api.open({ kind: "new" });
     const l = listing(path, wait);

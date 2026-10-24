@@ -28,7 +28,9 @@ import {
   latestIn,
   readIndex,
   topicsOf,
+  writeTopicRecord,
 } from "../src/topics.ts";
+import { DEFAULT_TOPIC } from "../src/protocol.ts";
 import { tempDir } from "./fixtures.ts";
 import {
   FAUX_MODEL,
@@ -210,6 +212,14 @@ it("lists default first, then the stored topics by name, each with its directory
     { name: "work", cwd: "/work" },
     { name: "zed", cwd: "/zed" },
   ]);
+});
+
+it("refuses to store the reserved default topic (DEC-015)", async () => {
+  const test = await sessioned();
+  await expect(writeTopicRecord(test.harness, DEFAULT_TOPIC, undefined)).rejects.toThrow(
+    "topic: default is reserved",
+  );
+  expect((await indexOf(test.harness)).topics).toEqual({});
 });
 
 it("merges the topic into an entry, keeping a key a later slice wrote", async () => {

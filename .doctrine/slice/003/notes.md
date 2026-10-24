@@ -107,7 +107,7 @@ If a later pass is wanted, it should probe the client's `resolveHere` and
 
 ## Harvest
 <!-- single-copy: updated in place each harvest; ids only, never restated content -->
-fresh-as-of: 2026-10-24 · design relocked (run rev 49; RV-008, RV-009 done) · plan: 6 phases materialised · slice `ready` · next: CHR-002 (pi 1.4.0), then /phase-plan PHASE-01 · 5970b67 (all SL-003 work uncommitted)
+fresh-as-of: 2026-10-24 · PHASE-01..03 committed (capsule-driver via quotient `pi_agent`, deepseek-flash) · next: PHASE-04
 
 ### Produced
 - design locked 2026-10-24 (RV-008), regressed for the planning-time amendment, relocked (RV-009, rev 49) — each on the user's section review, `conducted` disposition and acceptance
@@ -129,4 +129,6 @@ fresh-as-of: 2026-10-24 · design relocked (run rev 49; RV-008, RV-009 done) · 
 - DEC-007, DEC-008, DEC-010 — amendments owed at reconcile (design sec-7)
 - the top-level-`acceptance` trap fired twice (revs 38, 42) → mem.fact.doctrine.design-apply-top-level-acceptance-records-design-accepted
 - run rev 38 recorded a `design-accepted` act in error (a top-level `acceptance` on a declare-only submission records one). `review-disposed` did not stale it; the lock at rev 41 invalidated it and recorded the user's acceptance
-- quotient `pi_agent` still refuses: server reads quotient-policy/1, policy file is /2 (retested 2026-10-24, after restart)
+- design sec-3:176 says `attach: no topic <name>`; sec-4's table and PHASE-03 EX-1 say `no topic X` (unprefixed, like `no conversation N`). Code follows sec-4 — amend sec-3 at reconcile (PHASE-03 review)
+- `{"type":"attach","topic":T,"new":false}` refuses `attach: new must be true`; sec-4's attach-by-topic cell does not list it — add at reconcile
+- IMP-010 — share the `scanConversations` pager (PHASE-01 copied `durable-ids`'s loop)

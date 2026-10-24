@@ -21,11 +21,14 @@ import {
   type ConversationDefaults,
   type Conversations,
   conversations,
+  isConversationKey,
+  LIST_PAGE,
 } from "../src/conversations.ts";
 import { type Daemon, serve } from "../src/daemon.ts";
 import { isRecord } from "../src/json.ts";
 import { encodeLine } from "../src/ndjson.ts";
-import type { ConversationsMessage } from "../src/protocol.ts";
+import type { ConversationsMessage, TopicSummary, TopicsMessage } from "../src/protocol.ts";
+import { assignTopic } from "../src/topics.ts";
 import { type Printable, toPrintable } from "../src/render.ts";
 import { registryOf } from "../src/registry.ts";
 import { satanTools } from "../src/satan-tools.ts";
@@ -40,6 +43,7 @@ import {
 } from "./fixtures.ts";
 import {
   FAUX_MODEL,
+  NAME_RULE,
   openFauxHarness,
   openTestHarness,
   type TestHarness,
@@ -198,7 +202,7 @@ describe("daemon", () => {
   ): Promise<Daemon> =>
     serve({
       socketPath,
-      conversations: session.then((harness) => conversations(harness, DEFAULTS)),
+      conversations: session.then((harness) => conversations(harness, DEFAULTS, "host")),
       beforeInput,
     });
 
@@ -236,19 +240,90 @@ describe("daemon", () => {
     return { type: "conversations", conversations: ids, truncated };
   };
 
-  /** Anything the daemon sends on a listing connection: its reply, or a `Printable`. */
-  type Frame = Printable | ConversationsMessage;
+  /** One topic as a `topics` reply shows it, strictly. */
+  const topicSummary = (value: unknown): TopicSummary => {
+    const name = isRecord(value) ? value["name"] : undefined;
+    const cwd = isRecord(value) ? value["cwd"] : undefined;
+    if (typeof name !== "string" || (cwd !== undefined && typeof cwd !== "string")) {
+      throw new Error(`not a topic: ${JSON.stringify(value)}`);
+    }
+    return cwd === undefined ? { name } : { name, cwd };
+  };
+
+  /** The `topics` reply, strictly: its records and the profile their `cwd`s live in. */
+  const topicsFrame = (value: unknown): TopicsMessage => {
+    const profile = isRecord(value) ? value["profile"] : undefined;
+    const topics = isRecord(value) ? value["topics"] : undefined;
+    if (
+      !isRecord(value) ||
+      value["type"] !== "topics" ||
+      (profile !== "host" && profile !== "room") ||
+      !Array.isArray(topics)
+    ) {
+      throw new Error(`not a topics reply: ${JSON.stringify(value)}`);
+    }
+    return { type: "topics", profile, topics: topics.map(topicSummary) };
+  };
+
+  /** Anything the daemon sends on a first-line connection: its reply, or a `Printable`. */
+  type Frame = Printable | ConversationsMessage | TopicsMessage;
 
   const isListing = (frame: Frame): frame is ConversationsMessage => frame.type === "conversations";
 
-  const toFrame = (value: unknown): Frame =>
-    isRecord(value) && value["type"] === "conversations" ? listingFrame(value) : toPrintable(value);
+  const isTopics = (frame: Frame): frame is TopicsMessage => frame.type === "topics";
 
-  /** A client that understands the listing reply; every one is closed by the afterEach. */
+  const isError = (frame: Frame): frame is EventOf<"error"> => frame.type === "error";
+
+  const toFrame = (value: unknown): Frame => {
+    if (isRecord(value) && value["type"] === "conversations") {
+      return listingFrame(value);
+    }
+    return isRecord(value) && value["type"] === "topics" ? topicsFrame(value) : toPrintable(value);
+  };
+
+  /** A client that understands the first-line replies; every one is closed by the afterEach. */
   const listClient = async (): Promise<LineClient<Frame>> => {
     const client = await lineClient(socketPath, toFrame);
     clients.push(client);
     return client;
+  };
+
+  /**
+   * One first-line frame on a fresh connection, read through `read`: its single
+   * reply, then a clean close. A second frame, or a hang-up, fails here (EX-1).
+   */
+  const replyTo = async <T extends Frame>(
+    frame: unknown,
+    read: (value: Frame) => value is T,
+  ): Promise<T> => {
+    const client = await listClient();
+    client.send(frame);
+    const reply = await client.next(read);
+    await client.closed();
+    expect(client.received()).toHaveLength(1);
+    return reply;
+  };
+
+  /** Attach with `frame`, answering the conversation the daemon announced. */
+  const attachWith = async (frame: unknown): Promise<number> => {
+    const client = await lineClient(socketPath, toPrintable);
+    clients.push(client);
+    client.send(frame);
+    const attached = await client.next(isType("attached"));
+    await client.next(isType("snapshot"));
+    return attached.conversation;
+  };
+
+  /** The cwd a conversation's own agent carries: the one D1 says is never rewritten. */
+  const cwdOf = async (id: number): Promise<string | undefined> => {
+    if (!isConversationKey(id)) {
+      throw new Error(`no conversation ${String(id)}`);
+    }
+    const conversation = await test.harness.conversation(id, context);
+    if (conversation === undefined) {
+      throw new Error(`no conversation ${String(id)}`);
+    }
+    return (await conversation.agent(context)).cwd;
   };
 
   /**
@@ -567,7 +642,7 @@ describe("daemon", () => {
     expect(creator.received().filter(isType("attached"))).toHaveLength(1);
     expect(at(creator, "attached")).toBeLessThan(at(creator, "snapshot"));
     expect(snapshot.agent.cwd).toBe("/own");
-    const api = conversations(test, DEFAULTS);
+    const api = conversations(test, DEFAULTS, "host");
     const created = await api.open({ kind: "existing", id: attached.conversation });
     expect((await created.agent(context)).cwd).toBe("/own");
     const second = await lineClient(socketPath, toPrintable);
@@ -640,7 +715,7 @@ describe("daemon", () => {
     await start();
     test.faux.setResponses([fauxAssistantMessage([fauxText("hello")])]);
     // A conversation this connection is not bound to: a re-bind would be visible.
-    const other = await conversations(test, DEFAULTS).open({ kind: "new" });
+    const other = await conversations(test, DEFAULTS, "host").open({ kind: "new" });
     const client = await attach();
     client.send({ type: "attach", conversation: other.id });
     const error = await client.next(isType("error"));
@@ -669,7 +744,7 @@ describe("daemon", () => {
 
   it("answers a list frame with one page of ids, then closes cleanly (DEC-007)", async () => {
     await start();
-    const api = conversations(test, DEFAULTS);
+    const api = conversations(test, DEFAULTS, "host");
     const first = await api.open({ kind: "new" });
     const second = await api.open({ kind: "new" });
     const client = await listClient();
@@ -689,7 +764,7 @@ describe("daemon", () => {
     test.faux.setResponses([fauxAssistantMessage([fauxText("hello")])]);
     const client = await attach();
     // Well-formed and malformed alike: the rule is about the connection, not the frame.
-    for (const frame of [{ type: "list" }, { type: "list", topic: "x" }]) {
+    for (const frame of [{ type: "list" }, { type: "list", page: 2 }]) {
       client.send(frame);
       const error = await client.next(isType("error"));
       expect(error.message).toBe("already attached to conversation 1");
@@ -699,21 +774,153 @@ describe("daemon", () => {
     await client.next(isType("run_end"));
   });
 
-  it("answers a malformed list frame with one error naming the frame, then closes", async () => {
+  it("answers a topic listing for a topic nobody wrote with one error, then closes (EX-5)", async () => {
     await start();
-    const client = await lineClient(socketPath, toPrintable);
-    clients.push(client);
-    await client.write(encodeLine({ type: "list", topic: "x" }));
-    const error = await client.next(isType("error"));
-    expect(error.message).toBe("list: unknown key topic");
-    await client.closed();
-    expect(client.received()).toHaveLength(1);
+    const error = await replyTo({ type: "list", topic: "work" }, isError);
+    expect(error.message).toBe("no topic work");
+    expect(await conversationIds()).toEqual([test.root.id]);
+  });
+
+  it("refuses a list key this daemon does not know, naming the frame (EX-5)", async () => {
+    await start();
+    expect((await replyTo({ type: "list", page: 2 }, isError)).message).toBe(
+      "list: unknown key page",
+    );
+  });
+
+  it("keeps the shipped list reply's shape, so SL-002's clients still read it (EX-4)", async () => {
+    await start();
+    const reply = await replyTo({ type: "list" }, isListing);
+    expect(Object.keys(reply).sort()).toEqual(["conversations", "truncated", "type"]);
+    expect(reply.conversations).toEqual([test.root.id]);
+  });
+
+  it("binds a topic's latest conversation, creating only with `new` or in an empty topic (EX-3)", async () => {
+    await start();
+    await replyTo({ type: "topic", name: "work", cwd: "/A" }, isTopics);
+    // An empty topic gets its first conversation, in the topic's directory.
+    const first = await attachWith({ type: "attach", topic: "work" });
+    expect(await cwdOf(first)).toBe("/A");
+    // Without `new` the same conversation binds; `new` creates the next one.
+    expect(await attachWith({ type: "attach", topic: "work" })).toBe(first);
+    const second = await attachWith({ type: "attach", topic: "work", new: true });
+    expect(second).toBeGreaterThan(first);
+    expect(await attachWith({ type: "attach", topic: "work" })).toBe(second);
+    expect(await conversationIds()).toEqual([test.root.id, first, second]);
+  });
+
+  it("binds root for a plain attach, and default's latest for the name (EX-3)", async () => {
+    await start();
+    expect(await attachWith({ type: "attach" })).toBe(test.root.id);
+    expect(await attachWith({ type: "attach", topic: "default" })).toBe(test.root.id);
+    const created = await attachWith({ type: "attach", topic: "default", new: true });
+    expect(await attachWith({ type: "attach", topic: "default" })).toBe(created);
+    // A plain attach still binds root, whatever joined default.
+    expect(await attachWith({ type: "attach" })).toBe(test.root.id);
+  });
+
+  it("copies a topic's directory once, never rewriting the conversation (EX-2, D1)", async () => {
+    await start();
+    await replyTo({ type: "topic", name: "work", cwd: "/A" }, isTopics);
+    const first = await attachWith({ type: "attach", topic: "work" });
+    await replyTo({ type: "topic", name: "work", cwd: "/B" }, isTopics);
+    const second = await attachWith({ type: "attach", topic: "work", new: true });
+    expect(await cwdOf(first)).toBe("/A");
+    expect(await cwdOf(second)).toBe("/B");
+  });
+
+  it.each([
+    [
+      { type: "attach", topic: "work", conversation: 1 },
+      "attach: conversation and topic are exclusive",
+    ],
+    [{ type: "attach", topic: "work", cwd: "/tmp" }, "attach: cwd needs new"],
+    [{ type: "attach", topic: "Work" }, `attach: ${NAME_RULE}`],
+    [{ type: "attach", topic: "nope" }, "no topic nope"],
+    [{ type: "list", topic: "work", topics: true }, "list: topic and topics are exclusive"],
+    [{ type: "list", topics: false }, "list: topics must be true"],
+    [{ type: "list", topic: "Work" }, `list: ${NAME_RULE}`],
+    [{ type: "list", topic: "nope" }, "no topic nope"],
+    [{ type: "topic", name: "default" }, "topic: default is reserved"],
+    [{ type: "topic", name: "work", cwd: true }, "topic: cwd must be a string or null"],
+    [{ type: "topic", name: "Work" }, `topic: ${NAME_RULE}`],
+  ])("answers %j with one refusal, then closes (EX-1)", async (frame, refusal) => {
+    await start();
+    expect((await replyTo(frame, isError)).message).toBe(refusal);
+    // A refusal creates nothing and binds nothing.
+    expect(await conversationIds()).toEqual([test.root.id]);
+  });
+
+  it("answers a topic listing with that topic's ids, newest first (EX-4)", async () => {
+    await start();
+    await replyTo({ type: "topic", name: "work" }, isTopics);
+    const first = await attachWith({ type: "attach", topic: "work" });
+    const second = await attachWith({ type: "attach", topic: "work", new: true });
+    const outside = await attachWith({ type: "attach", new: true });
+    expect(outside).toBeGreaterThan(second);
+    expect(await replyTo({ type: "list", topic: "work" }, isListing)).toEqual({
+      type: "conversations",
+      conversations: [second, first],
+      truncated: false,
+    });
+  });
+
+  it(`cuts a topic listing at LIST_PAGE (${String(LIST_PAGE)}) and says so (EX-4)`, async () => {
+    await start();
+    await replyTo({ type: "topic", name: "many" }, isTopics);
+    for (let made = 0; made < LIST_PAGE + 1; made += 1) {
+      await test.harness.createConversation(
+        { ownership: { kind: "ownerless" }, init: assignTopic("many") },
+        context,
+      );
+    }
+    const page = await replyTo({ type: "list", topic: "many" }, isListing);
+    expect(page.conversations).toHaveLength(LIST_PAGE);
+    expect(page.truncated).toBe(true);
+  });
+
+  it("answers a topics listing with default first and the daemon's profile (EX-4)", async () => {
+    await start();
+    await replyTo({ type: "topic", name: "work", cwd: "/w" }, isTopics);
+    await replyTo({ type: "topic", name: "bare" }, isTopics);
+    expect(await replyTo({ type: "list", topics: true }, isTopics)).toEqual({
+      type: "topics",
+      profile: "host",
+      topics: [{ name: "default" }, { name: "bare" }, { name: "work", cwd: "/w" }],
+    });
+  });
+
+  it("names the profile its own daemon runs under, not the client's (EX-4)", async () => {
+    test = await openTestHarness([]);
+    daemon = await serve({
+      socketPath,
+      conversations: Promise.resolve(conversations(test, DEFAULTS, "room")),
+      beforeInput: noGate,
+    });
+    expect((await replyTo({ type: "list", topics: true }, isTopics)).profile).toBe("room");
+  });
+
+  it("creates a topic idempotently, sets its directory, and clears it (EX-5)", async () => {
+    await start();
+    const bare: TopicsMessage = {
+      type: "topics",
+      profile: "host",
+      topics: [{ name: "work" }],
+    };
+    expect(await replyTo({ type: "topic", name: "work" }, isTopics)).toEqual(bare);
+    expect(await replyTo({ type: "topic", name: "work" }, isTopics)).toEqual(bare);
+    const set: TopicsMessage = { ...bare, topics: [{ name: "work", cwd: "/A" }] };
+    expect(await replyTo({ type: "topic", name: "work", cwd: "/A" }, isTopics)).toEqual(set);
+    // Absent `cwd` leaves what is there, so a write is never a silent clear.
+    expect(await replyTo({ type: "topic", name: "work" }, isTopics)).toEqual(set);
+    expect(await replyTo({ type: "topic", name: "work", cwd: null }, isTopics)).toEqual(bare);
+    // A topic write is a commit on the index only: no conversation, no binding.
     expect(await conversationIds()).toEqual([test.root.id]);
   });
 
   it("a failed listing answers one error and closes", async () => {
     test = await openTestHarness([]);
-    const api = conversations(test, DEFAULTS);
+    const api = conversations(test, DEFAULTS, "host");
     const failing = {
       ...api,
       list: (): Promise<never> => Promise.reject(new Error("listing failed")),
@@ -889,7 +1096,7 @@ describe("daemon", () => {
     // Root is A; the conversation B attached to is read by the id it was given.
     expect(await entriesText(test.root)).toContain("alpha answer");
     expect(await entriesText(test.root)).not.toContain("bravo answer");
-    const created = await conversations(test, DEFAULTS).open({
+    const created = await conversations(test, DEFAULTS, "host").open({
       kind: "existing",
       id: b.attached.conversation,
     });
@@ -899,12 +1106,13 @@ describe("daemon", () => {
 
   it("aborts a created A while overlapping root B, leaving B intact and A aborted (V-4)", async () => {
     test = await openTestHarness([]);
-    const api = conversations(test, DEFAULTS);
+    const api = conversations(test, DEFAULTS, "host");
     // The daemon opens A through this seam, so the spy below holds the very instance
     // it binds and aborts; only the one created target resolves `opened`.
     const opened = Promise.withResolvers<Conversation>();
     const seam: Conversations = {
       root: api.root,
+      profile: api.profile,
       open: async (target) => {
         const conversation = await api.open(target);
         if (target.kind === "new") {
@@ -913,7 +1121,8 @@ describe("daemon", () => {
         return conversation;
       },
       watch: (conversation) => api.watch(conversation),
-      list: () => api.list(),
+      list: (query) => api.list(query),
+      setTopic: (topic) => api.setTopic(topic),
     };
     daemon = await serve({
       socketPath,
