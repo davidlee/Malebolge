@@ -33,7 +33,7 @@ import { conversations } from "../src/conversations.ts";
 import { type Daemon, serve } from "../src/daemon.ts";
 import { isRecord } from "../src/json.ts";
 import { registryOf } from "../src/registry.ts";
-import { openSession } from "../src/session.ts";
+import { openSession, type SessionOptions } from "../src/session.ts";
 import { type IndexDoc, type IndexReader, readIndex } from "../src/topics.ts";
 
 export const FAUX_MODEL = { provider: "faux", modelId: "faux-1" } as const;
@@ -57,17 +57,22 @@ export function fauxModels(fauxOptions?: FauxOptions): {
   return { faux, models };
 }
 
+/** The default hook: a node env at the conversation's cwd, or the process's. */
+const nodeEnv: SessionOptions["env"] = ({ cwd }) =>
+  new NodeExecutionEnv({ cwd: cwd ?? process.cwd() });
+
 /** A session on memory storage whose root runs the faux model. */
 export async function openTestHarness(
   extensions: readonly Extension[],
   fauxOptions?: FauxOptions,
+  env?: SessionOptions["env"],
 ): Promise<TestHarness> {
   const { faux, models } = fauxModels(fauxOptions);
   const session = await openSession(new MemoryStorage(), {
     models,
     registry: registryOf(extensions),
     agent: { model: FAUX_MODEL },
-    env: ({ cwd }) => new NodeExecutionEnv({ cwd: cwd ?? process.cwd() }),
+    env: env ?? nodeEnv,
   });
   return { ...session, faux };
 }
@@ -80,7 +85,7 @@ export interface FauxHarnessOptions {
   /** What the harness sees in place of the faux catalog, e.g. a gated view of it. */
   models?: (models: Models) => Models;
   settings?: HarnessSettings;
-  env?: HarnessOptions["env"];
+  env?: SessionOptions["env"];
   /** Enable scheduling once open (default). `false` leaves a passive harness that only reads. */
   resume?: boolean;
   /** The creating-commit hook; `openSession` installs the index's, a pre-index store installs none. */

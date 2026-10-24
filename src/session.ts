@@ -6,10 +6,10 @@ import {
   type AgentChange,
   type Conversation,
   Harness,
+  type HarnessOptions,
   type Registry,
   type Storage,
 } from "@earendil-works/pi-durable";
-import type { ExecutionEnv } from "@earendil-works/pi-durable/env";
 import { context } from "./context.ts";
 import { backfillIndex, indexConversation } from "./topics.ts";
 
@@ -24,8 +24,13 @@ export interface SessionOptions {
   registry: Registry;
   /** Applied to root on every open, so a changed model or cwd takes effect on restart. */
   agent: AgentChange;
-  /** pi-durable's per-call environment hook: where the agent's tools run (daemon-env.ts). */
-  env: (state: { cwd?: string }) => ExecutionEnv;
+  /**
+   * pi-durable's per-call environment hook: where the agent's tools run, for
+   * which conversation, and with what they run (daemon-env.ts). Its target
+   * carries the conversation's id, its cwd and an index reader, so a hook is
+   * where the `SATAN_*` variables enter a tool's environment (DEC-020).
+   */
+  env: NonNullable<HarnessOptions["env"]>;
 }
 
 export async function openSession(storage: Storage, options: SessionOptions): Promise<Session> {

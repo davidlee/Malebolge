@@ -6,7 +6,13 @@
 import { chmod, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fauxAssistantMessage, fauxText, fauxToolCall } from "@earendil-works/pi-ai/providers/faux";
-import { MemoryStorage } from "@earendil-works/pi-durable";
+import {
+  type Conversation,
+  type ConversationId,
+  type EnvTarget,
+  MemoryStorage,
+} from "@earendil-works/pi-durable";
+import type { ExecutionEnv, ShellExecOptions } from "@earendil-works/pi-durable/env";
 import { NodeExecutionEnv } from "@earendil-works/pi-durable/env/node";
 import { CodingTools } from "@earendil-works/pi-durable/tools";
 import {
@@ -26,6 +32,7 @@ import {
   requireGatewaySocket,
 } from "../src/daemon-env.ts";
 import { grepExtension } from "../src/grep.ts";
+import { DEFAULT_TOPIC } from "../src/protocol.ts";
 import type { RoomConnection } from "../src/room/connection.ts";
 import {
   ChannelFailed,
@@ -36,8 +43,19 @@ import {
 import { FETCH_LIMITS, HEAD_LIMITS } from "../src/room/source-reader.ts";
 import { registryOf } from "../src/registry.ts";
 import { openSession } from "../src/session.ts";
+import { assignTopic, IndexDocument } from "../src/topics.ts";
 import { tempDir } from "./fixtures.ts";
-import { FAUX_MODEL, fauxModels, textOf, toolResults } from "./harness-fixture.ts";
+import {
+  callThenAnswer,
+  closing,
+  createConversation,
+  FAUX_MODEL,
+  fauxModels,
+  openTestHarness,
+  type TestHarness,
+  textOf,
+  toolResults,
+} from "./harness-fixture.ts";
 import { DAEMON, fakeHelpers } from "./room/connection-fixture.ts";
 
 const ROOM: RoomConnection = {
@@ -67,6 +85,96 @@ const alive = (pid: number): boolean => {
 function recordingLog(): { lines: string[]; log: (text: string) => void } {
   const lines: string[] = [];
   return { lines, log: (text) => lines.push(text) };
+}
+
+/**
+ * An index that holds nothing: root is always indexed `default` (DEC-015), so
+ * a case that needs an id the index lacks reads through this one.
+ */
+const unindexed: EnvTarget["read"] = {
+  snapshot: () => Promise.resolve(IndexDocument.definition.initial()),
+  snapshotAsOf: () => Promise.resolve(IndexDocument.definition.initial()),
+};
+
+/** A branded id for `envTarget`: no case here depends on the number. */
+// eslint-disable-next-line @typescript-eslint/consistent-type-assertions -- no decimal literal is a branded id
+const ANY_ID = 1 as ConversationId;
+
+/** An `EnvTarget` as the harness builds one: no cwd unless the case sets one, the index above. */
+const envTarget = (cwd?: string, read: EnvTarget["read"] = unindexed): EnvTarget => ({
+  conversationId: ANY_ID,
+  ...(cwd === undefined ? {} : { cwd }),
+  read,
+});
+
+/** The environment `environment` builds for `target`: both arms build one, never none. */
+async function built(environment: DaemonEnv, target: EnvTarget): Promise<ExecutionEnv> {
+  const env = await environment.env(target, context);
+  if (env === undefined) {
+    throw new Error("the daemon's env hook built no environment");
+  }
+  return env;
+}
+
+/** What one exec through `env` printed, stdout and stderr alike, trimmed. */
+async function printed(
+  env: ExecutionEnv,
+  argv: readonly string[],
+  options?: ShellExecOptions,
+): Promise<string> {
+  let text = "";
+  const result = await env.exec(
+    argv,
+    {
+      ...options,
+      onOutput: (chunk) => {
+        text += chunk;
+      },
+    },
+    context,
+  );
+  if (!result.ok) {
+    throw new Error(result.error.message);
+  }
+  return text.trim();
+}
+
+/** The six variables as bash expands them: one `NAME=value` line each. */
+const PRINT_VARS =
+  'printf "%s\\n" "SATAN_HARNESS=$SATAN_HARNESS" "SATAN_PROFILE=$SATAN_PROFILE"' +
+  ' "SATAN_CONVERSATION=$SATAN_CONVERSATION" "SATAN_CWD=$SATAN_CWD"' +
+  ' "SATAN_TOPIC=$SATAN_TOPIC" "SATAN_PARENT_CONVERSATION=$SATAN_PARENT_CONVERSATION"';
+
+/** The `SATAN_*` values `text` holds, one per line. */
+function varsOf(text: string): Record<string, string> {
+  const vars: Record<string, string> = {};
+  for (const line of text.split("\n")) {
+    const [, name = "", value = ""] = /^(SATAN_[A-Z_]+)=(.*)$/.exec(line.trim()) ?? [];
+    if (name !== "") {
+      vars[name] = value;
+    }
+  }
+  return vars;
+}
+
+/** One bash turn in `conversation` (default: root): the text its tool result carries. */
+async function bashTurn(
+  test: TestHarness,
+  command: string,
+  conversation?: Conversation,
+): Promise<string> {
+  test.faux.setResponses(callThenAnswer("bash", { command }, "done"));
+  const turn = conversation ?? test.root;
+  await (await turn.submit({ type: "input", content: "run it" }, context)).wait(context);
+  return (await toolResults(test.harness, conversation)).map(textOf).join("\n");
+}
+
+/** The variables one bash turn in `conversation` (default: root) ran with. */
+async function bashVars(
+  test: TestHarness,
+  conversation?: Conversation,
+): Promise<Record<string, string>> {
+  return varsOf(await bashTurn(test, PRINT_VARS, conversation));
 }
 
 /**
@@ -100,14 +208,20 @@ describe("daemonEnv", () => {
     await cleanup?.();
   });
 
-  it("host: NodeExecutionEnv at the launch dir, or the agent's cwd", () => {
+  it("host: NodeExecutionEnv at the launch dir, or the agent's cwd", async () => {
+    const tmp = await tempDir();
+    cleanup = tmp.cleanup;
     environment = daemonEnv({ profile: "host", cwd: "/launch" }, () => undefined);
 
-    const env = environment.env({});
+    const env = await built(environment, envTarget());
     expect(environment.cwd).toBe("/launch");
     expect(env).toBeInstanceOf(NodeExecutionEnv);
     expect(env.cwd).toBe("/launch");
-    expect(environment.env({ cwd: "/elsewhere" }).cwd).toBe("/elsewhere");
+
+    // A real directory: exec spawns in this cwd, so it must exist (DEC-022).
+    const agent = await built(environment, envTarget(tmp.dir));
+    expect(agent.cwd).toBe(tmp.dir);
+    expect(await printed(agent, ["printenv", "SATAN_CWD"])).toBe(tmp.dir);
   });
 
   it("room: RemoteExecutionEnv pi-env:daemon-room in the home, over one directLaunch connection", async () => {
@@ -117,24 +231,15 @@ describe("daemonEnv", () => {
     const helpers = fakeHelpers(ssh);
     environment = daemonEnv(roomExecution(tmp.dir), () => undefined, helpers);
 
-    const first = environment.env({});
-    const second = environment.env({});
-    let printed = "";
-    const pwd = await first.exec(
-      ["pwd"],
-      {
-        onOutput: (text) => {
-          printed += text;
-        },
-      },
-      context,
-    );
+    const first = await built(environment, envTarget());
+    const second = await built(environment, envTarget());
+    const pwd = await printed(first, ["pwd"]);
     const again = await second.exec(["true"], {}, context);
 
     expect(first).toBeInstanceOf(RemoteExecutionEnv);
     expect(first.id).toBe("pi-env:daemon-room");
     expect(environment.cwd).toBe(tmp.dir);
-    expect(pwd.ok ? printed.trim() : pwd.error.message).toBe(tmp.dir);
+    expect(pwd).toBe(tmp.dir);
     expect(again.ok).toBe(true);
     expect(helpers.deployed).toHaveLength(1);
     const [started, ...more] = await argv();
@@ -144,11 +249,11 @@ describe("daemonEnv", () => {
     expect(started).not.toMatch(/\bsession\b/);
   });
 
-  it("room: nothing starts until the first call", () => {
+  it("room: nothing starts until the first call", async () => {
     const helpers = fakeHelpers("false");
     environment = daemonEnv(roomExecution("/home/satan"), () => undefined, helpers);
 
-    environment.env({});
+    await built(environment, envTarget());
 
     expect(helpers.deployed).toEqual([]);
   });
@@ -158,12 +263,108 @@ describe("daemonEnv", () => {
     cleanup = tmp.cleanup;
     const { ssh } = await recordingSsh(tmp.dir);
     const room = daemonEnv(roomExecution(tmp.dir), () => undefined, fakeHelpers(ssh));
-    const env = room.env({});
+    const env = await built(room, envTarget());
     const { pid } = await (env instanceof RemoteExecutionEnv ? env.connection.info() : never());
 
     room.close();
 
     await expect.poll(() => alive(pid)).toBe(false);
+  });
+});
+
+describe("host conversation env (SL-004 design sec-3)", () => {
+  let cleanup: (() => Promise<void>) | undefined;
+  let environment: DaemonEnv | undefined;
+  // The masking case sets these: the host's tools inherit this process's env.
+  const inherited = (["SATAN_TOPIC", "MALEBOLGE_TEST_INHERITED"] as const).map(
+    (name) => [name, process.env[name]] as const,
+  );
+  afterEach(async () => {
+    environment?.close();
+    environment = undefined;
+    for (const [name, value] of inherited) {
+      if (value === undefined) {
+        Reflect.deleteProperty(process.env, name);
+      } else {
+        process.env[name] = value;
+      }
+    }
+    await cleanup?.();
+  });
+
+  /** A host `DaemonEnv` at a fresh directory, its fixtures released after the test. */
+  async function hostAt(): Promise<DaemonEnv> {
+    const tmp = await tempDir();
+    cleanup = tmp.cleanup;
+    const host = daemonEnv({ profile: "host", cwd: tmp.dir }, () => undefined);
+    environment = host;
+    return host;
+  }
+
+  it("host: root's and a second conversation's bash each see their own conversation", async () => {
+    const host = await hostAt();
+    const test = await openTestHarness([CodingTools], undefined, host.env);
+    closing(test.harness);
+    const second = await createConversation(test.harness, assignTopic("work"));
+    // Only root gets an agent from `openTestHarness`; the daemon's defaults do this in production.
+    await second.configure({ model: FAUX_MODEL }, context);
+    const same = {
+      SATAN_HARNESS: "malebolge",
+      SATAN_PROFILE: "host",
+      SATAN_CWD: host.cwd,
+      SATAN_PARENT_CONVERSATION: "",
+    };
+
+    expect(await bashVars(test)).toEqual({
+      ...same,
+      SATAN_CONVERSATION: String(test.root.id),
+      SATAN_TOPIC: DEFAULT_TOPIC,
+    });
+    expect(await bashVars(test, second)).toEqual({
+      ...same,
+      SATAN_CONVERSATION: String(second.id),
+      SATAN_TOPIC: "work",
+    });
+  });
+
+  it("host: an inherited SATAN_TOPIC is masked, printed empty rather than absent", async () => {
+    process.env["SATAN_TOPIC"] = "inherited";
+    process.env["MALEBOLGE_TEST_INHERITED"] = "yes";
+    const host = await hostAt();
+    // A reader whose index lacks the conversation's id: its topic is empty, not `default`.
+    const test = await openTestHarness([CodingTools], undefined, (target) =>
+      host.env({ ...target, read: unindexed }, context),
+    );
+    closing(test.harness);
+
+    // Masked, yet inheriting: the foreign variable still reaches the shell.
+    const text = await bashTurn(test, 'echo "[${SATAN_TOPIC}][${MALEBOLGE_TEST_INHERITED}]"');
+
+    expect(text).toContain("[][yes]");
+    expect(text).not.toContain("inherited");
+  });
+
+  it("host: a failed index read fails the env build, never an empty context", async () => {
+    const bug = new TypeError("bug");
+    const host = await hostAt();
+    const read: EnvTarget["read"] = {
+      snapshot: () => Promise.reject(bug),
+      snapshotAsOf: () => Promise.reject(bug),
+    };
+
+    await expect(host.env({ ...envTarget(), read }, context)).rejects.toBe(bug);
+  });
+
+  it("host: an exec's own env wins over the conversation's", async () => {
+    const host = await hostAt();
+    const test = await openTestHarness([], undefined, host.env);
+    closing(test.harness);
+    const env = await built(host, { conversationId: test.root.id, read: test.harness });
+
+    expect(await printed(env, ["printenv", "SATAN_TOPIC"])).toBe(DEFAULT_TOPIC);
+    expect(
+      await printed(env, ["printenv", "SATAN_TOPIC"], { env: { SATAN_TOPIC: "explicit" } }),
+    ).toBe("explicit");
   });
 });
 
@@ -219,7 +420,7 @@ describe("room faults at the tool seam, the daemon's reword (design §4.4)", () 
 
   it("the reworded error keeps its type and fields: still a lost connection", async () => {
     environment = daemonEnv(roomExecution("/home/satan"), () => undefined, fakeHelpers("false"));
-    const env = environment.env({});
+    const env = await built(environment, envTarget());
 
     const error: unknown = await (env instanceof RemoteExecutionEnv
       ? env.connection.info()

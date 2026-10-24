@@ -6,11 +6,18 @@
 // seam. A fault or trust decision belongs to that one connection, never to a
 // conversation (DEC-106): a fault one conversation's tool call sees is the
 // daemon's, logged once.
+//
+// A profile is also where a conversation's identity enters its tools (DEC-020):
+// the hook resolves the conversation against the index and passes its `SATAN_*`
+// variables along, the host as the node env's `shellEnv`.
 
 import { existsSync } from "node:fs";
+import type { EnvTarget } from "@earendil-works/pi-durable";
+import type { ExecutionEnv } from "@earendil-works/pi-durable/env";
 import { NodeExecutionEnv } from "@earendil-works/pi-durable/env/node";
 import { RemoteError } from "@earendil-works/pi-env";
-import type { Execution } from "./config.ts";
+import type { Execution, Profile } from "./config.ts";
+import { contextOf, conversationVars } from "./conversation-context.ts";
 import { messageOf } from "./message-of.ts";
 import {
   type ContextSource,
@@ -40,6 +47,7 @@ export interface DaemonEnv {
   close: () => void;
 }
 
+type HostExecution = Extract<Execution, { profile: "host" }>;
 type RoomExecution = Extract<Execution, { profile: "room" }>;
 
 const FAULT_WORDS: Record<RoomFault, string> = {
@@ -113,10 +121,29 @@ export async function readRoomContext(
   }
 }
 
-const hostEnv = (cwd: string): DaemonEnv => ({
-  env: (state) => new NodeExecutionEnv({ cwd: state.cwd ?? cwd }),
-  cwd,
-  readContext: () => readSources(cwd, gitRootDirs(cwd), nodeSourceReader),
+/**
+ * One conversation's environment: its cwd and the variables its tools run with.
+ * The agent's cwd wins, the daemon's is the only fallback (DEC-022); the index
+ * read is the one `contextOf` makes, and a failed read is the caller's error,
+ * never an empty context.
+ */
+async function conversationEnv(
+  profile: Profile,
+  defaultCwd: string,
+  target: EnvTarget,
+): Promise<{ cwd: string; vars: Record<string, string> }> {
+  const cwd = target.cwd ?? defaultCwd;
+  const conversation = await contextOf(target.read, target.conversationId);
+  return { cwd, vars: conversationVars(profile, cwd, conversation) };
+}
+
+const hostEnv = (execution: HostExecution): DaemonEnv => ({
+  env: async (target): Promise<ExecutionEnv> => {
+    const { cwd, vars } = await conversationEnv(execution.profile, execution.cwd, target);
+    return new NodeExecutionEnv({ cwd, shellEnv: vars });
+  },
+  cwd: execution.cwd,
+  readContext: () => readSources(execution.cwd, gitRootDirs(execution.cwd), nodeSourceReader),
   close: () => undefined,
 });
 
@@ -159,7 +186,7 @@ export const daemonEnv = (
   log: (text: string) => void,
   helpers?: DaemonHelpers,
 ): DaemonEnv =>
-  execution.profile === "host" ? hostEnv(execution.cwd) : roomEnv(execution, log, helpers);
+  execution.profile === "host" ? hostEnv(execution) : roomEnv(execution, log, helpers);
 
 /**
  * Refuses startup when the room's gateway client socket is set but absent
