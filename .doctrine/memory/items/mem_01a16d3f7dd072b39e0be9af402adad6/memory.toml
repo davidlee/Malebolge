@@ -1,0 +1,46 @@
+memory_uid = "mem_01a16d3f7dd072b39e0be9af402adad6"
+memory_key = "mem.fact.malebolge.json-doc-maps-need-own-key-reads"
+schema_version = 1
+memory_type = "fact"
+status = "active"
+title = "User-named keys into JSON document maps need Object.hasOwn"
+summary = "A name regex [a-z0-9]… admits 'constructor', which every object literal inherits; read index/topic maps with Object.hasOwn"
+created = "2026-10-24"
+updated = "2026-10-24"
+
+[scope]
+paths = ["src/topics.ts"]
+globs = []
+commands = []
+tags = []
+workspace = "default"
+repo = "github.com/davidlee/Malebolge"
+repo_id_kind = "remote"
+repo_id_confidence = "high"
+
+[git]
+anchor_kind = "commit"
+commit = "171a1efdabc59f992dbb27bb3670068350c0d090"
+tree = "e6f79873badf35bb03102790e1b5a01d5aaae7cc"
+ref_name = "refs/heads/main"
+checkout_state_id = ""
+base_commit = "171a1efdabc59f992dbb27bb3670068350c0d090"
+verified_sha = ""
+normalizer = ""
+
+[review]
+verification_state = "unverified"
+reviewed = ""
+review_by = ""
+
+[trust]
+trust_level = "medium"
+
+[ranking]
+severity = "high"
+weight = 0
+
+[[source]]
+kind = "review"
+ref = "RV-010"
+
