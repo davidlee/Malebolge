@@ -1,0 +1,290 @@
+id    = 11
+slug  = "sl-003-reconciliation-audit-topics-and-the-conversation-index"
+title = "SL-003 reconciliation audit: topics and the conversation index"
+# no status — a review's status is DERIVED from its findings, so
+# it is never stored (the storage rule forbids derived data in authored files).
+
+[review]
+facet     = "reconciliation"     # scope|design|plan|phase-plan|implementation|code-review|reconciliation
+raiser    = "raiser"
+responder = "responder"
+rounds_base = 0
+contests_base = 0
+concluded = true
+
+[[review.turn]]
+act = "conclude"
+role = "raiser"
+note = """
+Examined: `slice conformance 3` (10 undeclared / 1 undelivered / 22 conformant), `slice verify-vt 3` (4 FAIL → 21/21 after F-5), `check gate` (no recipe; CHR-001), host gates `just check` 2062 passed / eslint 0 warnings, `just ert` 38/38, `just smoke` 4/4; design sec-2..sec-6 read against src/topics.ts, session.ts, conversations.ts, daemon.ts, attach-invocation.ts, protocol.ts; DEC-007/008/010 read as governance; notes § Harvest/Open drift list and RV-010's dispositions (evidence, not re-raised); the phaseless fix commit 8e0534e checked path-by-path against the registry; VH-1 record in notes.
+"""
+
+[target]                   # the outbound `reviews` edge: RV-NNN ──reviews──▶ <ref>
+ref   = "SL-003"
+
+[[finding]]
+id = "F-1"
+status = "verified"
+severity = "major"
+title = "Expected DEC-007 and DEC-010 to describe shipped behaviour; observed DEC-007 still prescribes `list: unknown key topic` and DEC-010 still refuses `--here`"
+detail = """
+Expected: accepted decisions agree with what SL-003 shipped (design sec-7 "Decision amendments at reconcile" lists them as owed).
+Observed (`doctrine show DEC-007`, `DEC-008`, `DEC-010`, today):
+- DEC-007:86-87 says the next step will send `{"type":"list","topic":"name"}` and that it "must be answered `list: unknown key topic`". SL-003 retired that refusal; `list` now takes `topic` and `topics`, and a new reply type `topics` exists (DEC-016).
+- DEC-010:1,34 "labels, `--here` and paging are refused". `--here` now ships, host-only (DEC-014).
+- DEC-008 names the `--list` exclusivity set; SL-003 widened it with `--topic`, `--topics`, `--set-topic`, `--dir`/`--no-dir`, `--here` (DEC-017, design sec-5).
+Major: a future agent reading governance would refuse or "fix" shipped behaviour.
+"""
+disposition = "design-wrong"
+response = """
+Governance drift, owed at reconcile per design sec-7. A DEC is not a REV target (SL-002 precedent, RV-007 F-1): reconcile appends amendment sections to DEC-007, DEC-008 and DEC-010 by direct edit. Reconciliation Brief § Decisions.
+"""
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "design-wrong"
+response = """
+Governance drift, owed at reconcile per design sec-7. A DEC is not a REV target (SL-002 precedent, RV-007 F-1): reconcile appends amendment sections to DEC-007, DEC-008 and DEC-010 by direct edit. Reconciliation Brief § Decisions.
+"""
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+
+[[finding]]
+id = "F-2"
+status = "verified"
+severity = "minor"
+title = "Expected design sec-2..sec-4 to match the code after RV-010; observed five unrecorded behaviours"
+detail = """
+Expected: the locked design describes what ships.
+Observed (code read at 7e50232):
+1. sec-2 Backfill step 2 writes entries "the index lacks". `src/topics.ts` `needsBackfill` also selects an existing entry that lacks the `parent` its record carries, and merges it in (RV-010 F-2 repair).
+2. sec-3 "Step 1's read and step 3's creating commit are two commits ... needs no lock". `src/conversations.ts:159,197` `serially(openTopic)` serialises topic opens daemon-wide, so two concurrent attaches to an empty topic start one conversation (RV-010 F-6).
+3. sec-3:176 says `attach: no topic <name>`; sec-4's table and the code say `no topic X` (unprefixed, like `no conversation N`).
+4. sec-4 attach-by-topic row omits `attach: new must be true` (`test/protocol.test.ts:121`).
+5. sec-4 `topic` row omits `topic: cwd must not contain a control character` (`src/protocol.ts:303`; RV-010 F-15). README:197 and docs/internals.md:138 already document it.
+"""
+disposition = "design-wrong"
+response = """
+The code is right in all five (RV-010 verified items 1, 2, 5; items 3, 4 are tested shipped behaviour). Reconcile edits design.md sec-2, sec-3 and sec-4. Reconciliation Brief § Per-slice, F-2.
+"""
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "design-wrong"
+response = """
+The code is right in all five (RV-010 verified items 1, 2, 5; items 3, 4 are tested shipped behaviour). Reconcile edits design.md sec-2, sec-3 and sec-4. Reconciliation Brief § Per-slice, F-2.
+"""
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+
+[[finding]]
+id = "F-3"
+status = "verified"
+severity = "minor"
+title = "Expected design sec-5 and sec-6 to match the client and file map; observed four mismatches"
+detail = """
+Expected: sec-5's flag table and `--here` steps, and sec-6's code-impact table, describe the code.
+Observed:
+1. sec-5 flag table omits `--set-topic NAME --here`, which the parser accepts (`src/attach-invocation.ts:291`) and PHASE-05 EX-3 requires.
+2. sec-5 `--here` step 1 says `git rev-parse --show-toplevel`; the code walks up for `.git` via `gitRootOf` (`src/project-context.ts`, added in PHASE-05 76839f2; used at `src/attach-invocation.ts:8,400`). RV-010 F-18 disposed this design-wrong.
+3. sec-6 omits `src/project-context.ts` (gains `gitRootOf`), and names `setTopic` in `src/topics.ts`, whose write is `writeTopicRecord` (with `storedTopic`, the own-key read from RV-010 F-1). `setTopic` is the `Conversations` method (`src/conversations.ts:64,228`).
+4. sec-6 lists `test/session.test.ts` among the test files carrying sec-7's matrices; no sec-7 row targets it, and the hook/backfill tests live in `test/topics.test.ts`. The file was never edited.
+"""
+disposition = "design-wrong"
+response = """
+The code is right; `gitRootOf` reuses project-context's existing walk rather than spawning git (RV-010 F-18). Reconcile edits design.md sec-5 and sec-6. Reconciliation Brief § Per-slice, F-3.
+"""
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "design-wrong"
+response = """
+The code is right; `gitRootOf` reuses project-context's existing walk rather than spawning git (RV-010 F-18). Reconcile edits design.md sec-5 and sec-6. Reconciliation Brief § Per-slice, F-3.
+"""
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+
+[[finding]]
+id = "F-4"
+status = "verified"
+severity = "minor"
+title = "Expected the selector registry to match what the slice touched; observed src/project-context.ts undeclared and test/session.test.ts undelivered"
+detail = """
+Expected: `doctrine slice conformance 3` shows no undeclared source and no undelivered design target.
+Observed (today): undeclared 10, undelivered 1, conformant 22.
+- `src/project-context.ts` (PHASE-05 76839f2: `gitRootOf`) is undeclared: a real design-target the design never named.
+- `test/session.test.ts` is undelivered (see the sec-6 finding, item 4).
+- `test/fixtures.ts`, `test/daemon-sections.test.ts`, `test/project-context.test.ts` fall under the `test/**` scope-relevant selector; conformance lists them as undeclared because only design-target selectors count. `test/project-context.test.ts` carries `gitRootOf`'s test.
+- Six `.doctrine/` paths (IMP-006, IMP-010, a memory, notes.md) are knowledge records committed inside phase ranges, not source.
+"""
+disposition = "design-wrong"
+response = """
+Registry fix at reconcile: `slice selector add` src/project-context.ts design-target; `slice selector rm` test/session.test.ts. The test/** paths are already scope-relevant (no change); the .doctrine/ paths are knowledge records, not source (no change). design.md sec-6 mirrors it (F-3). Reconciliation Brief § Registry.
+"""
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "design-wrong"
+response = """
+Registry fix at reconcile: `slice selector add` src/project-context.ts design-target; `slice selector rm` test/session.test.ts. The test/** paths are already scope-relevant (no change); the .doctrine/ paths are knowledge records, not source (no change). design.md sec-6 mirrors it (F-3). Reconciliation Brief § Registry.
+"""
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+
+[[finding]]
+id = "F-5"
+status = "verified"
+severity = "minor"
+title = "Expected every VT mandate to pass verify-vt; observed four keyword FAILs over behaviour that is tested"
+detail = """
+Expected: `doctrine slice verify-vt 3` passes every VT.
+Observed (today) 17 PASS, 4 FAIL:
+- PHASE-01 VT-2: `Harness.open` absent from test/topics.test.ts. The test exists (`:185` "indexes root from the hook alone, with no backfill"); it reaches `Harness.open` through `preIndex` → `openFauxHarness` (`test/harness-fixture.ts`).
+- PHASE-03 VT-3: `TopicMessage` absent from test/protocol.test.ts. The topic frame is parsed and refused in the table (`:129-131`, `:269`), named by its `type`, not its TS type.
+- PHASE-03 VT-4: `topic must match` absent from test/protocol.test.ts. The rule is asserted through the fixture constant `NAME_RULE` (`test/harness-fixture.ts:121`), with boundary rows at `:218-244`.
+- PHASE-04 VT-1: `checkAlone` absent from test/attach-invocation.test.ts. Exclusivity is tested under `describe("exclusive flags")` (`:150`).
+Each behaviour is verified; each mandate names an identifier the test reaches indirectly. Plan criteria are immutable, so the test titles must carry the names.
+"""
+disposition = "fix-now"
+response = """
+Fixed in this audit: four test titles now name the identifier the mandate cites — "indexes root() from the hook alone: Harness.open with indexConversation, no backfill"; "parses the topic frame into a TopicMessage"; "refuses %j: topic must match the rule"; describe("checkAlone: exclusive flags"). Titles only, no assertion changed. `slice verify-vt 3`: 21/21 PASS; `just check` 2062 passed.
+"""
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+response = """
+Fixed in this audit: four test titles now name the identifier the mandate cites — "indexes root() from the hook alone: Harness.open with indexConversation, no backfill"; "parses the topic frame into a TopicMessage"; "refuses %j: topic must match the rule"; describe("checkAlone: exclusive flags"). Titles only, no assertion changed. `slice verify-vt 3`: 21/21 PASS; `just check` 2062 passed.
+"""
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+
+[[finding]]
+id = "F-6"
+status = "verified"
+severity = "nit"
+title = "Expected every implementation commit attributed to a phase; observed RV-010 fix commit 8e0534e in no phase's delta"
+detail = """
+Expected: the source-delta registry covers all implementation.
+Observed: PHASE-06 was narrowed to b053e1f (`slice record-delta`). 8e0534e ("RV-010 review fixes", 17 files, +500/-258) belongs to no phase, so conformance does not see it.
+Checked by hand: all 17 of its paths are design-target selectors in slice-003.toml (README.md, docs/internals.md, src/{attach-invocation,attach-main,attach,conversations,daemon,protocol,request,topics}.ts and their tests), so conformance would be unchanged with it included.
+"""
+disposition = "tolerated"
+response = """
+Not attributed. Recording 8e0534e into PHASE-06 (docs-only) or any other phase would misstate what that phase delivered; the commit fixes across PHASE-01..05. Its evidence is RV-010's ledger, and every path it touches is a declared design target, so conformance loses nothing by its absence. Recorded here so it is not silent.
+"""
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "tolerated"
+response = """
+Not attributed. Recording 8e0534e into PHASE-06 (docs-only) or any other phase would misstate what that phase delivered; the commit fixes across PHASE-01..05. Its evidence is RV-010's ledger, and every path it touches is a declared design target, so conformance loses nothing by its absence. Recorded here so it is not silent.
+"""
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+
+[[finding]]
+id = "F-7"
+status = "verified"
+severity = "nit"
+title = "Expected VH-1's skew sub-check exercised; observed not run (no older daemon at hand)"
+detail = """
+Expected: plan PHASE-06 VH-1 "an older-daemon skew check if one is at hand".
+Observed: notes § VH-1 live session, row "skew check — not run". All other VH-1 steps passed with the user on 2026-10-24.
+Skew is covered by test: PHASE-04 VT-3 (`test/request.test.ts`, stub daemon answering all three skew shapes) and VT-4 (`test/attach.test.ts`, interactive restart hint), both PASS in verify-vt.
+"""
+disposition = "aligned"
+response = """
+VH-1 makes the skew check conditional ("if one is at hand"), and none was. The behaviour is verified by test: PHASE-04 VT-3 and VT-4 pass, covering all three skew shapes over `request` and the interactive path.
+"""
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "aligned"
+response = """
+VH-1 makes the skew check conditional ("if one is at hand"), and none was. The behaviour is verified by test: PHASE-04 VT-3 and VT-4 pass, covering all three skew shapes over `request` and the interactive path.
+"""
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+
+[[finding]]
+id = "F-8"
+status = "verified"
+severity = "nit"
+title = "Expected doctrine check gate to run the project gate; observed no gate recipe"
+detail = """
+Expected: `doctrine check gate` runs the end-of-phase gate.
+Observed: "error: justfile does not contain recipe `gate`" (today). Same as RV-004 F-8 / RV-007 F-5; CHR-001 owns it and is still open. Gate components run by hand instead: `just check` (2062 passed), `just ert` 38/38, `just smoke` 4/4.
+"""
+disposition = "follow-up"
+response = """
+Already owned by CHR-001 (open). No new item. Gate components were run by hand for this audit.
+"""
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "follow-up"
+response = """
+Already owned by CHR-001 (open). No new item. Gate components were run by hand for this audit.
+"""
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+
+# Findings are append-only `[[finding]]` tables, added by `review raise`.
+# Empty here at creation — a fresh review is Active, awaiting the raiser.

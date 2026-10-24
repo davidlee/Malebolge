@@ -128,7 +128,7 @@ Incidental:
 
 ## Harvest
 <!-- single-copy: updated in place each harvest; ids only, never restated content -->
-fresh-as-of: 2026-10-24 · PHASE-01..06 completed; RV-010 code review done (21 findings, all fixed/verified) · head 17a5171 · room daemon restarted onto the fixes · next: /audit
+fresh-as-of: 2026-10-24 · PHASE-01..06 completed; RV-010 done; RV-011 audit done (8 findings verified; brief written) · lifecycle reconcile · next: /reconcile per RV-011 § Reconciliation Brief
 
 ### Produced
 - design locked 2026-10-24 (RV-008), regressed for the planning-time amendment, relocked (RV-009, rev 49) — each on the user's section review, `conducted` disposition and acceptance
@@ -144,6 +144,7 @@ fresh-as-of: 2026-10-24 · PHASE-01..06 completed; RV-010 code review done (21 f
 - IMP-010 (pager duplication); IMP-006 and mem.fact.malebolge.list-has-no-reply-timeout updated for `request`/`REQUEST_FAILED`
 - RV-010: Claude code review (user chose Claude over Codex), 4 parallel reviewers, 21 findings (3 major, 9 minor, 9 nit), all fix-now except F-18 design-wrong; fixed test-first, `just check` 2062 green, `just ert` 38/38, `just smoke` green
 - two friction observations (quotient ceilings vs phase size; no biome in the write jail)
+- RV-011: reconciliation audit, 8 findings (1 major, 4 minor, 3 nit); F-5 fixed in-audit (four test titles carry the identifiers the VT mandates name; verify-vt 21/21); brief maps F-1..F-4 to reconcile
 
 ### Learned
 - mem.fact.malebolge.pi-env-version-skew-churns-room-daemon — mismatched pi-env versions delete each other's room daemon binary
@@ -151,15 +152,12 @@ fresh-as-of: 2026-10-24 · PHASE-01..06 completed; RV-010 code review done (21 f
 - mem.pattern.malebolge.injected-seam-needs-real-test — stubbed git root hid PHASE-05's `gitRootOf` bug
 
 ### Open
-- DEC-007, DEC-008, DEC-010 — amendments owed at reconcile (design sec-7)
+- RV-011 § Reconciliation Brief owns all reconcile drift: DEC-007/008/010 amendments (F-1); design sec-2..sec-4 (F-2) and sec-5/sec-6 (F-3), which absorb the earlier sec-3 `no topic X`, `new:false`, `--set-topic --here` items and RV-010 F-2/F-6/F-15/F-18; selector add `src/project-context.ts`, rm `test/session.test.ts` (F-4)
 - the top-level-`acceptance` trap fired twice (revs 38, 42) → mem.fact.doctrine.design-apply-top-level-acceptance-records-design-accepted
 - run rev 38 recorded a `design-accepted` act in error (a top-level `acceptance` on a declare-only submission records one). `review-disposed` did not stale it; the lock at rev 41 invalidated it and recorded the user's acceptance
-- design sec-3:176 says `attach: no topic <name>`; sec-4's table and PHASE-03 EX-1 say `no topic X` (unprefixed, like `no conversation N`). Code follows sec-4 — amend sec-3 at reconcile (PHASE-03 review)
-- `{"type":"attach","topic":T,"new":false}` refuses `attach: new must be true`; sec-4's attach-by-topic cell does not list it — add at reconcile
-- design sec-5's flag table omits `--set-topic NAME --here`, which the code accepts and PHASE-05 EX-3 requires — add at reconcile (PHASE-06 docs pass)
-- `~/satan-corpus/prompts/env/host.txt` (user-authored at VH-1) states the working directory as the daemon's launch dir; it is the conversation's (set at creation from `--cwd` or the topic's directory, else the launch dir). Corpus fix, user's call
-- VH-1 skew check not run (no older daemon at hand) — dispose at audit
-- RV-010 drift owed at reconcile: design sec-4 `topic` row gains `cwd must not contain a control character` (F-15); sec-5 step 1 names `.git` walk, not `git rev-parse` (F-18); backfill step 2 also merges a missing `parent` into existing entries (F-2 repair); sec-3 records topic opens serialised daemon-wide (F-6)
-- `malebolge-room` restarted onto 8e0534e (backfill repair of parentless pre-index forks ran); host daemon restart was the user's, unconfirmed
+- `~/satan-corpus/prompts/env/host.txt` (user-authored at VH-1) states the working directory as the daemon's launch dir; it is the conversation's. Corpus fix, user's call
+- 8e0534e (RV-010 fixes) is in no phase delta — tolerated at RV-011 F-6; VH-1 skew sub-check — aligned at RV-011 F-7
+- host daemon restart onto 8e0534e was the user's, unconfirmed
 - ISS-001 — interactive attach throws on a JSON line that is not an event (pre-existing; found at RV-010 F-5)
 - IMP-010 — share the `scanConversations` pager (PHASE-01 copied `durable-ids`'s loop)
+- IMP-006 — no reply timeout; CHR-001 — no `just gate` recipe (RV-011 F-8)

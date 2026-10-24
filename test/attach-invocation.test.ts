@@ -147,7 +147,7 @@ describe("attachInvocationOf", () => {
 });
 
 // Every refused pair exits 2 with the usage line, because every one is a UsageError.
-describe("exclusive flags", () => {
+describe("checkAlone: exclusive flags", () => {
   it.each<string[][]>([
     // --topics stands alone.
     [["--topics", "--list"]],

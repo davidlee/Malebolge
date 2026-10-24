@@ -182,7 +182,7 @@ it("persists neither the conversation nor its entry when an init throws", async 
   expect(await indexOf(test.harness)).toEqual(before);
 });
 
-it("indexes root from the hook alone, with no backfill", async () => {
+it("indexes root() from the hook alone: Harness.open with indexConversation, no backfill", async () => {
   const test = await preIndex({ conversationCreated: indexConversation });
   expect((await indexOf(test.harness)).conversations[String(test.root.id)]).toEqual(DEFAULT);
 });

@@ -234,7 +234,7 @@ describe("topicNameOf", () => {
     "work:x",
     "wörk",
     "work\n",
-  ])("refuses %j", (name) => {
+  ])("refuses %j: topic must match the rule", (name) => {
     expect(() => topicNameOf(name)).toThrow(NAME_RULE);
   });
 
@@ -266,7 +266,7 @@ describe("parseFirstLineFrame", () => {
     });
   });
 
-  it("parses the topic frame", () => {
+  it("parses the topic frame into a TopicMessage", () => {
     expect(parseFirstLineFrame({ type: "topic", name: "work" })).toEqual({
       type: "topic",
       name: "work",
