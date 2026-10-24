@@ -55,3 +55,14 @@ PHASE-03/VT-1; design VH-1 → PHASE-03/VH-1.
   real harness.
 - Out of scope, unchanged: `src/runner/`, `src/satan-tools.ts` (RV-012 F-8),
   IDE-002.
+- `inheritEnv: false` drops `shellEnv` on both profiles (host
+  `pi-durable/dist/env/node.js:205`, room `pi-env/dist/remote-env.js:765`): a
+  caller opting out of inheritance gets no `SATAN_*`. Intended; pi-durable's
+  bash tool inherits.
+- The env hook also builds the env for each prompt preparation
+  (`PromptInput.env`), so index reads run per request as well as per tool
+  call. Same in-process document read design sec-3 accepts; no memoisation.
+- PHASE-02's masking tests set `process.env.SATAN_TOPIC`; restore it in
+  `afterEach`.
+- `daemonEnv(...).env` becomes async: existing `daemon-env.test.ts` calls
+  `await` it (PHASE-02 EX-5).
