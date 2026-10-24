@@ -109,7 +109,7 @@
           root = ./.;
           fileset = pkgs.lib.fileset.unions [./package.json ./package-lock.json ./src];
         };
-        npmDepsHash = "sha256-KnOCkXCoMbp5ikH120Ain4e2xO0+SZdDOtro1mnVV0E=";
+        npmDepsHash = "sha256-FH4EDWH2a8mkOBiYwz6SI0MfDAZoZRBWB1oxSL37uIM=";
         dontNpmBuild = true; # node strips the types at load
         nativeBuildInputs = [pkgs.makeWrapper];
         # Not npmInstallHook's lib/node_modules/malebolge: node refuses to strip
