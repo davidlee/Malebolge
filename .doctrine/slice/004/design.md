@@ -73,8 +73,10 @@ six, and inherited by tools as today (RV-012 F-2).
 ## Tool environment
 
 `SessionOptions.env` (`src/session.ts:28`) widens from `(state: {cwd?}) =>
-ExecutionEnv` to pi-durable's own hook type, `(target: EnvTarget) =>
-Promise<ExecutionEnv>` (`harness/types.d.ts:566`, async allowed).
+ExecutionEnv` to pi-durable's own hook type, `NonNullable<HarnessOptions["env"]>`:
+`(target: EnvTarget, context) => ExecutionEnv | undefined |
+Promise<ExecutionEnv | undefined>` (`harness/types.d.ts:566`). Both arms
+always return an env.
 
 `daemonEnv` (`src/daemon-env.ts`) already holds the execution, hence the
 profile. Both arms resolve one shared step, then build their env with
@@ -152,17 +154,19 @@ can name `$SATAN_CONVERSATION` and `$SATAN_TOPIC` knowing they are set.
 |---|---|
 | `src/conversation-context.ts` (new) | `ConversationContext {id, entry?}`; `contextOf(read, id)` — the one index read, an own-key lookup over `readIndex`; pure `conversationVars(profile, cwd, context)` — all six names, empty when absent; `conversationLine(context)`; `conversationExtension` |
 | `src/session.ts` | `SessionOptions.env` takes `EnvTarget`, may be async |
+| `src/topics.ts` | `IndexReader` (a session's `snapshot`); `storedEntry` beside `storedTopic`, both over one own-key helper |
 | `src/daemon-env.ts` | `DaemonEnv.env` takes `EnvTarget`; host and room arms share `conversationEnv` and pass `shellEnv` |
 | `src/room/connection.ts` | `observedEnv` passes an optional `shellEnv` to `RemoteExecutionEnv` |
 | `src/daemon-extensions.ts` | `conversationExtension` after `cwdExtension` |
 | `test/conversation-context.test.ts` (new) | the mapping table; `contextOf` on an indexed, a forked and an unindexed conversation |
 | `test/daemon-env.test.ts` | host: a bash exec sees its own conversation's variables, overrides an inherited `SATAN_TOPIC` with empty; room: `RemoteExecutionEnv` gets the `shellEnv` and keeps its id; a rejecting index read fails the env build (RV-013 F-2) |
-| `test/harness-fixture.ts` | `openTestHarness` takes an optional `env` hook (today hardcoded at `:66`), so a test can pass the daemon's env, so VT-3 runs through the real `daemonEnv` (RV-012 F-9) |
+| `test/harness-fixture.ts` | `openTestHarness` takes an optional `env` hook (today hardcoded at `:66`), so a test can pass the daemon's env, so VT-3 runs through the real `daemonEnv` (RV-012 F-9); and the helpers lifted from the three test files below: `closing`, `openIndexedHarness`, `createConversation`, `stubTask`, `createTaskOwned`, `forkConversation` |
+| `test/topics.test.ts`, `test/conversations.test.ts`, `test/daemon.test.ts` | their copies of the lifted helpers removed |
 | `test/daemon-sections.test.ts` | the `conversation` section, its order after `cwd`, with and without a topic |
 | `README.md` / `docs/internals.md` | README: the six variables in their own subsection, not the daemon-configuration table (`README.md:274-291`; RV-012 F-2); internals: the `conversation` section in the section tree and the env diagram (`docs/internals.md:36-37`) with `shellEnv` (RV-013 F-8) |
 
 - `src/topics.ts` stays the index's only owner; `conversation-context.ts`
-  reads through `readIndex` only.
+  reads through `readIndex` and `storedEntry` only.
 - `src/runner/` untouched.
 
 <!-- doctrine:section sec-6 -->

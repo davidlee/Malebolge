@@ -24,7 +24,7 @@ intent = "scope-relevant"
 
 [[selector]]
 selector = "src/topics.ts"
-intent = "scope-relevant"
+intent = "design-target"
 
 [[selector]]
 selector = "src/conversation-*.ts"
@@ -64,6 +64,22 @@ intent = "design-target"
 
 [[selector]]
 selector = "docs/internals.md"
+intent = "design-target"
+
+[[selector]]
+selector = "test/harness-fixture.ts"
+intent = "design-target"
+
+[[selector]]
+selector = "test/conversations.test.ts"
+intent = "design-target"
+
+[[selector]]
+selector = "test/daemon.test.ts"
+intent = "design-target"
+
+[[selector]]
+selector = "test/topics.test.ts"
 intent = "design-target"
 
 # STRUCTURAL relations are uniform `[[relation]]` rows, never a typed

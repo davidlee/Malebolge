@@ -100,3 +100,33 @@ VT-2 stays a source-token check, with VT-1 as the behavioural proof (F-5).
 
 - None. SL-004 touches no ADR, policy or spec. SPEC-001 and SPEC-002 live in
   the satan repo, and neither names the tool environment's variables.
+
+## Reconciliation Outcome
+
+User agreement: "agreed" (2026-10-25), covering brief items 1–3.
+
+### Direct edits applied
+
+- Selector registry: `doctrine slice selector add 004 --intent design-target`
+  for `src/topics.ts` (was scope-relevant), `test/harness-fixture.ts`,
+  `test/conversations.test.ts`, `test/daemon.test.ts`, `test/topics.test.ts`.
+  `doctrine slice conformance 004` now shows 15 conformant, 0 undeclared, 0
+  undelivered (F-1).
+- design.md sec-5: added a `src/topics.ts` row and a row for the three test
+  files; the `test/harness-fixture.ts` row now lists the lifted helpers; the
+  ownership bullet reads "through `readIndex` and `storedEntry` only" (F-1).
+- design.md sec-3: the hook quoted as pi-durable's
+  `NonNullable<HarnessOptions["env"]>` signature (F-2).
+- Edited in place; `doctrine design materialise` not run.
+
+### REVs completed
+
+- None. The brief named no governance or spec target.
+
+### Withdrawn / tolerated
+
+- F-3, F-4: tolerated plan deviations; plan.toml is immutable (rationale in
+  the dispositions).
+- F-5: aligned. F-6: fixed in fb5fad2.
+
+Reconcile pass complete; handoff to /close. Open for /close: VH-1.
