@@ -94,3 +94,23 @@ Findings accepted on evidence; each cites the site that decided it.
   objects, which an older `--list` would print as `[object Object]`. Recorded, not
   papered over: the element type changes at step 4, and client and daemon ship
   together until satan ISS-055's handshake exists.
+
+## Amendments (2026-10-24, reconciliation of SL-003, RV-011 F-1)
+
+SL-003 (topics and the conversation index) widened this frame, as RFC-002 step 2
+planned. The widening rule held: new keys and a new reply type, no changed element
+type (DEC-016).
+
+- **`list` takes `topic` and `topics`.** `{"type":"list","topic":T}` answers
+  `conversations` with that topic's ids from the index, newest first, cut at
+  `LIST_PAGE` with `truncated`. `{"type":"list","topics":true}` answers the new
+  `{"type":"topics","profile","topics":[{name,cwd?}]}` reply. Bare `list` is
+  unchanged: still one `scanConversations` page.
+- **The `list: unknown key topic` refusal is retired.** The amendment above
+  prescribed it as the answer to step 2's frame. That frame now ships. Any other
+  unknown key, such as `{"type":"list","page":2}`, keeps the shipped
+  `FrameRefused` shape.
+- **A third first-line frame, `topic`**, writes one topic record and answers
+  `topics` with it, then closes. The three first-line frames dispatch through
+  one table (`FIRST_LINE`, `src/daemon.ts`). A bound connection still answers
+  any of them with the unprefixed `already attached to conversation N`.

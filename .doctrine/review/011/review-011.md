@@ -152,3 +152,48 @@ is outside this repo, user-authored, and the user's to fix (notes § Harvest/Ope
 
 - F-5 fixed in the audit (test titles). F-6 tolerated, F-7 aligned. F-8
   already owned by CHR-001. `host.txt` is the user's corpus.
+
+## Reconciliation Outcome
+
+User agreement 2026-10-24 ("agreed") to the drafted edits, applied as drafted.
+
+### Direct edits applied
+
+- **`design.md` sec-2** (F-2): backfill step 2 also merges a missing `parent`
+  into an existing entry.
+- **`design.md` sec-3** (F-2): `no topic <name>`, unprefixed; new paragraph on
+  topic opens serialised daemon-wide (`serially(openTopic)`).
+- **`design.md` sec-4** (F-2): attach-by-topic row adds `new must be true`;
+  `topic` row adds `cwd must not contain a control character`.
+- **`design.md` sec-5** (F-3): `--set-topic NAME [--dir PATH | --no-dir |
+  --here]`; `--here` step 1 is the `.git` walk (`gitRootOf`).
+- **`design.md` sec-6** (F-3): `src/topics.ts` names `writeTopicRecord` and
+  `storedTopic`; rows for `src/project-context.ts` and
+  `test/project-context.test.ts`; `test/session.test.ts` dropped.
+
+### Selector registry (F-4)
+
+- `doctrine slice selector add 003 --intent design-target src/project-context.ts`;
+  `doctrine slice selector rm 003 test/session.test.ts`. `slice conformance 3`
+  now reads **9 undeclared / 0 undelivered / 23 conformant**. The 9 are the
+  three `test/**` scope-relevant paths and six `.doctrine/` knowledge records
+  F-4 named as needing no change.
+
+### Decisions amended (F-1)
+
+- DEC-007, DEC-008, DEC-010 each gain `## Amendments (2026-10-24,
+  reconciliation of SL-003, RV-011 F-1)`, appended to the prose body with
+  `doctrine knowledge edit --body - --body-mode replace` over HEAD body +
+  amendment. (`--body` takes `-` but not `@path`: a first attempt stored the
+  path literally and was overwritten.)
+
+### REVs
+
+- None: no governance/spec item.
+
+### Not reconciled on purpose
+
+- F-5 fixed at audit; F-6 tolerated; F-7 aligned; F-8 owned by CHR-001.
+
+Handoff to `/close`: every brief item resolved, no undelivered target, no
+revision open.

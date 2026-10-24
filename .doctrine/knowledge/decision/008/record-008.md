@@ -62,3 +62,21 @@ path stays single, and the skew rule stops growing a literal per frame.
   ten-second `DEFAULT_WAIT` (`src/attach.ts:203`): a listing runs against a daemon
   that is already up, and Emacs runs it synchronously (DEC-009), where ten seconds
   of frozen UI is the difference between a message and a mystery.
+
+## Amendments (2026-10-24, reconciliation of SL-003, RV-011 F-1)
+
+- **The exclusivity set widens** (DEC-017, SL-003 design sec-5). `--topic` is
+  exclusive with `--conversation`. `--here` is exclusive with `--topic`,
+  `--conversation`, `--dir` and `--no-dir`. `--topics` stands alone.
+  `--set-topic` excludes every attach and list flag. `--dir` excludes
+  `--no-dir`. One helper, `checkAlone` (`src/attach-invocation.ts`), enforces
+  all of it. Each refusal is still a `UsageError`: one line, the usage, exit 2.
+- **The skew predicate matches two shapes.** `skewOf` (`src/request.ts`) also
+  treats a strict-key refusal of a new key as skew: `attach: unknown key topic`,
+  `list: unknown key topic` and `list: unknown key topics`. These sit alongside
+  `unknown message type "<frame>"`. Interactive attach and the request path
+  share it, so every skew prints the restart hint.
+- **One request path.** `listConversations` became `request` in
+  `src/request.ts`. It resolves to the typed reply and prints nothing. Callers
+  render: `--list`, `--topics` and `--set-topic` write their reply to stdout,
+  and everything else goes to stderr.

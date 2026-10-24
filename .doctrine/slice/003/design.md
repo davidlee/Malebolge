@@ -122,7 +122,9 @@ create a conversation. It is one commit:
    until `next` is undefined. The cursor loop follows
    `src/runner/durable-ids.ts:27-32`.
 2. Then write `{topic: "default", parent?}` for every ownerless record the
-   index lacks.
+   index lacks, and merge a missing `parent` into an existing entry whose
+   record carries one. The merge keeps the entry's topic and every other key,
+   so a fork indexed without its parent regains it (RV-010 F-2).
 
 - All reads happen before any write, so the commit never reads after writing.
 - Run again, it finds nothing missing and writes nothing.
@@ -173,7 +175,8 @@ over `conversations`, which is small at personal scale.
 **Attaching by topic, `{type:"attach", topic, new?, cwd?}`:**
 
 1. Read the index. If the topic is unknown (and not `default`), refuse with
-   `attach: no topic <name>`. Never create a topic implicitly (DEC-016).
+   `no topic <name>`, unprefixed like `no conversation N`. Never create a
+   topic implicitly (DEC-016).
 2. Without `new`, bind the latest conversation if there is one. If the topic
    has no conversations yet, fall through to step 3, so attaching to a fresh
    topic starts its first conversation.
@@ -190,6 +193,11 @@ Step 1's read and step 3's creating commit are two commits. A topic change
 that lands between them gives the new conversation the old directory. That is
 still a creation-time default and needs no lock.
 
+Two attaches to the same empty topic would each find it empty and each
+create a conversation. So topic opens run one at a time, daemon-wide
+(`serially(openTopic)` in `src/conversations.ts`). One daemon owns the
+store, so in-process order is enough (RV-010 F-6).
+
 `cwd` stays an opaque string throughout (DEC-107): no resolution and no
 containment check.
 
@@ -202,11 +210,11 @@ named for its frame (`src/protocol.ts:66-92`).
 | first line | reply, then | refusals (each `FrameRefused`, then close) |
 |---|---|---|
 | `{type:"attach"}` / `{conversation:N}` / `{new:true, cwd?}` | `attached`, snapshot, events, as shipped | as shipped |
-| `{type:"attach", topic, new?, cwd?}` | `attached`, snapshot, events | `conversation and topic are exclusive`; `cwd needs new`; bad name; `no topic X` |
+| `{type:"attach", topic, new?, cwd?}` | `attached`, snapshot, events | `conversation and topic are exclusive`; `cwd needs new`; `new must be true`; bad name; `no topic X` |
 | `{type:"list"}` | `{type:"conversations", conversations, truncated}`, then close. Unchanged: still `scanConversations`, so it matches SL-002 on the same store | — |
 | `{type:"list", topic}` | `conversations`: that topic's ids from the index, newest first, cut at `LIST_PAGE` with `truncated` | bad name; `no topic X` |
 | `{type:"list", topics:true}` | `{type:"topics", profile, topics:[{name, cwd?}]}`: `default` first, then by name; then close | `topic and topics are exclusive`; `topics must be true` |
-| `{type:"topic", name, cwd?: string\|null}` | `topics` with the one record written, then close | bad name; `default is reserved`; `cwd must be a string or null` |
+| `{type:"topic", name, cwd?: string\|null}` | `topics` with the one record written, then close | bad name; `default is reserved`; `cwd must be a string or null`; `cwd must not contain a control character` (`--topics` prints one `name<TAB>cwd` line per topic, RV-010 F-15) |
 
 - `topic` with `cwd` absent creates the topic, or leaves an existing one
   unchanged, so it is idempotent. A string sets the directory; `null` clears
@@ -291,7 +299,7 @@ type ResolvedInvocation = AttachInvocation<string>;
 | `--topic NAME [--new [--cwd DIR]] [--emacs]` | attach to topic `NAME` |
 | `--list [--topic NAME]` | list ids, all or one topic's |
 | `--topics` | list topics as `name<TAB>cwd`, one per line |
-| `--set-topic NAME [--dir PATH \| --no-dir]` | create the topic or re-point it; print the record; exit |
+| `--set-topic NAME [--dir PATH \| --no-dir \| --here]` | create the topic or re-point it; print the record; exit |
 | `--here` | stands in for `--topic NAME` (attach or `--list`), or for `--dir` with `--set-topic` |
 
 - **Exclusivity**, extending DEC-008 and enforced by one `checkAlone` helper
@@ -327,8 +335,10 @@ resolves to the typed reply and prints nothing to stdout:
 **`--here` (DEC-014).** `resolveHere(invocation, socketPath, gitRoot)`
 returns the invocation unchanged when it holds no `Here`. Otherwise, in order:
 
-1. `git rev-parse --show-toplevel` in the client's cwd. Not in a git repo:
-   say so, exit 1, nothing sent.
+1. The git root: the nearest directory at or above the client's cwd that
+   holds `.git` (`gitRootOf`, `src/project-context.ts`, which reuses the
+   project-context walk; RV-010 F-18). Not in a git repo: say so, exit 1,
+   nothing sent.
 2. `request` a `{type:"list", topics:true}` frame.
 3. If the reply's `profile` is not `host`, refuse: `--here needs a host
    daemon: this daemon runs under room, so its topic directories are room
@@ -366,19 +376,21 @@ path both use it, so every skew prints the restart hint.
 
 | file | change |
 |---|---|
-| `src/topics.ts` (new) | `IndexDocument`; `indexConversation` (the hook); `assignTopic(name)` (the `init`); `backfillIndex`; `readIndex` (the one snapshot read, absent → `initial()`); over it `topicsOf`, `latestIn`, `idsIn`; `setTopic` |
+| `src/topics.ts` (new) | `IndexDocument`; `indexConversation` (the hook); `assignTopic(name)` (the `init`); `backfillIndex`; `readIndex` (the one snapshot read, absent → `initial()`); over it `topicsOf`, `latestIn`, `idsIn`; `writeTopicRecord` (the topic write) and `storedTopic` (an own-key read) |
 | `src/session.ts` | passes `conversationCreated: indexConversation` to `Harness.open`; runs `backfillIndex` after `root()`, before `resume()` |
 | `src/conversations.ts` | `open` handles a topic target; `list(query)`; `setTopic`. Reads the index only through `topics.ts`. `conversations(session, defaults, profile)` takes the daemon's profile for the `topics` reply |
 | `src/daemon-start.ts` | passes `config.execution.profile` to `conversations` |
 | `src/protocol.ts` | `topicNameOf`; `FirstLineFrame`, `parseFirstLineFrame`, `TopicMessage`, `TopicsMessage` (with `profile`); `attach` and `list` key lists widen; `AttachTarget` gains `topic` |
 | `src/daemon.ts` | the `FIRST_LINE` table; `answer` generalises `answerList`; `laterLine` checks "is a first-line frame" |
+| `src/project-context.ts` | `gitRootOf`, the git root `--here` resolves, over the existing `gitRootDirs` walk |
 | `src/attach-invocation.ts` (new, extracted from `src/attach.ts`) | the command line: `Here`, the invocation union, flags, `checkAlone`, `attachInvocationOf`; `resolveHere` |
 | `src/request.ts` (new, extracted from `src/attach.ts`) | `request` (typed reply, no rendering), which replaces `listConversations`; `skewOf`, shared with interactive attach |
 | `src/attach.ts` | keeps the interactive connection only; uses `skewOf` from `src/request.ts` |
 | `src/attach-main.ts` | `USAGE`; awaits `resolveHere`, then dispatches a `ResolvedInvocation` and renders each mode's reply |
 | `src/render.ts` | the `topics` renderer |
 | `test/topics.test.ts` (new) | the index, the hook, backfill, names, latest |
-| `test/conversations.test.ts`, `test/protocol.test.ts`, `test/daemon.test.ts`, `test/attach.test.ts`, `test/render.test.ts`, `test/session.test.ts` | the matrices in section 7 |
+| `test/conversations.test.ts`, `test/protocol.test.ts`, `test/daemon.test.ts`, `test/attach.test.ts`, `test/render.test.ts` | the matrices in section 7 |
+| `test/project-context.test.ts` | `gitRootOf` against a real directory tree |
 | `test/attach-invocation.test.ts`, `test/request.test.ts` (new) | the invocation table, `resolveHere`, and the request and skew cases, moved with the code they test |
 | `test/harness-fixture.ts` | `indexOf(harness)`, a snapshot read of the index |
 | `test/structure.test.ts` | only if a tier allowlist must name `topics` (it is a root module imported by root modules, so probably no change) |

@@ -52,3 +52,13 @@ step without being pre-empted here.
 - This slice must not grow a partial label implementation, a directory resolver,
   or a pager. A future reader should find the refusal recorded here, not an
   oversight.
+
+## Amendments (2026-10-24, reconciliation of SL-003, RV-011 F-1)
+
+- **`--here` is no longer refused. It is host-only** (DEC-014). The path-space
+  mismatch recorded above still holds: under `room`, a topic's directory is a
+  room path. So `--here` asks the daemon for its topics and refuses unless the
+  reply's `profile` is `host`, whatever the client's `MALEBOLGE_PROFILE` says.
+  It then matches the shell's git root exactly against topic directories.
+  Topics, from RFC-002 D1, are what made the lookup well-defined.
+- Label derivation, fuzzy or prefix id matching, and paging stay refused.

@@ -83,10 +83,6 @@ selector = "test/render.test.ts"
 intent = "design-target"
 
 [[selector]]
-selector = "test/session.test.ts"
-intent = "design-target"
-
-[[selector]]
 selector = "test/harness-fixture.ts"
 intent = "design-target"
 
@@ -104,6 +100,10 @@ intent = "design-target"
 
 [[selector]]
 selector = "test/request.test.ts"
+intent = "design-target"
+
+[[selector]]
+selector = "src/project-context.ts"
 intent = "design-target"
 
 [[relation]]
