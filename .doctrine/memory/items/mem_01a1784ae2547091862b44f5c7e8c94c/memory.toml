@@ -1,0 +1,46 @@
+memory_uid = "mem_01a1784ae2547091862b44f5c7e8c94c"
+memory_key = "mem.pattern.malebolge.recorder-next-matches-history"
+schema_version = 1
+memory_type = "pattern"
+status = "active"
+title = "Test recorder.next matches the first item ever recorded"
+summary = "recorder().next(match) resolves on ANY recorded item, including ones from before the wait; to wait for a new event, count items before and after."
+created = "2026-10-26"
+updated = "2026-10-26"
+
+[scope]
+paths = ["test/fixtures.ts"]
+globs = []
+commands = []
+tags = ["tests"]
+workspace = "default"
+repo = "github.com/davidlee/Malebolge"
+repo_id_kind = "remote"
+repo_id_confidence = "high"
+
+[git]
+anchor_kind = "checkout_state"
+commit = ""
+tree = "f2ab351f5f25cfc7f983e60e7000e8aee9d4f229"
+ref_name = "refs/heads/main"
+checkout_state_id = "147c5b73fd985a9fd81a78443a0e8ef71ef25f253f5b2d955048068474550cff"
+base_commit = "a737928e3825ebe058564b62d069dae239159def"
+verified_sha = ""
+normalizer = "forget.checkout.v1"
+
+[review]
+verification_state = "unverified"
+reviewed = ""
+review_by = ""
+
+[trust]
+trust_level = "medium"
+
+[ranking]
+severity = "medium"
+weight = 0
+
+[[source]]
+kind = "slice"
+ref = "satan SL-032 PHASE-07"
+

@@ -1,0 +1,46 @@
+memory_uid = "mem_01a1784ae2397f31be3ce023ec579e51"
+memory_key = "mem.fact.malebolge.tools-resolved-at-step-start"
+schema_version = 1
+memory_type = "fact"
+status = "active"
+title = "pi-durable resolves a turn's tools at step start"
+summary = "A registry.install that lands while a model step runs is not offered until the NEXT step; refreshes that must reach the next step have to settle before the tool result returns."
+created = "2026-10-26"
+updated = "2026-10-26"
+
+[scope]
+paths = ["src/satan-tools.ts"]
+globs = []
+commands = []
+tags = ["pi-durable", "satan-tools"]
+workspace = "default"
+repo = "github.com/davidlee/Malebolge"
+repo_id_kind = "remote"
+repo_id_confidence = "high"
+
+[git]
+anchor_kind = "checkout_state"
+commit = ""
+tree = "f2ab351f5f25cfc7f983e60e7000e8aee9d4f229"
+ref_name = "refs/heads/main"
+checkout_state_id = "615a59d9987d38e0c83bb00b293994a7bb7970273449a0cf5cd6ec82f51f592e"
+base_commit = "a737928e3825ebe058564b62d069dae239159def"
+verified_sha = ""
+normalizer = "forget.checkout.v1"
+
+[review]
+verification_state = "unverified"
+reviewed = ""
+review_by = ""
+
+[trust]
+trust_level = "medium"
+
+[ranking]
+severity = "medium"
+weight = 0
+
+[[source]]
+kind = "slice"
+ref = "satan SL-032 PHASE-07"
+
