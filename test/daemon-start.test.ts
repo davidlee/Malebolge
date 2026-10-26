@@ -34,6 +34,7 @@ async function world(): Promise<World> {
     storagePath: join(state, "session.sqlite"),
     lockPath: join(state, "daemon.lock"),
     mcpSocket: join(tmp.dir, "mcp.sock"),
+    satanIdleMs: 900_000,
     daemonSocket: join(tmp.dir, "run", "satan", "durable", "host", "durable.sock"),
     model: FAUX_MODEL,
     gatewayCatalog: join(tmp.dir, "missing-catalog.json"),

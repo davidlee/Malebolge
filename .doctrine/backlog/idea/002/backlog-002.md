@@ -21,3 +21,11 @@ inherited from the owner chain. Needs a record read (`Storage.conversation`),
 not the document reader, and new `mem.origin` columns in the room's `~/db/q`.
 Pick up with the first feature that creates task-owned conversations (e.g. a
 subagent tool).
+
+## Update (satan SL-032 PHASE-07, 2026-10-26)
+
+A tool's `execute` receives a `TaskRuntime` as `api`, which carries both
+`taskId` and `conversationId` (pi-durable 1.4.0, `dist/types.d.ts:212-214`).
+So a tool knows its task id even though `HarnessOptions.env` (`EnvTarget`) does
+not. `satan-tools.ts` already uses `api.conversationId` to key its
+per-conversation satan-mcp connection pool.

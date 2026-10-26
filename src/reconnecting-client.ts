@@ -1,11 +1,11 @@
 // One live MCP client at a time, replaced on demand (SL-028 design §4.3): the
 // connection half of the SATAN tools, apart from what is installed from it.
 
-import { McpClient } from "@earendil-works/pi-mcp";
+import { type ClientCapabilities, McpClient } from "@earendil-works/pi-mcp";
 import { UnixSocketTransport } from "./unix-socket-transport.ts";
 
 /** What a caller gets once `close` has run: the handle is finished, not reconnecting. */
-const CLOSED = "satan-mcp client is closed";
+export const CLOSED = "satan-mcp client is closed";
 
 /** An attempt at a client: the connection being opened, and the client once it has one. */
 interface Attempt {
@@ -59,9 +59,22 @@ function dropsOf(log: (text: string) => void, onLoss: () => void): Drops {
   };
 }
 
-/** A client at `socketPath`, in service once it has connected. */
-async function connect(socketPath: string, drops: Drops): Promise<McpClient> {
-  const client = new McpClient({ name: "malebolge", version: "0.0.0" });
+/**
+ * A client at `socketPath`, in service once it has connected. Every client the
+ * handle opens announces `capabilities` in its initialize, so a replacement
+ * connection says what the one it stands in for said.
+ */
+async function connect(
+  socketPath: string,
+  drops: Drops,
+  capabilities: ClientCapabilities | undefined,
+): Promise<McpClient> {
+  // Omitted rather than set to undefined: the option is absent, not undefined.
+  const client = new McpClient({
+    name: "malebolge",
+    version: "0.0.0",
+    ...(capabilities === undefined ? {} : { capabilities }),
+  });
   await client.connect(new UnixSocketTransport(socketPath));
   // Watched only now: a client that never connected has no connection to lose.
   drops.watch(client);
@@ -110,19 +123,21 @@ async function closeAttempt(attempt: Attempt, drops: Drops): Promise<void> {
 /**
  * A client at `socketPath` that reconnects on demand. `onReconnect` runs once a
  * connection the handle had is lost and another stands in for it: the tools
- * satan-mcp serves may have changed with it.
+ * satan-mcp serves may have changed with it. `capabilities` is what every
+ * connection announces to satan-mcp (its `experimental.satan` identity).
  */
 export function reconnectingClient(
   socketPath: string,
   log: (text: string) => void,
   onReconnect: () => void,
+  capabilities?: ClientCapabilities,
 ): ReconnectingClient {
   /** Whether a client has been lost since the last announcement: the tools may have changed. */
   let lost = false;
   const drops = dropsOf(log, () => {
     lost = true;
   });
-  const open = (): Promise<McpClient> => connect(socketPath, drops);
+  const open = (): Promise<McpClient> => connect(socketPath, drops, capabilities);
   let current: Attempt | undefined;
   /** Set by `close`: the handle is finished, so no attempt is ever begun again. */
   let shut = false;

@@ -17,6 +17,7 @@ import {
 import { DEFAULT_MODEL, type ModelRef, parseModel } from "./models.ts";
 import type { RoomConnection } from "./room/connection.ts";
 import { readRoomDoor, ROOM_DOOR_KEYS, type RoomDoor, roomConnectionOf } from "./room/door.ts";
+import { DEFAULT_SATAN_IDLE_MS } from "./satan-pool.ts";
 
 export type Profile = "room" | "host";
 
@@ -39,6 +40,8 @@ export interface Config {
   /** `daemon.lock` beside the store: one daemon per profile (DEC-087). */
   lockPath: string;
   mcpSocket: string;
+  /** How long a conversation's SATAN connection survives once no call is using it (ms). */
+  satanIdleMs: number;
   /** `$MALEBOLGE_SOCKET` or `<runtime>/satan/durable/<profile>/durable.sock` */
   daemonSocket: string;
   model: ModelRef;
@@ -113,6 +116,20 @@ function parseDoorFile(text: string, hostHome: string): { door: RoomDoor; home: 
   }));
 }
 
+/** `env[name]` as a positive integer of milliseconds, or `fallback` when it is unset. */
+function idleMsOf(env: Env, name: string, fallback: number): number {
+  const value = env[name];
+  if (value === undefined) {
+    return fallback;
+  }
+  // Digits only: `Number` would also read "1e3", " 30" and "0x10" as integers.
+  const ms = Number(value);
+  if (!/^\d+$/.test(value) || !Number.isSafeInteger(ms) || ms <= 0) {
+    throw new Error(`${name} must be a positive integer of milliseconds, not ${value}`);
+  }
+  return ms;
+}
+
 function executionOf(env: Env, cwd: string, readFile: (path: string) => string): Execution {
   const profile = profileOf(env["MALEBOLGE_PROFILE"]);
   if (profile === "host") {
@@ -145,6 +162,7 @@ export function resolveConfig(env: Env, cwd: string, readFile: (path: string) =>
     storagePath: join(profileState, "session.sqlite"),
     lockPath: join(profileState, "daemon.lock"),
     mcpSocket: env["SATAN_MCP_SOCKET"] ?? join(runtime, "mcp", "mcp.sock"),
+    satanIdleMs: idleMsOf(env, "MALEBOLGE_SATAN_IDLE_MS", DEFAULT_SATAN_IDLE_MS),
     daemonSocket: inProfileDir("daemonSocket", daemonSocket(env, profile), profile),
     model: parseModel(env["MALEBOLGE_MODEL"] ?? DEFAULT_MODEL),
     gatewayCatalog:

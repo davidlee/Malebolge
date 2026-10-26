@@ -86,7 +86,7 @@ export async function startDaemon(config: Config, deps: StartDeps): Promise<Daem
     throw error;
   }
   // Construction never connects, so nothing here can fail before the `try`.
-  const satan = satanTools(config.mcpSocket, registry, log);
+  const satan = satanTools(config.mcpSocket, registry, log, { idleMs: config.satanIdleMs });
   let daemon: Daemon | undefined;
   let session: Session | undefined;
   try {

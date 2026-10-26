@@ -13,6 +13,8 @@ import {
   contextOf,
   conversationLine,
   conversationVars,
+  type SatanKind,
+  satanIdentity,
 } from "../src/conversation-context.ts";
 import { DEFAULT_TOPIC } from "../src/protocol.ts";
 import {
@@ -161,4 +163,15 @@ it("draws the line with the entry's topic", () => {
 
 it("draws the line alone when the index has no entry", () => {
   expect(conversationLine(conversationOf(12))).toBe("Conversation: 12");
+});
+
+it("announces the conversation as its identity to satan-mcp (EX-2)", () => {
+  const kind: SatanKind = "interactive";
+  const identity = satanIdentity(idOf(12), kind);
+  expect(identity).toEqual({
+    experimental: { satan: { conversation: "12", kind: "interactive" } },
+  });
+  // Stringified: satan-mcp keys its own state by a string, whatever pi's id is.
+  expect(identity.experimental.satan.conversation).toBeTypeOf("string");
+  expect(satanIdentity(idOf(7), kind).experimental.satan.conversation).toBe("7");
 });

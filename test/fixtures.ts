@@ -22,6 +22,20 @@ export interface FakeTool {
   call: (args: JsonRecord) => { text: string; isError?: boolean };
 }
 
+/**
+ * One connection's initialize, and the requests that connection has made: enough
+ * to tell the discovery connection from a tool call's, and to see what identity
+ * a pooled connection announced.
+ */
+export interface Initialization {
+  /** 1-based: the order the server accepted the connection in. */
+  connection: number;
+  /** The `capabilities` of the initialize params, as sent (`{}` when there were none). */
+  capabilities: JsonRecord;
+  /** The methods this connection has asked for, in order (`initialize` first); live. */
+  methods: readonly string[];
+}
+
 export interface Fixture {
   socketPath: string;
   close: () => Promise<void>;
@@ -29,6 +43,10 @@ export interface Fixture {
   release: () => Promise<void>;
   /** Connections accepted so far: a second one means the client opened a fresh connection. */
   connections: () => number;
+  /** Accepted connections that are still open: a client hanging up drops the count. */
+  openConnections: () => number;
+  /** One entry per initialize request, in arrival order, with what it announced. */
+  initializations: Recorder<Initialization>;
   /** Resolves when the first accepted connection ends: a client hung up. */
   ended: Promise<void>;
   /** Methods of the requests received so far, and a wait for one that matches. */
@@ -239,6 +257,12 @@ function callResult(tools: readonly FakeTool[], params: JsonRecord): JsonRecord 
   return textResult(text, isError ?? false);
 }
 
+/** The initialize params' `capabilities`, as sent. */
+function capabilitiesOf(params: JsonRecord): JsonRecord {
+  const capabilities = params["capabilities"];
+  return isRecord(capabilities) ? capabilities : {};
+}
+
 function answer(tools: readonly FakeTool[], request: Request): JsonRecord {
   switch (request.method) {
     case "initialize":
@@ -284,6 +308,7 @@ export async function fakeMcpServer(
   const silent = new Set(options.silent ?? []);
   const withheld: (() => Promise<void>)[] = [];
   const requests = recorder<string>();
+  const initializations = recorder<Initialization>();
   const sockets = new Set<Socket>();
   let served = tools;
   let connections = 0;
@@ -294,6 +319,9 @@ export async function fakeMcpServer(
   });
   const server = createServer((socket) => {
     connections += 1;
+    const connection = connections;
+    /** What this connection asked for: pushed before the answer, so it is current when read. */
+    const asked: string[] = [];
     if (options.hangUp === true) {
       // Accepted and dropped at once: the client's connect fails, as with a dead satan-mcp.
       socket.destroy();
@@ -314,6 +342,14 @@ export async function fakeMcpServer(
           return;
         }
         requests.push(request.method);
+        asked.push(request.method);
+        if (request.method === "initialize") {
+          initializations.push({
+            connection,
+            capabilities: capabilitiesOf(request.params),
+            methods: asked,
+          });
+        }
         // Answered as of the request, so a withheld answer is the one the server had then.
         const result = answer(served, request);
         const send = (): Promise<void> =>
@@ -335,6 +371,8 @@ export async function fakeMcpServer(
       await Promise.all(withheld.splice(0).map((send) => send()));
     },
     connections: () => connections,
+    openConnections: () => sockets.size,
+    initializations,
     ended,
     requests,
     serve: (next): void => {

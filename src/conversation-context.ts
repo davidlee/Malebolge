@@ -22,6 +22,31 @@ export interface ConversationContext {
 }
 
 /**
+ * The kinds of SATAN conversation satan-mcp may hold state for. `interactive` is
+ * the only one until a scheduled producer exists.
+ */
+export type SatanKind = "interactive";
+
+/**
+ * What a connection announces to satan-mcp in its initialize: `experimental.satan`
+ * (`ClientCapabilities`), so the server knows whose state the connection serves.
+ */
+export interface SatanIdentity {
+  experimental: {
+    satan: {
+      /** `SATAN_CONVERSATION`'s string form (DEC-020): satan-mcp keys its state by a string. */
+      conversation: string;
+      kind: SatanKind;
+    };
+  };
+}
+
+/** The identity `conversationId`'s connections announce, as `kind`'s conversation. */
+export function satanIdentity(conversationId: ConversationId, kind: SatanKind): SatanIdentity {
+  return { experimental: { satan: { conversation: String(conversationId), kind } } };
+}
+
+/**
  * The one read of the index: `id`'s entry, or none when the index lacks it —
  * a task-owned conversation, which is no topic's (DEC-012).
  */

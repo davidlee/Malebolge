@@ -58,6 +58,7 @@ describe("resolveConfig", () => {
       gatewayCatalog: "/h/.config/malebolge/gateway-models.json",
       gatewayKeyFile: "/h/.config/llm-gateway/keys/malebolge",
       skillDirs: [],
+      satanIdleMs: 900_000,
       execution: { profile: "host", cwd: "/cwd" },
     });
   });
@@ -99,6 +100,19 @@ describe("resolveConfig", () => {
   it("rejects a model without a provider prefix", () => {
     expect(() => resolve({ ...host, MALEBOLGE_MODEL: "bare" })).toThrow(/provider\/model/);
   });
+
+  it("takes the SATAN connection idle timeout from MALEBOLGE_SATAN_IDLE_MS", () => {
+    expect(resolve({ ...host, MALEBOLGE_SATAN_IDLE_MS: "30000" }).satanIdleMs).toBe(30_000);
+  });
+
+  it.each(["0", "-1", "1.5", "abc", "1e3", " 30", "0x10"])(
+    "refuses MALEBOLGE_SATAN_IDLE_MS %j",
+    (value) => {
+      expect(refusal({ ...host, MALEBOLGE_SATAN_IDLE_MS: value })).toContain(
+        "MALEBOLGE_SATAN_IDLE_MS",
+      );
+    },
+  );
 });
 
 describe("the execution profile (design §4.2)", () => {

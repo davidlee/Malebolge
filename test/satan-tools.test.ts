@@ -1,13 +1,16 @@
 import { join } from "node:path";
 import type { ToolResultMessage } from "@earendil-works/pi-ai";
 import {
+  type Conversation,
   type Extension,
   type JsonObject,
   MemoryStorage,
   type Registry,
 } from "@earendil-works/pi-durable";
+import { fauxAssistantMessage, fauxText, fauxToolCall } from "@earendil-works/pi-ai/providers/faux";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { context } from "../src/context.ts";
+import { isRecord, type JsonRecord } from "../src/json.ts";
 import { registryOf } from "../src/registry.ts";
 import {
   SATAN_EXTENSION,
@@ -20,11 +23,13 @@ import {
   type FakeTool,
   type Fixture,
   fakeMcpServer,
+  type Initialization,
   recorder,
   tempDir,
 } from "./fixtures.ts";
 import {
   callThenAnswer,
+  FAUX_MODEL,
   openFauxHarness,
   type TestHarness,
   textOf,
@@ -118,33 +123,137 @@ describe("satanTools", () => {
     return server;
   };
 
-  /** Drive one model turn that calls `call`; returns that call's result. */
-  const callTool = async (call: string, args: JsonObject): Promise<ToolResultMessage> => {
+  /** Drive one model turn of `conversation` that calls `call`; returns that call's result. */
+  const callOn = async (
+    conversation: Conversation,
+    call: string,
+    args: JsonObject,
+  ): Promise<ToolResultMessage> => {
     if (test === undefined) {
       throw new Error("start first");
     }
     test.faux.setResponses(callThenAnswer(call, args, "done"));
-    const settled = await (await test.root.submit({ type: "input", content: "go" }, context)).wait(
-      context,
-    );
+    const settled = await (
+      await conversation.submit({ type: "input", content: "go" }, context)
+    ).wait(context);
     expect(settled.status).toBe("done");
-    const result = (await toolResults(test.harness)).at(-1);
+    const result = (await toolResults(test.harness, conversation)).at(-1);
     if (result === undefined) {
       throw new Error("no tool result");
     }
     return result;
   };
 
-  /** Stop the MCP server and wait until the daemon side has seen it go. */
+  /**
+   * Drive one model turn of `conversation` that makes `calls` in order, one per step;
+   * returns their results, oldest first.
+   */
+  const turnOn = async (
+    conversation: Conversation,
+    calls: readonly (readonly [string, JsonObject])[],
+  ): Promise<ToolResultMessage[]> => {
+    if (test === undefined) {
+      throw new Error("start first");
+    }
+    test.faux.setResponses([
+      ...calls.map(([call, args], index) =>
+        fauxAssistantMessage([fauxToolCall(call, args, { id: `call-${String(index + 1)}` })], {
+          stopReason: "toolUse",
+        }),
+      ),
+      fauxAssistantMessage([fauxText("done")]),
+    ]);
+    const settled = await (
+      await conversation.submit({ type: "input", content: "go" }, context)
+    ).wait(context);
+    expect(settled.status).toBe("done");
+    return (await toolResults(test.harness, conversation)).slice(-calls.length);
+  };
+
+  /** The root conversation's turn, which is what most tests drive. */
+  const callTool = (call: string, args: JsonObject): Promise<ToolResultMessage> => {
+    if (test === undefined) {
+      throw new Error("start first");
+    }
+    return callOn(test.root, call, args);
+  };
+
+  /** A fresh conversation: its tool calls must not share the root's connection. */
+  const anotherConversation = async (): Promise<Conversation> => {
+    if (test === undefined) {
+      throw new Error("start first");
+    }
+    return test.harness.createConversation(
+      { ownership: { kind: "ownerless" }, agent: { model: FAUX_MODEL } },
+      context,
+    );
+  };
+
+  /** Stop the MCP server and wait until every daemon-side connection has seen it go. */
   const stopServer = async (): Promise<void> => {
+    const closes = (): number => logs.items.filter((line) => line.includes("closed")).length;
+    // Every connection open now reports its own close: discovery's and each pooled one's.
+    const expected = closes() + (server?.openConnections() ?? 0);
     await server?.close();
     server = undefined;
-    await logs.next((line) => line.includes("closed"));
+    await waitFor(() => closes() >= expected, "every connection to see the server go");
   };
 
   /** How many requests of `method` the server has received. */
   const received = (fixture: Fixture, method: string): number =>
     fixture.requests.items.filter((name) => name === method).length;
+
+  /** The running server; every test that makes a call has one. */
+  const running = (): Fixture => {
+    if (server === undefined) {
+      throw new Error("no server");
+    }
+    return server;
+  };
+
+  /** The `experimental.satan` an initialize announced, or none. */
+  const announced = (initialization: Initialization): JsonRecord | undefined => {
+    const experimental = initialization.capabilities["experimental"];
+    const satan = isRecord(experimental) ? experimental["satan"] : undefined;
+    return isRecord(satan) ? satan : undefined;
+  };
+
+  /** The identities announced, in arrival order: one per pooled connection, none for discovery. */
+  const identitiesOf = (fixture: Fixture): JsonRecord[] =>
+    fixture.initializations.items.flatMap((item) => {
+      const identity = announced(item);
+      return identity === undefined ? [] : [identity];
+    });
+
+  /** The discovery connection: the initialize that announced no identity, and the only one. */
+  const discoveryOf = (fixture: Fixture): Initialization => {
+    const anonymous = fixture.initializations.items.filter((item) => announced(item) === undefined);
+    const [discovery] = anonymous;
+    if (discovery === undefined || anonymous.length > 1) {
+      throw new Error(`expected one discovery connection, found ${String(anonymous.length)}`);
+    }
+    return discovery;
+  };
+
+  /** The identity `conversation`'s pooled connections announce (EX-2). */
+  const identityOf = (conversation: Conversation): JsonRecord => ({
+    conversation: String(conversation.id),
+    kind: "interactive",
+  });
+
+  /** How long a wait for something no log and no request announces may take. */
+  const WAIT_MS = 2000;
+
+  /** Wait, polling, until `ready()` holds; throws naming `what` when it never does. */
+  const waitFor = async (ready: () => boolean, what: string): Promise<void> => {
+    const deadline = Date.now() + WAIT_MS;
+    while (!ready()) {
+      if (Date.now() > deadline) {
+        throw new Error(`waited ${String(WAIT_MS)} ms for ${what}`);
+      }
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+  };
 
   it("installs every MCP tool, with the server's description", async () => {
     await start();
@@ -396,7 +505,7 @@ describe("satanTools", () => {
     ]);
   });
 
-  it("refreshes by itself when a call reconnects, over one connection", async () => {
+  it("refreshes by itself when a call reconnects, over one connection per role", async () => {
     await start();
     await stopServer();
     const restarted = await restartServer(restartedTools);
@@ -410,7 +519,9 @@ describe("satanTools", () => {
       "notes_read",
       "notes_archive",
     ]);
-    expect(restarted.connections()).toBe(1);
+    // One connection per role: the call's own pooled connection, and the discovery one
+    // the refresh it starts reopens. The refresh neither adds a third nor replays the call.
+    expect(restarted.connections()).toBe(2);
     expect(textOf(await callTool("notes_archive", {}))).toBe("archived");
   });
 
@@ -466,5 +577,100 @@ describe("satanTools", () => {
       "1 SATAN tools",
     ]);
     expect(textOf(await callTool("notes_archive", {}))).toBe("archived");
+  });
+
+  it("makes two calls of one conversation over one pooled connection (V11)", async () => {
+    await start();
+    const conversation = await anotherConversation();
+    expect(textOf(await callOn(conversation, "notes_read", { id: "1" }))).toBe("note 1");
+    expect(textOf(await callOn(conversation, "notes_read", { id: "2" }))).toBe("note 2");
+    const fixture = running();
+    // Discovery's connection, and the one connection both calls were made over.
+    expect(fixture.connections()).toBe(2);
+    // One initialize announced an identity: that one connection's, for that conversation.
+    expect(identitiesOf(fixture)).toEqual([identityOf(conversation)]);
+  });
+
+  it("closes every pooled connection when the handle closes (V11)", async () => {
+    const handle = await start();
+    const first = await anotherConversation();
+    const second = await anotherConversation();
+    expect(textOf(await callOn(first, "notes_read", { id: "1" }))).toBe("note 1");
+    expect(textOf(await callOn(second, "notes_read", { id: "2" }))).toBe("note 2");
+    // Discovery's connection, and one pooled connection per conversation.
+    expect(running().openConnections()).toBe(3);
+    await handle.close();
+    // Taken off the handle it closed, so the afterEach has nothing left to close.
+    satan = undefined;
+    await waitFor(() => running().openConnections() === 0, "every connection to close");
+  });
+
+  it("announces each conversation's identity on the connection its calls use (V10)", async () => {
+    await start();
+    const first = await anotherConversation();
+    const second = await anotherConversation();
+    expect(textOf(await callOn(first, "notes_read", { id: "1" }))).toBe("note 1");
+    expect(textOf(await callOn(second, "notes_read", { id: "2" }))).toBe("note 2");
+    const fixture = running();
+    // One connection for discovery, and one per conversation that made a call.
+    expect(fixture.connections()).toBe(3);
+    // Discovery is the connection that announced nothing, whichever one it turned out to be.
+    const discovery = discoveryOf(fixture);
+    expect(identitiesOf(fixture)).toEqual([identityOf(first), identityOf(second)]);
+    // Discovery lists; the calls went over the pooled connections, not over it.
+    expect(discovery.methods).toContain("tools/list");
+    expect(discovery.methods).not.toContain("tools/call");
+    expect(received(fixture, "tools/call")).toBe(2);
+  });
+
+  it("repeats the identity on the replacement connection after a restart (EX-1, V10)", async () => {
+    await start();
+    const conversation = await anotherConversation();
+    expect(textOf(await callOn(conversation, "notes_read", { id: "1" }))).toBe("note 1");
+    await stopServer();
+    const back = await restartServer(tools);
+    expect(textOf(await callOn(conversation, "notes_read", { id: "2" }))).toBe("note 2");
+    // The pooled connection came back announcing the same conversation.
+    expect(back.initializations.items.map(announced)).toContainEqual(identityOf(conversation));
+  });
+
+  it("offers the restarted tool set within the running turn once the old entry idled out (V12)", async () => {
+    const handle = await openHandle({ deadlineMs: DEADLINE_MS, idleMs: 50 });
+    await handle.refresh();
+    expect(toolNames()).toEqual(["notes_read", "fails"]);
+    const conversation = await anotherConversation();
+    expect(textOf(await callOn(conversation, "notes_read", { id: "1" }))).toBe("note 1");
+    // Nothing but discovery is left once the call's entry idles out: the pool closed it.
+    const before = running();
+    await waitFor(() => before.openConnections() === 1, "the pooled connection to idle out");
+    await stopServer();
+    const back = await restartServer(restartedTools);
+    // One running turn: the fresh entry's first call, then a tool only the new set has.
+    const results = await turnOn(conversation, [
+      ["notes_read", { id: "2" }],
+      ["notes_archive", {}],
+    ]);
+    // The fresh entry's first call answered once its refresh had settled (RV-060 F-3, VA-1):
+    // the turn's very next step was offered the restarted tool set.
+    expect(results.map(textOf)).toEqual(["note 2", "archived"]);
+    expect(toolNames()).toEqual(["notes_read", "notes_archive"]);
+    expect(received(back, "tools/list")).toBeLessThanOrEqual(2);
+    expect(back.initializations.items.map(announced)).toContainEqual(identityOf(conversation));
+  });
+
+  it("refreshes once when a live pooled connection reconnects (V12)", async () => {
+    const handle = await openHandle({ deadlineMs: DEADLINE_MS, idleMs: 60_000 });
+    await handle.refresh();
+    const conversation = await anotherConversation();
+    expect(textOf(await callOn(conversation, "notes_read", { id: "1" }))).toBe("note 1");
+    await stopServer();
+    const back = await restartServer(restartedTools);
+    expect(textOf(await callOn(conversation, "notes_read", { id: "2" }))).toBe("note 2");
+    await waitFor(() => toolNames().includes("notes_archive"), "the refreshed tool set");
+    expect(toolNames()).toEqual(["notes_read", "notes_archive"]);
+    expect(textOf(await callOn(conversation, "notes_archive", {}))).toBe("archived");
+    // The replacement connection is the pooled one, and the refresh it started listed once.
+    expect(back.initializations.items.map(announced)).toContainEqual(identityOf(conversation));
+    expect(received(back, "tools/list")).toBeLessThanOrEqual(2);
   });
 });
