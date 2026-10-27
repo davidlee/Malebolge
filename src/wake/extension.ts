@@ -2,10 +2,12 @@
 // in two steps, because the registry is built before satan-mcp's tools and before
 // the session exist. Every member is read through a getter at use, never captured.
 
-import type { Harness } from "@earendil-works/pi-durable";
+import { defineExtension, type Extension, type Harness } from "@earendil-works/pi-durable";
 import type { Conversations } from "../conversations.ts";
 import type { Log, SatanTools } from "../satan-tools.ts";
 import type { WakePolicy, WakeSettings } from "./policy.ts";
+import { wakeTask } from "./task.ts";
+import { wakeCancel, wakeList, wakeSchedule } from "./tools.ts";
 
 export interface WakeDeps {
   settings: WakeSettings;
@@ -21,3 +23,13 @@ export interface WakeDeps {
   harness: Pick<Harness, "inspect" | "abortTask" | "abortSubmission">;
   conversations: Pick<Conversations, "setTopic" | "open">;
 }
+
+/** The room's `tasks` extension: satan.wake and the three tools SATAN schedules it with. */
+export const tasksExtension = (deps: () => WakeDeps): Extension => {
+  const task = wakeTask(deps);
+  return defineExtension({
+    name: "tasks",
+    tasks: [task],
+    tools: [wakeSchedule(deps, task), wakeCancel(deps), wakeList(deps)],
+  });
+};

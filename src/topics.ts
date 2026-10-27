@@ -114,6 +114,11 @@ function ownKey<T>(record: Record<string, T>, key: string): T | undefined {
   return Object.hasOwn(record, key) ? record[key] : undefined;
 }
 
+/** Whether `name` is a topic: `default` always is; another only once someone wrote it. */
+export function isKnownTopic(index: IndexDoc, name: string): boolean {
+  return name === DEFAULT_TOPIC || storedTopic(index, name) !== undefined;
+}
+
 /** `name`'s stored record, or undefined when nobody wrote it. */
 export function storedTopic(index: IndexDoc, name: string): TopicRecord | undefined {
   return ownKey(index.topics, name);

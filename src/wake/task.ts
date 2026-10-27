@@ -19,6 +19,7 @@ import {
 import type { CallToolResult } from "@earendil-works/pi-mcp";
 import { contextOf } from "../conversation-context.ts";
 import { durationOf } from "../duration.ts";
+import { isRecord } from "../json.ts";
 import { messageOf } from "../message-of.ts";
 import type { PoolKey } from "../satan-pool.ts";
 import type { WakeDeps } from "./extension.ts";
@@ -53,6 +54,18 @@ export interface WakeInput {
   /** The heartbeat only. */
   recurring?: true;
 }
+
+/**
+ * Whether a stored task input is a wake's: the fields a reader of a live wake
+ * relies on. pi-durable hands back inputs as JSON, so readers check, not assert.
+ */
+export const isWakeInput = (value: unknown): value is WakeInput =>
+  isRecord(value) &&
+  typeof value["conversationId"] === "number" &&
+  typeof value["intent"] === "string" &&
+  (value["episodeClass"] === "attend" || value["episodeClass"] === "seclude") &&
+  typeof value["at"] === "number" &&
+  (value["recurring"] === undefined || value["recurring"] === true);
 
 export type WakeState =
   // `prepared`: an earlier `submit` of this occurrence may have admitted its input.

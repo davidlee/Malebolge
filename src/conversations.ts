@@ -22,7 +22,7 @@ import {
 } from "@earendil-works/pi-durable";
 import type { Profile } from "./config.ts";
 import { context } from "./context.ts";
-import { type AttachTarget, DEFAULT_TOPIC, type ListQuery } from "./protocol.ts";
+import type { AttachTarget, ListQuery } from "./protocol.ts";
 import type { Session } from "./session.ts";
 import {
   assignTopic,
@@ -31,6 +31,7 @@ import {
   latestIn,
   type NamedTopic,
   readIndex,
+  isKnownTopic,
   storedTopic,
   topicsOf,
   writeTopicRecord,
@@ -123,7 +124,7 @@ function create(
 /** The index, with `name` known: `default` always is, a topic nobody wrote is refused. */
 async function indexOfTopic(session: Session, name: string): Promise<IndexDoc> {
   const index = await readIndex(session.harness);
-  if (name !== DEFAULT_TOPIC && storedTopic(index, name) === undefined) {
+  if (!isKnownTopic(index, name)) {
     throw noTopic(name);
   }
   return index;

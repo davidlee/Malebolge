@@ -17,6 +17,7 @@ import {
   type ConversationId,
   defineExtension,
   type EntryRecord,
+  type Extension,
   type Harness,
   MemoryStorage,
   type Storage,
@@ -33,7 +34,7 @@ import { registryOf } from "../src/registry.ts";
 import type { PoolKey } from "../src/satan-pool.ts";
 import type { Log, SatanTools } from "../src/satan-tools.ts";
 import { openSession } from "../src/session.ts";
-import type { WakeDeps } from "../src/wake/extension.ts";
+import { tasksExtension, type WakeDeps } from "../src/wake/extension.ts";
 import {
   type Gate,
   type QuietWindow,
@@ -156,8 +157,12 @@ export interface WakeWorld {
   readonly faux: FauxProviderHandle;
   /** Sets the wake switch, rebuilding the policy the next phase entry reads. */
   setEnabled(enabled: boolean): void;
-  /** The next session over the world's one store, closed when the test ends; it binds `wake.harness` before resuming. */
-  open(): Promise<WakeSession>;
+  /**
+   * The next session over the world's one store, closed when the test ends; it binds
+   * `wake.harness` before resuming. `extension` replaces the tasks extension it
+   * installs by default: a test registering a task of its own passes one.
+   */
+  open(extension?: Extension): Promise<WakeSession>;
 }
 
 export interface OpenWakeOptions {
@@ -168,6 +173,8 @@ export interface OpenWakeOptions {
   readonly setTimer: FakeTimers["setTimer"];
   /** Called with the session before any task runs: the daemon's second binding step. */
   readonly bind: (session: WakeSession) => void;
+  /** The extension to install in place of the default one holding only `task`. */
+  readonly extension?: Extension;
 }
 
 /** A session whose registry holds the wake task; the same `now` and timer the wake's env reads. */
@@ -176,7 +183,9 @@ export async function openWake(options: OpenWakeOptions): Promise<WakeSession> {
   models.setProvider(options.faux.provider);
   const session = await openSession(options.storage, {
     models,
-    registry: registryOf([defineExtension({ name: "tasks", tasks: [options.task] })]),
+    registry: registryOf([
+      options.extension ?? defineExtension({ name: "tasks", tasks: [options.task] }),
+    ]),
     agent: { model: FAUX_MODEL },
     env: nodeEnv,
     now: options.clock.now,
@@ -246,6 +255,8 @@ export function wakeWorld(): WakeWorld {
   };
   const storage = new ReopenableMemory();
   const task = wakeTask(() => wake);
+  /** The session's registry: the wake task and the three tools SATAN schedules it with. */
+  const extension = tasksExtension(() => wake);
   const faux = fauxProvider();
   const timers = fakeTimers(clock);
   const bind = (session: WakeSession): void => {
@@ -266,8 +277,16 @@ export function wakeWorld(): WakeWorld {
       wake.settings = settings;
       wake.policy = v0Policy(settings);
     },
-    open: (): Promise<WakeSession> =>
-      openWake({ clock, storage, faux, task, setTimer: timers.setTimer, bind }),
+    open: (chosen?: Extension): Promise<WakeSession> =>
+      openWake({
+        clock,
+        storage,
+        faux,
+        task,
+        setTimer: timers.setTimer,
+        bind,
+        extension: chosen ?? extension,
+      }),
   };
 }
 
