@@ -6,12 +6,17 @@
   # The host-side bwrap jails an agent works on this repo in (`jailed-*`).
   inputs.agents.url = "github:davidlee/nix-config?dir=flakes/agents";
   inputs.agents.inputs.nixpkgs.follows = "nixpkgs";
+  # The per-call pi delegation server's form builder. Unpinned: a break should
+  # surface.
+  inputs.quotient.url = "github:davidlee/quotient";
+  inputs.quotient.inputs.nixpkgs.follows = "nixpkgs";
 
   outputs = {
     self,
     nixpkgs,
     doctrine,
     agents,
+    quotient,
   }: let
     systems = ["x86_64-linux" "aarch64-linux" "aarch64-darwin"];
     forAll = f: nixpkgs.lib.genAttrs systems (system: f nixpkgs.legacyPackages.${system});
@@ -98,6 +103,24 @@
         };
       };
 
+    # This root's quotient forms (`just quotient-forms`, then `quotient allow`):
+    # the host's machine-default forms carry no toolchain by rule, so a pi
+    # delegate could edit here but not run the gate. These add `shellPkgs`
+    # (node, just) to the machine default's base tools. No project env, no
+    # persisted home.
+    quotientForms = pkgs: let
+      jailLib = agents.lib.${pkgs.stdenv.hostPlatform.system}.mkJailedAgents {};
+      family = jailLib.quotientFormFamily {
+        inherit quotient;
+        prefix = "quotient";
+        packages = jailLib.commonPkgs ++ shellPkgs pkgs;
+      };
+    in
+      pkgs.lib.optionalAttrs pkgs.stdenv.isLinux {
+        quotient-read = family.read;
+        quotient-write = family.write;
+      };
+
     # The patch-job runner, for the satan-runner user unit (~/flakes
     # features/satan/runner.nix): the tree's src/ with production deps only.
     runner = pkgs: let
@@ -131,6 +154,7 @@
     # `dev-tools` are the same set — so the two can't drift.
     packages = forAll (pkgs:
       jails pkgs
+      // quotientForms pkgs
       // {
         dev-tools = pkgs.buildEnv {
           name = "malebolge-dev-tools";

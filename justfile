@@ -58,3 +58,13 @@ smoke-runner *args:
 # host_key. Stop the deployed runner first. Needs SATAN_RUNNER_LIVE=1.
 smoke-runner-host-key:
   node test/runner/live-host-key.ts
+
+# This root's quotient forms (flake `quotientForms`): link them where quotient
+# looks, then approve with `quotient allow`. Rerun both after changing the forms
+# or bumping the `quotient` input.
+quotient-forms:
+    mkdir -p .quotient/forms
+    nix build -o .quotient/result-read .#quotient-read
+    nix build -o .quotient/result-write .#quotient-write
+    ln -sfn "$(readlink -f .quotient/result-read)/bin/quotient-read" .quotient/forms/read
+    ln -sfn "$(readlink -f .quotient/result-write)/bin/quotient-write" .quotient/forms/write
