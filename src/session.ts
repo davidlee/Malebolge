@@ -31,6 +31,13 @@ export interface SessionOptions {
    * where the `SATAN_*` variables enter a tool's environment (DEC-020).
    */
   env: NonNullable<HarnessOptions["env"]>;
+  /** The harness clock (pi-durable's `HarnessOptions.now`); a wake's env reads the same function. */
+  now?: () => number;
+  /**
+   * Called synchronously with the complete session after the backfill and before
+   * `resume()`: the last point no task has run and no client has been served.
+   */
+  beforeResume?: (session: Session) => void;
 }
 
 export async function openSession(storage: Storage, options: SessionOptions): Promise<Session> {
@@ -40,6 +47,7 @@ export async function openSession(storage: Storage, options: SessionOptions): Pr
       models: options.models,
       registry: options.registry,
       env: options.env,
+      ...(options.now === undefined ? {} : { now: options.now }),
       conversationCreated: indexConversation,
     },
     context,
@@ -49,6 +57,8 @@ export async function openSession(storage: Storage, options: SessionOptions): Pr
   // After `root()`, so root is indexed by the hook like every other conversation,
   // and before `resume()`, so no client and no resumed task outruns the backfill.
   await backfillIndex(harness);
+  const session = { harness, root };
+  options.beforeResume?.(session);
   harness.resume();
-  return { harness, root };
+  return session;
 }

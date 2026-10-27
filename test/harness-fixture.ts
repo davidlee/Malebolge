@@ -61,11 +61,33 @@ export function fauxModels(fauxOptions?: FauxOptions): {
 const nodeEnv: SessionOptions["env"] = ({ cwd }) =>
   new NodeExecutionEnv({ cwd: cwd ?? process.cwd() });
 
-/** A session on memory storage whose root runs the faux model. */
+/** A settable clock: one function to hand the harness and a wake's env alike. */
+export interface FakeClock {
+  now: () => number;
+  set: (time: number) => void;
+  advance: (ms: number) => void;
+}
+
+/** A clock stopped at `start` until the test moves it. */
+export function fakeClock(start: number): FakeClock {
+  let time = start;
+  return {
+    now: () => time,
+    set: (to): void => {
+      time = to;
+    },
+    advance: (ms): void => {
+      time += ms;
+    },
+  };
+}
+
+/** A session on memory storage whose root runs the faux model, on `now` when given. */
 export async function openTestHarness(
   extensions: readonly Extension[],
   fauxOptions?: FauxOptions,
   env?: SessionOptions["env"],
+  now?: SessionOptions["now"],
 ): Promise<TestHarness> {
   const { faux, models } = fauxModels(fauxOptions);
   const session = await openSession(new MemoryStorage(), {
@@ -73,6 +95,7 @@ export async function openTestHarness(
     registry: registryOf(extensions),
     agent: { model: FAUX_MODEL },
     env: env ?? nodeEnv,
+    ...(now === undefined ? {} : { now }),
   });
   return { ...session, faux };
 }

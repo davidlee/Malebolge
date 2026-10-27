@@ -9,15 +9,17 @@ import {
 } from "@earendil-works/pi-ai/providers/faux";
 import {
   defineExtension,
+  defineTask,
   defineTool,
   MemoryStorage,
   type Registry,
+  type Task,
   type ToolRegistration,
 } from "@earendil-works/pi-durable";
 import { NodeExecutionEnv } from "@earendil-works/pi-durable/env/node";
 import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite/node";
 import { CodingTools } from "@earendil-works/pi-durable/tools";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { context } from "../src/context.ts";
 import { registryOf } from "../src/registry.ts";
 import { openSession, type Session } from "../src/session.ts";
@@ -25,7 +27,10 @@ import { tempDir } from "./fixtures.ts";
 import {
   callThenAnswer,
   FAUX_MODEL,
+  fakeClock,
   fauxModels as scriptedModels,
+  indexOf,
+  openFauxHarness,
   textOf,
   toolResults,
 } from "./harness-fixture.ts";
@@ -196,5 +201,92 @@ describe("openSession", () => {
     const results = await resumePinnedAlpha(registryOf([]));
     expect(results).toHaveLength(1);
     expect(results[0]).toContain("Tool alpha is not available");
+  });
+
+  describe("now and beforeResume", () => {
+    const HOUR = 3_600_000;
+    const START = 1_000_000;
+
+    /** Sleeps until `at` on the harness clock, then records that its phase ran. */
+    type Sleeper = { phase: "sleep"; at: number } | { phase: "wake" };
+    const sleeperTask = (ran: string[]): Task<{ at: number }, Sleeper, null, object> =>
+      defineTask<{ at: number }, Sleeper, null>({
+        name: "sleeper",
+        version: 1,
+        initial: (input) => ({ phase: "sleep", at: input.at }),
+        phases: {
+          sleep: (task, runtime, ctx) =>
+            runtime.sleepUntil(task.state.checkpoint.at, { phase: "wake" }, ctx),
+          wake: async (_task, runtime, ctx) => {
+            ran.push("phase");
+            await runtime.commit(
+              () => ({ status: "terminal", outcome: { status: "completed", result: null } }),
+              ctx,
+            );
+          },
+        },
+        abort: () => Promise.resolve(),
+      });
+
+    it("sleeps on the given clock and calls beforeResume after the backfill, before any task phase", async () => {
+      const tmp = await tempDir();
+      cleanup = tmp.cleanup;
+      const path = join(tmp.dir, "session.sqlite");
+      const clock = fakeClock(START);
+      const ran: string[] = [];
+      const task = sleeperTask(ran);
+      const registry = registryOf([defineExtension({ name: "sleepers", tasks: [task] })]);
+      // A store from before the index: its root conversation is indexed by the backfill alone.
+      const old = await openFauxHarness(await openNodeSqliteStorage(path), {
+        registry,
+        resume: false,
+      });
+      const rootId = old.root.id;
+      await old.harness.commit(
+        (tx) =>
+          tx.createTask(
+            task,
+            { at: START + HOUR },
+            { ownership: { kind: "conversation" }, conversationId: rootId, background: true },
+          ),
+        context,
+      );
+      await old.harness.close(context);
+
+      const seen: { ran: number; indexed: Promise<unknown> }[] = [];
+      let handed: Session | undefined;
+      const open = async (): Promise<Session> =>
+        openSession(await openNodeSqliteStorage(path), {
+          models: fauxModels([]),
+          registry,
+          agent: { model: FAUX_MODEL, cwd: tmp.dir },
+          env: nodeEnv,
+          now: clock.now,
+          beforeResume: (session) => {
+            handed = session;
+            seen.push({ ran: ran.length, indexed: indexOf(session.harness) });
+          },
+        });
+
+      // Real time is long past START + HOUR: only `now` keeps the task asleep.
+      const first = await open();
+      await vi.waitFor(async () => {
+        const { tasks } = await first.harness.inspect(context);
+        expect(tasks.map((t) => t.state)).toEqual([{ kind: "sleeping", until: START + HOUR }]);
+      });
+      await first.harness.close(context);
+      expect(handed).toBe(first);
+      expect(ran).toEqual([]);
+      expect(JSON.stringify(await seen[0]?.indexed)).toContain(String(rootId));
+
+      // Due on the fake clock: reopening runs it, after beforeResume.
+      clock.advance(HOUR);
+      const second = await open();
+      await vi.waitFor(() => {
+        expect(ran).toEqual(["phase"]);
+      });
+      await second.harness.close(context);
+      expect(seen.map((s) => s.ran)).toEqual([0, 0]);
+    });
   });
 });

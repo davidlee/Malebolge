@@ -22,10 +22,10 @@ export interface ConversationContext {
 }
 
 /**
- * The kinds of SATAN conversation satan-mcp may hold state for. `interactive` is
- * the only one until a scheduled producer exists.
+ * The kinds of connection satan-mcp may hold state for. `scheduled` is the wake
+ * path's own connection, apart from the conversation's `interactive` one.
  */
-export type SatanKind = "interactive";
+export type SatanKind = "interactive" | "scheduled";
 
 /**
  * What a connection announces to satan-mcp in its initialize: `experimental.satan`

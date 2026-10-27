@@ -18,6 +18,7 @@ import {
   type SatanToolsOptions,
   satanTools,
 } from "../src/satan-tools.ts";
+import { presenceOf } from "../src/wake/presence.ts";
 import {
   type FakeServerOptions,
   type FakeTool,
@@ -672,5 +673,45 @@ describe("satanTools", () => {
     // The replacement connection is the pooled one, and the refresh it started listed once.
     expect(back.initializations.items.map(announced)).toContainEqual(identityOf(conversation));
     expect(received(back, "tools/list")).toBeLessThanOrEqual(2);
+  });
+
+  describe("call", () => {
+    const CALL_DEADLINE_MS = 50;
+
+    it("calls over a scheduled connection apart from the conversation's interactive one", async () => {
+      const handle = await start();
+      const conversation = await anotherConversation();
+      expect(textOf(await callOn(conversation, "notes_read", { id: "1" }))).toBe("note 1");
+      const key = { conversation: conversation.id, kind: "scheduled" } as const;
+      const result = await handle.call(key, "notes_read", { id: "2" }, DEADLINE_MS);
+      // A satan-mcp answer is assignable to the presence reader's input type.
+      presenceOf(result);
+      expect(result.content).toEqual([{ type: "text", text: "note 2" }]);
+      const fixture = running();
+      // Discovery, the interactive connection, and the scheduled one.
+      expect(fixture.connections()).toBe(3);
+      expect(identitiesOf(fixture)).toEqual([
+        identityOf(conversation),
+        { conversation: String(conversation.id), kind: "scheduled" },
+      ]);
+    });
+
+    it("rejects a call that outlives deadlineMs", async () => {
+      const hung = await restartServer(tools, { silent: ["tools/call"] });
+      const handle = await start();
+      const key = { conversation: (await anotherConversation()).id, kind: "scheduled" } as const;
+      await expect(handle.call(key, "notes_read", { id: "1" }, CALL_DEADLINE_MS)).rejects.toThrow(
+        "the deadline passed",
+      );
+      await hung.release();
+    });
+
+    it("rejects a call made after close", async () => {
+      const handle = await start();
+      const key = { conversation: (await anotherConversation()).id, kind: "scheduled" } as const;
+      await handle.close();
+      satan = undefined;
+      await expect(handle.call(key, "notes_read", { id: "1" }, DEADLINE_MS)).rejects.toThrow();
+    });
   });
 });

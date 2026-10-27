@@ -13,7 +13,7 @@ import {
   type Registry,
   type ToolRegistration,
 } from "@earendil-works/pi-durable";
-import { McpClient, type Tool, toLlmContent } from "@earendil-works/pi-mcp";
+import { type CallToolResult, McpClient, type Tool, toLlmContent } from "@earendil-works/pi-mcp";
 import { coalesce } from "./coalesce.ts";
 import { satanIdentity } from "./conversation-context.ts";
 import { messageOf } from "./message-of.ts";
@@ -111,6 +111,13 @@ export interface SatanTools {
    * it, so it never gets a list older than itself.
    */
   refresh: () => Promise<void>;
+  /** One satan-mcp tool call over `key`'s pooled connection, bounded by `deadlineMs`. */
+  call: (
+    key: PoolKey,
+    tool: string,
+    args: Record<string, unknown>,
+    deadlineMs: number,
+  ) => Promise<CallToolResult>;
   /**
    * Close for good: the connection goes now if it has connected, or on arrival if it
    * is still connecting (never waited on). Later calls and refreshes are refused.
@@ -293,5 +300,13 @@ export function satanTools(
     await connections.close();
   };
 
-  return { refresh, close };
+  const call: SatanTools["call"] = (key, tool, args, callDeadlineMs) => {
+    const signal = AbortSignal.timeout(callDeadlineMs);
+    return within(
+      connections.withConnection(key, (client) => client.callTool(tool, args, { signal })),
+      signal,
+    );
+  };
+
+  return { refresh, call, close };
 }
