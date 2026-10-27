@@ -1,7 +1,8 @@
 // satan.wake v1 (SL-034 design § The wake task, § Fire composition): one task
 // definition for one-shot wakes and the heartbeat. `fire` gates and composes the
 // occurrence's input; `submit` re-checks the host's bounds, submits it once
-// (W1: its request id carries the occurrence counter `n`) and waits for its turn.
+// (W1: its request id carries the occurrence counter `n`) and waits at most one
+// ceiling for its turn. An aborted wake withdraws its own still-queued input (W9).
 
 import type { Context } from "@earendil-works/chord/context";
 import {
@@ -9,11 +10,15 @@ import {
   defineTask,
   type JsonObject,
   type RunningTask,
+  type SettledSubmissionRecord,
+  type Submission,
+  type SubmissionRecord,
   type Task,
   type TaskRuntime,
 } from "@earendil-works/pi-durable";
 import type { CallToolResult } from "@earendil-works/pi-mcp";
 import { contextOf } from "../conversation-context.ts";
+import { durationOf } from "../duration.ts";
 import { messageOf } from "../message-of.ts";
 import type { PoolKey } from "../satan-pool.ts";
 import type { WakeDeps } from "./extension.ts";
@@ -184,6 +189,20 @@ const nextBeat = (deps: WakeDeps, runtime: Runtime, n: number, ctx: Context): Pr
   return runtime.sleepUntil(at, { phase: "fire", at, n: n + 1 }, ctx);
 };
 
+/** A desktop notification about this wake, best effort: a notify that fails changes nothing. */
+const notify = async (
+  deps: WakeDeps,
+  runtime: Runtime,
+  input: WakeInput,
+  title: string,
+  text: string,
+): Promise<void> => {
+  const body = `wake ${String(runtime.taskId)} (${await topicOf(runtime, input)}): ${text}`;
+  await deps.satan
+    .call(scheduledKey(input), "notify_send", { title, body }, SATAN_CALL_DEADLINE_MS)
+    .catch(() => undefined);
+};
+
 /**
  * DEC-134: journal, notify (best effort), then a one-shot fails and the
  * heartbeat moves on to its next occurrence.
@@ -198,15 +217,7 @@ const failed = async (
 ): Promise<void> => {
   const input = task.input;
   await journal(deps, runtime, input, n, `failed: ${reason}`);
-  const body = `wake ${String(runtime.taskId)} (${await topicOf(runtime, input)}): ${reason}`;
-  await deps.satan
-    .call(
-      scheduledKey(input),
-      "notify_send",
-      { title: "SATAN wake failed", body },
-      SATAN_CALL_DEADLINE_MS,
-    )
-    .catch(() => undefined);
+  await notify(deps, runtime, input, "SATAN wake failed", reason);
   if (input.recurring === true) {
     await nextBeat(deps, runtime, n, ctx);
     return;
@@ -286,20 +297,51 @@ const entryOf = (runtime: Runtime, input: WakeInput, state: SubmitState): JsonOb
   scheduledBy: input.scheduledBy,
 });
 
+/** How an occurrence's input ended: answered, withdrawn by the bound, or not answered for `reason`. */
+type Ending = { kind: "done" } | { kind: "withdrawn" } | { kind: "failed"; reason: string };
+
 /**
- * Submit the composed input once and wait for its turn: `undefined` when it was
- * answered, else why not. The host's bounds are checked first by the caller.
+ * The input's settlement, waited for at most `ms`; then it is withdrawn if still
+ * queued (`withdrawn`), or waited for on, unbounded, once placed: a placed input
+ * always settles. The check and the withdrawal are one commit, so a turn that
+ * starts just before the bound is neither withdrawn nor reported.
+ */
+const boundedWait = async (
+  runtime: Runtime,
+  submission: Submission,
+  ms: number,
+  ctx: Context,
+): Promise<SettledSubmissionRecord | "withdrawn"> => {
+  const settled = submission.wait(ctx);
+  let disarm = (): void => undefined;
+  const elapsed = new Promise<"elapsed">((resolve) => {
+    disarm = runtime.setTimer(() => {
+      resolve("elapsed");
+    }, ms);
+  });
+  const first = await Promise.race([settled, elapsed]);
+  disarm();
+  if (first !== "elapsed") {
+    return first;
+  }
+  return (await submission.abort(ctx)) === "aborted" ? "withdrawn" : settled;
+};
+
+/**
+ * Submit the composed input once and wait at most one ceiling for its turn. The
+ * host's bounds are checked first by the caller.
  */
 const placed = async (
+  deps: WakeDeps,
   runtime: Runtime,
   input: WakeInput,
   state: SubmitState,
   ctx: Context,
-): Promise<string | undefined> => {
+): Promise<Ending> => {
   try {
     const target = await runtime.conversation(input.conversationId, ctx);
     if (target === undefined) {
-      return "target unreachable";
+      return { kind: "failed", reason: "target unreachable" };
     }
     const submission = await target.submit(
       {
@@ -311,11 +353,45 @@ const placed = async (
       },
       ctx,
     );
-    const settled = await submission.wait(ctx);
-    return settled.status === "done" ? undefined : `unanswered (${settled.reason})`;
+    const settled = await boundedWait(runtime, submission, deps.settings.ceilingMs, ctx);
+    if (settled === "withdrawn") {
+      return { kind: "withdrawn" };
+    }
+    return settled.status === "done"
+      ? { kind: "done" }
+      : { kind: "failed", reason: `unanswered (${settled.reason})` };
   } catch (error) {
-    return reasonOf(runtime, error);
+    return { kind: "failed", reason: reasonOf(runtime, error) };
   }
+};
+
+/**
+ * The bound withdrew the input: a one-shot fails; the heartbeat says so and moves
+ * on, and its next input carries whatever else is queued behind the failed run.
+ */
+const withdrawn = async (
+  deps: WakeDeps,
+  task: Wake<SubmitState>,
+  runtime: Runtime,
+  ctx: Context,
+): Promise<void> => {
+  const { n } = task.state.checkpoint;
+  const ceiling = durationOf(deps.settings.ceilingMs);
+  if (task.input.recurring !== true) {
+    await failed(deps, task, runtime, ctx, n, `not answered within ${ceiling}; withdrawn`);
+    return;
+  }
+  deps.log(
+    `wake ${String(runtime.taskId)} n=${String(n)} heartbeat unanswered after ${ceiling}; withdrawn`,
+  );
+  await notify(
+    deps,
+    runtime,
+    task.input,
+    "SATAN wake unanswered",
+    "heartbeat unanswered (queued behind a failed run?)",
+  );
+  await nextBeat(deps, runtime, n, ctx);
 };
 
 /** Re-check the host's bounds, submit, wait, then end the occurrence. */
@@ -338,9 +414,13 @@ const submit = async (
     });
     return;
   }
-  const reason = await placed(runtime, input, state, ctx);
-  if (reason !== undefined) {
-    await failed(deps, task, runtime, ctx, state.n, reason);
+  const ending = await placed(deps, runtime, input, state, ctx);
+  if (ending.kind === "failed") {
+    await failed(deps, task, runtime, ctx, state.n, ending.reason);
+    return;
+  }
+  if (ending.kind === "withdrawn") {
+    await withdrawn(deps, task, runtime, ctx);
     return;
   }
   await journal(deps, runtime, input, state.n, "done");
@@ -350,6 +430,77 @@ const submit = async (
   }
   await runtime.commit(
     () => ({ status: "terminal", outcome: { status: "completed", result: { fired: true } } }),
+    ctx,
+  );
+};
+
+/** The occurrence's submission, when one was admitted. */
+const admitted = async (
+  runtime: Runtime,
+  input: WakeInput,
+  n: number,
+  ctx: Context,
+): Promise<SubmissionRecord | undefined> => {
+  let found: SubmissionRecord | undefined;
+  await runtime.commit(async (tx) => {
+    found = await tx.submissionByRequest(input.conversationId, wakeRequestId(runtime.taskId, n));
+    return undefined;
+  }, ctx);
+  return found;
+};
+
+/**
+ * The abort handler's one duty: withdraw the occurrence's input if still queued
+ * (design § The wake task). `fired` when its turn ran or is running, or when
+ * that cannot be told: W9 permits overstating fired, never the reverse.
+ */
+const withdraw = async (
+  deps: WakeDeps,
+  task: Wake<WakeState>,
+  runtime: Runtime,
+  ctx: Context,
+): Promise<"unadmitted" | "withdrawn" | "fired"> => {
+  const input = task.input;
+  const { n } = task.state.checkpoint;
+  try {
+    const submission = await admitted(runtime, input, n, ctx);
+    if (submission === undefined) {
+      return "unadmitted";
+    }
+    switch (await deps.harness.abortSubmission(submission.id, ctx, input.conversationId)) {
+      case "not_found":
+        return "unadmitted";
+      case "aborted":
+        return "withdrawn";
+      case "already_placed":
+      case "settled":
+        return "fired";
+    }
+  } catch (error) {
+    await journal(deps, runtime, input, n, `withdraw failed: ${messageOf(error)}`);
+    return "fired";
+  }
+};
+
+/** An aborted wake: an occurrence that may be admitted withdraws its input first. */
+const aborted = async (
+  deps: WakeDeps,
+  task: Wake<WakeState>,
+  runtime: Runtime,
+  ctx: Context,
+): Promise<void> => {
+  const state = task.state.checkpoint;
+  const mayBeAdmitted = state.phase === "submit" || state.prepared === true;
+  const fired = mayBeAdmitted && (await withdraw(deps, task, runtime, ctx)) === "fired";
+  await journal(
+    deps,
+    runtime,
+    task.input,
+    state.n,
+    fired ? "cancelled: already fired" : "cancelled",
+  );
+  await runtime.commit(
+    () => ({ status: "terminal", outcome: { status: "aborted", result: { fired } } }),
     ctx,
   );
 };
@@ -364,14 +515,5 @@ export const wakeTask = (deps: () => WakeDeps): Task<WakeInput, WakeState, WakeR
       fire: (task, runtime, ctx) => fire(deps(), task, runtime, ctx),
       submit: (task, runtime, ctx) => submit(deps(), task, runtime, ctx),
     },
-    // Until PHASE-05's withdraw: an occurrence that may be admitted reports fired,
-    // never the reverse (W9's permitted overstatement).
-    abort: (task, runtime, ctx) => {
-      const state = task.state.checkpoint;
-      const fired = state.phase === "submit" || state.prepared === true;
-      return runtime.commit(
-        () => ({ status: "terminal", outcome: { status: "aborted", result: { fired } } }),
-        ctx,
-      );
-    },
+    abort: (task, runtime, ctx) => aborted(deps(), task, runtime, ctx),
   });

@@ -82,6 +82,42 @@ export function fakeClock(start: number): FakeClock {
   };
 }
 
+/** The harness timer on a fake clock: an armed timer fires only when the test moves the clock past it. */
+export interface FakeTimers {
+  /** For `HarnessOptions.setTimer`; background timers (memory only) are declined. */
+  readonly setTimer: NonNullable<SessionOptions["setTimer"]>;
+  /** Moves the clock by `ms`, then fires every timer now due, earliest first. */
+  readonly advance: (ms: number) => void;
+  /** When each armed timer is due, earliest first. */
+  readonly pending: () => number[];
+}
+
+/** Timers armed on `clock`, due at the clock's time plus their delay. */
+export function fakeTimers(clock: FakeClock): FakeTimers {
+  const armed = new Set<{ readonly due: number; readonly callback: () => void }>();
+  return {
+    setTimer: (callback, delayMs, { background }): (() => void) | undefined => {
+      if (background) {
+        return undefined;
+      }
+      const timer = { due: clock.now() + delayMs, callback };
+      armed.add(timer);
+      return (): void => {
+        armed.delete(timer);
+      };
+    },
+    advance: (ms): void => {
+      clock.advance(ms);
+      const due = [...armed].filter((timer) => timer.due <= clock.now());
+      for (const timer of due.sort((a, b) => a.due - b.due)) {
+        armed.delete(timer);
+        timer.callback();
+      }
+    },
+    pending: (): number[] => [...armed].map((timer) => timer.due).sort((a, b) => a - b),
+  };
+}
+
 /** A session on memory storage whose root runs the faux model, on `now` when given. */
 export async function openTestHarness(
   extensions: readonly Extension[],

@@ -33,6 +33,8 @@ export interface SessionOptions {
   env: NonNullable<HarnessOptions["env"]>;
   /** The harness clock (pi-durable's `HarnessOptions.now`); a wake's env reads the same function. */
   now?: () => number;
+  /** The harness timer (pi-durable's `HarnessOptions.setTimer`); default `setTimeout`. */
+  setTimer?: HarnessOptions["setTimer"];
   /**
    * Called synchronously with the complete session after the backfill and before
    * `resume()`: the last point no task has run and no client has been served.
@@ -48,6 +50,7 @@ export async function openSession(storage: Storage, options: SessionOptions): Pr
       registry: options.registry,
       env: options.env,
       ...(options.now === undefined ? {} : { now: options.now }),
+      ...(options.setTimer === undefined ? {} : { setTimer: options.setTimer }),
       conversationCreated: indexConversation,
     },
     context,

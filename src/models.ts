@@ -21,6 +21,7 @@ import {
 } from "@earendil-works/pi-ai";
 import { openAICompletionsApi } from "@earendil-works/pi-ai/api/openai-completions.lazy";
 import { createModels, createProvider, type Models } from "@earendil-works/pi-ai/models";
+import { durationOf } from "./duration.ts";
 import { optionalRecord, optionalString, required, requireString } from "./fields.ts";
 import { isRecord, type JsonRecord } from "./json.ts";
 import { messageOf } from "./message-of.ts";
@@ -172,12 +173,6 @@ export function parseGatewayCatalog(text: string): GatewayCatalog {
  * `fetch` returns (RV-062 F-13).
  */
 export const MODEL_STREAM_DEADLINE_MS = 2 * 60 * 60 * 1000;
-
-const HOUR_MS = 60 * 60 * 1000;
-
-/** `ms` as the expiry names it: whole hours as `2h`, anything else in milliseconds. */
-const durationOf = (ms: number): string =>
-  ms % HOUR_MS === 0 ? `${(ms / HOUR_MS).toString()}h` : `${ms.toString()}ms`;
 
 /**
  * The error a request past its deadline ends with. Deliberately not wording
