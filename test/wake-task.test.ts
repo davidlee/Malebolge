@@ -9,6 +9,7 @@ import { fauxAssistantMessage } from "@earendil-works/pi-ai/providers/faux";
 import { describe, expect, it, vi } from "vitest";
 import { context } from "../src/context.ts";
 
+import { localIso } from "../src/wake/local-time.ts";
 import { SATAN_CALL_DEADLINE_MS, wakeRequestId } from "../src/wake/task.ts";
 import { createConversation, FAUX_MODEL } from "./harness-fixture.ts";
 import {
@@ -227,6 +228,10 @@ describe("VT-2 (W1): one occurrence is admitted once, whatever a crash cuts shor
     expect(deferred.checkpoint["n"]).toBe(0);
     expect(deferred.checkpoint["prepared"]).toBe(true);
     expect(world.lines.some((line) => line.includes("defer presence until"))).toBe(true);
+    // The journal names the defer in local time with its offset, not UTC.
+    expect(
+      world.lines.some((line) => line.endsWith(`defer presence until ${localIso(deferred.until)}`)),
+    ).toBe(true);
     expect(await wakeEntries(session.root)).toHaveLength(1);
 
     // A present room user lets the same occurrence finish, and it is still one entry.

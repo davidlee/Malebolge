@@ -8,6 +8,7 @@ import type { Harness, TaskId } from "@earendil-works/pi-durable";
 import { describe, expect, it, vi } from "vitest";
 import { context } from "../src/context.ts";
 import type { WakeDeps } from "../src/wake/extension.ts";
+import { localIso } from "../src/wake/local-time.ts";
 import { type WakeResult, wakeRequestId } from "../src/wake/task.ts";
 import {
   CEILING,
@@ -227,7 +228,7 @@ describe("VT-1: a heartbeat whose input is stuck behind a failed run", () => {
 
     // Exactly one wake input was ever put before the model, and it is occurrence 1's.
     const text = only(wakeInputs(seen));
-    expect(text).toContain(`fired_at="${new Date(sleep.until).toISOString()}"`);
+    expect(text).toContain(`fired_at="${localIso(sleep.until)}"`);
     const entry = only(await wakeEntries(session.root));
     expect(dataOf(entry)["n"]).toBe(1);
   });

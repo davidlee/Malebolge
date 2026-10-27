@@ -18,6 +18,7 @@ import { isConversationKey } from "../conversations.ts";
 import { isRecord } from "../json.ts";
 import { isKnownTopic, latestIn, readIndex } from "../topics.ts";
 import type { WakeDeps } from "./extension.ts";
+import { localIso } from "./local-time.ts";
 import {
   createWakeTask,
   liveWakes,
@@ -29,21 +30,6 @@ import {
 type WakeTask = Task<WakeInput, WakeState, WakeResult, object>;
 
 const MINUTE = 60_000;
-
-/** `ms` as ISO-8601 local time with its offset: the zone the quiet window is read in. */
-export const localIso = (ms: number): string => {
-  const date = new Date(ms);
-  const pad = (n: number, width = 2): string =>
-    String(Math.trunc(Math.abs(n))).padStart(width, "0");
-  const offset = -date.getTimezoneOffset();
-  const zone =
-    offset === 0 ? "Z" : `${offset > 0 ? "+" : "-"}${pad(offset / 60)}:${pad(offset % 60)}`;
-  return (
-    `${String(date.getFullYear())}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}` +
-    `T${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}` +
-    `.${pad(date.getMilliseconds(), 3)}${zone}`
-  );
-};
 
 /** A result the model reads as JSON. */
 const answer = (value: object): ToolExecutionResult => ({

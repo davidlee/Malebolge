@@ -27,6 +27,7 @@ import { messageOf } from "../message-of.ts";
 import type { PoolKey } from "../satan-pool.ts";
 import type { IndexReader } from "../topics.ts";
 import type { WakeDeps } from "./extension.ts";
+import { localIso } from "./local-time.ts";
 import type { EpisodeClass, Gate, WakeEnv } from "./policy.ts";
 import { presenceOf } from "./presence.ts";
 
@@ -206,7 +207,7 @@ const contentOf = (
   percept: string,
 ): string =>
   [
-    `<wake fired_at="${new Date(firedAt).toISOString()}"${lateBy(input, n, firedAt)} class="${input.episodeClass}" scheduled_by="${String(input.scheduledBy)}">`,
+    `<wake fired_at="${localIso(firedAt)}"${lateBy(input, n, firedAt)} class="${input.episodeClass}" scheduled_by="${String(input.scheduledBy)}">`,
     fragment,
     `<intent>${input.intent}</intent>`,
     ...(input.payload === undefined ? [] : [`<payload>${JSON.stringify(input.payload)}</payload>`]),
@@ -246,7 +247,7 @@ const defer = async (
     runtime,
     task.input,
     next.n,
-    `defer ${gate.reason} until ${new Date(gate.until).toISOString()}`,
+    `defer ${gate.reason} until ${localIso(gate.until)}`,
   );
   await runtime.sleepUntil(gate.until, next, ctx);
 };
