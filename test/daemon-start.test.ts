@@ -40,6 +40,13 @@ async function world(): Promise<World> {
     gatewayCatalog: join(tmp.dir, "missing-catalog.json"),
     gatewayKeyFile: join(tmp.dir, "missing-key"),
     skillDirs: [],
+    wakes: {
+      enabled: false,
+      floorMs: 300_000,
+      ceilingMs: 7_200_000,
+      quiet: { startMin: 1400, endMin: 420 },
+      topic: "room",
+    },
     execution: { profile: "host", cwd },
   };
   return { config, log: [], models: fauxModels().models };

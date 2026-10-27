@@ -18,6 +18,7 @@ import { DEFAULT_MODEL, type ModelRef, parseModel } from "./models.ts";
 import type { RoomConnection } from "./room/connection.ts";
 import { readRoomDoor, ROOM_DOOR_KEYS, type RoomDoor, roomConnectionOf } from "./room/door.ts";
 import { DEFAULT_SATAN_IDLE_MS } from "./satan-pool.ts";
+import type { QuietWindow, WakeSettings } from "./wake/policy.ts";
 
 export type Profile = "room" | "host";
 
@@ -51,6 +52,8 @@ export interface Config {
   gatewayKeyFile: string;
   /** Agent Skill directories (each holds a SKILL.md), from MALEBOLGE_SKILLS. */
   skillDirs: string[];
+  /** When SATAN may wake itself in the room (SL-034; host keeps the defaults, disabled). */
+  wakes: WakeSettings;
   /** Where the agent's tools run; daemon-env.ts turns it into their environment and cwd. */
   execution: Execution;
 }
@@ -117,7 +120,7 @@ function parseDoorFile(text: string, hostHome: string): { door: RoomDoor; home: 
 }
 
 /** `env[name]` as a positive integer of milliseconds, or `fallback` when it is unset. */
-function idleMsOf(env: Env, name: string, fallback: number): number {
+function msOf(env: Env, name: string, fallback: number): number {
   const value = env[name];
   if (value === undefined) {
     return fallback;
@@ -130,12 +133,82 @@ function idleMsOf(env: Env, name: string, fallback: number): number {
   return ms;
 }
 
+/** The wake settings' defaults: five minutes to two hours, quiet from 23:20 to 07:00. */
+const DEFAULT_WAKE_FLOOR_MS = 300_000;
+const DEFAULT_WAKE_CEILING_MS = 7_200_000;
+const DEFAULT_QUIET: QuietWindow = { startMin: 23 * 60 + 20, endMin: 7 * 60 };
+const DEFAULT_WAKE_TOPIC = "room";
+
+/** `HH:MM-HH:MM`, the only shape MALEBOLGE_WAKE_QUIET accepts. */
+const QUIET = /^(\d\d):(\d\d)-(\d\d):(\d\d)$/;
+
+/** The minutes since midnight an `HH`/`MM` pair names; `undefined` unless it is a clock time. */
+function minutesOf(hours: string | undefined, minutes: string | undefined): number | undefined {
+  if (hours === undefined || minutes === undefined) {
+    return undefined;
+  }
+  const hour = Number(hours);
+  const minute = Number(minutes);
+  return hour > 23 || minute > 59 ? undefined : hour * 60 + minute;
+}
+
+/** MALEBOLGE_WAKE_QUIET's window; a window with no minutes in it is malformed, not empty. */
+function quietOf(env: Env): QuietWindow {
+  const value = env["MALEBOLGE_WAKE_QUIET"];
+  if (value === undefined) {
+    return { ...DEFAULT_QUIET };
+  }
+  const parsed = QUIET.exec(value);
+  const startMin = parsed === null ? undefined : minutesOf(parsed[1], parsed[2]);
+  const endMin = parsed === null ? undefined : minutesOf(parsed[3], parsed[4]);
+  if (startMin === undefined || endMin === undefined || startMin === endMin) {
+    throw new Error(`MALEBOLGE_WAKE_QUIET must be HH:MM-HH:MM, not ${JSON.stringify(value)}`);
+  }
+  return { startMin, endMin };
+}
+
+/**
+ * The wake settings the environment names, defaults for the keys it leaves
+ * unset (VT-1). The host's refusal of wake keys is `refuseWakeKeys`'s (W10).
+ */
+function wakesOf(env: Env): WakeSettings {
+  const floorMs = msOf(env, "MALEBOLGE_WAKE_FLOOR_MS", DEFAULT_WAKE_FLOOR_MS);
+  const ceilingMs = msOf(env, "MALEBOLGE_WAKE_CEILING_MS", DEFAULT_WAKE_CEILING_MS);
+  if (floorMs > ceilingMs) {
+    throw new Error(
+      `MALEBOLGE_WAKE_FLOOR_MS ${String(floorMs)} is above MALEBOLGE_WAKE_CEILING_MS ${String(ceilingMs)}`,
+    );
+  }
+  const topic = env["MALEBOLGE_WAKE_TOPIC"] ?? DEFAULT_WAKE_TOPIC;
+  if (topic === "") {
+    throw new Error("MALEBOLGE_WAKE_TOPIC must not be empty");
+  }
+  return {
+    enabled: env["MALEBOLGE_WAKES"] === "on",
+    floorMs,
+    ceilingMs,
+    quiet: quietOf(env),
+    topic,
+  };
+}
+
+/** W10: wakes wake the room, never the host, so a host profile refuses every wake key. */
+function refuseWakeKeys(env: Env): void {
+  const key = Object.keys(env).find(
+    (name) => name.startsWith("MALEBOLGE_WAKE") && env[name] !== undefined,
+  );
+  if (key !== undefined) {
+    throw new Error(`${key} is for the room profile, not host`);
+  }
+}
+
 function executionOf(env: Env, cwd: string, readFile: (path: string) => string): Execution {
   const profile = profileOf(env["MALEBOLGE_PROFILE"]);
   if (profile === "host") {
     if (env["MALEBOLGE_DOOR"] !== undefined) {
       throw new Error("MALEBOLGE_DOOR is for the room profile, not host");
     }
+    refuseWakeKeys(env);
     return { profile, cwd };
   }
   const doorFile = requireEnv(env, "MALEBOLGE_DOOR");
@@ -162,7 +235,7 @@ export function resolveConfig(env: Env, cwd: string, readFile: (path: string) =>
     storagePath: join(profileState, "session.sqlite"),
     lockPath: join(profileState, "daemon.lock"),
     mcpSocket: env["SATAN_MCP_SOCKET"] ?? join(runtime, "mcp", "mcp.sock"),
-    satanIdleMs: idleMsOf(env, "MALEBOLGE_SATAN_IDLE_MS", DEFAULT_SATAN_IDLE_MS),
+    satanIdleMs: msOf(env, "MALEBOLGE_SATAN_IDLE_MS", DEFAULT_SATAN_IDLE_MS),
     daemonSocket: inProfileDir("daemonSocket", daemonSocket(env, profile), profile),
     model: parseModel(env["MALEBOLGE_MODEL"] ?? DEFAULT_MODEL),
     gatewayCatalog:
@@ -171,6 +244,7 @@ export function resolveConfig(env: Env, cwd: string, readFile: (path: string) =>
       env["MALEBOLGE_GATEWAY_KEY_FILE"] ??
       join(home, ".config", "llm-gateway", "keys", "malebolge"),
     skillDirs: (env["MALEBOLGE_SKILLS"] ?? "").split(":").filter((dir) => dir !== ""),
+    wakes: wakesOf(env),
     execution,
   };
 }

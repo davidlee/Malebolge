@@ -59,6 +59,13 @@ describe("resolveConfig", () => {
       gatewayKeyFile: "/h/.config/llm-gateway/keys/malebolge",
       skillDirs: [],
       satanIdleMs: 900_000,
+      wakes: {
+        enabled: false,
+        floorMs: 300_000,
+        ceilingMs: 7_200_000,
+        quiet: { startMin: 23 * 60 + 20, endMin: 7 * 60 },
+        topic: "room",
+      },
       execution: { profile: "host", cwd: "/cwd" },
     });
   });
@@ -197,5 +204,114 @@ describe("the profile-bound store and socket (DEC-078)", () => {
     );
     expect(() => attachSocket({ ...client, MALEBOLGE_PROFILE: "vm" })).toThrow(/MALEBOLGE_PROFILE/);
     expect(refusal({ ...host, MALEBOLGE_PROFILE: undefined })).toContain("MALEBOLGE_PROFILE");
+  });
+});
+
+describe("wakes (VT-1)", () => {
+  const WAKES = {
+    enabled: false,
+    floorMs: 300_000,
+    ceilingMs: 7_200_000,
+    quiet: { startMin: 23 * 60 + 20, endMin: 7 * 60 },
+    topic: "room",
+  };
+  const MILLISECOND_KEYS: readonly string[] = [
+    "MALEBOLGE_WAKE_FLOOR_MS",
+    "MALEBOLGE_WAKE_CEILING_MS",
+  ];
+  const NOT_MILLISECONDS: readonly string[] = ["1e3", " 30", "0x10", "0", "-5", "abc"];
+  const BAD_MILLISECONDS_NAMED: [string, string][] = MILLISECOND_KEYS.flatMap((name) =>
+    NOT_MILLISECONDS.map((value): [string, string] => [name, value]),
+  );
+  const BAD_QUIET: readonly string[] = [
+    "7:00-08:00",
+    "24:00-07:00",
+    "23:60-07:00",
+    "23:20",
+    "23:20-07:00 ",
+    "08:00-08:00",
+  ];
+  const WAKE_KEYS: [string, string][] = [
+    ["MALEBOLGE_WAKES", "on"],
+    ["MALEBOLGE_WAKE_FLOOR_MS", "300000"],
+    ["MALEBOLGE_WAKE_CEILING_MS", "7200000"],
+    ["MALEBOLGE_WAKE_QUIET", "23:20-07:00"],
+    ["MALEBOLGE_WAKE_TOPIC", "room"],
+  ];
+
+  it("host: no wake keys means wakes are off and otherwise by default", () => {
+    expect(resolve(host).wakes).toEqual(WAKES);
+  });
+
+  it.each([
+    ["on", true],
+    ["ON", false],
+    ["true", false],
+    ["1", false],
+    [" on", false],
+  ])("MALEBOLGE_WAKES %j is enabled %s", (value, enabled) => {
+    expect(resolve({ ...room, MALEBOLGE_WAKES: value }).wakes.enabled).toBe(enabled);
+  });
+
+  it("takes the floor and ceiling from the environment", () => {
+    const config = resolve({
+      ...room,
+      MALEBOLGE_WAKE_FLOOR_MS: "60000",
+      MALEBOLGE_WAKE_CEILING_MS: "3600000",
+    });
+    expect(config.wakes.floorMs).toBe(60_000);
+    expect(config.wakes.ceilingMs).toBe(3_600_000);
+  });
+
+  it.each(BAD_MILLISECONDS_NAMED)("%s refuses %j", (name, value) => {
+    expect(refusal({ ...room, [name]: value })).toMatch(name);
+  });
+
+  it("refuses a floor above the ceiling", () => {
+    const keys = {
+      ...room,
+      MALEBOLGE_WAKE_FLOOR_MS: "7200001",
+      MALEBOLGE_WAKE_CEILING_MS: "7200000",
+    };
+    expect(refusal(keys)).toMatch(/MALEBOLGE_WAKE_(FLOOR|CEILING)_MS/);
+  });
+
+  it("defaults the quiet window to 23:20-07:00", () => {
+    expect(resolve(room).wakes.quiet).toEqual({ startMin: 1400, endMin: 420 });
+  });
+
+  it("takes MALEBOLGE_WAKE_QUIET 13:00-14:30 as 780 to 870", () => {
+    expect(resolve({ ...room, MALEBOLGE_WAKE_QUIET: "13:00-14:30" }).wakes.quiet).toEqual({
+      startMin: 780,
+      endMin: 870,
+    });
+  });
+
+  it.each(BAD_QUIET)("refuses MALEBOLGE_WAKE_QUIET %j", (value) => {
+    expect(refusal({ ...room, MALEBOLGE_WAKE_QUIET: value })).toMatch("MALEBOLGE_WAKE_QUIET");
+  });
+
+  it("defaults the wake topic to the room", () => {
+    expect(resolve(room).wakes.topic).toBe("room");
+  });
+
+  it("takes any non-empty MALEBOLGE_WAKE_TOPIC as it is", () => {
+    expect(resolve({ ...room, MALEBOLGE_WAKE_TOPIC: "the workshop" }).wakes.topic).toBe(
+      "the workshop",
+    );
+  });
+
+  it("refuses an empty MALEBOLGE_WAKE_TOPIC", () => {
+    expect(refusal({ ...room, MALEBOLGE_WAKE_TOPIC: "" })).toMatch("MALEBOLGE_WAKE_TOPIC");
+  });
+
+  it.each(WAKE_KEYS)("host with %s refuses startup", (name, value) => {
+    expect(refusal({ ...host, [name]: value })).toMatch(name);
+  });
+
+  it("host refuses a wake key as a host key before reading its value", () => {
+    expect(refusal({ ...host, MALEBOLGE_WAKE_QUIET: "nonsense" })).toMatch(
+      "MALEBOLGE_WAKE_QUIET is for the room profile, not host",
+    );
   });
 });
