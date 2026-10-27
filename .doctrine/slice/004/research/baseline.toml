@@ -1,0 +1,8 @@
+slice = "SL-004"
+date = "2026-10-24"
+
+[hashes]
+".doctrine/slice/004/design.md" = "9dafbe454282685eba5db216a4edce77dbbcc1bfade267c189ca23be182c5ab1"
+".doctrine/slice/004/plan.md" = "1501584d923a3b9967ceacd4781427496a272236ad37f1f495347b2647fa1a9e"
+".doctrine/slice/004/plan.toml" = "60d902646697265b7cf535f62c81dd27a763f56805cd32d2d0ee88f433679db2"
+".doctrine/slice/004/slice-004.md" = "17177c4d8b0a590df091aef1f5ec4a10c9019815fe764fed58575344d98906f0"
