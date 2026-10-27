@@ -5,6 +5,7 @@
   inputs.doctrine.url = "github:davidlee/doctrine";
   # The host-side bwrap jails an agent works on this repo in (`jailed-*`).
   inputs.agents.url = "github:davidlee/nix-config?dir=flakes/agents";
+  inputs.agents.inputs.nixpkgs.follows = "nixpkgs";
 
   outputs = {
     self,
