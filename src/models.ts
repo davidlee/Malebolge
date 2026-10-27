@@ -6,13 +6,18 @@
 // process.env, never on argv.
 
 import { readFile } from "node:fs/promises";
-import type {
-  Model,
-  ModelCost,
-  ModelInputModality,
-  OpenAICompletionsCompat,
-  Provider,
-  ThinkingLevelMap,
+import {
+  type Api,
+  type AssistantMessage,
+  type AssistantMessageEventStream,
+  createAssistantMessageEventStream,
+  type Model,
+  type ModelCost,
+  type ModelInputModality,
+  type OpenAICompletionsCompat,
+  type Provider,
+  type ProviderStreams,
+  type ThinkingLevelMap,
 } from "@earendil-works/pi-ai";
 import { openAICompletionsApi } from "@earendil-works/pi-ai/api/openai-completions.lazy";
 import { createModels, createProvider, type Models } from "@earendil-works/pi-ai/models";
@@ -160,8 +165,110 @@ export function parseGatewayCatalog(text: string): GatewayCatalog {
   };
 }
 
-/** The `catalog` provider, authenticating every request with `key` (held in the closure). */
-export function gatewayProvider(catalog: GatewayCatalog, key: string): Provider {
+/**
+ * How long one model request may run, from its start across headers and the
+ * whole body (design sec-5, Model stream deadline). pi-ai's `timeoutMs` stops
+ * at response headers on this path: the OpenAI SDK clears its timer once
+ * `fetch` returns (RV-062 F-13).
+ */
+export const MODEL_STREAM_DEADLINE_MS = 2 * 60 * 60 * 1000;
+
+const HOUR_MS = 60 * 60 * 1000;
+
+/** `ms` as the expiry names it: whole hours as `2h`, anything else in milliseconds. */
+const durationOf = (ms: number): string =>
+  ms % HOUR_MS === 0 ? `${(ms / HOUR_MS).toString()}h` : `${ms.toString()}ms`;
+
+/**
+ * The error a request past its deadline ends with. Deliberately not wording
+ * pi-ai's classifier deems transient, so pi-durable fails the run with
+ * `model_error` rather than retrying it (RV-062 F-16). It carries no streamed
+ * partial: the run fails either way.
+ */
+function expiredMessage(model: Model<Api>, ms: number): AssistantMessage {
+  return {
+    role: "assistant",
+    content: [],
+    api: model.api,
+    provider: model.provider,
+    model: model.id,
+    usage: {
+      input: 0,
+      output: 0,
+      cacheRead: 0,
+      cacheWrite: 0,
+      totalTokens: 0,
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+    },
+    stopReason: "error",
+    errorMessage: `model stream exceeded ${durationOf(ms)}`,
+    timestamp: Date.now(),
+  };
+}
+
+/**
+ * The stream `open` starts on a signal that also fires `ms` after the request
+ * starts; past that, the request is aborted and the stream ends as an error.
+ */
+function bounded(
+  model: Model<Api>,
+  ms: number,
+  caller: AbortSignal | undefined,
+  open: (signal: AbortSignal) => AssistantMessageEventStream,
+): AssistantMessageEventStream {
+  const outer = createAssistantMessageEventStream();
+  const deadline = new AbortController();
+  const timer = setTimeout(() => {
+    // Ended first, so whatever the abort makes the inner request send is dropped.
+    const error = expiredMessage(model, ms);
+    outer.push({ type: "error", reason: "error", error });
+    outer.end(error);
+    deadline.abort();
+  }, ms);
+  const inner = open(
+    caller === undefined ? deadline.signal : AbortSignal.any([caller, deadline.signal]),
+  );
+  void (async (): Promise<void> => {
+    try {
+      for await (const event of inner) {
+        outer.push(event);
+      }
+      outer.end(await inner.result());
+    } finally {
+      clearTimeout(timer);
+    }
+  })();
+  return outer;
+}
+
+/**
+ * `api` with every model request bounded by `ms` (design sec-5; RV-062 F-13,
+ * F-16). Only `stream` and `streamSimple`: deferred fetches pass through
+ * unbounded, and the gateway's openai-completions API has none.
+ */
+export function withStreamDeadline(api: ProviderStreams, ms: number): ProviderStreams {
+  return {
+    ...api,
+    stream: (model, context, options) =>
+      bounded(model, ms, options?.signal, (signal) =>
+        api.stream(model, context, { ...options, signal }),
+      ),
+    streamSimple: (model, context, options) =>
+      bounded(model, ms, options?.signal, (signal) =>
+        api.streamSimple(model, context, { ...options, signal }),
+      ),
+  };
+}
+
+/**
+ * The `catalog` provider, authenticating every request with `key` (held in the
+ * closure), each request bounded by `deadlineMs`.
+ */
+export function gatewayProvider(
+  catalog: GatewayCatalog,
+  key: string,
+  deadlineMs = MODEL_STREAM_DEADLINE_MS,
+): Provider {
   return createProvider({
     id: GATEWAY_PROVIDER,
     name: "LLM gateway",
@@ -173,7 +280,7 @@ export function gatewayProvider(catalog: GatewayCatalog, key: string): Provider 
       },
     },
     models: [...catalog.models],
-    api: openAICompletionsApi(),
+    api: withStreamDeadline(openAICompletionsApi(), deadlineMs),
   });
 }
 
@@ -198,13 +305,18 @@ async function readKey(path: string): Promise<string> {
 /**
  * A catalog holding the gateway provider alone, from the catalog file and key
  * file at the given paths. Every failure names a path; none carries the key.
+ * Both daemon profiles and the runner load their models here.
  */
-export async function loadGatewayModels(catalogPath: string, keyPath: string): Promise<Models> {
+export async function loadGatewayModels(
+  catalogPath: string,
+  keyPath: string,
+  deadlineMs = MODEL_STREAM_DEADLINE_MS,
+): Promise<Models> {
   const key = await readKey(keyPath);
   const text = await readRequired(catalogPath, "gateway catalog");
   let provider: Provider;
   try {
-    provider = gatewayProvider(parseGatewayCatalog(text), key);
+    provider = gatewayProvider(parseGatewayCatalog(text), key, deadlineMs);
   } catch (error) {
     throw new Error(`gateway catalog ${catalogPath}: ${messageOf(error)}`, { cause: error });
   }

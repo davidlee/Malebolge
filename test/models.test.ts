@@ -1,18 +1,38 @@
 import { readFileSync } from "node:fs";
 import { rm, writeFile } from "node:fs/promises";
-import { createServer } from "node:http";
+import { createServer, type RequestListener } from "node:http";
 import type { AddressInfo } from "node:net";
 import { join } from "node:path";
-import { createModels } from "@earendil-works/pi-ai/models";
-import { onTestFinished, describe, expect, it } from "vitest";
+import {
+  type Api,
+  type AssistantMessage,
+  type AssistantMessageEventStream,
+  contentText,
+  createAssistantMessageEventStream,
+  isRetryableAssistantError,
+  type Model,
+  normalizeContext,
+  type ProviderStreams,
+  type StreamOptions,
+  type TranscriptContext,
+} from "@earendil-works/pi-ai";
+import { createModels, type Models } from "@earendil-works/pi-ai/models";
+import { type Conversation, MemoryStorage } from "@earendil-works/pi-durable";
+import { onTestFinished, describe, expect, it, vi } from "vitest";
+import { context } from "../src/context.ts";
 import { isRecord, type JsonRecord } from "../src/json.ts";
 import {
   GATEWAY_PROVIDER,
   gatewayProvider,
   loadGatewayModels,
+  MODEL_STREAM_DEADLINE_MS,
   parseGatewayCatalog,
+  withStreamDeadline,
 } from "../src/models.ts";
+import { registryOf } from "../src/registry.ts";
+import { openSession } from "../src/session.ts";
 import { tempDir } from "./fixtures.ts";
+import { closing, nodeEnv } from "./harness-fixture.ts";
 
 /** The catalog as `piGatewayConfig` renders it (see test/gateway-catalog.json). */
 const GATEWAY_CATALOG_TEXT = readFileSync(
@@ -112,21 +132,15 @@ describe("gateway provider (parseGatewayCatalog)", () => {
 const isAddressInfo = (value: string | AddressInfo | null): value is AddressInfo =>
   typeof value === "object" && value !== null;
 
-/** A local server answering one chat completion; records each request's headers. */
-async function fakeGateway(): Promise<{ baseUrl: string; authorizations: string[] }> {
-  const authorizations: string[] = [];
-  const server = createServer((request, response) => {
-    authorizations.push(
-      `${request.method ?? ""} ${request.url ?? ""} ${request.headers.authorization ?? ""}`,
-    );
-    request.resume();
-    response.writeHead(400, { "content-type": "application/json" });
-    response.end(JSON.stringify({ error: { message: "nope" } }));
-  });
+/** `handler` served on a loopback port until the test ends; the base URL a catalog names. */
+async function localGateway(handler: RequestListener): Promise<string> {
+  const server = createServer(handler);
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   onTestFinished(
     () =>
       new Promise<void>((resolve) => {
+        // A stalled response would otherwise hold `close` open.
+        server.closeAllConnections();
         server.close(() => {
           resolve();
         });
@@ -134,9 +148,23 @@ async function fakeGateway(): Promise<{ baseUrl: string; authorizations: string[
   );
   const address = server.address();
   if (!isAddressInfo(address)) {
-    throw new Error("fake gateway has no port");
+    throw new Error("local gateway has no port");
   }
-  return { baseUrl: `http://127.0.0.1:${address.port.toString()}/v1`, authorizations };
+  return `http://127.0.0.1:${address.port.toString()}/v1`;
+}
+
+/** A local server answering one chat completion; records each request's headers. */
+async function fakeGateway(): Promise<{ baseUrl: string; authorizations: string[] }> {
+  const authorizations: string[] = [];
+  const baseUrl = await localGateway((request, response) => {
+    authorizations.push(
+      `${request.method ?? ""} ${request.url ?? ""} ${request.headers.authorization ?? ""}`,
+    );
+    request.resume();
+    response.writeHead(400, { "content-type": "application/json" });
+    response.end(JSON.stringify({ error: { message: "nope" } }));
+  });
+  return { baseUrl, authorizations };
 }
 
 describe("gateway provider requests", () => {
@@ -237,4 +265,234 @@ describe("loadGatewayModels (the daemon's and the runner's shared loader)", () =
       expect(refusal.message).not.toContain(key);
     },
   );
+});
+
+/** One OpenAI-compatible chat-completion chunk, as an SSE event. */
+function sseChunk(delta: JsonRecord, finishReason: string | null): string {
+  return `data: ${JSON.stringify({
+    id: "c1",
+    object: "chat.completion.chunk",
+    created: 0,
+    model: "deepseek-flash",
+    choices: [{ index: 0, delta, finish_reason: finishReason }],
+  })}\n\n`;
+}
+
+/** What a stalling gateway saw. */
+interface StallStats {
+  requests: number;
+  /** The client aborted a request before its response ended. */
+  clientClosed: boolean;
+}
+
+/**
+ * How a stalling gateway answers: never sending headers ("silent"), sending
+ * headers and one chunk then nothing ("stall"), or completing ("finish").
+ */
+type GatewayMode = "silent" | "stall" | "finish";
+
+/** A local gateway answering every request per `mode`. */
+async function stallingGateway(mode: GatewayMode): Promise<{ baseUrl: string; stats: StallStats }> {
+  const stats: StallStats = { requests: 0, clientClosed: false };
+  const baseUrl = await localGateway((request, response) => {
+    stats.requests += 1;
+    request.resume();
+    response.on("close", () => {
+      if (!response.writableEnded) {
+        stats.clientClosed = true;
+      }
+    });
+    if (mode === "silent") {
+      return;
+    }
+    response.writeHead(200, { "content-type": "text/event-stream" });
+    response.write(sseChunk({ role: "assistant", content: "hel" }, null));
+    if (mode === "finish") {
+      response.write(sseChunk({ content: "lo" }, "stop"));
+      response.write("data: [DONE]\n\n");
+      response.end();
+    }
+  });
+  return { baseUrl, stats };
+}
+
+/** A minimal assistant message for a request the caller aborted. */
+function abortedMessage(): AssistantMessage {
+  return {
+    role: "assistant",
+    content: [],
+    api: "openai-completions",
+    provider: "gateway",
+    model: "deepseek-flash",
+    usage: {
+      input: 0,
+      output: 0,
+      cacheRead: 0,
+      cacheWrite: 0,
+      totalTokens: 0,
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+    },
+    stopReason: "aborted",
+    errorMessage: "Request was aborted",
+    timestamp: Date.now(),
+  };
+}
+
+describe("model stream deadline (withStreamDeadline; RV-062 F-13 as amended by F-16)", () => {
+  /** Catalog and key files pointed at `baseUrl`, loaded with `deadlineMs` as both daemon profiles and the runner do. */
+  async function gatewayModels(baseUrl: string, deadlineMs: number): Promise<Models> {
+    const tmp = await tempDir();
+    onTestFinished(tmp.cleanup);
+    const catalogPath = join(tmp.dir, "gateway-models.json");
+    const keyPath = join(tmp.dir, "key");
+    await writeFile(catalogPath, editedCatalog(setting("baseUrl", baseUrl)));
+    await writeFile(keyPath, "sk-deadline\n");
+    return loadGatewayModels(catalogPath, keyPath, deadlineMs);
+  }
+
+  /** A session on `models` whose root runs the fixture's model; its harness closes when the test ends. */
+  async function openGatewaySession(models: Models): Promise<Conversation> {
+    const session = await openSession(new MemoryStorage(), {
+      models,
+      registry: registryOf([]),
+      agent: { model: { provider: GATEWAY_PROVIDER, modelId: "deepseek-flash" } },
+      env: nodeEnv,
+    });
+    closing(session.harness);
+    return session.root;
+  }
+
+  /** The fixture's model, from the catalog alone, refusing absence. */
+  function fixtureModel(): Model<Api> {
+    const models = createModels();
+    models.setProvider(gatewayProvider(parseGatewayCatalog(GATEWAY_CATALOG_TEXT), "k"));
+    const model = models.getModel(GATEWAY_PROVIDER, "deepseek-flash");
+    if (model === undefined) {
+      throw new Error("no model");
+    }
+    return model;
+  }
+
+  /** A ProviderStreams whose streams never emit, recording the signal each call received. */
+  function silentStreams(): { streams: ProviderStreams; signals: (AbortSignal | undefined)[] } {
+    const signals: (AbortSignal | undefined)[] = [];
+    const open = (
+      _model: Model<Api>,
+      _transcript: TranscriptContext,
+      options?: StreamOptions,
+    ): AssistantMessageEventStream => {
+      signals.push(options?.signal);
+      return createAssistantMessageEventStream();
+    };
+    return { streams: { stream: open, streamSimple: open }, signals };
+  }
+
+  /** A ProviderStreams that answers a caller abort with pi-ai's aborted error event. */
+  function abortingStreams(): ProviderStreams {
+    const open = (
+      _model: Model<Api>,
+      _transcript: TranscriptContext,
+      options?: StreamOptions,
+    ): AssistantMessageEventStream => {
+      const stream = createAssistantMessageEventStream();
+      options?.signal?.addEventListener("abort", () => {
+        stream.push({ type: "error", reason: "aborted", error: abortedMessage() });
+      });
+      return stream;
+    };
+    return { stream: open, streamSimple: open };
+  }
+
+  it.each<[string, GatewayMode]>([
+    ["sends headers and one chunk, then never ends", "stall"],
+    ["never sends headers", "silent"],
+  ])(
+    "a response that %s fails its run with model_error after exactly one model request, its input unanswered",
+    { timeout: 10_000 },
+    async (_label, mode) => {
+      const gateway = await stallingGateway(mode);
+      // Long enough for the request to reach the server under a loaded test run.
+      const root = await openGatewaySession(await gatewayModels(gateway.baseUrl, 1_000));
+      const submission = await root.submit(
+        { type: "input", content: "hi", requestId: "stall" },
+        context,
+      );
+      const settled = await submission.wait(context);
+      expect(settled).toMatchObject({
+        status: "unanswered",
+        reason: "model_error",
+        detail: "model stream exceeded 1000ms",
+      });
+      // No retry: the expiry's wording is not one pi-ai deems transient.
+      expect(gateway.stats.requests).toBe(1);
+      // The inner request's signal was aborted: the client hangs up mid-response.
+      await vi.waitFor(() => {
+        expect(gateway.stats.clientClosed).toBe(true);
+      });
+    },
+  );
+
+  it("leaves a stream that finishes inside the deadline unaffected", {
+    timeout: 10_000,
+  }, async () => {
+    const gateway = await stallingGateway("finish");
+    const root = await openGatewaySession(await gatewayModels(gateway.baseUrl, 5_000));
+    const submission = await root.submit(
+      { type: "input", content: "hi", requestId: "finish" },
+      context,
+    );
+    const settled = await submission.wait(context);
+    expect(settled).toMatchObject({ status: "done" });
+    expect(gateway.stats.requests).toBe(1);
+    expect(gateway.stats.clientClosed).toBe(false);
+    const page = await root.entries({}, 50, undefined, context);
+    const assistants = page.items
+      .flatMap((entry) => [...(entry.model ?? [])])
+      .filter((message) => message.role === "assistant");
+    const last = assistants.at(-1);
+    if (last === undefined) {
+      throw new Error("no assistant message");
+    }
+    expect(contentText(last.content)).toBe("hello");
+  });
+
+  it("ends a request at 2h from its start, aborting it, in wording pi-ai never retries", async () => {
+    vi.useFakeTimers();
+    onTestFinished(() => {
+      vi.useRealTimers();
+    });
+    const { streams, signals } = silentStreams();
+    const outer = withStreamDeadline(streams, MODEL_STREAM_DEADLINE_MS).stream(
+      fixtureModel(),
+      normalizeContext({ messages: [] }),
+    );
+    let settled = false;
+    const result = outer.result().finally(() => {
+      settled = true;
+    });
+    await vi.advanceTimersByTimeAsync(MODEL_STREAM_DEADLINE_MS - 1);
+    expect(settled).toBe(false);
+    expect(signals.map((signal) => signal?.aborted)).toEqual([false]);
+    await vi.advanceTimersByTimeAsync(1);
+    // Asserted before awaiting, so a wrapper that never expires fails rather than hangs.
+    expect(settled).toBe(true);
+    const message = await result;
+    expect(message).toMatchObject({
+      stopReason: "error",
+      errorMessage: "model stream exceeded 2h",
+    });
+    expect(isRetryableAssistantError(message)).toBe(false);
+    expect(signals.map((signal) => signal?.aborted)).toEqual([true]);
+  });
+
+  it("passes a caller abort through as aborted", async () => {
+    const controller = new AbortController();
+    const result = withStreamDeadline(abortingStreams(), 5_000).streamSimple(
+      fixtureModel(),
+      normalizeContext({ messages: [] }),
+      { signal: controller.signal },
+    );
+    controller.abort();
+    expect((await result.result()).stopReason).toBe("aborted");
+  });
 });

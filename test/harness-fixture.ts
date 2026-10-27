@@ -58,7 +58,7 @@ export function fauxModels(fauxOptions?: FauxOptions): {
 }
 
 /** The default hook: a node env at the conversation's cwd, or the process's. */
-const nodeEnv: SessionOptions["env"] = ({ cwd }) =>
+export const nodeEnv: SessionOptions["env"] = ({ cwd }) =>
   new NodeExecutionEnv({ cwd: cwd ?? process.cwd() });
 
 /** A settable clock: one function to hand the harness and a wake's env alike. */
