@@ -295,14 +295,13 @@ describe("wakes (VT-1)", () => {
     expect(resolve(room).wakes.topic).toBe("room");
   });
 
-  it("takes any non-empty MALEBOLGE_WAKE_TOPIC as it is", () => {
-    expect(resolve({ ...room, MALEBOLGE_WAKE_TOPIC: "the workshop" }).wakes.topic).toBe(
-      "the workshop",
-    );
+  it("takes a topic name in MALEBOLGE_WAKE_TOPIC as it is", () => {
+    expect(resolve({ ...room, MALEBOLGE_WAKE_TOPIC: "workshop.2" }).wakes.topic).toBe("workshop.2");
   });
 
-  it("refuses an empty MALEBOLGE_WAKE_TOPIC", () => {
-    expect(refusal({ ...room, MALEBOLGE_WAKE_TOPIC: "" })).toMatch("MALEBOLGE_WAKE_TOPIC");
+  // The heartbeat's topic is one an attach can name, and one the daemon can create.
+  it.each(["", "the workshop", "Room", "default"])("refuses MALEBOLGE_WAKE_TOPIC %j", (topic) => {
+    expect(refusal({ ...room, MALEBOLGE_WAKE_TOPIC: topic })).toMatch("MALEBOLGE_WAKE_TOPIC");
   });
 
   it.each(WAKE_KEYS)("host with %s refuses startup", (name, value) => {

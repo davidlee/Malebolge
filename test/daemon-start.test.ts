@@ -1,19 +1,57 @@
-import { existsSync } from "node:fs";
+import { existsSync, readdirSync, readlinkSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
+import type { Message } from "@earendil-works/pi-ai";
 import type { Models } from "@earendil-works/pi-ai/models";
-import { describe, expect, it, onTestFinished } from "vitest";
-import type { Config } from "../src/config.ts";
+import { type FauxProviderHandle } from "@earendil-works/pi-ai/providers/faux";
+import { Harness } from "@earendil-works/pi-durable";
+import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite/node";
+import { describe, expect, it, onTestFinished, vi } from "vitest";
+import type { Config, Profile } from "../src/config.ts";
+import { context } from "../src/context.ts";
+import { type DaemonEnv, daemonEnv } from "../src/daemon-env.ts";
+import { daemonExtensions } from "../src/daemon-extensions.ts";
 import { type DaemonHandle, startDaemon } from "../src/daemon-start.ts";
 import { acquireInstanceLock, InstanceLocked } from "../src/instance-lock.ts";
+import { registryOf } from "../src/registry.ts";
+import { openSession } from "../src/session.ts";
+import { storedEntry } from "../src/topics.ts";
 import { serveUnix, SocketInUse } from "../src/unix-socket.ts";
+import { tasksExtension, wakeBinding } from "../src/wake/extension.ts";
+import { liveWakes, type WakeInput } from "../src/wake/task.ts";
 import { type FakeTool, fakeMcpServer, rejection, staleSocket, tempDir } from "./fixtures.ts";
-import { FAUX_MODEL, fauxModels } from "./harness-fixture.ts";
+import {
+  callThenAnswer,
+  FAUX_MODEL,
+  fakeClock,
+  type FakeClock,
+  fauxModels,
+  indexOf,
+  nodeEnv,
+  textOf,
+  toolResults,
+} from "./harness-fixture.ts";
+import {
+  heldUntilCutOff,
+  IDLE,
+  PERCEPT,
+  recordedTurn,
+  START,
+  WAIT,
+  wakeInputs,
+} from "./wake-fixture.ts";
 
 interface World {
   config: Config;
   log: string[];
   models: Models;
+  faux: FauxProviderHandle;
+  /** The host-shaped cwd the world was built over. */
+  cwd: string;
+  /** The harness clock handed to `startDaemon`; the real one when absent. */
+  now?: () => number;
+  /** The execution environment handed to `startDaemon`; the profile's own when absent. */
+  environment?: DaemonEnv;
 }
 
 /** A daemon config over a temp tree, with persona files and injected faux models. */
@@ -49,7 +87,8 @@ async function world(): Promise<World> {
     },
     execution: { profile: "host", cwd },
   };
-  return { config, log: [], models: fauxModels().models };
+  const { faux, models } = fauxModels();
+  return { config, log: [], models, faux, cwd };
 }
 
 const start = (world: World): Promise<DaemonHandle> =>
@@ -58,6 +97,8 @@ const start = (world: World): Promise<DaemonHandle> =>
       world.log.push(line);
     },
     models: world.models,
+    ...(world.now === undefined ? {} : { now: world.now }),
+    ...(world.environment === undefined ? {} : { environment: world.environment }),
   });
 
 /** Stop a handle the test may not reach (a start still in flight, or a later failure). */
@@ -190,5 +231,245 @@ describe("startDaemon", () => {
     await first;
     expect(existsSync(w.config.daemonSocket)).toBe(false);
     lockFree(w.config);
+  });
+});
+
+/** A room-profile world over the host-shaped environment seam: no room, no ssh. */
+async function roomWorld(wakes: { enabled: boolean }): Promise<World> {
+  const w = await world();
+  const { corpusRoot } = w.config;
+  await writeFile(join(corpusRoot, "prompts", "env", "room.txt"), "room\n");
+  await writeFile(join(corpusRoot, "prompts", "wake.md"), "FRAGMENT TEXT\n");
+  w.config.execution = {
+    profile: "room",
+    // Never connected: `environment` stands in for the room.
+    room: { host: "room", user: "u", hostKeyAlias: "room", knownHosts: "/dev/null" },
+    home: w.cwd,
+  };
+  w.config.wakes.enabled = wakes.enabled;
+  w.environment = daemonEnv({ profile: "host", cwd: w.cwd }, (line) => {
+    w.log.push(line);
+  });
+  return w;
+}
+
+/** The satan-mcp tools a wake calls, answering as a room user who is away. */
+const wakeTools: FakeTool[] = [
+  { name: "activity_read", call: () => ({ text: IDLE }) },
+  { name: "satan_boot_context", call: () => ({ text: PERCEPT }) },
+  { name: "notify_send", call: () => ({ text: "sent" }) },
+];
+
+/** Answers every model request plainly and returns the messages each request carried. */
+function recordTurns(faux: FauxProviderHandle): Message[][] {
+  const { step, seen } = recordedTurn();
+  faux.setResponses(Array.from({ length: 8 }, () => step));
+  return seen;
+}
+
+/** The store as a stopped daemon left it, read through `profile`'s registry and closed after `read`. */
+async function inStore<T>(
+  w: World,
+  profile: Profile,
+  read: (harness: Harness) => Promise<T>,
+): Promise<T> {
+  const harness = await Harness.open(
+    await openNodeSqliteStorage(w.config.storagePath),
+    {
+      models: w.models,
+      registry: registryOf(
+        daemonExtensions({
+          personaFiles: [],
+          projectContext: undefined,
+          skills: [],
+          profile,
+          tasks: tasksExtension(wakeBinding().deps),
+        }),
+      ),
+      env: nodeEnv,
+    },
+    context,
+  );
+  try {
+    return await read(harness);
+  } finally {
+    await harness.close(context);
+  }
+}
+
+/** A live wake and the topic of the conversation it targets. */
+interface WakeInTopic {
+  id: number;
+  input: WakeInput;
+  topic: string | undefined;
+}
+
+const wakesInStore = (w: World, profile: Profile): Promise<WakeInTopic[]> =>
+  inStore(w, profile, async (harness) => {
+    const index = await indexOf(harness);
+    return (await liveWakes(harness, context)).map(({ id, input }) => ({
+      id,
+      input,
+      topic: storedEntry(index, input.conversationId)?.topic,
+    }));
+  });
+
+/** The files under `dir` this process holds open (Linux: its descriptors in /proc/self/fd). */
+const openFilesUnder = (dir: string): string[] =>
+  readdirSync("/proc/self/fd").flatMap((fd) => {
+    try {
+      const target = readlinkSync(join("/proc/self/fd", fd));
+      return target.startsWith(dir) ? [target] : [];
+    } catch {
+      // Closed between the listing and the read.
+      return [];
+    }
+  });
+
+/** The id in the log's `wake heartbeat <id> created in room` line. */
+const createdHeartbeats = (w: World): string[] =>
+  w.log.flatMap((line) => /^wake heartbeat (\d+) created in room$/.exec(line)?.[1] ?? []);
+
+const logged = (w: World, pattern: RegExp): boolean => w.log.some((line) => pattern.test(line));
+
+/** A started, tracked daemon. */
+async function started(w: World): Promise<DaemonHandle> {
+  const handle = start(w);
+  track(handle);
+  return handle;
+}
+
+/** A room world whose heartbeat is overdue: started once at noon, stopped, a ceiling and a minute on. */
+async function overdueHeartbeat(
+  enabled: boolean,
+): Promise<{ w: World; clock: FakeClock; id: string }> {
+  const w = await roomWorld({ enabled });
+  const clock = fakeClock(START);
+  w.now = clock.now;
+  const mcp = await fakeMcpServer(w.config.mcpSocket, wakeTools);
+  onTestFinished(mcp.close);
+  await (await started(w)).stop();
+  const [id] = createdHeartbeats(w);
+  expect(id).toBeDefined();
+  clock.advance(w.config.wakes.ceilingMs + 60_000);
+  return { w, clock, id: id ?? "" };
+}
+
+describe("startDaemon wakes", () => {
+  it("VT-3 a: a fresh room start creates one recurring heartbeat in the wake topic, and a restart none", async () => {
+    const w = await roomWorld({ enabled: true });
+    await (await started(w)).stop();
+    const wakes = await wakesInStore(w, "room");
+    expect(wakes).toHaveLength(1);
+    expect(wakes[0]?.input.recurring).toBe(true);
+    expect(wakes[0]?.topic).toBe(w.config.wakes.topic);
+    expect(createdHeartbeats(w)).toEqual([String(wakes[0]?.id)]);
+
+    await (await started(w)).stop();
+    expect(await wakesInStore(w, "room")).toHaveLength(1);
+    expect(createdHeartbeats(w)).toHaveLength(1);
+  });
+
+  it("VT-3 b: an overdue heartbeat fires on resume with every wake dependency bound", async () => {
+    const { w, id } = await overdueHeartbeat(true);
+    const seen = recordTurns(w.faux);
+    await started(w);
+    await vi.waitFor(() => {
+      expect(logged(w, new RegExp(`^wake ${id} n=\\d+ \\(room\\) done$`))).toBe(true);
+    }, WAIT);
+    const fire = w.log.findIndex((line) =>
+      new RegExp(`^wake ${id} n=\\d+ \\(room\\) fire$`).test(line),
+    );
+    const done = w.log.findIndex((line) =>
+      new RegExp(`^wake ${id} n=\\d+ \\(room\\) done$`).test(line),
+    );
+    expect(fire).toBeGreaterThanOrEqual(0);
+    expect(fire).toBeLessThan(done);
+    expect(wakeInputs(seen)).not.toHaveLength(0);
+    expect(w.log.filter((line) => line.includes("read before the daemon bound"))).toEqual([]);
+  });
+
+  it("VT-3 c: a resumed turn's wake_list runs against bound dependencies", async () => {
+    const w = await roomWorld({ enabled: true });
+    await mkdir(dirname(w.config.storagePath), { recursive: true });
+    // Seed: a turn left in flight, as a crash leaves it.
+    w.faux.setResponses([heldUntilCutOff]);
+    const seeded = await openSession(await openNodeSqliteStorage(w.config.storagePath), {
+      models: w.models,
+      registry: registryOf(
+        daemonExtensions({
+          personaFiles: [],
+          projectContext: undefined,
+          skills: [],
+          profile: "room",
+          tasks: tasksExtension(wakeBinding().deps),
+        }),
+      ),
+      agent: { model: FAUX_MODEL, cwd: w.cwd },
+      env: nodeEnv,
+    });
+    await seeded.root.submit({ type: "input", content: "hello" }, context);
+    await vi.waitFor(() => {
+      expect(w.faux.state.callCount).toBe(1);
+    }, WAIT);
+    await seeded.harness.close(context);
+
+    w.faux.setResponses(callThenAnswer("wake_list", {}, "listed"));
+    const handle = await started(w);
+    await vi.waitFor(() => {
+      expect(w.faux.state.callCount).toBeGreaterThanOrEqual(3);
+    }, WAIT);
+    await handle.stop();
+    const results = await inStore(w, "room", (harness) => toolResults(harness));
+    const listed = results.find((message) => message.toolName === "wake_list");
+    expect(listed?.isError).toBe(false);
+    expect(listed === undefined ? "" : textOf(listed)).toContain('"enabled"');
+  });
+
+  // Off is MALEBOLGE_WAKES unset (anything but "on"): resolveConfig's `wakes.enabled` false.
+  it("VT-3 d: with wakes off an overdue heartbeat defers 'disabled' and fires once they are on", async () => {
+    const { w, clock, id } = await overdueHeartbeat(false);
+    const off = recordTurns(w.faux);
+    const second = await started(w);
+    await vi.waitFor(() => {
+      expect(logged(w, new RegExp(`^wake ${id} n=\\d+ \\(room\\) defer disabled until `))).toBe(
+        true,
+      );
+    }, WAIT);
+    await second.stop();
+    expect(wakeInputs(off)).toEqual([]);
+    expect((await wakesInStore(w, "room")).map((wake) => String(wake.id))).toEqual([id]);
+
+    w.config.wakes.enabled = true;
+    clock.advance(2 * w.config.wakes.floorMs);
+    const on = recordTurns(w.faux);
+    await started(w);
+    await vi.waitFor(() => {
+      expect(wakeInputs(on)).not.toHaveLength(0);
+    }, WAIT);
+  });
+
+  it("VT-3 e: a host start schedules no wake and logs none", async () => {
+    const w = await world();
+    await (await started(w)).stop();
+    expect(await wakesInStore(w, "host")).toEqual([]);
+    expect(w.log.filter((line) => line.startsWith("wake "))).toEqual([]);
+  });
+
+  it("VT-3 f: a failed heartbeat ensure fails the start and undoes it", async () => {
+    const w = await roomWorld({ enabled: true });
+    // `default` is reserved: setTopic refuses it, so the ensure throws after the resume.
+    w.config.wakes.topic = "default";
+    const failed = start(w);
+    track(failed);
+    await expect(failed).rejects.toThrow("default");
+    lockFree(w.config);
+    // The resumed session was closed, not leaked: nothing holds the store open.
+    expect(openFilesUnder(dirname(w.config.storagePath))).toEqual([]);
+
+    // The failed start closed the store too: the next one opens it and ensures one heartbeat.
+    w.config.wakes.topic = "room";
+    await started(w);
+    expect(createdHeartbeats(w)).toHaveLength(1);
   });
 });

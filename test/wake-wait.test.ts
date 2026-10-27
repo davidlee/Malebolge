@@ -3,13 +3,7 @@
 // handler)): a submit that waits at most one ceiling, and an abort that owns the
 // input it prepared. The world, clock and harness timers are the wake fixture's.
 
-import type { AssistantMessage, Message } from "@earendil-works/pi-ai";
-import {
-  fauxAssistantMessage,
-  fauxText,
-  type FauxResponseFactory,
-  type FauxResponseStep,
-} from "@earendil-works/pi-ai/providers/faux";
+import type { Message } from "@earendil-works/pi-ai";
 import type { Harness, TaskId } from "@earendil-works/pi-durable";
 import { describe, expect, it, vi } from "vitest";
 import { context } from "../src/context.ts";
@@ -20,19 +14,24 @@ import {
   HOUR,
   START,
   WAIT,
-  type SatanCall,
   type Sleeping,
   type WakeSession,
   type WakeWorld,
   checkpointOf,
   createWake,
   dataOf,
+  failingOnce,
   firedResult,
   heldGate,
+  heldTurn,
+  notifyCalls,
   only,
+  recordedTurn,
   recording,
   submissionOf,
+  turn,
   waitPlaced,
+  waitQueued,
   waitSleeping,
   waitTerminal,
   wakeEntries,
@@ -44,67 +43,6 @@ import {
 /** The request id of the plain input submitted behind the wake: findable after a reopen. */
 const SECOND = "manual:second";
 
-/** A model turn that holds until the test releases it, then answers once. */
-interface GatedTurn {
-  readonly step: FauxResponseStep;
-  /** Resolves when the turn has started and the model is waiting. */
-  readonly reached: Promise<undefined>;
-  readonly release: () => void;
-}
-
-function gatedTurn(answer: () => AssistantMessage): GatedTurn {
-  const gate = Promise.withResolvers<undefined>();
-  const reached = Promise.withResolvers<undefined>();
-  const step: FauxResponseStep = async () => {
-    reached.resolve(undefined);
-    await gate.promise;
-    return answer();
-  };
-  return {
-    step,
-    reached: reached.promise,
-    release: (): void => {
-      gate.resolve(undefined);
-    },
-  };
-}
-
-/** The model error pi-durable does not retry: the run fails and its input settles unanswered. */
-const failingOnce = (): GatedTurn =>
-  gatedTurn(() =>
-    fauxAssistantMessage([], { stopReason: "error", errorMessage: "Invalid request" }),
-  );
-
-/** A turn held mid-run, then successful: a wake input placed in a turn that is still going. */
-const heldTurn = (): GatedTurn => gatedTurn(() => fauxAssistantMessage([fauxText("ok")]));
-
-/** Every notification the wake sent, in order. */
-const notifyCalls = (world: WakeWorld): SatanCall[] =>
-  world.calls.filter((call) => call.tool === "notify_send");
-
-/** A model turn that records what the model saw, then answers plainly. */
-interface RecordedTurn {
-  readonly step: FauxResponseFactory;
-  readonly seen: Message[][];
-}
-
-function recordedTurn(): RecordedTurn {
-  const seen: Message[][] = [];
-  const step: FauxResponseFactory = (request) => {
-    seen.push([...request.messages]);
-    return fauxAssistantMessage([fauxText("ok")]);
-  };
-  return { step, seen };
-}
-
-/** A real turn of the event loop: the phases commit on microtasks and short timers. */
-const turn = (): Promise<void> =>
-  new Promise<void>((resolve) => {
-    setTimeout(() => {
-      resolve();
-    }, WAIT.interval);
-  });
-
 /**
  * Lets exactly one ceiling pass on the bounded wait: first waits until the wait
  * has armed its timer, due one ceiling from now, then moves the clock to it.
@@ -115,14 +53,6 @@ async function passBound(world: WakeWorld): Promise<void> {
   }, WAIT);
   world.advance(CEILING);
   await turn();
-}
-
-/** Waits until the occurrence's input is admitted and queued behind the busy run. */
-async function waitQueued(session: WakeSession, taskId: TaskId<WakeResult>): Promise<void> {
-  await vi.waitFor(async () => {
-    const record = await submissionOf(session.harness, session.root.id, wakeRequestId(taskId, 0));
-    expect(record?.status).toBe("queued");
-  }, WAIT);
 }
 
 /** The task's stored occurrence, whatever state it is in. */

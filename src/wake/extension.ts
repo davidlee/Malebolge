@@ -2,11 +2,16 @@
 // in two steps, because the registry is built before satan-mcp's tools and before
 // the session exist. Every member is read through a getter at use, never captured.
 
-import { defineExtension, type Extension, type Harness } from "@earendil-works/pi-durable";
+import {
+  defineExtension,
+  type Extension,
+  type Harness,
+  type Task,
+} from "@earendil-works/pi-durable";
 import type { Conversations } from "../conversations.ts";
 import type { Log, SatanTools } from "../satan-tools.ts";
 import type { WakePolicy, WakeSettings } from "./policy.ts";
-import { wakeTask } from "./task.ts";
+import { type WakeInput, type WakeResult, type WakeState, wakeTask } from "./task.ts";
 import { wakeCancel, wakeList, wakeSchedule } from "./tools.ts";
 
 export interface WakeDeps {
@@ -24,12 +29,45 @@ export interface WakeDeps {
   conversations: Pick<Conversations, "setTopic" | "open">;
 }
 
+/** What `startDaemon` binds before it serves: everything but the session's own parts. */
+export type EarlyWakeDeps = Omit<WakeDeps, "harness" | "conversations">;
+
+/** What `startDaemon` binds in `beforeResume`, from the one session. */
+export type LateWakeDeps = Pick<WakeDeps, "harness" | "conversations">;
+
+/** The getter the extension reads, and its two binding steps; reading before both throws. */
+export interface WakeBinding {
+  readonly deps: () => WakeDeps;
+  bindEarly(early: EarlyWakeDeps): void;
+  bindLate(late: LateWakeDeps): void;
+}
+
+export const wakeBinding = (): WakeBinding => {
+  let early: EarlyWakeDeps | undefined;
+  let late: LateWakeDeps | undefined;
+  return {
+    deps: (): WakeDeps => {
+      if (early === undefined || late === undefined) {
+        throw new Error("wake dependencies read before the daemon bound them");
+      }
+      return { ...early, ...late };
+    },
+    bindEarly: (value): void => {
+      early = value;
+    },
+    bindLate: (value): void => {
+      late = value;
+    },
+  };
+};
+
 /** The room's `tasks` extension: satan.wake and the three tools SATAN schedules it with. */
-export const tasksExtension = (deps: () => WakeDeps): Extension => {
-  const task = wakeTask(deps);
-  return defineExtension({
+export const tasksExtension = (
+  deps: () => WakeDeps,
+  task: Task<WakeInput, WakeState, WakeResult, object> = wakeTask(deps),
+): Extension =>
+  defineExtension({
     name: "tasks",
     tasks: [task],
     tools: [wakeSchedule(deps, task), wakeCancel(deps), wakeList(deps)],
   });
-};

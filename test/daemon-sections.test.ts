@@ -1,6 +1,6 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { MemoryStorage } from "@earendil-works/pi-durable";
+import { defineExtension, MemoryStorage } from "@earendil-works/pi-durable";
 import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite/node";
 import { afterEach, describe, expect, it } from "vitest";
 import { context } from "../src/context.ts";
@@ -8,7 +8,7 @@ import { conversations } from "../src/conversations.ts";
 import { conversationExtension } from "../src/conversation-context.ts";
 import { cwdExtension } from "../src/cwd.ts";
 import { isRecord } from "../src/json.ts";
-import { daemonExtensions } from "../src/daemon-extensions.ts";
+import { type DaemonParts, daemonExtensions } from "../src/daemon-extensions.ts";
 import { personaExtension } from "../src/persona.ts";
 import { DEFAULT_TOPIC } from "../src/protocol.ts";
 import {
@@ -26,6 +26,12 @@ import {
   openTestHarness,
   systemPromptSections,
 } from "./harness-fixture.ts";
+
+/** The host profile: section order is the profile's, and the host installs no tasks. */
+const HOST: Pick<DaemonParts, "profile" | "tasks"> = {
+  profile: "host",
+  tasks: defineExtension({ name: "tasks" }),
+};
 
 const skill: Skill = {
   name: "alpha",
@@ -64,7 +70,7 @@ describe("conversationExtension", () => {
 
   it("renders directly after cwd", async () => {
     const test = await openTestHarness(
-      daemonExtensions({ personaFiles: [], projectContext: undefined, skills: [] }),
+      daemonExtensions({ ...HOST, personaFiles: [], projectContext: undefined, skills: [] }),
     );
     closing(test.harness);
     await test.root.configure({ cwd: "/work" }, context);
@@ -113,6 +119,7 @@ describe("daemon system prompt sections", () => {
     expect(projectContext).toContain("be careful");
     const test = await openFauxHarness(new MemoryStorage(), {
       extensions: daemonExtensions({
+        ...HOST,
         personaFiles: [persona],
         projectContext,
         skills: [skill],
@@ -137,7 +144,7 @@ describe("daemon system prompt sections", () => {
 
   it("states a created conversation's own cwd, not the daemon default", async () => {
     const test = await openTestHarness(
-      daemonExtensions({ personaFiles: [], projectContext: undefined, skills: [] }),
+      daemonExtensions({ ...HOST, personaFiles: [], projectContext: undefined, skills: [] }),
     );
     const api = conversations(test, { model: FAUX_MODEL, cwd: "/daemon-default" }, "host");
     const created = await api.open({ kind: "new", cwd: "/own" });
@@ -150,6 +157,7 @@ describe("daemon system prompt sections", () => {
     const { persona, cwd } = await setup();
     const test = await openFauxHarness(new MemoryStorage(), {
       extensions: daemonExtensions({
+        ...HOST,
         personaFiles: [persona],
         projectContext: undefined,
         skills: [skill],
@@ -172,6 +180,7 @@ describe("daemon system prompt sections", () => {
 
     const after = await openFauxHarness(await openNodeSqliteStorage(dbPath), {
       extensions: daemonExtensions({
+        ...HOST,
         personaFiles: [persona],
         projectContext,
         skills: [skill],
@@ -186,5 +195,21 @@ describe("daemon system prompt sections", () => {
       ["persona", "project_context", "skills", "cwd", "conversation"],
     ]);
     expect(entries[1]).toEqual({ persona: null, skills: null });
+  });
+});
+
+describe("daemonExtensions tasks", () => {
+  const namesOf = (profile: DaemonParts["profile"]): string[] =>
+    daemonExtensions({
+      personaFiles: [],
+      projectContext: undefined,
+      skills: [],
+      profile,
+      tasks: defineExtension({ name: "tasks" }),
+    }).map(({ name }) => name);
+
+  it("VT-3 e: the room installs the tasks extension and the host never does (W10)", () => {
+    expect(namesOf("room")).toContain("tasks");
+    expect(namesOf("host")).not.toContain("tasks");
   });
 });

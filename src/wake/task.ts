@@ -8,13 +8,16 @@ import type { Context } from "@earendil-works/chord/context";
 import {
   type ConversationId,
   defineTask,
+  type Harness,
   type JsonObject,
   type RunningTask,
   type SettledSubmissionRecord,
   type Submission,
   type SubmissionRecord,
   type Task,
+  type TaskId,
   type TaskRuntime,
+  type Tx,
 } from "@earendil-works/pi-durable";
 import type { CallToolResult } from "@earendil-works/pi-mcp";
 import { contextOf } from "../conversation-context.ts";
@@ -22,6 +25,7 @@ import { durationOf } from "../duration.ts";
 import { isRecord } from "../json.ts";
 import { messageOf } from "../message-of.ts";
 import type { PoolKey } from "../satan-pool.ts";
+import type { IndexReader } from "../topics.ts";
 import type { WakeDeps } from "./extension.ts";
 import type { EpisodeClass, Gate, WakeEnv } from "./policy.ts";
 import { presenceOf } from "./presence.ts";
@@ -70,20 +74,71 @@ export const isWakeInput = (value: unknown): value is WakeInput =>
 export type WakeState =
   // `prepared`: an earlier `submit` of this occurrence may have admitted its input.
   | { phase: "fire"; at: number; n: number; prepared?: true }
-  | { phase: "submit"; at: number; n: number; firedAt: number; content: string };
+  | {
+      phase: "submit";
+      at: number;
+      n: number;
+      firedAt: number;
+      content: string;
+    };
 
 export interface WakeResult {
   fired: boolean;
 }
+
+/** A live wake as the scheduler shows it. */
+export interface LiveWake {
+  readonly id: TaskId;
+  readonly input: WakeInput;
+  /** When it next fires; absent unless it sleeps. */
+  readonly until?: number;
+  /** No registered definition can run it, or the restart limit parked it. */
+  readonly blocked: boolean;
+  readonly abortRequested: boolean;
+}
+
+/** The live satan.wake tasks whose input reads as a wake's. */
+export const liveWakes = async (
+  harness: Pick<Harness, "inspect">,
+  ctx: Context,
+): Promise<LiveWake[]> =>
+  (await harness.inspect(ctx)).tasks.flatMap(({ record, state }): LiveWake[] =>
+    record.kind === WAKE_KIND && isWakeInput(record.input)
+      ? [
+          {
+            id: record.id,
+            input: record.input,
+            ...(state.kind === "sleeping" ? { until: state.until } : {}),
+            blocked: state.kind === "blocked",
+            abortRequested: record.abortRequested,
+          },
+        ]
+      : [],
+  );
 
 type FireState = Extract<WakeState, { phase: "fire" }>;
 type SubmitState = Extract<WakeState, { phase: "submit" }>;
 type Runtime = TaskRuntime<WakeInput, WakeState, WakeResult, object>;
 type Wake<S extends WakeState> = RunningTask<WakeInput, S, WakeResult>;
 
+/** What every request id of task `taskId`'s occurrences starts with: the wake's own namespace. */
+export const wakeRequestPrefix = (taskId: number): string => `wake:${String(taskId)}:`;
+
 /** The request id of occurrence `n` of task `taskId`: pi-durable dedupes it per conversation (W1). */
 export const wakeRequestId = (taskId: number, n: number): string =>
-  `wake:${String(taskId)}:${String(n)}`;
+  `${wakeRequestPrefix(taskId)}${String(n)}`;
+
+/** Creates a wake as every caller does: owned by its target conversation, in the background. */
+export const createWakeTask = (
+  tx: Tx,
+  task: Task<WakeInput, WakeState, WakeResult, object>,
+  input: WakeInput,
+): Promise<TaskId<WakeResult>> =>
+  tx.createTask(task, input, {
+    ownership: { kind: "conversation" },
+    conversationId: input.conversationId,
+    background: true,
+  });
 
 /** Where the occurrence's scheduled satan-mcp calls go: the target's own connection of that kind. */
 const scheduledKey = (input: WakeInput): PoolKey => ({
@@ -160,8 +215,8 @@ const contentOf = (
   ].join("\n");
 
 /** How the journal names a wake's target: its topic, or the conversation when it is no topic's. */
-const topicOf = async (runtime: Runtime, input: WakeInput): Promise<string> =>
-  (await contextOf(runtime, input.conversationId)).entry?.topic ??
+const topicOf = async (read: IndexReader, input: WakeInput): Promise<string> =>
+  (await contextOf(read, input.conversationId)).entry?.topic ??
   `conversation ${String(input.conversationId)}`;
 
 /** One journal line about occurrence `n` (W7). */
@@ -202,18 +257,37 @@ const nextBeat = (deps: WakeDeps, runtime: Runtime, n: number, ctx: Context): Pr
   return runtime.sleepUntil(at, { phase: "fire", at, n: n + 1 }, ctx);
 };
 
-/** A desktop notification about this wake, best effort: a notify that fails changes nothing. */
+/** A desktop notification about wake `taskId`, best effort: a notify that fails changes nothing. */
 const notify = async (
   deps: WakeDeps,
-  runtime: Runtime,
+  topic: string,
+  taskId: number,
   input: WakeInput,
   title: string,
   text: string,
 ): Promise<void> => {
-  const body = `wake ${String(runtime.taskId)} (${await topicOf(runtime, input)}): ${text}`;
+  const body = `wake ${String(taskId)} (${topic}): ${text}`;
   await deps.satan
     .call(scheduledKey(input), "notify_send", { title, body }, SATAN_CALL_DEADLINE_MS)
     .catch(() => undefined);
+};
+
+/**
+ * DEC-134's report: a journal line and a best-effort notification. `n` is left
+ * out when no occurrence can be read (the start sweep's blocked wake).
+ */
+export const reportFailure = async (
+  deps: WakeDeps,
+  read: IndexReader,
+  taskId: number,
+  input: WakeInput,
+  n: number | undefined,
+  reason: string,
+): Promise<void> => {
+  const topic = await topicOf(read, input);
+  const occurrence = n === undefined ? "" : ` n=${String(n)}`;
+  deps.log(`wake ${String(taskId)}${occurrence} (${topic}) failed: ${reason}`);
+  await notify(deps, topic, taskId, input, "SATAN wake failed", reason);
 };
 
 /**
@@ -229,8 +303,7 @@ const failed = async (
   reason: string,
 ): Promise<void> => {
   const input = task.input;
-  await journal(deps, runtime, input, n, `failed: ${reason}`);
-  await notify(deps, runtime, input, "SATAN wake failed", reason);
+  await reportFailure(deps, runtime, runtime.taskId, input, n, reason);
   if (input.recurring === true) {
     await nextBeat(deps, runtime, n, ctx);
     return;
@@ -252,6 +325,31 @@ const reasonOf = (runtime: Runtime, error: unknown): string => {
   return messageOf(error);
 };
 
+/**
+ * A due heartbeat stands down while any other wake sleeps: one ceiling on, `n`
+ * unchanged. Only sleeping wakes count; one that fired and awaits its turn does not.
+ */
+const suppressed = async (
+  deps: WakeDeps,
+  task: Wake<FireState>,
+  runtime: Runtime,
+  ctx: Context,
+): Promise<boolean> => {
+  if (task.input.recurring !== true) {
+    return false;
+  }
+  const pending = (await liveWakes(deps.harness, ctx)).filter(
+    ({ id, until }) => id !== runtime.taskId && until !== undefined,
+  ).length;
+  if (pending === 0) {
+    return false;
+  }
+  deps.log(`wake ${String(runtime.taskId)} heartbeat suppressed: ${String(pending)} pending`);
+  const at = deps.now() + deps.settings.ceilingMs;
+  await runtime.sleepUntil(at, { ...task.state.checkpoint, at }, ctx);
+  return true;
+};
+
 /** Gate, then compose the occurrence's input and checkpoint it for `submit`. */
 const fire = async (
   deps: WakeDeps,
@@ -264,6 +362,9 @@ const fire = async (
   if (deps.now() < state.at) {
     // `resume()` re-runs a phase cut off mid-run, whatever its time.
     await runtime.sleepUntil(state.at, state, ctx);
+    return;
+  }
+  if (await suppressed(deps, task, runtime, ctx)) {
     return;
   }
   const gate = await deps.policy.gate(input, envOf(deps, input));
@@ -399,7 +500,8 @@ const withdrawn = async (
   );
   await notify(
     deps,
-    runtime,
+    await topicOf(runtime, task.input),
+    runtime.taskId,
     task.input,
     "SATAN wake unanswered",
     "heartbeat unanswered (queued behind a failed run?)",

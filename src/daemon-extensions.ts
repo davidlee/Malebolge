@@ -3,6 +3,7 @@
 
 import type { Extension } from "@earendil-works/pi-durable";
 import { CodingTools } from "@earendil-works/pi-durable/tools";
+import type { Profile } from "./config.ts";
 import { conversationExtension } from "./conversation-context.ts";
 import { cwdExtension } from "./cwd.ts";
 import { grepExtension } from "./grep.ts";
@@ -15,6 +16,9 @@ export interface DaemonParts {
   /** Rendered project context, read once at startup; `undefined` when there is none. */
   projectContext: string | undefined;
   skills: readonly Skill[];
+  profile: Profile;
+  /** The room's `tasks` extension (wakes); the host never installs it (W10). */
+  tasks: Extension;
 }
 
 // Scope: persona, project context and skills are per profile; `cwd` is per
@@ -29,4 +33,5 @@ export const daemonExtensions = (parts: DaemonParts): Extension[] => [
   conversationExtension,
   CodingTools,
   grepExtension,
+  ...(parts.profile === "room" ? [parts.tasks] : []),
 ];

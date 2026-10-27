@@ -3,14 +3,12 @@
 // They need the harness, which the tool api does not expose, so they read it
 // from the late-bound deps at each call (design § Daemon wiring).
 
-import type { Context } from "@earendil-works/chord/context";
 import { Type } from "@earendil-works/pi-ai";
 import {
   type ConversationId,
   defineTool,
   type JsonObject,
   type Task,
-  type TaskId,
   type ToolExecutionApi,
   type ToolExecutionResult,
   type ToolRegistration,
@@ -20,7 +18,13 @@ import { isConversationKey } from "../conversations.ts";
 import { isRecord } from "../json.ts";
 import { isKnownTopic, latestIn, readIndex } from "../topics.ts";
 import type { WakeDeps } from "./extension.ts";
-import { isWakeInput, WAKE_KIND, type WakeInput, type WakeResult, type WakeState } from "./task.ts";
+import {
+  createWakeTask,
+  liveWakes,
+  type WakeInput,
+  type WakeResult,
+  type WakeState,
+} from "./task.ts";
 
 type WakeTask = Task<WakeInput, WakeState, WakeResult, object>;
 
@@ -51,28 +55,6 @@ const refusal = (text: string): ToolExecutionResult => ({
   output: [{ type: "text", text }],
   isError: true,
 });
-
-/** A live wake as the scheduler shows it: its id, its input, and its sleep when it sleeps. */
-interface LiveWake {
-  readonly id: TaskId;
-  readonly input: WakeInput;
-  /** When it next fires; absent unless it sleeps. */
-  readonly until?: number;
-}
-
-/** The live satan.wake tasks. */
-const liveWakes = async (deps: WakeDeps, ctx: Context): Promise<LiveWake[]> =>
-  (await deps.harness.inspect(ctx)).tasks.flatMap(({ record, state }): LiveWake[] =>
-    record.kind === WAKE_KIND && isWakeInput(record.input)
-      ? [
-          {
-            id: record.id,
-            input: record.input,
-            ...(state.kind === "sleeping" ? { until: state.until } : {}),
-          },
-        ]
-      : [],
-  );
 
 /** The conversation a wake goes to, or why there is none: the caller, or a known topic's latest now (W8). */
 const targetOf = async (
@@ -144,16 +126,13 @@ export const wakeSchedule = (
         ...(requestedAt === undefined ? {} : { requestedAt }),
         scheduledBy: api.conversationId,
       };
-      const id = await api.commit(
-        (tx) =>
-          tx.createTask(task, input, {
-            ownership: { kind: "conversation" },
-            conversationId: target,
-            background: true,
-          }),
-        ctx,
-      );
-      return answer({ id, at: localIso(at), conversation: target, enabled: wake.settings.enabled });
+      const id = await api.commit((tx) => createWakeTask(tx, task, input), ctx);
+      return answer({
+        id,
+        at: localIso(at),
+        conversation: target,
+        enabled: wake.settings.enabled,
+      });
     },
   });
 
@@ -168,7 +147,7 @@ export const wakeCancel = (deps: () => WakeDeps): ToolRegistration<typeof cancel
     parameters: cancelParameters,
     execute: async (args, api, ctx) => {
       const wake = deps();
-      const found = (await liveWakes(wake, ctx)).find(({ id }) => id === args.id);
+      const found = (await liveWakes(wake.harness, ctx)).find(({ id }) => id === args.id);
       if (found === undefined) {
         return refusal(`no live wake ${String(args.id)}`);
       }
@@ -198,7 +177,7 @@ export const wakeList = (deps: () => WakeDeps): ToolRegistration<typeof listPara
     parameters: listParameters,
     execute: async (_args, api, ctx) => {
       const wake = deps();
-      const sleeping = (await liveWakes(wake, ctx)).flatMap(({ id, input, until }) =>
+      const sleeping = (await liveWakes(wake.harness, ctx)).flatMap(({ id, input, until }) =>
         until === undefined ? [] : [{ id, input, until }],
       );
       const wakes = await Promise.all(

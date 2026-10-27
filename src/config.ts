@@ -14,7 +14,9 @@ import {
   setDefined,
   within,
 } from "./fields.ts";
+import { messageOf } from "./message-of.ts";
 import { DEFAULT_MODEL, type ModelRef, parseModel } from "./models.ts";
+import { DEFAULT_TOPIC, topicNameOf } from "./protocol.ts";
 import type { RoomConnection } from "./room/connection.ts";
 import { readRoomDoor, ROOM_DOOR_KEYS, type RoomDoor, roomConnectionOf } from "./room/door.ts";
 import { DEFAULT_SATAN_IDLE_MS } from "./satan-pool.ts";
@@ -139,6 +141,18 @@ const DEFAULT_WAKE_CEILING_MS = 7_200_000;
 const DEFAULT_QUIET: QuietWindow = { startMin: 23 * 60 + 20, endMin: 7 * 60 };
 const DEFAULT_WAKE_TOPIC = "room";
 
+/** The heartbeat's topic: a topic name the daemon can create, so not the reserved `default`. */
+function wakeTopicOf(topic: string): string {
+  if (topic === DEFAULT_TOPIC) {
+    throw new Error("MALEBOLGE_WAKE_TOPIC must not be default: it is reserved");
+  }
+  try {
+    return topicNameOf(topic);
+  } catch (error) {
+    throw new Error(`MALEBOLGE_WAKE_TOPIC: ${messageOf(error)}`);
+  }
+}
+
 /** `HH:MM-HH:MM`, the only shape MALEBOLGE_WAKE_QUIET accepts. */
 const QUIET = /^(\d\d):(\d\d)-(\d\d):(\d\d)$/;
 
@@ -179,10 +193,7 @@ function wakesOf(env: Env): WakeSettings {
       `MALEBOLGE_WAKE_FLOOR_MS ${String(floorMs)} is above MALEBOLGE_WAKE_CEILING_MS ${String(ceilingMs)}`,
     );
   }
-  const topic = env["MALEBOLGE_WAKE_TOPIC"] ?? DEFAULT_WAKE_TOPIC;
-  if (topic === "") {
-    throw new Error("MALEBOLGE_WAKE_TOPIC must not be empty");
-  }
+  const topic = wakeTopicOf(env["MALEBOLGE_WAKE_TOPIC"] ?? DEFAULT_WAKE_TOPIC);
   return {
     enabled: env["MALEBOLGE_WAKES"] === "on",
     floorMs,

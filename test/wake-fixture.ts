@@ -10,6 +10,7 @@ import {
   fauxText,
   type FauxProviderHandle,
   type FauxResponseFactory,
+  type FauxResponseStep,
 } from "@earendil-works/pi-ai/providers/faux";
 import type { CallToolResult } from "@earendil-works/pi-mcp";
 import {
@@ -29,6 +30,7 @@ import {
 } from "@earendil-works/pi-durable";
 import { expect, vi } from "vitest";
 import { context } from "../src/context.ts";
+import { conversations } from "../src/conversations.ts";
 import { isRecord, type JsonRecord } from "../src/json.ts";
 import { registryOf } from "../src/registry.ts";
 import type { PoolKey } from "../src/satan-pool.ts";
@@ -47,6 +49,7 @@ import {
   type WakeInput,
   type WakeResult,
   type WakeState,
+  wakeRequestId,
   wakeTask,
 } from "../src/wake/task.ts";
 import {
@@ -132,6 +135,15 @@ export interface WakeSession {
 
 /** Memory storage that survives its close: a crash leaves the store behind for the next process. */
 export class ReopenableMemory extends MemoryStorage {
+  /** While set, every commit fails: a process that dies before it can record anything. */
+  crashed = false;
+
+  override commit(
+    ...args: Parameters<MemoryStorage["commit"]>
+  ): ReturnType<MemoryStorage["commit"]> {
+    return this.crashed ? Promise.reject(new Error("the process died")) : super.commit(...args);
+  }
+
   /** MemoryStorage.close() only sets a flag, so leaving it clear keeps the store the same store. */
   override close(): Promise<void> {
     return Promise.resolve();
@@ -163,6 +175,11 @@ export interface WakeWorld {
    * installs by default: a test registering a task of its own passes one.
    */
   open(extension?: Extension): Promise<WakeSession>;
+  /**
+   * Ends `session` as a crash does: its close writes nothing, so a task it was
+   * running stays `running` and the next open counts a restart for it.
+   */
+  crash(session: WakeSession): Promise<void>;
 }
 
 export interface OpenWakeOptions {
@@ -245,22 +262,22 @@ export function wakeWorld(): WakeWorld {
       abortTask: (): Promise<never> => Promise.reject(new Error("no session is open")),
       abortSubmission: (): Promise<never> => Promise.reject(new Error("no session is open")),
     },
-    // The wake task never reaches these.
+    // Bound to each session as it opens; the heartbeat's ensure reads them.
     conversations: {
-      setTopic: (): Promise<never> =>
-        Promise.reject(new Error("the wake phases never set a topic")),
-      open: (): Promise<never> =>
-        Promise.reject(new Error("the wake phases never open a conversation")),
+      setTopic: (): Promise<never> => Promise.reject(new Error("no session is open")),
+      open: (): Promise<never> => Promise.reject(new Error("no session is open")),
     },
   };
   const storage = new ReopenableMemory();
   const task = wakeTask(() => wake);
   /** The session's registry: the wake task and the three tools SATAN schedules it with. */
-  const extension = tasksExtension(() => wake);
+  const extension = tasksExtension(() => wake, task);
   const faux = fauxProvider();
   const timers = fakeTimers(clock);
+  // The daemon's second binding step: the session's harness and its one Conversations.
   const bind = (session: WakeSession): void => {
     wake.harness = session.harness;
+    wake.conversations = conversations(session, { model: FAUX_MODEL, cwd: process.cwd() }, "room");
   };
   return {
     clock,
@@ -276,6 +293,11 @@ export function wakeWorld(): WakeWorld {
       settings = { ...settings, enabled };
       wake.settings = settings;
       wake.policy = v0Policy(settings);
+    },
+    crash: async (session: WakeSession): Promise<void> => {
+      storage.crashed = true;
+      await session.harness.close(context).catch(() => undefined);
+      storage.crashed = false;
     },
     open: (chosen?: Extension): Promise<WakeSession> =>
       openWake({
@@ -488,25 +510,27 @@ export function recording(world: WakeWorld): Requests {
   };
 }
 
+/** A model turn that holds until its run is cut off (a close or a crash), then answers. */
+export const heldUntilCutOff: FauxResponseFactory = (_context, options) =>
+  new Promise<AssistantMessage>((resolve) => {
+    const cutOff = (): void => {
+      resolve(fauxAssistantMessage([fauxText("cut off")]));
+    };
+    const signal = options?.signal;
+    if (signal === undefined || signal.aborted) {
+      cutOff();
+      return;
+    }
+    signal.addEventListener("abort", cutOff, { once: true });
+  });
+
 /**
  * The first model turn holds until its run is cut off, then plain answers follow:
  * a crash while the occurrence's input is admitted and its turn unfinished.
  */
 export function holdFirstTurn(world: WakeWorld): void {
-  const held: FauxResponseFactory = (_context, options) =>
-    new Promise<AssistantMessage>((resolve) => {
-      const cutOff = (): void => {
-        resolve(fauxAssistantMessage([fauxText("cut off")]));
-      };
-      const signal = options?.signal;
-      if (signal === undefined || signal.aborted) {
-        cutOff();
-        return;
-      }
-      signal.addEventListener("abort", cutOff, { once: true });
-    });
   world.faux.setResponses([
-    held,
+    heldUntilCutOff,
     ...Array.from({ length: 8 }, () => fauxAssistantMessage([fauxText("ok")])),
   ]);
 }
@@ -548,4 +572,77 @@ export function heldGate(inner: WakePolicy): HeldGate {
     },
   };
   return { policy, secondSeen: second.promise, release: held.resolve };
+}
+
+/** A model turn that holds until the test releases it, then answers once. */
+export interface GatedTurn {
+  readonly step: FauxResponseStep;
+  /** Resolves when the turn has started and the model is waiting. */
+  readonly reached: Promise<undefined>;
+  readonly release: () => void;
+}
+
+export function gatedTurn(answer: () => AssistantMessage): GatedTurn {
+  const gate = Promise.withResolvers<undefined>();
+  const reached = Promise.withResolvers<undefined>();
+  const step: FauxResponseStep = async () => {
+    reached.resolve(undefined);
+    await gate.promise;
+    return answer();
+  };
+  return {
+    step,
+    reached: reached.promise,
+    release: (): void => {
+      gate.resolve(undefined);
+    },
+  };
+}
+
+/** The model error pi-durable does not retry: the run fails and its input settles unanswered. */
+export const failingOnce = (): GatedTurn =>
+  gatedTurn(() =>
+    fauxAssistantMessage([], { stopReason: "error", errorMessage: "Invalid request" }),
+  );
+
+/** A turn held mid-run, then successful: a wake input placed in a turn that is still going. */
+export const heldTurn = (): GatedTurn => gatedTurn(() => fauxAssistantMessage([fauxText("ok")]));
+
+/** Every notification the wake sent, in order. */
+export const notifyCalls = (world: WakeWorld): SatanCall[] =>
+  world.calls.filter((call) => call.tool === "notify_send");
+
+/** A model turn that records what the model saw, then answers plainly. */
+export interface RecordedTurn {
+  readonly step: FauxResponseFactory;
+  readonly seen: Message[][];
+}
+
+export function recordedTurn(): RecordedTurn {
+  const seen: Message[][] = [];
+  const step: FauxResponseFactory = (request) => {
+    seen.push([...request.messages]);
+    return fauxAssistantMessage([fauxText("ok")]);
+  };
+  return { step, seen };
+}
+
+/** A real turn of the event loop: the phases commit on microtasks and short timers. */
+export const turn = (): Promise<void> =>
+  new Promise<void>((resolve) => {
+    setTimeout(() => {
+      resolve();
+    }, WAIT.interval);
+  });
+
+/** Waits until occurrence 0's input is admitted and queued behind the busy run. */
+export async function waitQueued(
+  session: WakeSession,
+  taskId: TaskId<WakeResult>,
+  conversationId: ConversationId = session.root.id,
+): Promise<void> {
+  await vi.waitFor(async () => {
+    const record = await submissionOf(session.harness, conversationId, wakeRequestId(taskId, 0));
+    expect(record?.status).toBe("queued");
+  }, WAIT);
 }
