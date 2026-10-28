@@ -21,10 +21,12 @@
     systems = ["x86_64-linux" "aarch64-linux" "aarch64-darwin"];
     forAll = f: nixpkgs.lib.genAttrs systems (system: f nixpkgs.legacyPackages.${system});
 
-    # node runs the TypeScript directly (package.json `engines`: >=24); biome,
-    # eslint, tsc and vitest are npm devDependencies, reached through `npx`, so
-    # they need `npm ci` and are not here.
-    shellPkgs = pkgs: (with pkgs; [nodejs_24 just]);
+    # node runs the TypeScript directly (package.json `engines`: >=24); eslint,
+    # tsc and vitest are npm devDependencies, reached through `npx`, so they
+    # need `npm ci` and are not here. biome is here because the justfile calls
+    # it bare (the quotient forms and jails must run `just check`); keep its
+    # version on package.json's `@biomejs/biome` pin.
+    shellPkgs = pkgs: (with pkgs; [nodejs_24 just biome]);
 
     # The room's tool set, and what the flake exports as `dev-tools` for
     # oubliette capsules: the devshell's tools plus doctrine, which is how the
