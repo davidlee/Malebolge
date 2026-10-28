@@ -89,25 +89,49 @@ if run:
 These are carried as tests in the design's Verification section, so the
 plan's phases test them rather than another design pass.
 
+## Plan review pass (2026-10-29)
+
+Plan authored and committed (3efcd6c): 8 phases, `plan.toml` + `plan.md`. Not yet
+`doctrine slice phases`, not yet `slice status ready`. Plan deviates from design
+in one place: DEC-042 (`DAEMON_SETTINGS`) is its own PHASE-02, not in the post phase.
+
+pi first pass done (profile `review`; run artifacts
+`~/.local/state/quotient/runs/run-20261028T164712520Z-1-77de3424c15d/`). 15 findings,
+UNDISPOSITIONED (adjudicate under /feedback against the tree; pi's claims are evidence):
+- F1 blocker: `test/wake-heartbeat.test.ts` also pins `afterFailedRun: keep` (behindFailure-style, ~274-308, used by 7 cases); PHASE-02 omits it.
+- F2 major: sweep move is not "moved, not rewritten": `sweepBlockedWakes` called at 8 sites in wake-heartbeat.test.ts with pinned journal text ("blocked (task_too_old); aborting", "withdrew N queued input(s)"); `SweptKind.report` has no hook for those lines or the IndexReader.
+- F3 blocker: PHASE-04 needs `Origin`/`originKey` (PostInput) but PHASE-05 creates them; move pure data to PHASE-04.
+- F4 blocker: PHASE-05 breaks `test/fixtures/interactive-baseline.json` (toolsets.test.ts:140-145) and ~11 `daemonExtensions` literals (toolsets/daemon-sections/daemon-start tests) if `DaemonParts.threads` is required.
+- F5 major: PHASE-04 EX-1 early premise VTs presume createPostTask/fixture from the same phase; say they drive raw Conversation.submit/abortSubmission.
+- F6 major: PHASE-04 oversized; split.
+- F7 major: PHASE-02 VT-1 untestable (no settings reader in pi-durable); make behavioural.
+- F8 major: PHASE-04 VT-5 (faulted run) has no faux recipe; add or spike.
+- F9 minor: PHASE-02 VT-2 keywords not distinctive. F10 minor: PHASE-03 VT-2 splits across conversations.test.ts and wake-tools.test.ts. F11 minor: cap constants created in PHASE-05, used in PHASE-07. F12 minor: PHASE-04 EX-7 coupling rule unenforceable; add rule to test/structure.test.ts or demote to VA. F13 minor: quote design's refusal texts verbatim. 
+- F14 major: DEC-042 lands before premises (b)/(c) are proven; keep it a one-line constant with recorded rollback, or move after PHASE-04 premise tests (design's placement).
+- F15 minor: journal line forms have no VT.
+Also noted by me: `verify-vt` shows some keywords already present (non-distinctive: "startedBy", "marked id", "DAEMON_SETTINGS"?) — tighten.
+
+Next: disposition under /feedback (verify F1, F2, F4 against the tree first), revise plan, commit, then Sol via codex:ask (operator's order: pi, then Sol), then `slice phases`, `slice status ready`, /super-orchestrator.
+
 ## Harvest
 <!-- single-copy: updated in place each harvest; ids only, never restated content -->
-fresh-as-of: 2026-10-29 · plan (design locked, run rev 64) · parent 23f229a (work since uncommitted)
+fresh-as-of: 2026-10-29 · plan authored (not yet ready), pi review findings recorded · head 3efcd6c + this notes edit
 
 ### Produced
 - RSK-002, RFC-003 (framing); `research/research.md`; EVD-002
 - DEC-031..DEC-046; amendments noted on DEC-034, DEC-035, DEC-036, DEC-040, DEC-042, DEC-044; DEC-015 refined
 - minted: CHR-004, IMP-019, IMP-020, IDE-003, IDE-004, RSK-003
-- `design.md` (13 sections, locked); RV-017 — the run's review pass, disposed waived (informal passes: § Design review passes)
-- slice scope reconciled with DEC-041..046; SL-006 related to RSK-003, IMP-020
-- `mem.fact.malebolge.src-seam` body repaired
+- `design.md` (13 sections, locked); RV-017 (design review, waived)
+- `plan.toml` / `plan.md` (8 phases), commit 3efcd6c; pi plan-review findings F1-F15 (§ Plan review pass)
 
 ### Learned
 - EVD-002 — fork inside a tool call
 - `mem.fact.doctrine.design-section-order` — design.md orders sections by id as text; selector steps need an explicit discharge
+- `slice verify-vt` passes keyword-only on text already in the test file: titles must be genuinely new
 
 ### Open
-- DEC-031 — the fork child's written ToolResultEntry: first VT of the fork phase
-- DEC-036 — one follow-up placed per run, and sibling withdrawal: first VTs of the post phase
-- the operator asked for a review pass on the plan
+- plan review: pi F1-F15 undispositioned; then Sol (codex:ask) pass; then phases/ready
+- DEC-031 premise VT (PHASE-06), DEC-036 premise VTs (PHASE-04): first VTs of their phases
+- DEC-042 placement (PHASE-02 vs design's post phase): pi F14 contests it
 - RFC-003 OQ-1, OQ-2, OQ-4, OQ-7, OQ-8
-- doctrine tool: lexical sort of `sec-N` ids, with no reorder or retire verb; belongs in doctrine's own backlog, not this repo's
+- doctrine tool: lexical sort of `sec-N` ids, no reorder verb; belongs in doctrine's backlog
