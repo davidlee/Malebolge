@@ -251,7 +251,7 @@ describe("VT-5: DEC-045's failure outcomes", () => {
     expect(only(inputsOf(turns.seen, "<post-failed "))).toContain(`reason="${reason}"`);
   });
 
-  it("VT-5 a run failing after a tool succeeded reports delivered-incomplete", async () => {
+  it("VT-5 a run failing after a tool succeeded and an abort after placement (VT-7) report delivered-incomplete", async () => {
     const world = threadWorld();
     const session = await world.open();
     const recipient = await createRecipient(session.harness);
