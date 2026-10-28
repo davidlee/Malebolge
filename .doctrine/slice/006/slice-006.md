@@ -30,8 +30,9 @@ profile, not per conversation (RFC-002 D2 is unimplemented; research X-4). Talk 
 
 ## Scope & Objectives
 
-Settled in the design run's inquiry (2026-10-29); each objective cites the
-decision that shapes it.
+Settled in the design run's inquiry and review (2026-10-29); each objective
+cites the decisions that shape it. The design (`design.md`) holds the
+mechanism.
 
 1. **Start a thread** (DEC-034). `thread_start {intent, context?, topic?}`
    creates a conversation in an existing topic (default: the caller's), with
@@ -51,17 +52,26 @@ decision that shapes it.
    submission idiom without a bound: a post is never withdrawn for waiting.
    Rendered `<post from topic>` with `<intent>` and `<context>`; the reply
    address is `from`. A post that fails sends one terminal `<post-failed>`
-   notice to its sender.
+   notice to its sender, with outcome `withdrawn` (never read) or
+   `delivered-incomplete` (read; its turn did not complete) (DEC-045).
+   Daemon-wide, a failed run continues with the inputs queued behind it
+   (`afterFailedRun: continue`, DEC-042), so a post behind a failed run
+   progresses; this also changes how queued wakes and operator inputs behave.
 4. **Talk sets in code** (DEC-032, DEC-038). `TALK_SETS` beside
    `PROFILE_TOOLSETS`: the room's interactive set; mail and host have none.
    One `requireSameTalkSet` serves start, fork and post.
-5. **Origins and bounds** (DEC-036). Every post carries an inspectable
-   origin (the root human or wake input; a wake origin records its episode
-   class). At most 4 active posts per origin and 12 daemon-wide, counted by
-   `harness.inspect`. Crossing either reaps a family (the over-cap one, or the
-   largest, youngest on a tie): queued posts withdrawn, the origin
-   tombstoned, running turns left to finish, the originator told by a
-   terminal `<family-reaped>` notice. No chain-depth cap: loops are allowed.
+5. **Origins and bounds** (DEC-036, DEC-041, DEC-044, DEC-046). Every post
+   carries an inspectable origin (the root human or wake input; a wake origin
+   records its episode class). At most 4 active posts per origin and 12
+   daemon-wide, counted by `harness.inspect`; the thread tools run
+   sequentially, so one turn's calls cannot pass the caps together (DEC-041).
+   Crossing either reaps a family (the over-cap one, or the largest, youngest
+   on a tie). The reap's first commit writes the origin's tombstone and the
+   `<family-reaped>` notice task together; queued posts are then withdrawn,
+   placed turns finish and cannot post, and every post task enforces its
+   origin's tombstone when it runs (DEC-044). Tombstones are never pruned. A
+   wake scheduled from a reaped family opens a new, capped family (DEC-046,
+   RSK-003). No chain-depth cap: loops are allowed.
 6. **Topic latest skips threads** (DEC-037, refining DEC-015). `latestIn`
    ignores entries with `parent` or `startedBy`, so attach by topic,
    `wake_schedule {topic}` and the heartbeat stay on human-created
@@ -70,7 +80,10 @@ decision that shapes it.
    marks threads; `notify_send` on a reap; transcript renders posts, notices
    (`[thread]`) and wakes (`[wake]`) as their own lines, not as `You:`, with
    their own Emacs faces.
-8. **Prompt surface** (DEC-040). Tool descriptions and one test-pinned
+8. **Interrupted calls** (DEC-043). The thread tools stay replay `unsafe`;
+   a call interrupted by a crash after its commit is ambiguous to its caller
+   and a retry may duplicate it. Accepted; receipts are IMP-020.
+9. **Prompt surface** (DEC-040, DEC-045, DEC-046). Tool descriptions and one test-pinned
    `threads` section in code state the framing's facts (a post is from a
    peer thread, not the operator). Conduct between threads is SATAN's corpus
    prose; SL-006 does not change `interactive.txt`.
@@ -97,11 +110,19 @@ decision that shapes it.
 - A per-conversation byte budget (IMP-015); cost ceilings (satan IMP-053).
 - Orientation re-injection (IMP-016), beyond keeping the envelope shape open
   for it.
+- Crash-safe receipts for thread tool calls (IMP-020, DEC-043).
+- `wake_schedule` refusing a reaped origin (RSK-003, DEC-046).
 
 ## Affected surface (coarse)
 
 - `src/toolsets.ts`: `TALK_SETS`, `requireSameTalkSet`; the new extension in
   the interactive list.
+- `src/session.ts` also: the daemon's harness settings (`afterFailedRun`,
+  DEC-042).
+- `src/task-sweep.ts` (new): the start sweep of blocked tasks, shared by
+  wakes and posts; `src/wake/sweep.ts` shrinks to wake's part.
+- `src/late-binding.ts` (new): the two-step dependency binding wake and
+  threads share.
 - `src/topics.ts`: the hook copies a fork's toolset; `startedBy`; `latestIn`
   skips threads.
 - `src/session.ts`: the narrowed fork refusal.
@@ -115,10 +136,22 @@ decision that shapes it.
 
 - **Runaway cost.** Bounded by DEC-036 against fan-out; a looping
   population at the caps costs tokens, which satan IMP-053 bounds.
-- **Unverified (DEC-031):** a tool may append a `ToolResultEntry` to the
-  fork child. Fallback: explain the fork in the first post's envelope.
-- **Unverified (DEC-036):** follow-ups stay one-at-a-time per turn under
-  load; withdrawing one queued post leaves a sibling input queued.
+- **Unverified (DEC-031), tested first in the fork phase:** a tool may
+  append a `ToolResultEntry` to the fork child. Fallback: explain the fork
+  in the first post's envelope.
+- **Unverified (DEC-036), tested first in the post phase:** follow-ups are
+  placed one per run; withdrawing one queued post leaves a sibling input
+  queued. No fallback: a failure returns to the operator.
+- **Daemon-wide behaviour change (DEC-042):** inputs queued behind a failed
+  run are answered in the next run; wake tests pinning the old behaviour
+  are rewritten.
+- **Accepted residuals:** an interrupted thread call may be duplicated
+  (DEC-043, IMP-020); counts can overshoot across concurrently running
+  turns (DEC-036, DEC-041); a reaped family can resume through a wake
+  (DEC-046, RSK-003); a post placed in the moment of its reap is delivered,
+  and a post queued behind a faulted run waits for the recipient's next
+  input (DEC-044, DEC-042); a sender looping against a failing recipient is
+  a loop like any other (DEC-036, satan IMP-053).
 - **Assumption:** EVD-001 (busy conversations queue input) holds for
   task-submitted posts as for wakes.
 
@@ -132,8 +165,11 @@ decision that shapes it.
   with `from`, is queued when the recipient is busy, and its failure reaches
   the sender; mail and host refuse; a family over 4 is reaped and its
   originator told, while a co-resident loop is untouched; the global cap
-  reaps the largest family; `latestIn` skips threads; posts and wakes render
-  as their own lines.
+  reaps the largest family; one message with more thread calls than the cap
+  admits only up to it; a crash mid-reap delivers no queued family post and
+  the notice once; a post behind a failed run is placed with no further
+  input; `<post-failed>` reports withdrawn or delivered-incomplete;
+  `latestIn` skips threads; posts and wakes render as their own lines.
 - VH (verified by the operator): in the room, SATAN starts a thread in
   another topic, posts to it, and receives a reply; the operator attaches to
   both and sees the post lines coloured.
@@ -151,4 +187,5 @@ touched.
   tools.
 - IDE-003 (gptel-hosted runs spawning conversations), IDE-004 (live view),
   IMP-019 (wake reconciliation), CHR-004 (rename).
+- IMP-020 (thread tool receipts), RSK-003 (reaped-family wake escape).
 - IMP-014 and IMP-018 (Emacs client for many live threads).

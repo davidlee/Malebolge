@@ -6,7 +6,7 @@ status = "active"
 title = "src/ seam: the runner's shared contract set is emergent, not declared"
 summary = "12 of 26 src/*.ts modules are the runner's contract and 14 are daemon-private; the one-way arrow and the contract set are computed, not expressed in the tree."
 created = "2026-10-19"
-updated = "2026-10-19"
+updated = "2026-10-28"
 
 [scope]
 paths = ["src/"]

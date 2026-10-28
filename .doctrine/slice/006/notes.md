@@ -68,21 +68,46 @@ Changes from the proposals, and why:
   its parent's topic.
 - Visibility: transcript lines and faces for posts, notices and wakes.
 
+## Design review passes (2026-10-29, design run revisions 33-60)
+
+Informal, no RV ledger: Sol (GPT) twice, pi twice, the disposer
+adjudicating, the drafter applying. Rulings landed as R1-R14 and as
+decision notes on DEC-036 and DEC-044 (notice in the tombstone commit;
+no `withdrawn` count; never-pruned tombstones; the reap's guarantee at
+placement; faulted runs).
+
+A further pass is not needed before locking: the last pi verify pass found
+R1-R14 in place, and the operator accepted the design. What one would probe,
+if run:
+- The reap under concurrency: the in-commit tombstone re-read, the
+  notice created only on a new tombstone, and the at-most-K-plus-overshoot
+  bound when a post is placed in the moment of a reap.
+- The early VTs' premises: the fork child's written `ToolResultEntry`
+  (DEC-031), one follow-up placed per run, sibling withdrawal (DEC-036).
+- The fork sole-call check against a mid-call append to the caller.
+- The DEC-042 blast radius on wake and operator input behind a failed run.
+These are carried as tests in the design's Verification section, so the
+plan's phases test them rather than another design pass.
+
 ## Harvest
 <!-- single-copy: updated in place each harvest; ids only, never restated content -->
-fresh-as-of: 2026-10-29 · design/drafting (run rev 26) · parent 31c5a61
+fresh-as-of: 2026-10-29 · plan (design locked, run rev 64) · parent 23f229a (work since uncommitted)
 
 ### Produced
-- RSK-002, RFC-003 (framing, committed before the slice)
-- `research/research.md`; EVD-002 (fork inside a tool call)
-- DEC-031..DEC-040; DEC-015 refined (note); CHR-004, IMP-019, IDE-003, IDE-004
-- slice scope rewritten against the decisions
+- RSK-002, RFC-003 (framing); `research/research.md`; EVD-002
+- DEC-031..DEC-046; amendments noted on DEC-034, DEC-035, DEC-036, DEC-040, DEC-042, DEC-044; DEC-015 refined
+- minted: CHR-004, IMP-019, IMP-020, IDE-003, IDE-004, RSK-003
+- `design.md` (13 sections, locked); RV-017 — the run's review pass, disposed waived (informal passes: § Design review passes)
+- slice scope reconciled with DEC-041..046; SL-006 related to RSK-003, IMP-020
+- `mem.fact.malebolge.src-seam` body repaired
 
 ### Learned
-- EVD-002
-- DEC-031, DEC-036 (pi-durable result pairing; abort scopes; one-at-a-time follow-ups)
+- EVD-002 — fork inside a tool call
+- `mem.fact.doctrine.design-section-order` — design.md orders sections by id as text; selector steps need an explicit discharge
 
 ### Open
-- unverified: DEC-031 child ToolResultEntry; DEC-036 placement and sibling withdrawal
+- DEC-031 — the fork child's written ToolResultEntry: first VT of the fork phase
+- DEC-036 — one follow-up placed per run, and sibling withdrawal: first VTs of the post phase
+- the operator asked for a review pass on the plan
 - RFC-003 OQ-1, OQ-2, OQ-4, OQ-7, OQ-8
-- memory `mem.fact.malebolge.src-seam` has a broken body (`@/tmp/rv/mem.md`)
+- doctrine tool: lexical sort of `sec-N` ids, with no reorder or retire verb; belongs in doctrine's own backlog, not this repo's

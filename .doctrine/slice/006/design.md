@@ -493,11 +493,15 @@ Every call runs the same admission before its commit:
 3. Refuse when the origin is tombstoned: `origin 12/340 was reaped for
    fan-out; posts and thread starts from it are refused`.
 4. Count and decide (`verdict`). `reap-own`: commit the reap (§ Reaping,
-   step 1) alone, and refuse.
+   step 1) alone, and refuse. That commit also re-reads the tombstone first,
+   and writes nothing if another conversation reaped the family meanwhile.
 5. Otherwise commit the call's writes. For `reap-other`, the reap's writes
    (tombstone and notice task) go in this same commit, so a call whose
-   creation fails reaps nobody. Then run the reap's withdrawal step, if any,
-   and journal (§ Visibility).
+   creation fails reaps nobody. The commit first re-reads the caller's
+   tombstone (`ThreadsDocument`, read before any table write) and refuses if
+   it is now set: another conversation reaped the family between steps 3 and
+   5. Step 3 stays as the cheap early refusal. Then run the reap's withdrawal
+   step, if any, and journal (§ Visibility).
 
 ### The flows
 
@@ -534,7 +538,8 @@ sequenceDiagram
 An unknown topic is refused (`unknown topic: x`); threads never create
 topics. Its toolset is the topic's, else the profile default; its cwd the
 topic's, else the daemon default (`ThreadDeps.defaults.cwd`). The commit:
-`tx.createConversation({ownership: {kind: "ownerless"}})` (the hook writes the
+`tx.createConversation({ownership: {kind: "ownerless"}})`, which returns the
+new `ConversationRecord` whose `id` the later steps use (the hook writes the
 entry), `configure(tx, id, {...defaults, cwd})`, then
 `toolsetInit(profile, topic, {startedBy: caller, require})(tx, id)`, then the
 first post's `createTask`. This is the same sequence `Harness#create` runs
@@ -560,7 +565,7 @@ refuses a table read after a table write):
 ```ts
 const [latest] = (await tx.scanEntries({ conversationId: caller, order: "descending" }, 1)).items;
 // … sole-call check on `latest` …
-const child = await tx.forkConversation(caller, latest.id, { ownership: { kind: "ownerless" } });
+const { id: child } = await tx.forkConversation(caller, latest.id, { ownership: { kind: "ownerless" } });
 await tx.appendEntry(ToolResultEntry, child, {
   model: [{
     role: "toolResult", toolCallId: api.callId, toolName: "thread_fork", isError: false,
@@ -759,6 +764,12 @@ queued behind a failed run is now answered in the next run as well. A
 persistent model outage fails each queued run in turn, and each failed post
 answers its sender once.
 
+`continue` covers runs that fail (`model_error`, `no_model`). A run that
+faults (malformed provider data, a storage rejection; `unanswered(faulted)`,
+`dist/harness/live.js:133-155`) ends without placing the inputs queued behind
+it; they wait for the conversation's next input. This is an accepted residual
+(§ Residuals).
+
 <!-- doctrine:section sec-4 -->
 ## Reaping and tombstones
 
@@ -781,11 +792,12 @@ export type ThreadsDoc = {
 /** Session scope, so a fork never copies it; nothing else names it. */
 export const ThreadsDocument = defineDoc<ThreadsDoc>({
   kind: "malebolge.threads", version: 1, scope: "session", initial: () => ({ reaped: {} }),
+  checkpointWhen: (_value, _ops, info) => info.deltasSinceBase >= 50, // as IndexDocument; pi-durable requires a policy
 });
 
 export const isReaped = (doc: ThreadsDoc, origin: Origin): boolean;
-/** Write `origin`'s tombstone. */
-export function tombstone(doc: ThreadsDoc, origin: Origin, reason: string, now: number): void;
+/** Write `origin`'s tombstone; false when it already existed, so the caller creates no second notice. */
+export function tombstone(doc: ThreadsDoc, origin: Origin, reason: string, now: number): boolean;
 ```
 
 Example:
@@ -811,7 +823,9 @@ stateDiagram-v2
 ```
 
 1. **The reap commit** writes the tombstone and, in the same commit, creates
-   the `family-reaped` notice task to `origin.conversation`. Both are durable
+   the `family-reaped` notice task to `origin.conversation`, only when
+   `tombstone()` returns `true`. Commits serialise, so two conversations of
+   one family reaping at once produce one tombstone and one notice. Both are durable
    together: from here admission refuses the origin, every family post task
    that runs, re-runs or settles sees the tombstone, and pi-durable runs (or,
    after a crash, recovers) the notice task like any other. There is no
@@ -846,12 +860,17 @@ origin.
 
 ### Invariants
 
-- After the reap commit, no `post` from origin O is delivered: admission
-  refuses new ones; a queued one is withdrawn by step 2, or by its own task
-  on re-run; one not yet submitted settles `reaped` on its first run.
+- After the reap commit, no new post or thread start from origin O is
+  admitted. A post already in flight is stopped where it has not yet been
+  placed: withdrawn by step 2, or by its own task when it runs. A post whose
+  input is placed first (its tombstone check passed just before the reap
+  commit, or the recipient's boundary placed it before step 2 reached it) is
+  delivered; its turn inherits O and cannot post. So a reap stops a family
+  within at most its in-flight posts (at most K, plus the accepted overshoot
+  across concurrently running turns; § Residuals).
 - A reap touches only inputs of family O, one submission at a time.
 - The tombstone and the notice task exist together or not at all; the
-  originator receives exactly one `<family-reaped>` per reap, unless that
+  originator receives exactly one `<family-reaped>` per reaped origin, unless that
   notice itself fails, which journals and notifies.
 - Tombstones are never pruned: one small entry per reaped origin.
 
@@ -989,7 +1008,7 @@ the recipient never read it. outcome="delivered-incomplete": the recipient
 read it but its turn did not complete; it may have acted on it.
 
 A <family-reaped> says an activity was stopped for fan-out: too many posts
-at once from one starting input. Its queued posts will not be delivered, and
+at once from one starting input. Its posts not yet read are withdrawn, and
 posts and thread starts from that activity are refused.
 ```
 
@@ -1011,7 +1030,8 @@ a backlog item:
 | A reaped family can resume later as a new family through a wake. | Each new family is capped and reaped; wake timing is clamped and jittered. | DEC-046; RSK-003 |
 | A sender that keeps posting to a recipient whose runs fail loops like any loop: each post settles before the next, so caps never fill. | Loops are unbounded by design (DEC-036); a failing loop is one of them, and the sender's own turns stop when the model does. Cost ceilings are satan's. | DEC-036; satan IMP-053 |
 | A legitimate fan-out wider than 4 is reaped. | K is a code constant and the refusal says why. | DEC-036 |
-| A recipient whose turn never ends holds a post slot. | With DEC-042 every failed run moves on; only a turn that never ends strands a post; the operator can abort the task. | DEC-035, DEC-042 |
+| A post queued behind a recipient turn that never ends, or behind a run that faults, waits and holds a slot. | Faults are rare (malformed provider data, storage rejection); any later input to the recipient places it; the operator can abort the post task, which sends `<post-failed>`. | DEC-035, DEC-042 |
+| A family's post placed in the moment of its reap is delivered. | Its turn inherits the reaped origin and cannot post; at most K such posts. | DEC-044 |
 | Wake and posts differ in delivery bound, failure reporting and extra-field name (`payload` vs `context`). | Reconciling them is outside threads. | IMP-019 |
 | "Toolset" is not yet renamed "mode". | It reaches stored data and the wire. | CHR-004 |
 | Threads cannot be spawned from gptel-hosted runs or other harnesses. | Talk across harnesses is decided later. | IDE-003 |
@@ -1083,6 +1103,7 @@ Posts and notices:
 - `a post starts a turn in the recipient with from, topic and origin`
 - `a post to a busy recipient is queued and placed when its turn ends`
 - `a post queued behind a failed recipient run is placed with no further input; and across a restart` (DEC-042)
+- `a post queued behind a faulted run stays queued until the recipient's next input` (pins the residual)
 - `failure before placement reports withdrawn; abort after placement and a run failing after a tool succeeded report delivered-incomplete` (DEC-045)
 - `a notice that cannot be delivered journals and notifies, and sends no further notice`
 
@@ -1094,10 +1115,15 @@ Origins, caps and reaping:
 - `the global cap reaps the largest family, ties to the youngest origin`
 - `a second call after a global-cap reap does not reap the same family again`
 - `a call whose creating commit throws after a reap-other verdict leaves no tombstone and no notice`
+- `two conversations of one family reaping at once create one tombstone and one notice`
+- `a call admitted before its family is reaped by another conversation is refused in its commit and creates nothing`
+- `two distinct reaps write two tombstones to the same stored document`
 - `a blocked post task is not counted`
 - `the start sweep withdraws a blocked post's queued input and aborts it`
-- `a crash after the tombstone and before any withdrawal delivers no post after restart` (DEC-044)
+- `a crash after the reap commit and before any withdrawal delivers no queued family post after restart` (DEC-044)
 - `a post task created before the reap and not yet submitted withdraws itself` (DEC-044)
+- `a post that passed its tombstone check before the reap commit is delivered, and its turn cannot post`
+- `a post that passed its tombstone check before the reap commit and restarted before its submit re-checks on re-run and settles reaped`
 - `a crash right after the reap commit delivers the family-reaped notice once after restart, with no startup scan` (DEC-044)
 - `a turn started by family-reaped cannot post or start threads`
 
@@ -1121,13 +1147,12 @@ coloured.
 | `src/threads/extension.ts` (new) | `ThreadDeps`, the `threads` extension, `THREADS_SECTION`. |
 | `src/threads/tools.ts` (new) | `thread_start`, `thread_fork`, `thread_post`: sequential, replay `unsafe`; `thread_fork` `callers: ["model"]`. |
 | `src/threads/admission.ts` (new) | `Origin`, `originKey`, the caller's origin read, `familiesOf`, `verdict`, `FAMILY_CAP`, `GLOBAL_CAP`, the reap. |
-| `src/threads/task.ts` (new) | `satan.post` v1: `PostInput`, delivery, outcomes, envelopes, notices, abort handler. |
+| `src/threads/task.ts` (new) | `satan.post` v1: `POST_KIND`, `PostInput`, `PostState`, `PostResult`, `postRequestId`, `postTask(deps)` (the definition, as `wakeTask`), `createPostTask(tx, task, input)` (owned by `input.to`, background, as `createWakeTask`); delivery, outcomes, envelopes, notices, abort handler; the `satan.post` `SweptKind` row. |
 | `src/threads/tombstones.ts` (new) | `ThreadsDocument`, `isReaped`, `tombstone`. |
 | `src/late-binding.ts` (new) | `lateBinding<Early, Late>`, generalised from `wakeBinding`. |
 | `src/wake/extension.ts` | `wakeBinding` becomes a use of `lateBinding`. |
 | `src/task-sweep.ts` (new) | `SweptKind`, `sweepBlockedTasks`: the start sweep, moved out of `src/wake/sweep.ts`, over a per-kind table. |
 | `src/wake/sweep.ts` | Shrinks to wake's `SweptKind` row: its wake-specific part (no report for the heartbeat or an abort already requested; otherwise `reportFailure`). |
-| `src/threads/task.ts` | Also exports the `satan.post` `SweptKind` row. |
 | `src/toolsets.ts` | `TalkSet`, `TALK_SETS`, `requireSameTalkSet`; `threads` in the interactive list and in `ROOM_ONLY`. |
 | `src/topics.ts` | `IndexEntry.startedBy`; `isThread`, `markOf`; the hook copies a fork's toolset and throws without one; `writeCreated` writes `startedBy`; `latestIn` skips threads. |
 | `src/conversations.ts` | `toolsetInit` takes the optional `StartedThread`; the cwd lookup extracted for reuse; list pages carry marks. |

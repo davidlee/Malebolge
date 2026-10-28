@@ -15,3 +15,6 @@ Consequence 2026-10-29 (design d1 review, pi F-8; operator: 'keep 7 day pruning 
 
 
 Amended 2026-10-29 (operator: 'maybe just leave the tombstones, it seems unlikely to cause issues and is less code'): tombstones are never pruned. This replaces the best-effort 7-day pruning noted above.
+
+
+Consequence 2026-10-29 (design d2 review, Sol D-1; operator agreed): the tombstone commit stops admission, not placement. A family post that passed its tombstone check just before the reap commit, or whose input the recipient placed before the withdrawal reached it, is delivered; its turn inherits the reaped origin and cannot post. A reap therefore stops a family within at most its in-flight posts (at most K). The reap commit re-reads the tombstone and creates the notice only when it inserts the mark, so one notice per reaped origin (Sol D-2).

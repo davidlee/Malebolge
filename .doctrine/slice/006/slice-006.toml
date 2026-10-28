@@ -1,7 +1,7 @@
 id = 6
 slug = "threads"
 title = "Threads: start, fork and post among interactive conversations"
-status = "design"
+status = "plan"
 created = "2026-10-28"
 updated = "2026-10-28"
 tags = ["malebolge", "conversations", "threads", "topics"]
@@ -121,6 +121,14 @@ target = "RSK-002"
 [[relation]]
 label = "related"
 target = "IMP-017"
+
+[[relation]]
+label = "related"
+target = "RSK-003"
+
+[[relation]]
+label = "related"
+target = "IMP-020"
 
 # STRUCTURAL relations are uniform `[[relation]]` rows, never a typed
 # `[relationships]` axis. Slices carry no typed STRUCTURAL
