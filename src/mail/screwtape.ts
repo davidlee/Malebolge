@@ -5,7 +5,7 @@
 // else fails closed, so a call returns checked data or no data at all.
 //
 // Every failure becomes a MailSourceError worded from a fixed vocabulary:
-// stderr is read only for a usage error's `code`, so no child text — least of
+// stderr is read only for a usage error's code (its `reason`), so no child text — least of
 // all raw stderr — ever reaches a message the model can see.
 
 import { withAbortSignal } from "@earendil-works/chord/context";
@@ -132,23 +132,28 @@ function execError(error: ExecutionError): Error {
   return error;
 }
 
-/** The `code` of the first non-blank stderr line, if that line is a JSON object naming one. */
+/**
+ * A usage error's code: the `reason` of the first stderr line that is a JSON
+ * object at level "error" (screwtape writes one diagnostic per line, and a
+ * warning may come first). Only a bare word is kept.
+ */
 function usageCode(stderr: string): string | undefined {
-  const first = stderr.split("\n").find((line) => line.trim() !== "");
-  if (first === undefined) {
-    return undefined;
-  }
+  const reason = stderr
+    .split("\n")
+    .map(errorDiagnostic)
+    .find((d) => d !== undefined)?.["reason"];
+  return typeof reason === "string" && USAGE_CODE.test(reason) ? reason : undefined;
+}
+
+/** A stderr line as an error-level diagnostic object, or undefined. */
+function errorDiagnostic(line: string): Record<string, unknown> | undefined {
   let parsed: unknown;
   try {
-    parsed = JSON.parse(first);
+    parsed = JSON.parse(line);
   } catch {
     return undefined;
   }
-  if (!isRecord(parsed)) {
-    return undefined;
-  }
-  const code = parsed["code"];
-  return typeof code === "string" && USAGE_CODE.test(code) ? code : undefined;
+  return isRecord(parsed) && parsed["level"] === "error" ? parsed : undefined;
 }
 
 /** The failure for a non-zero exit: stderr contributes only a usage error's code. */
