@@ -1,0 +1,40 @@
+schema = "doctrine.rfc"
+version = 1
+
+id = 3
+slug = "conversation-domain-model"
+title = "Conversation domain model: identity, protocol, mode, capability, place, history, turn origin"
+status = "open"
+created = "2026-10-28"
+updated = "2026-10-28"
+tags = ["malebolge", "conversations", "prompts", "domain-model", "threads"]
+
+[relationships]
+# RFCs participate in the tier-1 `related` relation (AnyNumbered — links to any entity).
+# Author with `doctrine link RFC-NNN related <target>`. `doctrine inspect RFC-NNN` renders them.
+superseded_by = []   # reverse link is derived (REV→RFC originates_from)
+
+[[relation]]
+label = "related"
+target = "RSK-002"
+
+[[relation]]
+label = "related"
+target = "DEC-029"
+
+[[relation]]
+label = "related"
+target = "RFC-002"
+
+[[relation]]
+label = "related"
+target = "IMP-017"
+
+[[relation]]
+label = "related"
+target = "IMP-016"
+
+[[relation]]
+label = "related"
+target = "IDE-002"
+

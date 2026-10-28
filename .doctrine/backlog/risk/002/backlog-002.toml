@@ -1,0 +1,36 @@
+schema = "doctrine.backlog"
+version = 1
+
+id = 2
+slug = "foreign-instruction-quarantine"
+title = "Foreign-originated text can carry instructions into SATAN: quarantine for mail, its derivatives, and panopticon"
+kind = "risk"
+status = "triaged"
+resolution = ""
+created = "2026-10-28"
+updated = "2026-10-28"
+tags = ["mail", "panopticon", "security"]
+
+[facet]                         # risk only — every field typed; seeded empty
+likelihood = "medium"
+impact = "high"
+origin = "operator, threads RFC discussion 2026-10-28"
+controls = ["mail mode has mail tools only (DEC-029)", "mail results wrapped as untrusted data (src/mail/render.ts)", "pre-read classifier planned (satan:RFC-020), not built"]
+
+# outbound-only. Cross-kind structural edges (e.g. references with a role
+# — `originates_from` for backlog→slice provenance — governed_by, related, drift) are
+# uniform `[[relation]]` rows — author them with
+# `doctrine link RSK-NNN <label> <target>`; `doctrine inspect RSK-NNN` renders
+# them. The dep/seq axes below stay typed (they carry per-edge payloads).
+[relationships]
+needs    = []                   # item→item hard prerequisite
+after    = []                   # item→item soft sequence: { to, rank? }
+triggers = []                   # watched source globs: { globs, note? }
+
+[[relation]]
+label = "related"
+target = "RFC-003"
+
+[[relation]]
+label = "related"
+target = "IMP-017"
