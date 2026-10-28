@@ -32,7 +32,6 @@ import {
 import {
   CEILING,
   createWake,
-  failingOnce,
   firedResult,
   HOUR,
   heldTurn,
@@ -264,7 +263,7 @@ function withdrawalHeld(harness: Harness, held: Gate): WakeDeps["harness"] {
   };
 }
 
-/** A wake stuck behind a failed foreground run in the room topic's conversation. */
+/** A wake stuck behind a held foreground run in the room topic's conversation. */
 interface Stuck {
   readonly world: WakeWorld;
   readonly session: WakeSession;
@@ -273,19 +272,27 @@ interface Stuck {
 }
 
 /**
- * The failed-run recipe: a held foreground turn fails, leaving the wake's input
- * queued behind it (and a plain "second" input behind that). A heartbeat is
- * ensured and fired; a one-shot is scheduled for now.
+ * How many held turns the recipe scripts: the first foreground turn, then one per
+ * reopen, whose cut-off turn the reopened session re-runs and holds again.
  */
-async function behindFailure(kind: "heartbeat" | "one-shot"): Promise<Stuck> {
+const HELD_TURNS = 12;
+
+/**
+ * The held-run recipe: a foreground turn that no answer ends, so the wake's input stays
+ * queued behind it (and a plain "second" input behind that). A heartbeat is ensured and
+ * fired; a one-shot is scheduled for now. The turn is held until its run is signalled —
+ * a close or a crash — so no close waits on it, and a reopen re-runs it held again.
+ */
+async function behindHeldRun(kind: "heartbeat" | "one-shot"): Promise<Stuck> {
   const world = wakeWorld();
   const session = await world.open();
   const conversation = await topicConversation(world);
-  const failing = failingOnce();
-  const records = recordedTurn();
-  world.faux.setResponses([failing.step, ...Array.from({ length: 6 }, () => records.step)]);
+  world.faux.setResponses(Array.from({ length: HELD_TURNS }, () => heldUntilCutOff));
   const foreground = await conversation.submit({ type: "input", content: "foreground" }, context);
-  await failing.reached;
+  // Placed: the conversation holds a run, which every input below must queue behind.
+  await vi.waitFor(async () => {
+    expect((await foreground.status(context)).status).toBe("placed");
+  }, WAIT);
 
   let taskId: Heartbeat;
   if (kind === "heartbeat") {
@@ -305,9 +312,7 @@ async function behindFailure(kind: "heartbeat" | "one-shot"): Promise<Stuck> {
     context,
   );
 
-  failing.release();
-  const answered = await foreground.wait(context);
-  expect(answered.reason).toBe("model_error");
+  // The wake's input is still behind the held run: nothing places it and nothing withdrew it.
   expect(
     (await submissionOf(session.harness, conversation.id, wakeRequestId(taskId, 0)))?.status,
   ).toBe("queued");
@@ -398,7 +403,7 @@ describe("VT-1: the heartbeat", () => {
   });
 
   it("VT-1b a parked heartbeat is replaced", async () => {
-    const stuck = await behindFailure("heartbeat");
+    const stuck = await behindHeldRun("heartbeat");
     const { world, taskId: parked } = stuck;
     const session = await reopenedParked(stuck);
 
@@ -555,7 +560,7 @@ describe("VT-1: the heartbeat", () => {
 
 describe("VT-2: the start sweep", () => {
   it("VT-2a a task_too_old heartbeat's queued input is withdrawn before it is aborted and replaced", async () => {
-    const stuck = await behindFailure("heartbeat");
+    const stuck = await behindHeldRun("heartbeat");
     const { world, taskId } = stuck;
     const { session, old } = await reopenedTooOld(world, stuck.session);
 
@@ -585,7 +590,7 @@ describe("VT-2: the start sweep", () => {
   });
 
   it("VT-2b the replacement targets the newer conversation", async () => {
-    const stuck = await behindFailure("heartbeat");
+    const stuck = await behindHeldRun("heartbeat");
     const { world } = stuck;
     const newer = await world.wake.conversations.open({
       kind: "topic",
@@ -605,7 +610,7 @@ describe("VT-2: the start sweep", () => {
   });
 
   it("VT-2c a restart after the withdrawal and before the abort finishes the job", async () => {
-    const stuck = await behindFailure("heartbeat");
+    const stuck = await behindHeldRun("heartbeat");
     const { world, taskId } = stuck;
     const { session: crashed } = await reopenedTooOld(world, stuck.session);
 
@@ -630,7 +635,7 @@ describe("VT-2: the start sweep", () => {
   });
 
   it("VT-2c-one-shot a blocked one-shot's failure report lands before the abort a crash interrupts", async () => {
-    const stuck = await behindFailure("one-shot");
+    const stuck = await behindHeldRun("one-shot");
     const { world, taskId } = stuck;
     const { session: crashed } = await reopenedTooOld(world, stuck.session);
 
@@ -658,7 +663,7 @@ describe("VT-2: the start sweep", () => {
   });
 
   it("VT-2d a blocked one-shot is withdrawn, reported as failed, aborted, and not replaced", async () => {
-    const stuck = await behindFailure("one-shot");
+    const stuck = await behindHeldRun("one-shot");
     const { world, taskId } = stuck;
     const { session, old } = await reopenedTooOld(world, stuck.session);
 
@@ -680,7 +685,7 @@ describe("VT-2: the start sweep", () => {
   });
 
   it("VT-2e a parked heartbeat's input is withdrawn once, and its abort handler does not reject", async () => {
-    const stuck = await behindFailure("heartbeat");
+    const stuck = await behindHeldRun("heartbeat");
     const { world, taskId } = stuck;
     const session = await reopenedParked(stuck);
 

@@ -26,7 +26,7 @@ import type { Profile } from "../src/config.ts";
 import { context } from "../src/context.ts";
 import { registryOf } from "../src/registry.ts";
 import type { Log } from "../src/satan-tools.ts";
-import { openSession, type Session, type SessionOptions } from "../src/session.ts";
+import { DAEMON_SETTINGS, openSession, type Session, type SessionOptions } from "../src/session.ts";
 import {
   IndexDocument,
   indexConversation,
@@ -51,6 +51,7 @@ import {
   textOf,
   toolResults,
 } from "./harness-fixture.ts";
+import { failingOnce, submissionOf, userText, WAIT } from "./wake-fixture.ts";
 
 const fauxModels = (answers: string[]): Models => {
   const faux = fauxProvider();
@@ -144,6 +145,48 @@ describe("openSession", () => {
     const second = await open("/second");
     expect((await second.root.agent(context)).cwd).toBe("/second");
     await second.harness.close(context);
+  });
+
+  /**
+   * DEC-042: `afterFailedRun: continue` starts the next run with the inputs queued
+   * behind a failed one, so an operator input queued behind a `model_error` turn is
+   * answered with nothing else submitting (design § "A failed run continues").
+   */
+  it("an operator input queued behind a failed run is answered in the next run", async () => {
+    const { faux, models } = scriptedModels();
+    const failing = failingOnce();
+    faux.setResponses([failing.step, fauxAssistantMessage([fauxText("ok")])]);
+    const session = await openSession(new MemoryStorage(), {
+      models,
+      registry: registryOf([]),
+      agent: { model: FAUX_MODEL, cwd: process.cwd() },
+      profile: "room",
+      log: () => undefined,
+      env: nodeEnv,
+    });
+
+    const foreground = await session.root.submit({ type: "input", content: "foreground" }, context);
+    await failing.reached;
+    await session.root.submit(
+      { type: "input", content: "queued", whenBusy: "followUp", requestId: "operator:queued" },
+      context,
+    );
+
+    failing.release();
+    const answered = await foreground.wait(context);
+    expect(answered.status).toBe("unanswered");
+    expect(answered.reason).toBe("model_error");
+    // No further input: the failed run's successor answers the queued one.
+    await vi.waitFor(async () => {
+      const queued = await submissionOf(session.harness, session.root.id, "operator:queued");
+      expect(queued?.status).toBe("done");
+    }, WAIT);
+    expect(faux.state.callCount).toBe(2);
+    const { messages } = await session.root.context(context);
+    expect(messages.map(userText)).toContain("queued");
+    await session.harness.close(context);
+
+    expect(DAEMON_SETTINGS).toEqual({ afterFailedRun: "continue", followUpMode: "one-at-a-time" });
   });
 
   it("runs the agent's tools in the environment its env hook gives, at the agent's cwd", async () => {

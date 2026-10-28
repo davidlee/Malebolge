@@ -14,3 +14,8 @@ Refined 2026-10-29 after design review r1 (Sol F-1, F-4, F-6), not superseded:
 
 
 Noted 2026-10-29 (design d1 review, pi F-7): a post is active until the recipient's turn ends, and a reply is sent during that turn, so a two-party loop holds up to two active posts, not one. K = 4 admits two co-resident loops per origin; the design states it.
+
+
+
+## Premise outcome (SL-006 PHASE-03, 2026-10-29)
+Premises (b) and (c) HOLD on pi-durable 1.4.0, pinned by test/queue-premises.test.ts: two follow-ups queued behind a held run are placed in two runs (3 model calls; the run answering post:44: does not see post:45:); abortSubmission of one queued post answers aborted and leaves its sibling queued, then placed. (b) rests on pi-durable's followUpMode default one-at-a-time, now pinned explicitly by DAEMON_SETTINGS (DEC-042).

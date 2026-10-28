@@ -19,6 +19,7 @@ import {
   configure,
   Harness,
   type HarnessOptions,
+  type HarnessSettings,
   type Registry,
   type Storage,
 } from "@earendil-works/pi-durable";
@@ -165,6 +166,12 @@ async function reconcileToolsets(
   }, context);
 }
 
+/** The daemon's harness-wide run policy (DEC-042; DEC-036's one-at-a-time follow-ups, pinned). */
+export const DAEMON_SETTINGS: HarnessSettings = {
+  afterFailedRun: "continue",
+  followUpMode: "one-at-a-time",
+};
+
 export async function openSession(storage: Storage, options: SessionOptions): Promise<Session> {
   const harness = await Harness.open(
     storage,
@@ -172,6 +179,7 @@ export async function openSession(storage: Storage, options: SessionOptions): Pr
       models: options.models,
       registry: options.registry,
       env: options.env,
+      settings: DAEMON_SETTINGS,
       ...(options.now === undefined ? {} : { now: options.now }),
       ...(options.setTimer === undefined ? {} : { setTimer: options.setTimer }),
       conversationCreated: indexConversation,

@@ -178,10 +178,20 @@ Seat: /super-orchestrator (2026-10-29, operator asleep). Main worktree, no dispa
 - PHASE-01 / VT-2 "mixed sets" read as caller in a set, target in none (TalkSet has one value, so two distinct sets cannot exist yet). decided.
 - PHASE-01 / test helper `sweepWakes(wake, read)` in wake-heartbeat.test.ts collapses the 7 sweep call sites (refactor, no expectation changed). decided.
 - PHASE-02 / writeCreated takes an optional trailing `startedBy`; cwd lookup is exported `topicCwd(index, topic, defaults, requested?)` (design names no function). decided.
+- PHASE-03 / premises (b),(c) HOLD (test/queue-premises.test.ts); outcome appended to DEC-036; DAEMON_SETTINGS landed after. decided.
+- PHASE-03 / every EN-2 case kept via a held run (behindHeldRun; heldUntilCutOff across close/reopen); none removed. wake-wait gains VT-3g/h/i (placed in the next run, no further input; one-shot, heartbeat, across a reopen). VT-3a restored to a failed foreground run (worker had moved it to a held run; the failed run now continues, which is the sharper claim). decided.
+- PHASE-03 / wake notify body "heartbeat unanswered (queued behind a failed run?)" is stale under DEC-042. deferred -> CHR-005.
+
+### PHASE-03 blast radius (EX-5)
+- Wake one-shot and heartbeat: an input queued behind a failed run is now placed in the next run and answered (VT-3g/h/i); no journal `failed:` line, no notify. The 2h bound now only fires behind a run that is still going (held) or a faulted run.
+- Abort handler: unchanged; a withdrawn input is not revived by the failed run continuing (VT-3a).
+- Start sweep: unchanged behaviour; its cases now get their queued input from a held run, which survives close/reopen (pi-durable re-runs the cut-off turn on reopen; queued inputs stay queued).
+- Operator input: queued behind a failed run, answered in the next run (session.test.ts).
 
 ## Pi passes (implementation)
 - PHASE-01: 4 parallel `implement` runs (A lateBinding, B task-sweep, C talk sets, D structure rules), ~$0.06 total, all green first time. Misses: D named its may-import predicate `crosses` (inverted polarity; renamed `seamAllows`); B left 7 repeated 4-line sweep calls (helper extracted). Sandbox: repo-local biome binary missing, workers used nix biome 2.5.15.
 - PHASE-02: 1 `implement` run, green first time; added shared `startThread` fixture in test/harness-fixture.ts; replaced private creationCwd with exported `topicCwd`. No misses found on review.
+- PHASE-03: 3 `implement` runs (A premises $0.03, B wake-wait+session $0.12 incl. one ceiling continuation, C heartbeat $0.06), all green. Misses: B moved VT-3a off its failed run needlessly (restored); B hit the request ceiling mid-format (continued). Finding: heldTurn ignores the abort signal, so a close with one in flight hangs; use heldUntilCutOff across a close.
 
 ## Harvest
 <!-- single-copy: updated in place each harvest; ids only, never restated content -->
