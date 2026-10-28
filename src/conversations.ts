@@ -115,18 +115,43 @@ async function resolveExisting(session: Session, id: ConversationId): Promise<Co
 }
 
 /**
+ * The `thread_start` caller's standing (design sec-12): the conversation whose
+ * thread_start created the one being made, and the judgement on the toolset the
+ * creating commit chose.
+ */
+export interface StartedThread {
+  /** The calling conversation, written as the entry's startedBy. */
+  startedBy: ConversationId;
+  /** Refuses a chosen toolset outside the caller's talk set, inside the creating commit. */
+  require: (toolset: DaemonToolset) => void;
+}
+
+/**
  * The `init` every create passes (design sec-3): the topic's toolset, else the
  * profile's default, checked against `policy` and selected in the creating
  * commit — the entry it writes and the selection it configures are one read.
+ * A `thread` makes it a thread_start's child: its `require` judges the toolset
+ * chosen inside the commit, so a refusal throws there and nothing is created.
  */
-export function toolsetInit(profile: Profile, topic: string | undefined): ConversationInit {
+export function toolsetInit(
+  profile: Profile,
+  topic: string | undefined,
+  thread?: StartedThread,
+): ConversationInit {
   const policy = PROFILE_TOOLSETS[profile];
   return async (tx, conversationId) => {
-    const toolset = await writeCreated(tx, conversationId, topic, (record) => {
-      const chosen = record?.toolset ?? policy.default;
-      requireAllowed(chosen, profile, policy);
-      return chosen;
-    });
+    const toolset = await writeCreated(
+      tx,
+      conversationId,
+      topic,
+      (record) => {
+        const chosen = record?.toolset ?? policy.default;
+        requireAllowed(chosen, profile, policy);
+        thread?.require(chosen);
+        return chosen;
+      },
+      thread?.startedBy,
+    );
     await configure(tx, conversationId, { extensions: selectionOf(toolsetList(toolset, profile)) });
   };
 }
@@ -153,13 +178,17 @@ async function indexOfTopic(session: Session, name: string): Promise<IndexDoc> {
   return index;
 }
 
-/** The directory a conversation born in `target`'s topic starts in: client, topic, daemon. */
-function creationCwd(
+/**
+ * The directory a conversation born in `topic` starts in: the client's when it asked
+ * for one, else the topic's, else the daemon's (D1, EX-2). Thread tools take it too.
+ */
+export function topicCwd(
   index: IndexDoc,
-  target: Extract<AttachTarget, { kind: "topic" }>,
+  topic: string,
   defaults: ConversationDefaults,
+  requested?: string,
 ): string {
-  return target.cwd ?? storedTopic(index, target.name)?.cwd ?? defaults.cwd;
+  return requested ?? storedTopic(index, topic)?.cwd ?? defaults.cwd;
 }
 
 /** The conversation a `topic` target binds: its latest, or a first one in that topic. */
@@ -177,7 +206,7 @@ async function openTopic(
     }
     return resolveExisting(session, latest);
   }
-  const cwd = creationCwd(index, target, defaults);
+  const cwd = topicCwd(index, target.name, defaults, target.cwd);
   return create(session, defaults, cwd, toolsetInit(profile, target.name));
 }
 

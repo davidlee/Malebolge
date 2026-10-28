@@ -30,9 +30,15 @@ import type { DaemonToolset } from "./toolsets.ts";
 
 /**
  * One conversation's place in the index; `parent` is the conversation it was forked
- * from, and `toolset` the set its extensions are derived from (design sec-3).
+ * from, `startedBy` the one whose `thread_start` created it, and `toolset` the set its
+ * extensions are derived from (design sec-3, sec-12).
  */
-export type IndexEntry = { topic: string; parent?: number; toolset: DaemonToolset };
+export type IndexEntry = {
+  topic: string;
+  parent?: number;
+  startedBy?: number;
+  toolset: DaemonToolset;
+};
 
 /**
  * What storage holds before the reconcile backfills it: an entry the hook wrote,
@@ -72,7 +78,12 @@ export const IndexDocument = defineDoc<IndexDoc>({
 });
 
 /** The keys a create writes into `id`'s entry; a key it leaves out keeps the entry's own. */
-export type EntryChange = { topic: string; parent?: ConversationId; toolset?: DaemonToolset };
+export type EntryChange = {
+  topic: string;
+  parent?: ConversationId;
+  startedBy?: ConversationId;
+  toolset?: DaemonToolset;
+};
 
 /**
  * Set `change`'s keys on conversation `id`'s entry, keeping every other key it
@@ -106,19 +117,25 @@ export async function indexConversation(tx: Tx, record: ConversationRecord): Pro
 }
 
 /**
- * Write what a create puts in `id`'s entry: its topic, and the toolset `choose`
- * picks from the topic's record — read here, in the creating commit, never
- * before it (design sec-3). Returns the toolset it wrote, for the selection.
+ * Write what a create puts in `id`'s entry: its topic, its `startedBy` when a thread
+ * tool started it, and the toolset `choose` picks from the topic's record — read here,
+ * in the creating commit, never before it (design sec-3, sec-12). Returns the toolset
+ * it wrote, for the selection.
  */
 export async function writeCreated(
   tx: Tx,
   id: ConversationId,
   topic: string | undefined,
   choose: (record: TopicRecord | undefined) => DaemonToolset,
+  startedBy?: ConversationId,
 ): Promise<DaemonToolset> {
   const index = await tx.doc(IndexDocument);
   const toolset = choose(topic === undefined ? undefined : storedTopic(index, topic));
-  writeEntry(index, id, { topic: topic ?? DEFAULT_TOPIC, toolset });
+  writeEntry(index, id, {
+    topic: topic ?? DEFAULT_TOPIC,
+    toolset,
+    ...(startedBy === undefined ? {} : { startedBy }),
+  });
   return toolset;
 }
 
@@ -329,7 +346,14 @@ export function idsIn(index: IndexDoc, topic: string): number[] {
     .sort((a, b) => b - a);
 }
 
-/** The highest id in `topic`: its latest conversation, since pi mints ids in creation order (DEC-015). */
+/** A conversation a thread tool created: a fork, or a thread_start's child (DEC-037). */
+export const isThread = (entry: StoredEntry): boolean =>
+  entry.parent !== undefined || entry.startedBy !== undefined;
+
+/** The highest id in `topic` that no thread tool created: its latest (DEC-015, DEC-037). */
 export function latestIn(index: IndexDoc, topic: string): number | undefined {
-  return idsIn(index, topic)[0];
+  return idsIn(index, topic).find((id) => {
+    const entry = ownKey(index.conversations, String(id));
+    return entry !== undefined && !isThread(entry);
+  });
 }

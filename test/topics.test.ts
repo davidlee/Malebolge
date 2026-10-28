@@ -18,6 +18,7 @@ import {
   indexConversation,
   type IndexDoc,
   type IndexEntry,
+  isThread,
   latestIn,
   readIndex,
   topicsOf,
@@ -150,6 +151,27 @@ it("finds a topic's latest conversation and its ids newest first", async () => {
   expect(idsIn(index, "work")).toEqual([last.id, first.id]);
   expect(idsIn(index, "nothing")).toEqual([]);
   expect(latestIn(index, "nothing")).toBeUndefined();
+});
+
+// PHASE-02: a thread tool's conversation is no topic's latest (DEC-037, refining DEC-015).
+it("latestIn skips forks and started threads", () => {
+  const operator: IndexEntry = { topic: "work", toolset: "interactive" };
+  const fork: IndexEntry = { topic: "work", parent: 11, toolset: "interactive" };
+  const started: IndexEntry = { topic: "work", startedBy: 11, toolset: "interactive" };
+  const onlyThreads: IndexEntry = { topic: "threads", startedBy: 11, toolset: "interactive" };
+  const index: IndexDoc = {
+    topics: { work: {}, threads: {} },
+    conversations: { "11": operator, "12": fork, "13": started, "14": onlyThreads },
+  };
+  // The operator's own conversation is the latest, though two threads have higher ids.
+  expect(latestIn(index, "work")).toBe(11);
+  // A listing is unchanged: threads are conversations too.
+  expect(idsIn(index, "work")).toEqual([13, 12, 11]);
+  // A topic of threads only has no latest, as an empty one has none.
+  expect(latestIn(index, "threads")).toBeUndefined();
+  expect(isThread(fork)).toBe(true);
+  expect(isThread(started)).toBe(true);
+  expect(isThread(operator)).toBe(false);
 });
 
 it("lists default first, then the stored topics by name, each with its directory", () => {

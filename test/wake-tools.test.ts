@@ -33,7 +33,14 @@ import { writeTopicRecord } from "../src/topics.ts";
 import type { WakeDeps } from "../src/wake/extension.ts";
 import { wakeRequestId } from "../src/wake/task.ts";
 import { wakeCancel, wakeList, wakeSchedule } from "../src/wake/tools.ts";
-import { callThenAnswer, FAUX_MODEL, indexOf, textOf, toolResults } from "./harness-fixture.ts";
+import {
+  callThenAnswer,
+  FAUX_MODEL,
+  indexOf,
+  startThread,
+  textOf,
+  toolResults,
+} from "./harness-fixture.ts";
 import {
   HOUR,
   START,
@@ -373,6 +380,24 @@ describe("wake tools (SL-034 sec-13)", () => {
     expect(newer.id).toBeGreaterThan(later.id);
     const input = objectOf((await taskById(session.harness, id)).record.input, "the wake's input");
     expect(numberOf(input, "conversationId")).toBe(later.id);
+  });
+
+  // PHASE-02: a topic target is the operator's conversation, never a thread (DEC-037).
+  it("wake_schedule {topic} lands on the operator-created conversation", async () => {
+    const world = wakeWorld();
+    const session = await world.open();
+    await writeTopicRecord(session.harness, "work", {});
+    const operator = await talking(session, toolsetInit("room", "work"));
+    const thread = await startThread(session.harness, operator, "work", "room");
+    expect(thread.id).toBeGreaterThan(operator.id);
+    const result = await callTool(world, session, session.root, "wake_schedule", {
+      intent: "the work topic",
+      episode_class: "attend",
+      topic: "work",
+      after_minutes: 30,
+    });
+    expect(result.isError).toBe(false);
+    expect(numberOf(result.json, "conversation")).toBe(operator.id);
   });
 
   it("VT-1c an unknown topic is refused, and writes no topic and no wake", async () => {

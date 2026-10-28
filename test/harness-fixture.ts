@@ -28,13 +28,15 @@ import {
 } from "@earendil-works/pi-durable";
 import { NodeExecutionEnv } from "@earendil-works/pi-durable/env/node";
 import { onTestFinished } from "vitest";
+import type { Profile } from "../src/config.ts";
 import { context } from "../src/context.ts";
-import { conversations } from "../src/conversations.ts";
+import { conversations, toolsetInit } from "../src/conversations.ts";
 import { type Daemon, serve } from "../src/daemon.ts";
 import { isRecord } from "../src/json.ts";
 import { registryOf } from "../src/registry.ts";
 import { openSession, type SessionOptions } from "../src/session.ts";
 import { type IndexDoc, type IndexReader, readIndex } from "../src/topics.ts";
+import { type DaemonToolset, requireSameTalkSet } from "../src/toolsets.ts";
 
 export const FAUX_MODEL = { provider: "faux", modelId: "faux-1" } as const;
 
@@ -255,6 +257,26 @@ export function createTaskOwned(test: TestHarness): Promise<ConversationId> {
     );
     return (await tx.createConversation({ ownership: { kind: "task", taskId } })).id;
   }, context);
+}
+
+/**
+ * The `thread_start` recipe: a conversation in `topic` that `caller` started, its entry
+ * recording `startedBy` and its toolset checked against the caller's talk set inside the
+ * creating commit. The caller talks on `interactive`, as every fixture conversation does.
+ */
+export function startThread(
+  harness: Harness,
+  caller: Conversation,
+  topic: string,
+  profile: Profile,
+): Promise<Conversation> {
+  const require = (toolset: DaemonToolset): void => {
+    requireSameTalkSet(profile, "interactive", toolset, `topic ${topic}`);
+  };
+  return createConversation(
+    harness,
+    toolsetInit(profile, topic, { startedBy: caller.id, require }),
+  );
 }
 
 /** A fork of `parent` at a note entry: the recipe a client forks by. */

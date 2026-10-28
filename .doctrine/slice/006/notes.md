@@ -177,9 +177,11 @@ Seat: /super-orchestrator (2026-10-29, operator asleep). Main worktree, no dispa
 - PHASE-01 / requireSameTalkSet(profile, caller, target, targetLabel): the label yields `conversation 13` / `topic inbox` in the refusal; design-drift item 2 applied. decided; -> /reconcile.
 - PHASE-01 / VT-2 "mixed sets" read as caller in a set, target in none (TalkSet has one value, so two distinct sets cannot exist yet). decided.
 - PHASE-01 / test helper `sweepWakes(wake, read)` in wake-heartbeat.test.ts collapses the 7 sweep call sites (refactor, no expectation changed). decided.
+- PHASE-02 / writeCreated takes an optional trailing `startedBy`; cwd lookup is exported `topicCwd(index, topic, defaults, requested?)` (design names no function). decided.
 
 ## Pi passes (implementation)
 - PHASE-01: 4 parallel `implement` runs (A lateBinding, B task-sweep, C talk sets, D structure rules), ~$0.06 total, all green first time. Misses: D named its may-import predicate `crosses` (inverted polarity; renamed `seamAllows`); B left 7 repeated 4-line sweep calls (helper extracted). Sandbox: repo-local biome binary missing, workers used nix biome 2.5.15.
+- PHASE-02: 1 `implement` run, green first time; added shared `startThread` fixture in test/harness-fixture.ts; replaced private creationCwd with exported `topicCwd`. No misses found on review.
 
 ## Harvest
 <!-- single-copy: updated in place each harvest; ids only, never restated content -->

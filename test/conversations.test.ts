@@ -38,6 +38,7 @@ import {
 import {
   type DaemonToolset,
   PROFILE_TOOLSETS,
+  requireSameTalkSet,
   SATAN,
   selectionOf,
   toolsetList,
@@ -45,12 +46,15 @@ import {
 import { tempDir } from "./fixtures.ts";
 import {
   callThenAnswer,
+  createConversation,
   createTaskOwned,
   FAUX_MODEL,
   fauxModels,
   type FauxHarnessOptions,
+  forkConversation,
   indexOf,
   openFauxHarness,
+  startThread,
   textOf,
   toolResults,
   type TestHarness,
@@ -344,6 +348,79 @@ describe("conversations", () => {
     const second = await api.open({ kind: "topic", name: "work", new: true });
     expect(first.id).toBeLessThan(second.id);
     expect((await api.open({ kind: "topic", name: "work", new: false })).id).toBe(second.id);
+  });
+
+  // PHASE-02: a thread tool's conversation never answers for the topic (DEC-037).
+  it("attach by topic lands on the operator-created conversation", async () => {
+    const session = await passive();
+    const api = conversations(session, DEFAULTS, "host");
+    await api.setTopic({ name: "work" });
+    const operator = await api.open({ kind: "topic", name: "work", new: true });
+    const thread = await startThread(session.harness, operator, "work", "room");
+    const forked = await forkConversation(session.harness, operator);
+    expect(thread.id).toBeGreaterThan(operator.id);
+    expect(forked.id).toBeGreaterThan(thread.id);
+    // Both newer conversations are threads of `work`, and neither is its latest.
+    const index = await indexOf(session.harness);
+    expect(index.conversations[String(thread.id)]).toEqual({
+      topic: "work",
+      toolset: "interactive",
+      startedBy: operator.id,
+    });
+    expect(index.conversations[String(forked.id)]).toEqual({
+      topic: "work",
+      parent: operator.id,
+    });
+    expect((await api.open({ kind: "topic", name: "work", new: false })).id).toBe(operator.id);
+    // A listing still shows every conversation of the topic, threads included.
+    expect((await api.list({ kind: "topic", name: "work" })).ids).toEqual([
+      forked.id,
+      thread.id,
+      operator.id,
+    ]);
+  });
+
+  it("toolsetInit with a started thread records startedBy", async () => {
+    const session = await passive();
+    const api = conversations(session, DEFAULTS, "host");
+    await api.setTopic({ name: "work" });
+    const caller = await api.open({ kind: "topic", name: "work", new: true });
+    const saw: DaemonToolset[] = [];
+    const thread = await createConversation(
+      session.harness,
+      toolsetInit("room", "work", {
+        startedBy: caller.id,
+        require: (toolset) => {
+          saw.push(toolset);
+        },
+      }),
+    );
+    expect((await indexOf(session.harness)).conversations[String(thread.id)]).toEqual({
+      topic: "work",
+      toolset: "interactive",
+      startedBy: caller.id,
+    });
+    // The judgement is the commit's own: it sees the toolset the topic chose.
+    expect(saw).toEqual(["interactive"]);
+
+    // A refusal throws inside the creating commit: nothing is created or indexed.
+    await writeTopicRecord(session.harness, "mail", { toolset: "mail" });
+    const before = await indexOf(session.harness);
+    const listed = (await api.list({ kind: "all" })).ids;
+    const refused = createConversation(
+      session.harness,
+      toolsetInit("room", "mail", {
+        startedBy: caller.id,
+        require: (toolset) => {
+          requireSameTalkSet("room", "interactive", toolset, "topic mail");
+        },
+      }),
+    );
+    await expect(refused).rejects.toThrow(
+      "topic mail (toolset mail) is outside this conversation's talk set (interactive)",
+    );
+    expect((await api.list({ kind: "all" })).ids).toEqual(listed);
+    expect(await indexOf(session.harness)).toEqual(before);
   });
 
   it("starts one conversation when two attaches race on an empty topic", async () => {
