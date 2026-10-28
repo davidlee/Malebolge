@@ -208,13 +208,13 @@ export interface ListQuery {
   limit: number;
   offset: number;
   filters: MailFilters;
-  signal?: AbortSignal;
+  signal?: AbortSignal | undefined;
 }
 
 export interface ReadQuery {
   id: string;
   maxBytes: number;
-  signal?: AbortSignal;
+  signal?: AbortSignal | undefined;
 }
 
 export interface ReadAfterQuery {
@@ -223,13 +223,13 @@ export interface ReadAfterQuery {
   maxBytes: number;
   since?: string;
   filters: MailFilters;
-  signal?: AbortSignal;
+  signal?: AbortSignal | undefined;
 }
 
 export interface ThreadQuery {
   id: string;
   limit: number;
-  signal?: AbortSignal;
+  signal?: AbortSignal | undefined;
 }
 
 /** The mail tools' port (DEC-026): queries carry validated, clamped values. */

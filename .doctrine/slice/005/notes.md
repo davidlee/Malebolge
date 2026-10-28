@@ -265,6 +265,23 @@ exist, but none includes mail.
   mutants (inheritEnv true, extra PATH, breach ignored on exit, retry text
   at limit 1, exit 3 accepted, kind unchecked): each caught. Host gate
   green (3013/3013).
+- 2026-10-28, PHASE-07 (sub-orchestrator). First the PHASE-06 fix
+  (`bac193a`, orchestrator-written: usage `reason` from the first
+  error-level stderr line, warning-first case, `code`-only control). API
+  fixed in `.doctrine/state/slice/005/p07-api.md`. Claude Sonnet
+  `capsule-worker` wrote the RED tests (158 in test/mail/tools.test.ts,
+  VT-4 in test/daemon-sections.test.ts, a recording fake MailSource in
+  mail-fixtures.ts). quotient `implement` run wrote src/mail/tools.ts and
+  extension.ts (46 req, $0.072) and correctly reported 3 tests it could
+  not pass without editing them: a lone "-" echo check against a fixed
+  message containing "-", a held-back cut case whose item fit limit 2's
+  share, and the VT-4 render without selecting `mail` on root. The
+  orchestrator fixed the three tests (exact-message equality kept; limit
+  20; explicit `selectionOf(["mail"])` as persona VT-3 does). pi also found
+  that `isJmapId` admits a leading "-" (see autonomy log). Mutants re-run
+  by the orchestrator (next past held back, caught_up ignoring held back,
+  oversize message passed through at limit 1, no 10-minute skew, no joint
+  clamp, leading-"-" id accepted): each caught. Host gate green (3214/3214).
 - PHASE-02 carry-forward: VT-1's mail case calls `toolsetInit` with a
   policy seam allowing mail; PHASE-08 (room allows mail) should exercise
   it through `conversations().open`. Runner start's installed-name check
@@ -363,3 +380,7 @@ Standing rulings from the operator (tier 1), binding on every charter:
   warning-first case. Done as a `fix(SL-005)` commit at the start of the
   PHASE-07 charter. Design sec-5's "<code>" means this `reason`: flagged for
   audit.
+- PHASE-07: the port's query field is `signal?: AbortSignal | undefined` (src/mail/source.ts), so tools pass `context.abortSignal` as is. Why: exactOptionalPropertyTypes; the adapter's internal Call already used that type. Tier: decide.
+- PHASE-07: ids and the mailbox filter are refused when they start with "-", on top of `isJmapId`. Why: the JMAP Id form `[A-Za-z0-9_-]` admits a leading "-", so design sec-4's "so no value can start with -" does not follow from the regex; the refusal makes the stated argv safety true. A real JMAP id starting with "-" would be refused (none seen in fixtures). Design text drift, flagged for audit. Tier: decide.
+- PHASE-07: `OVERSIZE_AT_LIMIT_1` applies to mail_new at the clamped limit 1; clamps are reported once per name with the final value (mail_new max_bytes after the joint clamp, a lowered default included); header clamp order limit, offset, max_bytes; `heldBack` always in mail_new's header (0 included), `known gaps` only in mail_new's. Why: design names the facts, not these forms. Tier: decide.
+- PHASE-07: the mail tools read their arguments as untrusted JSON (own defaults and type checks), not relying on harness schema validation; MailInputError/MailSourceError become error results, anything else is thrown. Tier: decide.

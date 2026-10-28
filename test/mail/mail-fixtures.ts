@@ -11,9 +11,13 @@ import {
   type Attachment,
   type Body,
   checkData,
+  type ListData,
+  type MailboxesData,
   type Mailbox,
+  type MailSource,
   type ReadData,
   type Summary,
+  type ThreadData,
   type ThreadItem,
 } from "../../src/mail/source.ts";
 
@@ -530,4 +534,53 @@ export function renderedBytes(value: unknown): number {
     .replaceAll(">", "\\u003e")
     .replaceAll("&", "\\u0026");
   return bytesOf(json);
+}
+
+// ------------------------------------------------------------- a fake port
+
+/** What a fake port answers per verb: the data, or an Error to fail with. */
+export interface FakeReplies {
+  readonly mailboxes?: MailboxesData | Error;
+  readonly list?: ListData | Error;
+  readonly read?: ReadData | Error;
+  readonly readAfter?: ReadData[] | Error;
+  readonly thread?: ThreadData | Error;
+}
+
+export interface RecordedCall {
+  readonly verb: keyof FakeReplies;
+  /** The query as the tool passed it, without its signal. */
+  readonly query: object;
+  readonly signal: AbortSignal | undefined;
+}
+
+export interface FakeMailSource extends MailSource {
+  readonly calls: readonly RecordedCall[];
+}
+
+/**
+ * A MailSource that records every call and answers from `replies`. A verb
+ * with no reply fails when called, so a tool reaching for the wrong verb shows.
+ */
+export function fakeMailSource(replies: FakeReplies = {}): FakeMailSource {
+  const calls: RecordedCall[] = [];
+  const answer = <T>(
+    verb: keyof FakeReplies,
+    { signal, ...query }: { signal?: AbortSignal | undefined },
+    reply: T | Error | undefined,
+  ): Promise<T> => {
+    calls.push({ verb, query, signal });
+    if (reply === undefined) {
+      return Promise.reject(new Error(`unexpected ${verb} call`));
+    }
+    return reply instanceof Error ? Promise.reject(reply) : Promise.resolve(reply);
+  };
+  return {
+    calls,
+    mailboxes: (signal) => answer("mailboxes", { signal }, replies.mailboxes),
+    list: (query) => answer("list", query, replies.list),
+    read: (query) => answer("read", query, replies.read),
+    readAfter: (query) => answer("readAfter", query, replies.readAfter),
+    thread: (query) => answer("thread", query, replies.thread),
+  };
 }

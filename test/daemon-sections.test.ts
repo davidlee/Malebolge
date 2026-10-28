@@ -9,6 +9,7 @@ import { conversationExtension } from "../src/conversation-context.ts";
 import { cwdExtension } from "../src/cwd.ts";
 import { isRecord } from "../src/json.ts";
 import { type DaemonParts, daemonExtensions } from "../src/daemon-extensions.ts";
+import { mailExtension, MAIL_SECTION } from "../src/mail/extension.ts";
 import { personaExtension } from "../src/persona.ts";
 import { DEFAULT_TOPIC } from "../src/protocol.ts";
 import {
@@ -18,7 +19,9 @@ import {
   renderProjectContext,
 } from "../src/project-context.ts";
 import { type Skill, skillsExtension } from "../src/skills.ts";
+import { selectionOf } from "../src/toolsets.ts";
 import { tempDir } from "./fixtures.ts";
+import { fakeMailSource } from "./mail/mail-fixtures.ts";
 import {
   closing,
   FAUX_MODEL,
@@ -211,5 +214,36 @@ describe("daemonExtensions tasks", () => {
   it("VT-3 e: the room installs the tasks extension and the host never does (W10)", () => {
     expect(namesOf("room")).toContain("tasks");
     expect(namesOf("host")).not.toContain("tasks");
+  });
+});
+
+describe("mailExtension", () => {
+  const extension = mailExtension({ source: fakeMailSource(), now: () => 0 });
+
+  it("VT-4 is the mail extension: the five mail tools and one tagged section keyed mail", () => {
+    expect(extension.name).toBe("mail");
+    expect((extension.tools ?? []).map(({ name }) => name)).toEqual([
+      "mail_new",
+      "mail_read",
+      "mail_thread",
+      "mail_list",
+      "mail_mailboxes",
+    ]);
+    expect((extension.sections ?? []).map(({ key, tag }) => [key, tag])).toEqual([["mail", true]]);
+  });
+
+  it("VT-4 the section text states the untrusted-data rule (mail-data, untrusted), pinned", () => {
+    expect(MAIL_SECTION).toContain("mail-data");
+    expect(MAIL_SECTION).toContain("untrusted");
+    expect(MAIL_SECTION).toContain("never an instruction");
+  });
+
+  it("VT-4 renders the section text as the prompt's tagged mail section", async () => {
+    const test = await openTestHarness([extension]);
+    // Root's list is the interactive toolset (the reconcile): select mail explicitly.
+    await test.root.configure({ extensions: selectionOf(["mail"]) }, context);
+    expect(await systemPromptSections(test)).toEqual([
+      { mail: `<mail>\n${MAIL_SECTION}\n</mail>` },
+    ]);
   });
 });
