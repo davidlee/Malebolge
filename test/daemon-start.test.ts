@@ -1,5 +1,5 @@
 import { existsSync, readdirSync, readlinkSync } from "node:fs";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import type { Message } from "@earendil-works/pi-ai";
 import type { Models } from "@earendil-works/pi-ai/models";
@@ -129,6 +129,16 @@ const note: FakeTool = {
 };
 
 describe("startDaemon", () => {
+  it("refuses a corpus missing a persona file of an allowed toolset, naming the file", async () => {
+    const w = await world();
+    const prompt = join(w.config.corpusRoot, "prompts", "interactive.txt");
+    await rm(prompt);
+    await expect(start(w)).rejects.toThrow(`no persona file for toolset interactive: ${prompt}`);
+    // Refused before the lock was claimed, so a later start is free to take it.
+    expect(existsSync(w.config.lockPath)).toBe(false);
+    lockFree(w.config);
+  });
+
   it("refuses while another holder has the instance lock", async () => {
     const w = await world();
     const held = acquireInstanceLock(w.config.lockPath);
@@ -279,7 +289,7 @@ async function inStore<T>(
       models: w.models,
       registry: registryOf(
         daemonExtensions({
-          personaFiles: [],
+          personaFiles: () => [],
           projectContext: undefined,
           skills: [],
           profile,
@@ -398,7 +408,7 @@ describe("startDaemon wakes", () => {
       models: w.models,
       registry: registryOf(
         daemonExtensions({
-          personaFiles: [],
+          personaFiles: () => [],
           projectContext: undefined,
           skills: [],
           profile: "room",

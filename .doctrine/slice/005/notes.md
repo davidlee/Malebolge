@@ -210,6 +210,14 @@ exist, but none includes mail.
   finds an edge; weigh each against YAGNI before patching, and stop open
   attack rounds once findings drop to minor.
 
+- 2026-10-28, PHASE-01 (sub-orchestrator). Three quotient `implement`
+  runs: baseline capture (28 req, $0.027), RED contract tests from spec
+  (32 req, $0.048), implementation (32 req, $0.037). pi got wrong: id
+  normalisation rewrote the id in every string (narrowed by orchestrator);
+  impl added an unreachable `build` throw duplicating `requireInstalled`'s
+  message (accepted: type narrowing under `noUncheckedIndexedAccess`).
+  Host gate green (2281/2281).
+
 ## Planning (2026-10-28)
 
 - Plan authored: 8 phases, two tracks (toolsets 01-04, mail 05-07) joined
@@ -241,3 +249,29 @@ quotient memory refreshed (quotient-sandbox-limits); design-review-yagni memory 
 
 ### Open
 /phase-plan SL-005 PHASE-01 next (its first step is the baseline capture, RV-015 F-32). IMP-017 (fork/task-owned toolsets) and screwtape IMP-002 (list-field bounds) parked; IMP-015 (byte budget, deferred); ~/satan-corpus/prompts/mail.txt draft (operator repo).
+
+## Implementation run (2026-10-28, /super-orchestrator)
+
+Standing rulings from the operator (tier 1), binding on every charter:
+
+- **Mail fixtures need operator confirmation before entering the repo.**
+  Raw screwtape dumps: `~/.local/state/malebolge-sl005-raw/` (outside the
+  repo, mode 700; never readable by pi). Scrubbed set:
+  `.doctrine/state/slice/005/mail-scrubbed/` (gitignored). PHASE-05 may copy
+  the scrubbed set into `test/mail/fixtures/` only once the seat records the
+  operator's confirmation below.
+- **Confirmed 2026-10-28** (operator, "Yes, commit as is"): the scrubbed
+  set as it stands in `mail-scrubbed/` (see its `SCRUB.md`) may be committed
+  to `test/mail/fixtures/` unchanged, mailbox names included. A re-capture
+  or re-scrub needs fresh confirmation.
+- Preflight: `biome` added to the flake's shellPkgs (`e0f82e9`); planning
+  files committed (`3523209`). In the quotient forms, 4 tests fail that pass
+  on the host (`test/runner/collect.test.ts` ×3, `recovery.test.ts` ×1:
+  git-guard refuses `git reset --hard`). pi workers treat those 4 as known;
+  the host `just check` is the authoritative gate.
+  In the forms `biome format .` also reports "Found 4 warnings" that the
+  same biome 2.5.15 does not report on the host; treat as a form quirk.
+
+## Autonomy log
+- PHASE-01: baseline capture committed alone (976262d); conversation-id normalisation narrowed to the `conversation` section (pi's version rewrote the id in every string). Why: EN-2 order checkable from git; avoid a false match on id "1". Tier: decide.
+- PHASE-01: API fixed by the orchestrator beyond the design's names: `DaemonToolset`, `allowedNames`, `requireInstalled(names, installed)`, `requirePersonaFiles(corpusRoot, profile)` (personaFiles made pure); `toolsets.ts` takes `import type { Profile }` from config.ts (structure test checks direct edges only). Why: design sec-2 names the behaviour, not the helpers. Tier: decide.

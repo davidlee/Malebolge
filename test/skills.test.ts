@@ -237,7 +237,7 @@ describe("skillsExtension", () => {
     const file = join(tmp.dir, "persona");
     await writeFile(file, "persona\n");
     const test = await openTestHarness([
-      personaExtension([file]),
+      personaExtension("persona", [file]),
       skillsExtension([skill({ hidden: true })]),
     ]);
     expect(await systemPromptSections(test)).toEqual([{ persona: "persona\n" }]);

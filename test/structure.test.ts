@@ -20,6 +20,7 @@ const RUNNER_ROOTS = [
   "ndjson",
   "project-context",
   "registry",
+  "toolsets",
   "truncate",
   "unix-socket",
 ];

@@ -15,7 +15,7 @@ import { daemonExtensions } from "./daemon-extensions.ts";
 import { type Daemon, serve } from "./daemon.ts";
 import { acquireInstanceLock } from "./instance-lock.ts";
 import { loadGatewayModels, type ModelRef } from "./models.ts";
-import { personaFiles, readPersona } from "./persona.ts";
+import { personaFiles, readPersona, requirePersonaFiles } from "./persona.ts";
 import { renderProjectContext } from "./project-context.ts";
 import { registryOf } from "./registry.ts";
 import { type Log, SATAN_EXTENSION, type SatanTools, satanTools } from "./satan-tools.ts";
@@ -135,7 +135,7 @@ export interface DaemonHandle {
  */
 export async function startDaemon(config: Config, deps: StartDeps): Promise<DaemonHandle> {
   const { log, now = Date.now } = deps;
-  const persona = personaFiles(config.corpusRoot, config.execution.profile);
+  requirePersonaFiles(config.corpusRoot, config.execution.profile);
   const skills = loadSkills(config.skillDirs, log);
   requireGatewaySocket(config.execution);
   const models = await modelsFor(config, deps.models);
@@ -150,7 +150,7 @@ export async function startDaemon(config: Config, deps: StartDeps): Promise<Daem
   const task = wakeTask(wakes.deps);
   const registry = registryOf(
     daemonExtensions({
-      personaFiles: persona,
+      personaFiles: (toolset) => personaFiles(config.corpusRoot, toolset, config.execution.profile),
       projectContext,
       skills,
       profile: config.execution.profile,

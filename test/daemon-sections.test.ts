@@ -70,7 +70,7 @@ describe("conversationExtension", () => {
 
   it("renders directly after cwd", async () => {
     const test = await openTestHarness(
-      daemonExtensions({ ...HOST, personaFiles: [], projectContext: undefined, skills: [] }),
+      daemonExtensions({ ...HOST, personaFiles: () => [], projectContext: undefined, skills: [] }),
     );
     closing(test.harness);
     await test.root.configure({ cwd: "/work" }, context);
@@ -120,7 +120,7 @@ describe("daemon system prompt sections", () => {
     const test = await openFauxHarness(new MemoryStorage(), {
       extensions: daemonExtensions({
         ...HOST,
-        personaFiles: [persona],
+        personaFiles: () => [persona],
         projectContext,
         skills: [skill],
       }),
@@ -144,7 +144,7 @@ describe("daemon system prompt sections", () => {
 
   it("states a created conversation's own cwd, not the daemon default", async () => {
     const test = await openTestHarness(
-      daemonExtensions({ ...HOST, personaFiles: [], projectContext: undefined, skills: [] }),
+      daemonExtensions({ ...HOST, personaFiles: () => [], projectContext: undefined, skills: [] }),
     );
     const api = conversations(test, { model: FAUX_MODEL, cwd: "/daemon-default" }, "host");
     const created = await api.open({ kind: "new", cwd: "/own" });
@@ -158,7 +158,7 @@ describe("daemon system prompt sections", () => {
     const test = await openFauxHarness(new MemoryStorage(), {
       extensions: daemonExtensions({
         ...HOST,
-        personaFiles: [persona],
+        personaFiles: () => [persona],
         projectContext: undefined,
         skills: [skill],
       }),
@@ -174,14 +174,14 @@ describe("daemon system prompt sections", () => {
     // Closing a harness closes its storage, so reopen the daemon's real sqlite file.
     const dbPath = join(dir, "session.db");
     const before = await openFauxHarness(await openNodeSqliteStorage(dbPath), {
-      extensions: [personaExtension([persona]), skillsExtension([skill])],
+      extensions: [personaExtension("persona", [persona]), skillsExtension([skill])],
     });
     expect((await systemPromptSections(before)).map(keysOf)).toEqual([["persona", "skills"]]);
 
     const after = await openFauxHarness(await openNodeSqliteStorage(dbPath), {
       extensions: daemonExtensions({
         ...HOST,
-        personaFiles: [persona],
+        personaFiles: () => [persona],
         projectContext,
         skills: [skill],
       }),
@@ -201,7 +201,7 @@ describe("daemon system prompt sections", () => {
 describe("daemonExtensions tasks", () => {
   const namesOf = (profile: DaemonParts["profile"]): string[] =>
     daemonExtensions({
-      personaFiles: [],
+      personaFiles: () => [],
       projectContext: undefined,
       skills: [],
       profile,
