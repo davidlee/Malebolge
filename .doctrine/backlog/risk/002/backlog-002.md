@@ -68,9 +68,9 @@ Operator's stance (2026-10-28):
    Whether the digest step frames or classifies its input is unchecked.
 2. **Threads (planned).** Starting or posting into a thread from mail mode, or
    reading a mail conversation's transcript or forking it into another mode,
-   would open a path from Q1 to SATAN. The reachability rule in the threads RFC
-   must treat mail mode as a sink: it may receive, never send, except to the
-   operator. A fork of a mail conversation stays in mail mode.
+   would open a path from Q1 to SATAN. RFC-003 puts mail mode in no talk set:
+   it neither sends nor receives, and talks only to the operator. A fork of a
+   mail conversation stays in mail mode.
 3. **Where derivatives live.** RFC-020 puts operation proposals and the unread
    digest under `~/.local/state/satan/…`. That path must stay outside every
    SATAN read root, the lexical exception aside.
