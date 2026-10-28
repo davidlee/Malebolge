@@ -80,8 +80,9 @@
 (defconst malebolge-draft-buffer-name "*malebolge-draft*")
 
 (defconst malebolge--key-summary
-  "C-c C-c submit   C-c C-a abort   C-c C-m compact   C-c C-o orient
-C-c C-q quit   C-c C-e draft   C-c C-h help")
+  (concat "C-c C-c submit  C-c C-a abort  C-c C-m compact  C-c C-o orient  "
+          "C-c C-q quit  C-c C-e draft  C-c C-h help")
+  "The controls, on one line: a header line shows a newline as ^J.")
 
 (defvar malebolge-transcript-mode-map (make-sparse-keymap))
 (defvar malebolge-draft-mode-map (make-sparse-keymap))
@@ -155,14 +156,14 @@ C-c C-q quit   C-c C-e draft   C-c C-h help")
   "Major mode for composing one message to the malebolge daemon.
 The buffer is plain text: RET inserts a newline and nothing is sent
 until \\[malebolge-submit]."
-  (setq-local header-line-format malebolge--key-summary)
+  (setq-local header-line-format 'malebolge--key-summary)
   (electric-indent-mode -1))
 
 ;;;###autoload
 (define-derived-mode malebolge-transcript-mode comint-mode "Malebolge"
   "Major mode for the read-only malebolge transcript.
 Process output is inserted here; input is composed in the draft buffer."
-  (setq-local header-line-format malebolge--key-summary)
+  (setq-local header-line-format 'malebolge--key-summary)
   (setq-local font-lock-defaults '(malebolge--font-lock-keywords t))
   (setq-local comint-input-sender #'malebolge--refuse-input)
   ;; comint's own following suffices: a window whose point is at the

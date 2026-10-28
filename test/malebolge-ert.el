@@ -351,13 +351,34 @@ created by `malebolge-attach' against the fake process."
 
 ;;; EX-4: cues, help, draft lifetime
 
+;; Keys, not spellings: the summary's C-c C-m is the key C-c RET.
+(defun malebolge-test--named-keys (text)
+  "The key sequences TEXT names as \"C-c C-<letter>\"."
+  (let (keys (start 0))
+    (while (string-match "C-c C-[a-z]" text start)
+      (push (vconcat (kbd (match-string 0 text))) keys)
+      (setq start (match-end 0)))
+    keys))
+
 (ert-deftest malebolge-header-lines-and-help ()
-  "Both buffers show a header line; help names the submit binding."
+  "Both buffers show a one-line header naming their C-c controls; help names submit."
   (malebolge-test--with-session
     (dolist (buf (list draft transcript))
       (with-current-buffer buf
-        (should header-line-format)
-        (should (string-match-p "C-c C-h" header-line-format))))
+        ;; `format-mode-line' answers "" under --batch: resolve the symbol here.
+        (let* ((line (if (symbolp header-line-format)
+                         (symbol-value header-line-format)
+                       header-line-format))
+               (named (malebolge-test--named-keys line)))
+          ;; One line: a header line shows a newline as ^J.
+          (should-not (string-match-p "\n" line))
+          ;; Every malebolge control the buffer binds under C-c is named.
+          (map-keymap
+           (lambda (k command)
+             (when (and (symbolp command)
+                        (string-prefix-p "malebolge-" (symbol-name command)))
+               (should (member (vector ?\C-c k) named))))
+           (lookup-key (current-local-map) (kbd "C-c"))))))
     (let ((help (with-current-buffer draft
                   (cl-letf (((symbol-function 'display-buffer)
                              (lambda (buf &rest _) buf))
