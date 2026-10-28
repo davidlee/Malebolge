@@ -240,3 +240,17 @@ export interface MailSource {
   readAfter(query: ReadAfterQuery): Promise<ReadData[]>;
   thread(query: ThreadQuery): Promise<ThreadData>;
 }
+
+/** Why a MailSource call failed. */
+export type MailFailure = "usage" | "failed" | "timeout" | "spawn" | "contract" | "oversize";
+
+/** A MailSource call that failed; `message` is safe to show the model (never raw stderr). */
+export class MailSourceError extends Error {
+  readonly failure: MailFailure;
+
+  constructor(failure: MailFailure, message: string) {
+    super(message);
+    this.name = "MailSourceError";
+    this.failure = failure;
+  }
+}

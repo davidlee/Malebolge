@@ -3,18 +3,19 @@
 //
 // rg may be repo-supplied and so hostile (design "Trust"), and `--json`
 // always carries whole lines, so nothing it sends is buffered unbounded:
-// stdout goes through a line splitter capped at MAX_MESSAGE_BYTES, kept
-// output stops at GREP_MAX_BYTES, stderr is capped at GREP_MAX_STDERR_BYTES
-// as it streams. Host memory per call is those caps plus the chunk in hand.
+// the bounds come from bounded-exec (src/bounded-exec.ts) — a line splitter
+// capped at MAX_MESSAGE_BYTES, kept output stopping at GREP_MAX_BYTES, stderr
+// capped at GREP_MAX_STDERR_BYTES — and the exec is boundedExec, in "count"
+// mode. Host memory per call is those caps plus the chunk in hand.
 
 import { posix } from "node:path";
-import { type Context, withAbortSignal } from "@earendil-works/chord/context";
+import { type Context } from "@earendil-works/chord/context";
 import { Type } from "@earendil-works/pi-ai";
 import { defineExtension, defineTool } from "@earendil-works/pi-durable";
-import { type ExecutionEnv, toError } from "@earendil-works/pi-durable/env";
+import { type ExecutionEnv } from "@earendil-works/pi-durable/env";
+import { boundedExec, boundedOutput } from "./bounded-exec.ts";
 import { isRecord } from "./json.ts";
-import { boundedLineSplitter } from "./ndjson.ts";
-import { GREP_MAX_LINE_LENGTH, headKeeper, truncateLine } from "./truncate.ts";
+import { GREP_MAX_LINE_LENGTH, truncateLine } from "./truncate.ts";
 
 /** The largest rg message parsed; a longer one is dropped as it streams and counted. */
 export const MAX_MESSAGE_BYTES = 1024 * 1024;
@@ -188,10 +189,9 @@ interface Kept {
   limitReached: boolean;
   byteCapped: boolean;
   linesTruncated: boolean;
-  oversized: number;
 }
 
-const noticesOf = (kept: Kept, limit: number, stderr: string): string[] => [
+const noticesOf = (kept: Kept, limit: number, stderr: string, oversized: number): string[] => [
   ...(kept.limitReached
     ? [
         `${String(limit)} matches limit reached. Use limit=${String(limit * 2)} for more, or refine pattern`,
@@ -203,15 +203,15 @@ const noticesOf = (kept: Kept, limit: number, stderr: string): string[] => [
         `Some lines truncated to ${String(GREP_MAX_LINE_LENGTH)} chars. Use read tool to see full lines`,
       ]
     : []),
-  ...(kept.oversized > 0
-    ? [`${String(kept.oversized)} results too large to show; narrow the pattern or path`]
+  ...(oversized > 0
+    ? [`${String(oversized)} results too large to show; narrow the pattern or path`]
     : []),
   ...(stderr === "" ? [] : [`rg reported errors: ${stderr}`]),
 ];
 
 /** Kept lines, then pi's bracketed notices. */
-const renderKept = (kept: Kept, limit: number, stderr: string): string => {
-  const notices = noticesOf(kept, limit, stderr);
+const renderKept = (kept: Kept, limit: number, stderr: string, oversized: number): string => {
+  const notices = noticesOf(kept, limit, stderr, oversized);
   const parts = [kept.lines.join("\n"), notices.length === 0 ? "" : `[${notices.join(". ")}]`];
   const text = parts.filter((part) => part !== "").join("\n\n");
   return text === "" ? "No matches found" : text;
@@ -230,11 +230,15 @@ const resultOf = (
   kept: Kept,
   limit: number,
   stderr: string,
+  oversized: number,
   exitCode: number,
   stopped: boolean,
 ): GrepResult => {
   if (stopped || exitCode === 0 || (exitCode === 2 && kept.matches > 0)) {
-    return { text: renderKept(kept, limit, exitCode === 2 ? stderr : ""), isError: false };
+    return {
+      text: renderKept(kept, limit, exitCode === 2 ? stderr : "", oversized),
+      isError: false,
+    };
   }
   if (exitCode === 1) {
     return { text: "No matches found", isError: false };
@@ -264,11 +268,9 @@ export function grepCollector(options: {
     limitReached: false,
     byteCapped: false,
     linesTruncated: false,
-    oversized: 0,
   };
   let stopped = false;
   let peakCarryBytes = 0;
-  const stderr = headKeeper(GREP_MAX_STDERR_BYTES);
   const halt = (): void => {
     stopped = true;
     options.stop();
@@ -292,33 +294,33 @@ export function grepCollector(options: {
       }
     }
   };
-  const splitter = boundedLineSplitter({
-    maxBytes: MAX_MESSAGE_BYTES,
+  const output = boundedOutput({
+    maxLineBytes: MAX_MESSAGE_BYTES,
+    maxStderrBytes: GREP_MAX_STDERR_BYTES,
+    oversize: "count",
     onLine: (text) => {
       const line = stopped ? undefined : parseLine(text);
       if (line !== undefined) {
         keep(line);
       }
     },
-    onOversize: () => {
-      kept.oversized += 1;
-    },
   });
   return {
     accept: (stream, text): void => {
       if (stream === "stderr") {
-        stderr.accept(text);
+        output.accept("stderr", text);
       } else if (!stopped) {
-        splitter.push(text);
-        peakCarryBytes = Math.max(peakCarryBytes, splitter.carriedBytes());
+        output.accept("stdout", text);
+        peakCarryBytes = Math.max(peakCarryBytes, output.carriedBytes());
       }
     },
-    render: (exitCode) => resultOf(kept, limit, stderr.text.trim(), exitCode, stopped),
+    render: (exitCode) =>
+      resultOf(kept, limit, output.stderr.text.trim(), output.oversized, exitCode, stopped),
     stats: () => ({
       peakCarryBytes,
-      stderrBytes: stderr.bytes,
+      stderrBytes: output.stderr.bytes,
       outputBytes: kept.bytes,
-      oversized: kept.oversized,
+      oversized: output.oversized,
       matches: kept.matches,
     }),
   };
@@ -341,29 +343,22 @@ export async function runGrep(
       own.abort();
     },
   });
-  const result = await env.exec(
+  const outcome = await boundedExec(
+    env,
     grepArgv(params),
-    {
-      cwd: env.cwd,
-      onOutput: (text, _context, info) => {
-        collector.accept(info.stream, text);
-      },
-    },
-    withAbortSignal(own.signal, context),
+    { exec: { cwd: env.cwd }, output: collector, stop: own.signal },
+    context,
   );
-  if (context.abortSignal?.aborted === true) {
-    throw result.ok ? toError(context.abortSignal.reason) : result.error;
+  if (outcome.kind === "exited") {
+    return collector.render(outcome.exitCode);
   }
-  if (result.ok) {
-    return collector.render(result.value.exitCode);
-  }
-  if (result.error.code === "aborted" && own.signal.aborted) {
+  if (outcome.kind === "stopped") {
     return collector.render(0);
   }
-  if (result.error.code === "spawn_error") {
-    return { text: `rg could not run: ${result.error.message}`, isError: true };
+  if (outcome.error.code === "spawn_error") {
+    return { text: `rg could not run: ${outcome.error.message}`, isError: true };
   }
-  throw result.error;
+  throw outcome.error;
 }
 
 export const grepTool = defineTool({

@@ -11,6 +11,7 @@ import { describe, expect, it } from "vitest";
 const RUNNER_ENTRY = "runner-main.ts";
 /** Root modules src/runner/ may import: today's edges, less config and session. */
 const RUNNER_ROOTS = [
+  "bounded-exec",
   "context",
   "fields",
   "grep",

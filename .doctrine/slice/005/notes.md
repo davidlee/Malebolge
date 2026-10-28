@@ -250,6 +250,21 @@ exist, but none includes mail.
   re-ran 6 mutations against the real code (raw measure, no reserve,
   dropped body, no `&` escape, raw received_at, 7 message ids): each
   caught. Host gate green (2603/2603).
+- 2026-10-28, PHASE-06 (sub-orchestrator). API fixed in
+  `.doctrine/state/slice/005/p06-api.md`. quotient `implement` run T1
+  extracted src/bounded-exec.ts with its own tests and moved grep onto it
+  (28 req, $0.048); grep's existing tests unedited, one count-mode test
+  added. Claude Sonnet `capsule-worker` wrote the RED adapter contract
+  tests (396 tests; checked against a throwaway reference and 6 mutants).
+  quotient `implement` run T3 wrote src/mail/screwtape.ts from the
+  reference (16 req, $0.035), green first time. pi got nothing wrong; it
+  noted (accepted) that mail's "line" breach is unreachable behind an
+  equal total ceiling (same error either way; the line path is pinned in
+  test/bounded-exec.test.ts) and that the abort tests check only "not a
+  MailSourceError". The orchestrator typed the violation set and re-ran 7
+  mutants (inheritEnv true, extra PATH, breach ignored on exit, retry text
+  at limit 1, exit 3 accepted, kind unchecked): each caught. Host gate
+  green (3013/3013).
 - PHASE-02 carry-forward: VT-1's mail case calls `toolsetInit` with a
   policy seam allowing mail; PHASE-08 (room allows mail) should exercise
   it through `conversations().open`. Runner start's installed-name check
@@ -335,3 +350,6 @@ Standing rulings from the operator (tier 1), binding on every charter:
 - PHASE-05: `test/mail/fixtures/**` excluded from biome (biome.json). Why: the fixtures are screwtape's bytes, committed as is by operator ruling; biome would reformat them. Tier: decide.
 - PHASE-05: fixtures laid out as `test/mail/fixtures/real/` (scrubbed set, unchanged, with SCRUB.md) and `contract/` (transcribed from screwtape README § Contract), provenance and screwtape `e61d01b` in `SOURCE.md`. Header line forms, cut-list placement (last in the core, always present), `truncated_by` as a list in fixed order, and the fill's worst-case reservation of later cut names fixed by the orchestrator (design names the content, not the format). Tier: decide.
 - PHASE-05: `ListSchema` refuses a page carrying both `offset` and `after` (contract: exactly one). Tier: decide.
+- PHASE-06: bounded-exec split into a pure sink `boundedOutput` and the exec wiring `boundedExec` (outcome exited | stopped | failed; caller abort throws), so grep keeps its collector API and stats; the ceiling counts raw stdout bytes and applies in either mode; ndjson.ts unchanged. Why: design names the parts, not the seams; one splitter. Tier: decide.
+- PHASE-06: `MailSourceError { failure }` added to src/mail/source.ts (the port's error, so PHASE-07 tools can tell an oversize failure at limit 1 from others without importing the adapter); spawn_error maps to `screwtape could not run`, other ExecutionErrors propagate; an unterminated last stdout line is a contract violation (`unterminated line`), added to the fixed set; one message for a line or ceiling breach. Why: design's outcome table omits spawn failure and an unterminated line; both fail closed. Tier: decide.
+- PHASE-06: exit 2's code is read as the `code` string field of the first non-blank stderr line parsed as a JSON object. The field name is assumed (screwtape DEC-011 not read: no other repo); PHASE-08's smoke should confirm it against the real binary. Tier: decide (flagged).

@@ -525,6 +525,22 @@ describe("grepTool: host memory is bounded (VT-2, EX-2)", () => {
     );
     await expect(aborted).rejects.toThrow();
   });
+
+  it("runs on boundedExec in count mode: an oversize line is counted and noticed, matches around it kept", async () => {
+    function* aroundOversize(): Generator<Chunk> {
+      yield out(match("./a", 1, "before"));
+      yield out('{"type":"match","data":{"path":{"text":"./big"},"lines":{"text":"');
+      for (let sent = 0; sent < 2 * MIB; sent += CHUNK.length) {
+        yield out(CHUNK);
+      }
+      yield out('\\n"},"line_number":1,"submatches":[]}}\n');
+      yield out(match("./a", 3, "after"));
+    }
+    const result = await grep(aroundOversize());
+    expect(result.text).toContain("a:1: before");
+    expect(result.text).toContain("a:3: after");
+    expect(result.text).toContain("[1 results too large to show; narrow the pattern or path]");
+  });
 });
 
 // ---- VT-3: one real run -----------------------------------------------------
