@@ -230,6 +230,16 @@ exist, but none includes mail.
   (src/wake/heartbeat.ts:38); no wake change. The only other
   `createConversation` callers are src/conversations.ts and
   src/runner/conversations.ts.
+- 2026-10-28, PHASE-03 (sub-orchestrator). quotient `implement` runs:
+  RED tests (34 req, $0.048), implementation (61 req, hit the ceiling,
+  $0.075), continuation with five orchestrator rulings (36 req, $0.053).
+  pi got wrong: none of substance; its reconcile carried a dead "no index
+  entry" check and a two-pass step 3 (simplified by the orchestrator:
+  entryToolsets returns an array). Host gate green (2300/2300), `6185372`.
+- 2026-10-28, PHASE-04 (sub-orchestrator). quotient `implement` runs:
+  RED tests (32 req, $0.049), implementation (17 req, $0.028). pi got
+  nothing material wrong; it shared one set/clear/leave helper between
+  --dir and --toolset as briefed. Host gate green (2340/2340), `ef28d62`.
 - PHASE-02 carry-forward: VT-1's mail case calls `toolsetInit` with a
   policy seam allowing mail; PHASE-08 (room allows mail) should exercise
   it through `conversations().open`. Runner start's installed-name check
@@ -290,8 +300,17 @@ Standing rulings from the operator (tier 1), binding on every charter:
   the host `just check` is the authoritative gate.
   In the forms `biome format .` also reports "Found 4 warnings" that the
   same biome 2.5.15 does not report on the host; treat as a form quirk.
+- quotient policy maxima per pi run: 60 requests, 280k context tokens, $1,
+  900 s; a ceiling above one is refused, not clamped. pi runs see only this
+  root: hand them spec files under `.doctrine/state/slice/005/`, not the
+  session scratchpad. biome is on PATH in the forms: tell workers to run
+  `biome format --write <their files>`.
 
 ## Autonomy log
 - PHASE-01: baseline capture committed alone (976262d); conversation-id normalisation narrowed to the `conversation` section (pi's version rewrote the id in every string). Why: EN-2 order checkable from git; avoid a false match on id "1". Tier: decide.
 - PHASE-01: API fixed by the orchestrator beyond the design's names: `DaemonToolset`, `allowedNames`, `requireInstalled(names, installed)`, `requirePersonaFiles(corpusRoot, profile)` (personaFiles made pure); `toolsets.ts` takes `import type { Profile }` from config.ts (structure test checks direct edges only). Why: design sec-2 names the behaviour, not the helpers. Tier: decide.
 - PHASE-02: `toolsetInit(profile, topic, policy = PROFILE_TOOLSETS[profile])` gains a test seam; `selectionOf(names)` passes name-only extension references to `configure` (pi-durable stores names only); `toolsetList("job")` overload so the runner needs no profile. Why: room allows only `interactive` until PHASE-08, so VT-1's mail-topic case needs a policy allowing mail; the runner has no execution profile. Tier: decide.
+- PHASE-03: `IndexEntry.toolset` required as the reconciled reader type; storage typed by a module-private `StoredEntry` (toolset optional), `storedEntry` reads an entry without toolset as undefined; the hook still writes none, so root's toolset has one writer (the reconcile). Why: EX-3 without casts, keeping the design's path table. Tier: decide.
+- PHASE-03: `SessionOptions.policy?` test seam for the reconcile, mirroring toolsetInit's; production never passes it. Why: PHASE-02 VT-1's mail-topic reopen would otherwise be refused while the room disallows mail (until PHASE-08). Tier: decide.
+- PHASE-03: `assignTopic` deleted; test fixtures create through `toolsetInit` (an index entry without toolset now reads as unindexed). persona VT-3 selects `mail-persona` explicitly (root no longer gets every installed extension). Why: fixtures model production creates; no parallel implementation. Tier: decide.
+- PHASE-04: `requireAllowed` takes a string and returns the allowed `DaemonToolset` (the frame's name arrives unchecked; one checker); the disallowed-name refusal is tested at setTopic (test/conversations.test.ts), not in protocol.test.ts, since the frame does not judge names; `--topics` lines gain a third field `TOOLSET` (no Emacs consumer parses them); `toolset` added to the client's skew keys. Why: the policy, not the parser, owns names; design "listing shows it". Tier: decide.
