@@ -41,12 +41,12 @@ requirements = []
 [[phase]]
 id        = "PHASE-02"
 name      = "Index: startedBy, thread predicate, latest skips threads"
-objective = "The conversation index learns which conversations are threads (DEC-037): IndexEntry.startedBy, isThread, markOf, latestIn skipping threads, and toolsetInit's optional StartedThread (with the cwd lookup extracted from creationCwd). Behaviour-neutral in production, since no store yet holds a thread. The fork half of IMP-017 is NOT here; it lands with thread_fork (DEC-033)."
+objective = "The conversation index learns which conversations are threads (DEC-037): IndexEntry.startedBy, isThread, latestIn skipping threads, and toolsetInit's optional StartedThread (with the cwd lookup extracted from creationCwd). Behaviour-neutral in production, since no store yet holds a thread. The fork half of IMP-017 is NOT here; it lands with thread_fork (DEC-033)."
 entrance_criteria = [
   { id = "EN-1", text = "PHASE-01 completed; suite green." },
 ]
 exit_criteria = [
-  { id = "EX-1", text = "IndexEntry carries optional startedBy; isThread and markOf live beside each other in src/topics.ts; a conversation is a thread exactly when its entry has parent or startedBy." },
+  { id = "EX-1", text = "IndexEntry carries optional startedBy; isThread lives in src/topics.ts (markOf joins it in PHASE-08, with ThreadMark, its return type); a conversation is a thread exactly when its entry has parent or startedBy." },
   { id = "EX-2", text = "latestIn skips threads; attach by topic, wake_schedule {topic} and the heartbeat re-creation inherit it; idsIn is unchanged." },
   { id = "EX-3", text = "toolsetInit(profile, topic, thread?) writes startedBy and runs thread.require on the toolset chosen inside the commit; the cwd lookup is one function used by creationCwd and, later, thread_start." },
   { id = "EX-4", text = "No fork-toolset hook change and no refuseUnsupported change in this phase (DEC-033)." },
@@ -98,7 +98,7 @@ entrance_criteria = [
 ]
 exit_criteria = [
   { id = "EX-1", text = "src/threads/admission.ts holds Origin and originKey only (pure data, design § The origin); the caller's-origin read and every refusal follow in later phases. task.ts and later tombstones.ts import Origin as a type." },
-  { id = "EX-2", text = "src/threads/task.ts: POST_KIND, PostInput (all three letters), PostState, PostResult, postRequestId, the envelopes of design § Envelopes the model reads, postTask(deps) and createPostTask(tx, task, input), owned by input.to in the background. The deliver phase runs steps 2-5 of design § One phase: deliver (open recipient, submit followUp, unbounded wait, DEC-045 outcomes); a close rethrows and re-runs." },
+  { id = "EX-2", text = "src/threads/task.ts: POST_KIND, PostInput (all three letters), PostState, PostResult, postRequestId (terminated by a delimiter, 'post:44:', so the shared sweep's prefix match cannot reach post 440; wake's ids already end their prefix in ':', src/wake/task.ts:126), the envelopes of design § Envelopes the model reads, postTask(deps) and createPostTask(tx, task, input), owned by input.to in the background. The deliver phase runs steps 2-5 of design § One phase: deliver (open recipient, submit followUp, unbounded wait, DEC-045 outcomes); a close rethrows and re-runs." },
   { id = "EX-3", text = "A post ending withdrawn or delivered-incomplete creates a post-failed notice task to its from in the same commit that settles it; notices are terminal: a failed notice writes a journal line and a best-effort notify_send, and creates no further notice." },
   { id = "EX-4", text = "The abort handler withdraws the task's queued input and maps abortSubmission's answer: aborted or not_found is withdrawn; already_placed is delivered-incomplete; settled reads the record as step 5." },
   { id = "EX-5", text = "The satan.post SweptKind row is exported from src/threads/task.ts: a blocked post's queued input is withdrawn, the task aborted, and the post reported by journal and best-effort notify_send. daemon-start passes it from PHASE-05." },
@@ -113,7 +113,7 @@ verification = [
   { id = "VT-5", expects = "DEC-045 outcomes: failure before placement is withdrawn; abort after placement and a run failing after a tool succeeded are delivered-incomplete; each tells the sender once", test_file = "test/threads-post.test.ts", keywords = ["failure before placement reports withdrawn", "report delivered-incomplete"], waived = false },
   { id = "VT-6", expects = "a notice that cannot be delivered journals and notifies, and sends no further notice", test_file = "test/threads-post.test.ts", keywords = ["a notice that cannot be delivered journals and notifies"], waived = false },
   { id = "VT-7", expects = "the abort handler maps aborted, not_found, already_placed and settled", test_file = "test/threads-post.test.ts", keywords = ["the abort handler maps each abortSubmission answer"], waived = false },
-  { id = "VT-8", expects = "the start sweep withdraws a blocked post's queued input and aborts it", test_file = "test/threads-post.test.ts", keywords = ["the start sweep withdraws a blocked post's queued input and aborts it"], waived = false },
+  { id = "VT-8", expects = "the start sweep withdraws a blocked post's queued input and aborts it; sweeping blocked post 44 leaves post 440's queued input in place", test_file = "test/threads-post.test.ts", keywords = ["the start sweep withdraws a blocked post's queued input and aborts it", "leaves post 440 queued"], waived = false },
   { id = "VT-9", expects = "the failed-post and failed-notice journal lines carry the outcome, reason and origin key", test_file = "test/threads-post.test.ts", keywords = ["failed delivered-incomplete: unanswered (model_error) origin", "failed: target unreachable origin"], waived = false },
 ]
 specs        = []
@@ -130,7 +130,7 @@ entrance_criteria = [
 exit_criteria = [
   { id = "EX-1", text = "src/threads/admission.ts gains the caller's-origin read over tx.scanEntries per design § The origin (pi.user, satan.wake, satan.post inheritance, pi.reset); no input found refuses 'no input entry to take an origin from'. The caller's index entry is read and requireSameTalkSet applied." },
   { id = "EX-2", text = "thread_post refuses a missing, unindexed, own ('a conversation cannot post to itself') or out-of-talk-set target; one api.commit creates the post task; declared executionMode sequential and replay unsafe (DEC-041, DEC-043); returns {post, to}." },
-  { id = "EX-3", text = "'threads' joins the interactive list after 'tasks' and ROOM_ONLY. DaemonParts.threads is required, mirroring tasks, with its builder; every daemonExtensions call site passes it (test/toolsets.test.ts:108; test/daemon-sections.test.ts HOST at 34 and the literal at 206; test/daemon-start.test.ts:305, 425, 552). daemon-start builds and binds ThreadDeps early and late beside the wakes' and passes the wake and post rows to sweepBlockedTasks. Host installs no thread tools." },
+  { id = "EX-3", text = "'threads' joins the interactive list after 'tasks' and ROOM_ONLY. DaemonParts.threads is required, mirroring tasks, with its builder; every daemonExtensions( call in test/ passes it (about 10 calls: grep them; 5 in daemon-sections spread its shared HOST const, so the edit points are HOST plus the other literals). daemon-start builds and binds ThreadDeps early and late beside the wakes' and passes the wake and post rows to sweepBlockedTasks. Host installs no thread tools." },
   { id = "EX-4", text = "test/fixtures/interactive-baseline.json is not regenerated (its note forbids it). toolsets.test.ts VT-1 compares the room snapshot without the threads extension to the baseline, and a new case pins exactly what threads adds after the baseline: its section and its tools." },
   { id = "EX-5", text = "THREADS_SECTION is a constant in src/threads/extension.ts, pinned by test. FAMILY_CAP and GLOBAL_CAP are created here in src/threads/admission.ts and interpolated into thread_post's description (design § Tool descriptions); PHASE-06 uses them in verdict, nothing retypes 4 or 12." },
   { id = "EX-6", text = "Journal line 'post N A->B origin K' through ThreadDeps.log." },
@@ -161,7 +161,7 @@ exit_criteria = [
   { id = "EX-3", text = "Admission refuses a tombstoned origin: 'origin 12/340 was reaped for fan-out; posts and thread starts from it are refused'." },
   { id = "EX-4", text = "familiesOf and verdict are pure and unit-tested without a harness, using FAMILY_CAP and GLOBAL_CAP; blocked tasks and reaped origins are not counted; notices are cap-exempt." },
   { id = "EX-5", text = "reap-own commits the reap alone and refuses; reap-other puts tombstone and notice in the admitted call's commit; each commit re-reads the tombstone first (table read before any table write) and creates nothing if set; tombstone() true gates the notice." },
-  { id = "EX-6", text = "Withdrawal uses harness.abortSubmission per queued family input by request id post:<task>, never Conversation.abort; a crash before withdrawal loses nothing (each task withdraws its own)." },
+  { id = "EX-6", text = "Withdrawal uses harness.abortSubmission per queued family input whose request id equals postRequestId(task), never Conversation.abort; a crash before withdrawal loses nothing (each task withdraws its own)." },
   { id = "EX-7", text = "Journal 'family K reaped: <reason>; withdrew N' and best-effort notify_send titled 'SATAN threads reaped'." },
 ]
 verification = [
@@ -184,20 +184,20 @@ requirements = []
 [[phase]]
 id        = "PHASE-07"
 name      = "thread_start and thread_fork, with IMP-017's fork branch"
-objective = "Start and fork in one phase (DEC-033), both through the admission PHASE-05 and PHASE-06 built: thread_start through toolsetInit(startedBy); thread_fork forking at the latest entry with the sole-call check and the child's written ToolResultEntry; the index hook copies the fork's toolset and the startup refusal narrows to a fork without one. First, prove the fork-result premise."
+objective = "Start and fork in one phase (DEC-033), both through the admission PHASE-05 and PHASE-06 built: thread_start through toolsetInit(startedBy); thread_fork forking at the latest entry with the sole-call check and the child's written ToolResultEntry; the index hook copies the fork's toolset and the startup refusal narrows to a fork without one. First, probe the fork-result premise; its outcome selects the written result or the design's fallback."
 entrance_criteria = [
   { id = "EN-1", text = "PHASE-06 completed." },
 ]
 exit_criteria = [
-  { id = "EX-1", text = "FIRST: VT-1 (premise (a), DEC-031) passes before the rest of the phase. If it fails, apply the design's fallback (the first post carries fork_of and a note, design § Envelopes the model reads; pi-durable's synthetic result stays), record the choice on DEC-031 and in notes.md, and continue; the sole-call refusal stays." },
+  { id = "EX-1", text = "FIRST: probe premise (a), DEC-031: a tool appends a ToolResultEntry for its own call id to a fork child, and the child's context shows it in place of pi-durable's synthetic 'Tool result unavailable'. Record the outcome on DEC-031 and in notes.md. It selects the path for EX-3: pass, the written result; fail, the design's fallback (the first post carries fork_of and a note, design § Envelopes the model reads; the synthetic result stays). Either way continue; the sole-call refusal stays. The probe test is kept only on the pass path; on the fail path it becomes the fallback's test (VT-1)." },
   { id = "EX-2", text = "thread_start: unknown topic refused ('unknown topic: x'); the topic's toolset and cwd, else the defaults; creates, configures, indexes with startedBy, and creates the first post in one commit; returns {conversation, topic}. Admission (talk set, tombstone, caps) is the shared one." },
-  { id = "EX-3", text = "thread_fork: callers [model], sequential, replay unsafe; refuses ('thread_fork must be the only tool call in its message') unless the caller's newest entry is a pi.assistant with exactly one toolCall with api.callId; forks at that entry, writes the child's ToolResultEntry, creates the first post, all in one commit with reads before writes." },
+  { id = "EX-3", text = "thread_fork: callers [model], sequential, replay unsafe; refuses ('thread_fork must be the only tool call in its message') unless the caller's newest entry is a pi.assistant with exactly one toolCall with api.callId; forks at that entry, creates the first post and, on EX-1's pass path, writes the child's ToolResultEntry (on its fail path the first post carries fork_of and the note instead), all in one commit with reads before writes." },
   { id = "EX-4", text = "indexConversation copies the parent entry's toolset to a fork and throws without one; refuseUnsupported refuses a fork whose index entry has no toolset (text per design) and every task-owned conversation." },
   { id = "EX-5", text = "The DEC-024 guard (test/conversations.test.ts 'VT-1 records each create's toolset and resolves it again after a reopen') gains thread_start and thread_fork; PHASE-05's baseline-delta case gains both tools." },
   { id = "EX-6", text = "Journal lines 'thread start N (topic) by C origin K' and 'thread fork N of C (topic) origin K'." },
 ]
 verification = [
-  { id = "VT-1", expects = "premise (a): a fork's child sees the written fork result, not 'Tool result unavailable'", test_file = "test/threads-fork.test.ts", keywords = ["a fork's child sees the written fork result"], waived = false },
+  { id = "VT-1", expects = "on whichever path EX-1 selected, a fork's child learns its parent and its purpose: from the written fork result, or from the fallback's fork_of post", test_file = "test/threads-fork.test.ts", keywords = ["a fork's child learns its parent and purpose"], waived = false },
   { id = "VT-2", expects = "thread_fork keeps topic and toolset and survives a restart; forks at the latest entry after compaction; a sibling tool call is refused", test_file = "test/threads-fork.test.ts", keywords = ["thread_fork keeps the caller's topic and toolset", "thread_fork after compaction forks at the latest entry", "thread_fork with a sibling tool call is refused"], waived = false },
   { id = "VT-3", expects = "the hook copies a fork's toolset and fails the commit when the parent has none", test_file = "test/topics.test.ts", keywords = ["the hook copies a fork's toolset from its parent"], waived = false },
   { id = "VT-4", expects = "session refuses a fork without a toolset with the new text; a store holding a fork with a toolset opens", test_file = "test/session.test.ts", keywords = ["a fork without a toolset is not supported", "opens a store holding a fork with a toolset"], waived = false },
@@ -218,7 +218,7 @@ entrance_criteria = [
   { id = "EN-1", text = "PHASE-07 completed; the satan.post entry data shape is stable." },
 ]
 exit_criteria = [
-  { id = "EX-1", text = "protocol.ts ThreadMark and optional marks; conversations.ts fills marks via markOf; daemon.ts passes them; the renderer prints marked ids with a tab and the mark; an unmarked list is unchanged on the wire." },
+  { id = "EX-1", text = "protocol.ts ThreadMark and optional marks; markOf(entry): ThreadMark | undefined beside isThread in src/topics.ts; conversations.ts fills marks via markOf; daemon.ts passes them; the renderer prints marked ids with a tab and the mark; an unmarked list is unchanged on the wire." },
   { id = "EX-2", text = "render.ts renders input entries by kind through one function shared by snapshot and live message_end paths; PresentationTable gains input(kind, header, body); posts and wakes print live even where typing is echoed." },
   { id = "EX-3", text = "emacs/malebolge.el: malebolge-thread-face, malebolge-reap-face, a post header as a speaker label, and the candidate parser accepting 'id<TAB>mark' and attaching to the id; test/malebolge-ert.el covers it." },
 ]
@@ -226,6 +226,7 @@ verification = [
   { id = "VT-1", expects = "posts, notices and wakes render as [thread] and [wake] lines in both presentations, live and in a snapshot", test_file = "test/render.test.ts", keywords = ["posts, notices and wakes render as [thread] and [wake] lines"], waived = false },
   { id = "VT-2", expects = "--list marks forks and started threads", test_file = "test/conversations.test.ts", keywords = ["--list marks forks and started threads"], waived = false },
   { id = "VT-3", expects = "the Emacs picker attaches to a marked id", test_file = "test/malebolge-ert.el", keywords = ["malebolge-thread-face", "picker attaches to a marked id"], waived = false },
+  { id = "VA-1", expects = "the orchestrator runs `nix develop -c just ert` on the host (ERT and byte-compilation are outside `just check`, and ERT is unavailable in the pi sandbox) and it passes" },
   { id = "VH-1", expects = "In the room, SATAN starts a thread in another topic, posts to it and receives a reply; the operator attaches to both and sees the post lines coloured." },
 ]
 specs        = []

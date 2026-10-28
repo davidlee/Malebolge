@@ -57,11 +57,14 @@ flowchart LR
   tool, and `thread_post` alone exercises them, so start and fork then plug
   into a complete admission rather than being reworked. This also keeps the
   window in which main carries uncapped thread tools to one phase.
-- **PHASE-07 start and fork together** (DEC-033). The DEC-031 premise test is
-  its first test; unlike the queue premises it has a design fallback, applied
-  and recorded rather than stopped on.
+- **PHASE-07 start and fork together** (DEC-033). The DEC-031 premise is
+  probed first; unlike the queue premises it has a design fallback, so its
+  outcome selects a path rather than stopping the phase, and one behavioural
+  test (the child learns its parent and purpose) holds on either path.
 - **PHASE-08 visibility last.** It reads the settled `satan.post` entry shape;
-  the one VH criterion needs every piece.
+  `markOf` lands here with `ThreadMark`, its return type and first consumer.
+  ERT runs on the host (`just ert`), outside `just check` and the pi sandbox.
+  The one VH criterion needs every piece.
 
 ## Notes
 

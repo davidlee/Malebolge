@@ -146,6 +146,17 @@ Arbiter rulings (seat, operator asleep; reversible, logged for audit):
 - Uncapped window PHASE-05..PHASE-06 accepted: intermediate commits only; don't run the daemon from a PHASE-05 commit.
 - Spot-check: `daemonExtensions(` has ~10 test call sites (daemon-sections 6, daemon-start 3, toolsets 1), not 6; the plan must hold whichever way `DaemonParts.threads` is threaded.
 
+### Plan review dispositions (round 2, Sol)
+
+- S1 accept. Verified: PHASE-07 EX-1 allowed the fallback while EX-3 and VT-1 required the written result. EX-1 is now a probe that selects the path (recorded on DEC-031 and here); EX-3 writes the ToolResultEntry on the pass path only; VT-1 is path-agnostic: "a fork's child learns its parent and purpose".
+- S2 accept. Verified: `markOf` returns `ThreadMark` (design § Operator visibility), absent until PHASE-08; `eslint.config.js:60-61` enforces explicit return and boundary types. `markOf` moved to PHASE-08; `isThread` stays in PHASE-02.
+- S3 accept. Verified: `just check` excludes ERT (`justfile` `ert` recipe "kept out of `check`"). PHASE-08 VA-1: the orchestrator runs `nix develop -c just ert` on the host (not in the pi sandbox).
+- S4 accept-modified (seat: smallest correct fix). Verified: `wakeRequestPrefix` ends in ':' (`src/wake/task.ts:126`); the design's `postRequestId` gives `post:44`, a prefix of `post:440`. Fix: `postRequestId` ends in a delimiter (`post:44:`), so SweptKind keeps one prefix contract and wake is untouched; Sol's per-kind predicate would change the contract and the wake row. PHASE-04 EX-2 states it; VT-8 adds the collision regression ("leaves post 440 queued"); PHASE-06 EX-6 matches by equality with `postRequestId`.
+- Seat F4 correction: about 10 `daemonExtensions(` calls (5 spread the shared `HOST`); my "6" counted edit points. PHASE-05 EX-3 now says grep every call; the plan holds either way, since `threads` stays required as `tasks` is.
+- New keywords grepped absent from `src/ test/ emacs/`.
+
+Design-drift item for audit: (4) `postRequestId` is `post:<id>:` (design shows `post:44` and `post:<task>`).
+
 ## Harvest
 <!-- single-copy: updated in place each harvest; ids only, never restated content -->
 fresh-as-of: 2026-10-29 · plan authored (not yet ready), pi review findings recorded · head 3efcd6c + this notes edit
