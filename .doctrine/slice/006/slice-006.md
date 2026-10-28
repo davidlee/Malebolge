@@ -23,8 +23,9 @@ of 2026-10-28, recorded there, set its bounds:
   to mode, move tool-specific prose into extensions, and split the scaffold,
   each only where this slice touches it.
 
-A first cut, therefore, has threads differing in place (topic, cwd, project
-context) and in history, not yet in prompt or tools. Talk across harnesses
+A first cut, therefore, has threads differing in place (topic and cwd) and
+in history, not yet in prompt or tools. Project context is read once per
+profile, not per conversation (RFC-002 D2 is unimplemented; research X-4). Talk across harnesses
 (the patch runner, gptel batch runs) is RFC-003 OQ-8, decided later.
 
 ## Scope & Objectives
