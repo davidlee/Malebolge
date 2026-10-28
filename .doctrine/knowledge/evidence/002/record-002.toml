@@ -1,0 +1,29 @@
+schema = "doctrine.knowledge"
+version = 1
+
+id = 2
+slug = "fork-inside-tool-call"
+title = "A fork made inside a tool call at the caller's latest entry carries the call with a synthetic unavailable result, and the child accepts input"
+record_kind = "evidence"
+status = "captured"
+created = "2026-10-28"
+updated = "2026-10-28"
+tags = ["fork", "pi-durable", "sl-006"]
+
+[facet]                         # every field typed; seeded empty (captured later)
+datum = "In a faux-harness test (pi-durable 1.4.0, 2026-10-29), a tool forked its own conversation inside api.commit at the newest entry from tx.scanEntries (descending): the pi.assistant entry holding the in-flight tool call. forkConversation succeeded. The child's context held system, user, the assistant tool call, and a synthetic toolResult 'Tool result unavailable: history ends before this call completed.' A later submit to the child settled done and the model answered normally."
+provenance = "experiment"
+confidence = "high"
+
+[evidence]                      # free-text citations (supports / contradicts / notes)
+supports    = []
+contradicts = []
+notes       = []
+
+[relationships]                 # verb-written edges (set by doctrine supersede)
+supersedes    = []   # record ids this one replaces (set by doctrine supersede)
+superseded_by = []   # set on superseded predecessor (verb-written)
+
+[[relation]]
+label = "shapes"
+target = "SL-006"
