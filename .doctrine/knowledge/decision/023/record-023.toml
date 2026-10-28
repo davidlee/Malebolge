@@ -1,0 +1,33 @@
+schema = "doctrine.knowledge"
+version = 1
+
+id = 23
+slug = "toolset-catalog"
+title = "Toolsets: a closed code catalog of named extension lists, chosen by profile or mode"
+record_kind = "decision"
+status = "superseded"
+created = "2026-10-27"
+updated = "2026-10-27"
+tags = []
+
+[facet]                         # every field typed; seeded empty (captured later)
+context = "SL-005 needs a mail-only conversation beside coding ones. pi-durable selects every installed extension for a conversation with no stored selection, and can only select safely by extension name: satan-mcp tool names are discovered at run time, and the {remove} form is a deny-list."
+choice = "A toolset is a named, ordered list of tool-bearing extension names, defined in a closed catalog in code (interactive, job, mail). A conversation's extensions are the harness's prompt extensions followed by its toolset's. A runner [mode.*] names its toolset (default job); each daemon execution profile has a default toolset (interactive). A harness installs only the extensions its allowed toolsets name. No toolset means 'everything'."
+alternatives = ["Toolsets declared in config as TOML lists of extension names", "Per-conversation tool-name filters", "Separate harness per toolset"]
+rationale = "Extensions are code, so a catalog in code fails at compile time, not startup. Selection by explicit extension list is allow-listed, so a mail toolset is defined by what it names."
+consequences = ["'profile' stays where tools run; 'mode' stays the runner's repo and path scope; 'toolset' is what a conversation can call", "Adding a toolset is a code change"]
+decided_by = "operator"
+decided_on = "2026-10-27"
+
+[evidence]                      # free-text citations (supports / contradicts / notes)
+supports    = []
+contradicts = []
+notes       = []
+
+[relationships]                 # verb-written edges (set by doctrine supersede)
+supersedes    = []   # record ids this one replaces (set by doctrine supersede)
+superseded_by = ["DEC-029"]   # set on superseded predecessor (verb-written)
+
+[[relation]]
+label = "shapes"
+target = "SL-005"

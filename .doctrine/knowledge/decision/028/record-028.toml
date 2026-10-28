@@ -1,0 +1,33 @@
+schema = "doctrine.knowledge"
+version = 1
+
+id = 28
+slug = "screwtape-client"
+title = "Screwtape client: configured absolute paths, shared bounded exec, fail-closed envelope validation"
+record_kind = "decision"
+status = "accepted"
+created = "2026-10-27"
+updated = "2026-10-27"
+tags = []
+
+[facet]                         # every field typed; seeded empty (captured later)
+context = "The MailSource adapter runs the screwtape binary on the host and parses contract v1 (screwtape DEC-011 exit codes and stderr diagnostics; DEC-031 reader needs: binary, --config, writable store dir)."
+choice = "(1) MALEBOLGE_SCREWTAPE and MALEBOLGE_SCREWTAPE_CONFIG: absolute paths checked at startup, required only when a profile allows the mail toolset; no PATH lookup. (2) The mail extension owns a host NodeExecutionEnv; argv array, no shell, --config always; minimal child env (HOME; verified in the smoke test); 10 s timeout. (3) A bounded exec extracted from src/grep.ts and shared with grep: stdout through the capped line splitter with a hard total ceiling, stderr capped (headKeeper), abort kills the child. (4) Exit 0 ok; 2 usage error showing screwtape's fixed reason code; 1 or signal 'screwtape failed' with the code; raw stderr never shown. (5) Every line parses as JSON, version in the supported set {1}, kind matches the verb, data passes a TypeBox projection schema allowing extra fields; any failure fails the call ('contract violation'), no partial data. (6) Fixtures copied from SL-003's published v1 shape; tools tested on a fake MailSource; a read-only smoke test against the real binary, skipped when absent."
+alternatives = ["Run screwtape through the conversation's execution env (may be the room)", "Locate screwtape on PATH"]
+rationale = "Structural confinement (the only program the tools can run is screwtape), one bounded-exec implementation (no parallel copy of grep's), and fail-closed parsing of untrusted output."
+consequences = ["grep.ts is refactored onto the shared bounded exec"]
+decided_by = "operator"
+decided_on = "2026-10-28"
+
+[evidence]                      # free-text citations (supports / contradicts / notes)
+supports    = []
+contradicts = []
+notes       = []
+
+[relationships]                 # verb-written edges (set by doctrine supersede)
+supersedes    = []   # record ids this one replaces (set by doctrine supersede)
+superseded_by = []   # set on superseded predecessor (verb-written)
+
+[[relation]]
+label = "shapes"
+target = "SL-005"

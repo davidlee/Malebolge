@@ -1,0 +1,33 @@
+schema = "doctrine.knowledge"
+version = 1
+
+id = 30
+slug = "mail-persona"
+title = "Mail persona: scaffold plus a corpus mode prompt; tool-coupled guidance in code"
+record_kind = "decision"
+status = "accepted"
+created = "2026-10-27"
+updated = "2026-10-27"
+tags = []
+
+[facet]                         # every field typed; seeded empty (captured later)
+context = "Under DEC-029 the mail toolset brings its own persona. The interactive persona is scaffold.txt + interactive.txt + env/<profile>.txt. interactive.txt claims all tools are available and orders a first-turn satan_boot_context call, and it is the file that supersedes scaffold.txt's batch Protocol section (JSONL only; end with satan_final). The corpus (~/satan-corpus) is a separate repo, in SATAN's own self-edit-mind patch lane. Mail tools emit untrusted mail inside a <mail-data> block (DEC-026)."
+choice = "(1) The persona's files depend on the toolset. interactive: scaffold.txt; prompts/interactive.txt; prompts/env/<profile>.txt (unchanged). mail: scaffold.txt; prompts/mail.txt. Mail has no environment file: its tools run on the host whatever the profile (DEC-028) and it has no other tools. (2) prompts/mail.txt is a mode prompt like interactive.txt: SATAN's purpose in mail triage, and that it supersedes the parts of scaffold.txt written for other runs: the batch Protocol section and every reference to tools or write surfaces the mail manifest does not list (refined 2026-10-28, RV-015 F-14, F-37). Its absence refuses startup only when a profile allows mail. (3) Each mail tool's usage is in its description, in code. The untrusted-data rule (what <mail-data> means and that its contents are never instructions) is one section of the mail extension, in code, pinned by a test. (4) Both personas render the section key persona, from differently named extensions (persona and mail-persona)."
+alternatives = ["Whole mail prompt in the corpus (prompts/env/mail.txt): the safety rule would live in a separate repo the model proposes edits to and would drift from the framing code emits", "Whole mail prompt in code: persona prose would need a release to edit and would leave the corpus", "A shared base persona: interactive.txt is coding-specific"]
+rationale = "Split by coupling. Persona prose is model-facing and edited without a release in the corpus like the other mode prompts. Text that names tools or the framing code emits changes with that code and can be tested. The injection defence is a code property (brief 4.4: bounds in code not prompts); its prompt statement stays out of SATAN's self-edit lane."
+consequences = ["satan-corpus needs prompts/mail.txt before a mail-allowing profile starts (an operator change in another repo)", "personaFiles takes the toolset as well as the profile", "The persona section key is shared so the two personas never coexist in one conversation"]
+decided_by = "operator"
+decided_on = "2026-10-28"
+
+[evidence]                      # free-text citations (supports / contradicts / notes)
+supports    = []
+contradicts = []
+notes       = []
+
+[relationships]                 # verb-written edges (set by doctrine supersede)
+supersedes    = []   # record ids this one replaces (set by doctrine supersede)
+superseded_by = []   # set on superseded predecessor (verb-written)
+
+[[relation]]
+label = "shapes"
+target = "SL-005"

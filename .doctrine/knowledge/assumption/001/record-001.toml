@@ -1,0 +1,34 @@
+schema = "doctrine.knowledge"
+version = 1
+
+id = 1
+slug = "mail-host-exec"
+title = "A mail conversation runs as the operator on the host and can execute screwtape with HOME alone"
+record_kind = "assumption"
+status = "held"
+created = "2026-10-27"
+updated = "2026-10-27"
+tags = []
+
+[facet]                         # every field typed; seeded empty (captured later)
+claim           = "A mail conversation runs as the operator (david) on the host, and the screwtape binary runs with --config and a child environment of HOME alone, reading its store read-only."
+confidence      = "medium"            # low | medium | high
+basis           = "design-inference"            # observation | prior-art | design-inference | external-source | operator-judgement
+validation_plan = "SL-005 smoke test: run each mail tool against the real screwtape binary on this host with the minimal environment."
+validated_by    = ""
+validated_on    = ""
+invalidated_by  = ""
+invalidated_on  = ""
+
+[evidence]                      # free-text citations (supports / contradicts / notes)
+supports    = []
+contradicts = []
+notes       = ["satan:RFC-020 D3 (same uid)", "screwtape DEC-031 (reader needs: binary, --config, writable store dir)", "SL-005 DEC-028"]
+
+[relationships]                 # verb-written edges (set by doctrine supersede)
+supersedes    = []   # record ids this one replaces (set by doctrine supersede)
+superseded_by = []   # set on superseded predecessor (verb-written)
+
+[[relation]]
+label = "shapes"
+target = "SL-005"

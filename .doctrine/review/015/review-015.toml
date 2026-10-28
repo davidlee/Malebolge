@@ -1,0 +1,1724 @@
+id    = 15
+slug  = "design-review-of-sl-005"
+title = "design review of SL-005"
+# no status — a review's status is DERIVED from its findings, so
+# it is never stored (the storage rule forbids derived data in authored files).
+
+[review]
+facet     = "design"     # scope|design|plan|phase-plan|implementation|code-review|reconciliation
+raiser    = "raiser"
+responder = "responder"
+rounds_base = 0
+contests_base = 0
+concluded = true
+
+[[review.turn]]
+act = "conclude"
+role = "raiser"
+note = "Seven rounds over design revs 29-46 (quotient review runs, deepseek-flash, read-only, about $0.50 total): selection/storage, mail trust boundary, bounds, lifecycle, conformance/tests. 56 findings, all verified; round 7 verify-only found nothing new."
+
+[[review.turn]]
+act = "conclude"
+role = "raiser"
+note = "Seven rounds over design revs 29-46 plus the operator-ordered simplification (rev 48, consistency-checked). 56 findings, all verified; round-1 severe findings routed at lock (metadata only)."
+
+[target]                   # the outbound `reviews` edge: RV-NNN ──reviews──▶ <ref>
+ref   = "SL-005"
+
+[[finding]]
+id = "F-1"
+status = "verified"
+severity = "blocker"
+title = "Catalog omits the room-only tasks extension (wake)"
+detail = "sec-2/DEC-029: interactive lacks 'tasks' (src/daemon-extensions.ts:36, src/wake/extension.ts carries satan.wake task + wake_* tools). 'Install exactly what allowed toolsets name' drops it: satan.wake unregistered, ensureHeartbeat (daemon-start.ts:86) fails. Adding it to interactive breaks the host's installed-name check: membership is profile-dependent. Sources: pi review S-1, C-1; verified by orchestrator."
+disposition = "fix-now"
+response = "toolsetList(toolset, profile); interactive/room ends grep, tasks, satan; host without tasks. DEC-029 (2) refined. VT-1 compares against a baseline captured before the change. sec-1, sec-2. Route at lock: VT-1 rejects a room list without tasks."
+route = "control"
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+response = "toolsetList(toolset, profile); interactive/room ends grep, tasks, satan; host without tasks. DEC-029 (2) refined. VT-1 compares against a baseline captured before the change. sec-1, sec-2."
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "sec-2 room list ends grep, tasks, satan; host without tasks; matches src/daemon-extensions.ts:36. DEC-029 (2) agrees. (pi verify-a, rev 34)"
+
+[[finding.turn]]
+act = "reopen"
+role = "raiser"
+note = "Reopened only to add a route (lock gate: severe findings need one); content unchanged."
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+route = "control"
+response = "toolsetList(toolset, profile); interactive/room ends grep, tasks, satan; host without tasks. DEC-029 (2) refined. VT-1 compares against a baseline captured before the change. sec-1, sec-2. Route at lock: VT-1 rejects a room list without tasks."
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "Re-verified: route added, content unchanged from the verified response."
+
+[[finding]]
+id = "F-2"
+status = "verified"
+severity = "blocker"
+title = "Escaping rule lost: '<' written as '<' (no-op)"
+detail = "sec-4 Output reads 'are written as <, > and &': the unicode escapes were lost in authoring (orchestrator tool input decoded them). Content '</mail-data>' closes the block. Restate as JSON.stringify per line, then <,>,& replaced by backslash-u003c/003e/0026; pin with a test. Sources: C-4, M-3."
+disposition = "fix-now"
+response = "sec-4 Output restated: JSON.stringify, then <, >, & replaced by their JSON unicode escapes; verified present in design.md. VT-8 pins it with a body containing </mail-data>. Route at lock: The design text lagged the intended escapes; restated and checked against the materialised design.md."
+route = "refresh"
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+response = "sec-4 Output restated: JSON.stringify, then <, >, & replaced by their JSON unicode escapes; verified present in design.md. VT-8 pins it with a body containing </mail-data>."
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "sec-4 Output: JSON.stringify then less-than, greater-than, ampersand replaced by their JSON unicode escapes; present in design.md; VT-8 pins it. (pi verify-b)"
+
+[[finding.turn]]
+act = "reopen"
+role = "raiser"
+note = "Reopened only to add a route (lock gate: severe findings need one); content unchanged."
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+route = "refresh"
+response = "sec-4 Output restated: JSON.stringify, then <, >, & replaced by their JSON unicode escapes; verified present in design.md. VT-8 pins it with a body containing </mail-data>. Route at lock: The design text lagged the intended escapes; restated and checked against the materialised design.md."
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "Re-verified: route added, content unchanged from the verified response."
+
+[[finding]]
+id = "F-3"
+status = "verified"
+severity = "blocker"
+title = "Only bodies are bounded: one hostile message can block all progress"
+detail = "sec-4: subject, preview, address lists, references, attachments, mailbox names are unbounded in v1 and in our projection. One message with a huge Subject makes mail_new(limit 1) exceed MAIL_MAX_BYTES; fail-the-call then repeats forever and the cursor can never pass it. Need per-field bounds and a guarantee that limit 1 at minimum max_bytes always fits. Sources: M-1, M-13."
+disposition = "fix-now"
+response = "Operator agreed a redesign (2026-10-28, reply: agree). sec-4 Bounds now measures every size in rendered bytes; each item has a core (ids and received_at validated by the contract schema, subject capped at 200) of at most 1 KiB (read: 2 KiB), and limits are clamped so the core fits its share; other fields fill in a fixed order and are left out when they do not fit; the body is cut to the remainder. No stub, no over-budget error. DEC-026 refreshed to this mechanism. Control: the criterion must reject an implementation that measures caps or the body on raw bytes, and one that drops or replaces a message; VT-8's property test over generated hostile envelopes at every limit asserts each result is within MAIL_MAX_BYTES and every core is whole. Host phase needs the pure render and projection modules and the v1 fixtures."
+route = "control"
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+response = "Per-field caps with marker, count and cut list; per-message rendered budget; oversize message replaced by a visible stub that still counts toward next. No over-budget failure, no page cut (operator: 'per-field max and truncating, or rejecting the offending message'). DEC-026 refined. sec-4."
+
+[[finding.turn]]
+act = "contest"
+role = "raiser"
+note = "Progress is now guaranteed by the stub, but the claimed guarantee that one message at limit 1 fits is false: caps are measured before escaping, and the cap table alone (6 address lists x 10 x (128+254), escaped names x6, 20 attachments, mailbox ids) exceeds the 48 KiB single-message budget, so a message with hostile address names is a stub at every tool, including mail_read. DEC-026 still describes an over-budget error (retry with limit 1) that design.md deleted. Settle: caps sized and measured so the worst-case non-body envelope fits the smallest per-message budget after escaping, and DEC-026 refreshed to the actual mechanism. (pi verify-b, adv-budget)"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+route = "control"
+response = "Operator agreed a redesign (2026-10-28, reply: agree). sec-4 Bounds now measures every size in rendered bytes; each item has a core (ids and received_at validated by the contract schema, subject capped at 200) of at most 1 KiB (read: 2 KiB), and limits are clamped so the core fits its share; other fields fill in a fixed order and are left out when they do not fit; the body is cut to the remainder. No stub, no over-budget error. DEC-026 refreshed to this mechanism. Control: the criterion must reject an implementation that measures caps or the body on raw bytes, and one that drops or replaces a message; VT-8's property test over generated hostile envelopes at every limit asserts each result is within MAIL_MAX_BYTES and every core is whole. Host phase needs the pure render and projection modules and the v1 fixtures."
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "Verified by pi r3-verify against design rev 36."
+
+[[finding]]
+id = "F-4"
+status = "verified"
+severity = "major"
+title = "Clamp table inconsistent; escaping expansion unbudgeted"
+detail = "sec-4 Bounds: limit 1-20 x max_bytes 512-8192 allows 160 KiB, contradicting 'limit x max_bytes <= 40 KiB'. No joint clamp stated. Escaping and JSON can expand raw bytes several-fold; mail_read 32 KiB leaves little room. Sources: C-5, M-2."
+disposition = "fix-now"
+response = "Joint clamp max_bytes <= floor(40 KiB / limit); budget measured on the rendered, escaped line. VT-8 tests the corners. sec-4. Route at lock: VT-8 property test rejects any result over MAIL_MAX_BYTES at every limit."
+route = "control"
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+response = "Joint clamp max_bytes <= floor(40 KiB / limit); budget measured on the rendered, escaped line. VT-8 tests the corners. sec-4."
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "Joint clamp floor(40 KiB / limit) and per-message budget are consistent on raw bytes. Escape-driven over-stubbing that the stub path now causes is raised separately as a new finding. (pi verify-b)"
+
+[[finding.turn]]
+act = "reopen"
+role = "raiser"
+note = "Reopened only to add a route (lock gate: severe findings need one); content unchanged."
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+route = "control"
+response = "Joint clamp max_bytes <= floor(40 KiB / limit); budget measured on the rendered, escaped line. VT-8 tests the corners. sec-4. Route at lock: VT-8 property test rejects any result over MAIL_MAX_BYTES at every limit."
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "Re-verified: route added, content unchanged from the verified response."
+
+[[finding]]
+id = "F-5"
+status = "verified"
+severity = "major"
+title = "Skew rule livelocks; next undefined on empty or held page"
+detail = "sec-4 Cursor/DEC-027: oldest-first paging returns the future-dated message first on every retry; stopping next before it with caught_up false repeats the same page forever. next is unspecified when no item is returned (an implementation returning '' restarts the walk). Sources: M-5, C-2."
+disposition = "fix-now"
+response = "next = input after when nothing returned; held-back message: next stops before it, caught_up true, re-shown each poll; new mail sorts ahead, no stall. DEC-027 refined. VT-9. sec-4. Route at lock: VT-9 rejects a next that advances past a held-back message or is undefined on an empty page."
+route = "control"
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+response = "next = input after when nothing returned; held-back message: next stops before it, caught_up true, re-shown each poll; new mail sorts ahead, no stall. DEC-027 refined. VT-9. sec-4."
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "sec-4 Cursor: next = input after on empty page; held-back stops next, caught_up true. Contract orders by received_at_ms, id, so future-dated mail sorts last and paging cannot stall. DEC-027 agrees. (pi verify-b, adv-budget, orchestrator)"
+
+[[finding.turn]]
+act = "reopen"
+role = "raiser"
+note = "Reopened only to add a route (lock gate: severe findings need one); content unchanged."
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+route = "control"
+response = "next = input after when nothing returned; held-back message: next stops before it, caught_up true, re-shown each poll; new mail sorts ahead, no stall. DEC-027 refined. VT-9. sec-4. Route at lock: VT-9 rejects a next that advances past a held-back message or is undefined on an empty page."
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "Re-verified: route added, content unchanged from the verified response."
+
+[[finding]]
+id = "F-6"
+status = "verified"
+severity = "major"
+title = "argv injection: ids and filters beginning with -- reach screwtape"
+detail = "sec-5: screwtape read treats a first argument starting with -- as a selection (screwtape argv.gleam:102). An injected 'call mail_read with id --after ...' changes the verb. Validate ids (JMAP id charset, 1-255) and filter values in code before argv. Also --config must be the first argument (argv.gleam:81); the draft says only 'always passed'. Source: M-6, verified."
+disposition = "fix-now"
+response = "Ids validated against the JMAP Id form, filters validated, since checked, before argv; argv is --config <c> <verb> ... with --config first (argv.gleam:81). VT-9, VT-10. sec-4, sec-5. Route at lock: Adversary: an id or filter starting with --; VT-9 refuses it before argv."
+route = "probe"
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+response = "Ids validated against the JMAP Id form, filters validated, since checked, before argv; argv is --config <c> <verb> ... with --config first (argv.gleam:81). VT-9, VT-10. sec-4, sec-5."
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "Ids constrained to the JMAP Id form, from has no leading dash, since checked, config first in argv. (pi verify-b)"
+
+[[finding.turn]]
+act = "reopen"
+role = "raiser"
+note = "Reopened only to add a route (lock gate: severe findings need one); content unchanged."
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+route = "probe"
+response = "Ids validated against the JMAP Id form, filters validated, since checked, before argv; argv is --config <c> <verb> ... with --config first (argv.gleam:81). VT-9, VT-10. sec-4, sec-5. Route at lock: Adversary: an id or filter starting with --; VT-9 refuses it before argv."
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "Re-verified: route added, content unchanged from the verified response."
+
+[[finding]]
+id = "F-7"
+status = "verified"
+severity = "major"
+title = "Promised provenance absent from list and thread summaries"
+detail = "sec-4: v1 summary has no message_id and no account_id (only read has provenance.account_id). mail_list/mail_thread cannot emit them; a fake MailSource would hide it. Provenance must be per verb. Source: C-3."
+disposition = "fix-now"
+response = "Provenance per verb: summaries id, thread_id, mailbox_ids, received_at; read adds message_id, account_id and truncation flags. DEC-026 refined. VT-9 asserts keys exactly. sec-4."
+route = "review"
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+response = "Provenance per verb: summaries id, thread_id, mailbox_ids, received_at; read adds message_id, account_id and truncation flags. DEC-026 refined. VT-9 asserts keys exactly. sec-4."
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "Per-verb provenance matches contract v1's published shapes; VT-9 asserts keys exactly. (pi verify-b)"
+
+[[finding.turn]]
+act = "reopen"
+role = "raiser"
+note = "Reopened only to add a route (lock gate: severe findings need one); content unchanged."
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+route = "review"
+response = "Provenance per verb: summaries id, thread_id, mailbox_ids, received_at; read adds message_id, account_id and truncation flags. DEC-026 refined. VT-9 asserts keys exactly. sec-4."
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "Re-verified: route added, content unchanged from the verified response."
+
+[[finding]]
+id = "F-8"
+status = "verified"
+severity = "major"
+title = "Re-deriving the list at startup can silently widen old transcripts"
+detail = "sec-3 step 3 vs DEC-025 rationale: adding an extension to a toolset in code widens every existing conversation of it on restart, including mail transcripts. Needs a stated rule and a guard that mail never names host-reaching extensions. Source: S-3."
+disposition = "aligned"
+response = "Operator ruling 2026-10-28: a toolset's contents follow the code; a catalog change reaches existing conversations at the next restart as the operator's act; startup logs each changed list; a guard test bars mail from naming coding-tools, grep, satan, tasks. DEC-029 (3), (6). The catalog-revision hash was rejected as heavier than needed."
+route = "review"
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "aligned"
+response = "Operator ruling 2026-10-28: a toolset's contents follow the code; a catalog change reaches existing conversations at the next restart as the operator's act; startup logs each changed list; a guard test bars mail from naming coding-tools, grep, satan, tasks. DEC-029 (3), (6). The catalog-revision hash was rejected as heavier than needed."
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "sec-3 name fixed, contents follow code, change logged at restart; mail guard test present. DEC-029 (6) agrees. (pi verify-a)"
+
+[[finding.turn]]
+act = "reopen"
+role = "raiser"
+note = "Reopened only to add a route (lock gate: severe findings need one); content unchanged."
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "aligned"
+route = "review"
+response = "Operator ruling 2026-10-28: a toolset's contents follow the code; a catalog change reaches existing conversations at the next restart as the operator's act; startup logs each changed list; a guard test bars mail from naming coding-tools, grep, satan, tasks. DEC-029 (3), (6). The catalog-revision hash was rejected as heavier than needed."
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "Re-verified: route added, content unchanged from the verified response."
+
+[[finding]]
+id = "F-9"
+status = "verified"
+severity = "major"
+title = "Topic toolset unchecked at startup and creation; resolved outside the creating commit"
+detail = "sec-3: writeTopicRecord writes unconditionally; creation reads the topic record without the allowed-set check; a stored disallowed topic toolset leads to a near-toolless conversation, then a permanent startup refusal with no repair path. creationToolset reads the index before the create commit, so a concurrent --set-topic can be overtaken. Sources: S-4, S-9."
+disposition = "fix-now"
+response = "Toolset resolved, checked and written inside the creating commit (init + configure(tx)); setTopic validates; reconcile refuses a disallowed topic or entry, naming it; remedy is a code migration (silent widening is worse). VT-4, VT-5. sec-3. Route at lock: VT-4 names the incorrect candidate (topic record read before the commit) and rejects it."
+route = "control"
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+response = "Toolset resolved, checked and written inside the creating commit (init + configure(tx)); setTopic validates; reconcile refuses a disallowed topic or entry, naming it; remedy is a code migration (silent widening is worse). VT-4, VT-5. sec-3."
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "Topic toolset resolved, checked and written in init inside the creating commit; configure inside init is legal and wins (pi-durable dist/harness/harness.js:269-272, confirmed by orchestrator and an empirical run by pi adv-lifecycle). setTopic validates; reconcile step 2 refuses."
+
+[[finding.turn]]
+act = "reopen"
+role = "raiser"
+note = "Reopened only to add a route (lock gate: severe findings need one); content unchanged."
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+route = "control"
+response = "Toolset resolved, checked and written inside the creating commit (init + configure(tx)); setTopic validates; reconcile refuses a disallowed topic or entry, naming it; remedy is a code migration (silent widening is worse). VT-4, VT-5. sec-3. Route at lock: VT-4 names the incorrect candidate (topic record read before the commit) and rejects it."
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "Re-verified: route added, content unchanged from the verified response."
+
+[[finding]]
+id = "F-10"
+status = "verified"
+severity = "major"
+title = "Reconcile: task-owned refusal is unrecoverable; root has two writers"
+detail = "sec-3 step 4 refuses startup forever for an unindexed task-owned conversation without a list; derive from the owner's entry instead. Root: configure(options.agent) on every open and step 3 both write root's list. Pick one owner. Sources: S-5, S-8."
+disposition = "fix-now"
+response = "Task-owned conversations take the owner's entry toolset; refusal only without one. Root's configure no longer carries extensions; the reconcile is the only writer. VT-5. sec-3. Route at lock: Superseded in part by operator ruling 2026-10-28: forks and task-owned conversations now refuse startup by design (an accepted trade, not an oversight); the inheritance mechanism is parked in IMP-017. The root single-writer fix stands."
+route = "review"
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+response = "Task-owned conversations take the owner's entry toolset; refusal only without one. Root's configure no longer carries extensions; the reconcile is the only writer. VT-5. sec-3."
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "Root configure no longer carries extensions; owner entry derivation for task-owned. Reconcile scan-predicate and wording issues raised separately. (pi verify-a)"
+
+[[finding.turn]]
+act = "reopen"
+role = "raiser"
+note = "Reopened only to add a route (lock gate: severe findings need one); content unchanged."
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+route = "review"
+response = "Task-owned conversations take the owner's entry toolset; refusal only without one. Root's configure no longer carries extensions; the reconcile is the only writer. VT-5. sec-3. Route at lock: Superseded in part by operator ruling 2026-10-28: forks and task-owned conversations now refuse startup by design (an accepted trade, not an oversight); the inheritance mechanism is parked in IMP-017. The root single-writer fix stands."
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "Re-verified: route added, content unchanged from the verified response."
+
+[[finding]]
+id = "F-11"
+status = "verified"
+severity = "major"
+title = "Runner create path writes no selection (DEC-024 (1))"
+detail = "src/runner/conversations.ts:19-22 creates with ownership only; extensions arrive later via configure at admission (run.ts:365-371). Neither file is in Code impact. Source: C-7."
+disposition = "fix-now"
+response = "src/runner/conversations.ts passes agent.extensions at create. Code impact and VT-3. sec-3, sec-6. Route at lock: VT-3 rejects a runner job with no stored selection."
+route = "control"
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+response = "src/runner/conversations.ts passes agent.extensions at create. Code impact and VT-3. sec-3, sec-6."
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "Runner create passes agent extensions at create (src/runner/conversations.ts:19-22 today passes ownership only). Remaining admission-writer issue raised separately. (pi verify-a)"
+
+[[finding.turn]]
+act = "reopen"
+role = "raiser"
+note = "Reopened only to add a route (lock gate: severe findings need one); content unchanged."
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+route = "control"
+response = "src/runner/conversations.ts passes agent.extensions at create. Code impact and VT-3. sec-3, sec-6. Route at lock: VT-3 rejects a runner job with no stored selection."
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "Re-verified: route added, content unchanged from the verified response."
+
+[[finding]]
+id = "F-12"
+status = "verified"
+severity = "major"
+title = "Bounded exec: unbounded splitter named, oversize line dropped silently, ceiling unstated, arity unchecked"
+detail = "sec-5: lineSplitter is the unbounded one (ndjson.ts:79-80); boundedLineSplitter drops oversize lines, which would silently lose a message. Ceiling value not derived. Validation lacks per-verb envelope count (exactly one, or 0..limit for read --after). Sources: M-7, M-8."
+disposition = "fix-now"
+response = "boundedLineSplitter with MAIL_STDOUT_MAX 4 MiB per line and in total; oversize option fail|count (mail fails closed, grep counts); per-verb arity. Residual risk of a >4 MiB envelope stated and accepted. VT-10, VT-11. sec-5. Route at lock: VT-10 rejects an oversize line or ceiling breach that returns partial data."
+route = "control"
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+response = "boundedLineSplitter with MAIL_STDOUT_MAX 4 MiB per line and in total; oversize option fail|count (mail fails closed, grep counts); per-verb arity. Residual risk of a >4 MiB envelope stated and accepted. VT-10, VT-11. sec-5."
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "boundedLineSplitter, 4 MiB per-line and total, fail/count option, arity per verb. Aggregate-ceiling retry gap raised separately. (pi verify-b; src/ndjson.ts:33, src/grep.ts:303-305)"
+
+[[finding.turn]]
+act = "reopen"
+role = "raiser"
+note = "Reopened only to add a route (lock gate: severe findings need one); content unchanged."
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+route = "control"
+response = "boundedLineSplitter with MAIL_STDOUT_MAX 4 MiB per line and in total; oversize option fail|count (mail fails closed, grep counts); per-verb arity. Residual risk of a >4 MiB envelope stated and accepted. VT-10, VT-11. sec-5. Route at lock: VT-10 rejects an oversize line or ceiling breach that returns partial data."
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "Re-verified: route added, content unchanged from the verified response."
+
+[[finding]]
+id = "F-13"
+status = "verified"
+severity = "major"
+title = "Child env not minimal; timeout, abort and signal unmapped; exit-2 code vs stderr"
+detail = "sec-5: NodeExecutionEnv merges the daemon's shellEnv unless inheritEnv:false (pi-durable env/node.js:205,745). timeout/aborted arrive as ExecutionError codes; signals as 128+n. Exit-2 reason code lives on stderr: state an allow-listed parse. Sources: M-11, M-12, C-12."
+disposition = "fix-now"
+response = "inheritEnv: false with env {HOME}; env closed with the daemon; outcome table for exit 0/2/other incl. 128+n, timeout, aborted; exit-2 code parsed from stderr JSON, accepted only on ^[a-z_]{1,64}$. VT-10. sec-5. Route at lock: VT-10 rejects an inherited environment and unmapped exits."
+route = "control"
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+response = "inheritEnv: false with env {HOME}; env closed with the daemon; outcome table for exit 0/2/other incl. 128+n, timeout, aborted; exit-2 code parsed from stderr JSON, accepted only on ^[a-z_]{1,64}$. VT-10. sec-5."
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "inheritEnv false with HOME only; outcome table maps 0, 2, other exits, timeout, aborted; raw stderr never reaches the model. (pi verify-b)"
+
+[[finding.turn]]
+act = "reopen"
+role = "raiser"
+note = "Reopened only to add a route (lock gate: severe findings need one); content unchanged."
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+route = "control"
+response = "inheritEnv: false with env {HOME}; env closed with the daemon; outcome table for exit 0/2/other incl. 128+n, timeout, aborted; exit-2 code parsed from stderr JSON, accepted only on ^[a-z_]{1,64}$. VT-10. sec-5. Route at lock: VT-10 rejects an inherited environment and unmapped exits."
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "Re-verified: route added, content unchanged from the verified response."
+
+[[finding]]
+id = "F-14"
+status = "verified"
+severity = "major"
+title = "mail.txt must override more than the scaffold's Protocol section"
+detail = "sec-2/DEC-030: scaffold.txt also names write surfaces and tools (hippocampus_write, inbox, goad) the mail toolset lacks. mail.txt must supersede the write boundaries and tool references too, or mail needs its own scaffold. Source: M-10."
+disposition = "fix-now"
+response = "mail.txt supersedes the scaffold's Protocol section and every reference to tools or write surfaces the manifest does not list. sec-2."
+route = "review"
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+response = "mail.txt supersedes the scaffold's Protocol section and every reference to tools or write surfaces the manifest does not list. sec-2."
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "sec-2 mail.txt supersedes the Protocol section and every unlisted tool or write surface. DEC-030 (2) still names only the Protocol override: raised as a refresh finding. (pi verify-a)"
+
+[[finding.turn]]
+act = "reopen"
+role = "raiser"
+note = "Reopened only to add a route (lock gate: severe findings need one); content unchanged."
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+route = "review"
+response = "mail.txt supersedes the scaffold's Protocol section and every reference to tools or write surfaces the manifest does not list. sec-2."
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "Re-verified: route added, content unchanged from the verified response."
+
+[[finding]]
+id = "F-15"
+status = "verified"
+severity = "major"
+title = "Thread total/truncated missing from the header"
+detail = "sec-4: thread keeps the last limit entries; the header lists body truncation but not thread total/truncated, a silent cut. Source: M-9."
+disposition = "fix-now"
+response = "Thread total and truncated in the header. VT-9. sec-4. Route at lock: VT-9 rejects a thread header without total and truncated."
+route = "control"
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+response = "Thread total and truncated in the header. VT-9. sec-4."
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "Thread total and truncated in header; VT-9 covers. (pi verify-b)"
+
+[[finding.turn]]
+act = "reopen"
+role = "raiser"
+note = "Reopened only to add a route (lock gate: severe findings need one); content unchanged."
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+route = "control"
+response = "Thread total and truncated in the header. VT-9. sec-4. Route at lock: VT-9 rejects a thread header without total and truncated."
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "Re-verified: route added, content unchanged from the verified response."
+
+[[finding]]
+id = "F-16"
+status = "verified"
+severity = "major"
+title = "Verification gaps"
+detail = "sec-7: VT-1 restates the design's own table (would not catch the tasks omission); VT-5 has no baseline (no snapshots exist; tests call daemonExtensions themselves); VT-11 runs in just check whenever the binary is present, against live config, and is not shown read-only; no VT for the untrusted-data section text, replay safe, missing Screwtape variables; the proposed harness helper cannot use systemPromptSections (closes the harness). Sources: C-1, C-8, C-10, C-11, C-13, C-14, C-16."
+disposition = "fix-now"
+response = "Overclaim withdrawn. sec-3 now says SessionOptions.agent omits extensions so openSession cannot write them, notes that pi-durable's Conversation.configure still accepts extensions, and rests the single-writer property on order: the reconcile runs after root's configure, so its list stands. Control: VT-3 checks root's list after a restart and must reject a root left with a list other than toolsetList for its profile. Items (1) and (3) unchanged (verified)."
+route = "control"
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+response = "VT-1 now compares against a captured baseline; VT-12 smoke is opt-in (MALEBOLGE_MAIL_SMOKE=1), against a temp store copy, digest checked; VT-6 pins the untrusted-data section; VT-9 asserts replay safe; VT-2 host needs no Screwtape vars; toolsetProbe reads conversation.agent() on a sqlite store, no turn. sec-7, sec-6."
+
+[[finding.turn]]
+act = "contest"
+role = "raiser"
+note = "Still uncovered: (1) a room daemon refusing a missing or relative MALEBOLGE_SCREWTAPE or _CONFIG (VT-2 covers only the host side; a PATH-lookup implementation passes every VT); (2) root's single writer: VT-3 checks the resolved list, which a surviving second writer also satisfies; (3) tool descriptions (offset drift, retry rules) are pinned by no VT, so empty descriptions pass. (pi verify-c)"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+route = "control"
+response = "(1) VT-2 adds: a room start refuses when MALEBOLGE_SCREWTAPE or MALEBOLGE_SCREWTAPE_CONFIG is missing or relative; it rejects a PATH-lookup implementation. (2) Root single writer: SessionOptions.agent omits extensions in its type (sec-3), so a second writer does not compile; VT-3 covers root after restart. (3) VT-9 pins the tool descriptions: the limit 1 retry rule and mail_list offset drift; it rejects empty descriptions. Host phases: the daemon-start phase for (1), the session phase for (2), the tools phase for (3)."
+
+[[finding.turn]]
+act = "contest"
+role = "raiser"
+note = 'Item (2) overclaims: SessionOptions.agent omitting extensions stops openSession writing them, but Conversation.configure still accepts extensions (pi-durable dist/harness/types.d.ts:385, 676), so "a second writer does not compile" is false. Items (1) and (3) are resolved. (pi r3-verify)'
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+route = "control"
+response = "Overclaim withdrawn. sec-3 now says SessionOptions.agent omits extensions so openSession cannot write them, notes that pi-durable's Conversation.configure still accepts extensions, and rests the single-writer property on order: the reconcile runs after root's configure, so its list stands. Control: VT-3 checks root's list after a restart and must reject a root left with a list other than toolsetList for its profile. Items (1) and (3) unchanged (verified)."
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "Verified by pi r4 against design rev 40."
+
+[[finding]]
+id = "F-17"
+status = "verified"
+severity = "major"
+title = "Code impact misses files"
+detail = "sec-6: test/structure.test.ts (RUNNER_ROOTS allow-list), test/daemon-start.test.ts, openSession callers (test/models.test.ts, test/wake-fixture.ts, test/daemon-env.test.ts, test/topics.test.ts), src/runner/conversations.ts, src/runner/run.ts, src/wake/*. src/runner/config.ts needs no change. Source: C-9, C-7."
+disposition = "fix-now"
+response = "The code is right, the record lagged. sec-6 now lists src/request.ts (toolset in requestFrameOf) and src/attach-main.ts (usage text) in the protocol row, test/request.test.ts in the test row, src/runner/run.ts (admission configure stops writing extensions) in the runner row, and src/runner/tools.ts as no change. Swept: sec-3 runner row and VT-3 (admission leaves the stored list unchanged) now agree."
+route = "refresh"
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+response = "Code impact gains structure.test.ts, the baseline fixture, openSession callers, src/runner/conversations.ts, test/runner/*; src/runner/config.ts marked no change; src/wake/* marked verify-only. Selectors updated. sec-6."
+
+[[finding.turn]]
+act = "contest"
+role = "raiser"
+note = "Still missing: src/request.ts builds the topic frame (requestFrameOf, src/request.ts:126-130, name and cwd only), so --toolset never reaches the wire without a change there, plus test/request.test.ts; src/attach-main.ts:20 USAGE must show --toolset / --no-toolset; src/runner/run.ts:365-374 admission configure writes extensions on every run and needs a stated change or no-change. Verified against source by orchestrator. (pi verify-c, adv-lifecycle)"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+route = "refresh"
+response = "The code is right, the record lagged. sec-6 now lists src/request.ts (toolset in requestFrameOf) and src/attach-main.ts (usage text) in the protocol row, test/request.test.ts in the test row, src/runner/run.ts (admission configure stops writing extensions) in the runner row, and src/runner/tools.ts as no change. Swept: sec-3 runner row and VT-3 (admission leaves the stored list unchanged) now agree."
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "Verified by pi r3-verify against design rev 36."
+
+[[finding]]
+id = "F-18"
+status = "verified"
+severity = "minor"
+title = "attach new has no topic: always the profile default"
+detail = "sec-3 Creation row: {kind:new} carries no topic and default cannot hold a record (topics.ts:169-171). State it; drop the topic lookup for that row and VT-3's untestable case. Sources: S-7, C-6."
+disposition = "fix-now"
+response = "attach new row states the profile default (lands in default, which holds no record). sec-3."
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+response = "attach new row states the profile default (lands in default, which holds no record). sec-3."
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "attach new lands in default, which holds no record (src/topics.ts:170-172). The missing in-commit writer for this path is raised separately. (pi verify-a)"
+
+[[finding]]
+id = "F-19"
+status = "verified"
+severity = "minor"
+title = "Fork row relies on pi copying the agent"
+detail = "sec-3: a fork at an entry before the list was written gets no list and fails open (pi README: fork keeps the agent as of the entry). malebolge has no fork path today (no fork call in src/); any future fork must pass agent.extensions. Source: S-2, downgraded: latent."
+disposition = "fix-now"
+response = "Fork row: no fork path today; any future fork passes agent.extensions explicitly. sec-3."
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+response = "Fork row: no fork path today; any future fork passes agent.extensions explicitly. sec-3."
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "No fork path exists in src/. The prescribed future-fork remedy is itself wrong (needs the name, not the list): raised separately. (pi verify-a, adv-lifecycle)"
+
+[[finding]]
+id = "F-20"
+status = "verified"
+severity = "minor"
+title = "'Unchanged byte for byte' needs restating"
+detail = "sec-2: tool order must keep today's install order (..., grep, tasks, then satan appended by refresh). Sections are unaffected. Source: S-6."
+disposition = "fix-now"
+response = "interactive keeps today's install order including tasks before satan; VT-1 pins sections and tool order. sec-2."
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+response = "interactive keeps today's install order including tasks before satan; VT-1 pins sections and tool order. sec-2."
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "sec-2 restates install order with satan by discovery; VT-1 pins against a pre-change baseline. Cross-reference VT-5 should read VT-1: raised as minor. (pi verify-c)"
+
+[[finding]]
+id = "F-21"
+status = "verified"
+severity = "minor"
+title = "Persona file checks asymmetric"
+detail = "sec-2: personaFiles checks only the env file at startup today; mail.txt would be checked, interactive.txt not. Choose one rule. Source: S misc."
+disposition = "fix-now"
+response = "One rule: every persona file of every allowed toolset is checked at startup. VT-6. sec-2."
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+response = "One rule: every persona file of every allowed toolset is checked at startup. VT-6. sec-2."
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "Every persona file of every allowed toolset checked at startup; matches src/persona.ts:16-20 today; VT-6 pins. (pi verify-a)"
+
+[[finding]]
+id = "F-22"
+status = "verified"
+severity = "minor"
+title = "Room start now needs Screwtape configured"
+detail = "sec-5: required whenever the profile allows mail, i.e. every room start. Add the refusal VT and the deployment order (corpus file, launcher env, restart). Source: C-8."
+disposition = "fix-now"
+response = "VT-2 now asserts a room start refuses when either Screwtape variable is missing or relative (same fix as F-16 item 1)."
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+response = "Deployment order stated (corpus file, launcher env, restart); VT-2 covers host needing none. sec-5."
+
+[[finding.turn]]
+act = "contest"
+role = "raiser"
+note = "Rule and deployment order are stated in sec-5, but no verification asserts that a room start refuses when the Screwtape variables are unset; VT-2 asserts only that host needs none, VT-12 is opt-in. Overlaps F-16 item (1). (pi verify-a)"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+response = "VT-2 now asserts a room start refuses when either Screwtape variable is missing or relative (same fix as F-16 item 1)."
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "Verified by pi r3-verify against design rev 36."
+
+[[finding]]
+id = "F-23"
+status = "verified"
+severity = "minor"
+title = "Parameter edges unspecified"
+detail = "sec-4: since without after '' rejected or ignored; since format; offset upper bound; mail_list offset paging shifts under sync (say so in the description). Sources: M-13, M-14."
+disposition = "fix-now"
+response = "since with non-empty after refused; since checked against the contract form; offset 0-10000; mail_list description notes offset shifts under sync. sec-4."
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+response = "since with non-empty after refused; since checked against the contract form; offset 0-10000; mail_list description notes offset shifts under sync. sec-4."
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "since only with empty after; date form checked; offset bounded; mail_list description states offset drift. (pi verify-b)"
+
+[[finding]]
+id = "F-24"
+status = "verified"
+severity = "nit"
+title = "Possible over-build"
+detail = "Topic listing showing toolset and the exact refusal wording are not required by DEC-025/029; header gap prose duplicates the Screwtape README. Source: C-17."
+disposition = "tolerated"
+response = "Topic listing shows the toolset so the operator can see mail-only topics (cheap, operator-facing); refusal wording left to implementation; gap prose reduced to one fixed header line."
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "tolerated"
+response = "Topic listing shows the toolset so the operator can see mail-only topics (cheap, operator-facing); refusal wording left to implementation; gap prose reduced to one fixed header line."
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "Tolerated items present and modest. (pi verify-c)"
+
+[[finding]]
+id = "F-25"
+status = "verified"
+severity = "blocker"
+title = "Per-message budget is escape-blind and the whole-message stub swallows ordinary mail"
+detail = "sec-4 Bounds. Budget = (50 KiB - 2 KiB) / limit (limit 10: 4915 B; 20: 2457 B; thread 100: 491 B; list 50: 983 B) while max_bytes and field caps count raw bytes; the three JSON-escaped characters cost 6 B each and are the commonest in quoted mail. Failures: limit 10 default, a body with 820 B of quote markers escapes past 4915 and the whole message (subject, from, preview) becomes an id-only stub; limit 20, 410 B suffices; mail_read max_bytes 32768 of escape-heavy text (about 192 KiB) stubs although max_bytes 1024 would show it; a normal 512 B subject + 512 B preview + 10-entry from is about 5.2 KiB, over the limit-20 budget; at thread and list maxima a minimal summary (ids + cursor, about 1.2 KiB) exceeds the budget, so every entry is a stub. The stub, meant for hostile mail, becomes the common path. Direction: measure caps on escaped bytes; give the body only the residual budget after the bounded non-body fields (truncate body, flag it) instead of stubbing; size non-body caps so they fit the smallest per-message budget; clamp thread and list limits to the summary size; a stub keeps id, received_at and a bounded subject. Sources: pi adv-budget F-3, F-4, F-7; verify-b N3; verify-c N1."
+disposition = "fix-now"
+route = "control"
+response = "Operator-agreed redesign (see F-3): rendered-byte measurement, core plus ordered fill, body cut to the remainder, no stub; thread and list limits clamped to 1-40 (default 20) so 40 cores fit. Control: VT-8 must reject the stub implementation: at limit 10 a body of 4096 greater-than characters keeps the core and addresses and is cut with output_truncated; the largest core fits its share at mail_list 40, mail_new 20 and mail_read. Host phase: the pure render module."
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+route = "control"
+response = "Operator-agreed redesign (see F-3): rendered-byte measurement, core plus ordered fill, body cut to the remainder, no stub; thread and list limits clamped to 1-40 (default 20) so 40 cores fit. Control: VT-8 must reject the stub implementation: at limit 10 a body of 4096 greater-than characters keeps the core and addresses and is cut with output_truncated; the largest core fits its share at mail_list 40, mail_new 20 and mail_read. Host phase: the pure render module."
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "Verified by pi r3-verify against design rev 36."
+
+[[finding]]
+id = "F-26"
+status = "verified"
+severity = "blocker"
+title = "mail_mailboxes has no result bound: 200 mailboxes can exceed 50 KiB"
+detail = 'sec-4 Bounds caps mailbox names at 128 B and the list at 200, but id and parent_id are JMAP ids up to 255 B each and there is no per-item budget or stub. 200 x (255 + 128 + 255 + about 70 key overhead) = 141,600 B raw, about 263 KiB with escaped names; 200 folders with 60 B names and 40 B ids is already about 42 KB. The "every result fits, by construction" claim fails for this tool. Direction: bound the rendered list against MAIL_MAX_BYTES (shown and total in the header) or cap per item. Source: pi adv-budget F-1.'
+disposition = "fix-now"
+route = "control"
+response = "sec-4: mailboxes are added in Screwtape's order while they fit in 48 KiB; the header says shown N of M; names capped at 128 bytes. Control: VT-8 mailboxes case and the property test must reject an implementation that bounds only names or count (e.g. 200 mailboxes with 255-byte ids and escaped names). Host phase: the pure render module."
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+route = "control"
+response = "sec-4: mailboxes are added in Screwtape's order while they fit in 48 KiB; the header says shown N of M; names capped at 128 bytes. Control: VT-8 mailboxes case and the property test must reject an implementation that bounds only names or count (e.g. 200 mailboxes with 255-byte ids and escaped names). Host phase: the pure render module."
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "Verified by pi r3-verify against design rev 36."
+
+[[finding]]
+id = "F-27"
+status = "verified"
+severity = "major"
+title = "Header is unbudgeted: held-back notices overflow HEADER_RESERVE"
+detail = "sec-4 Output. The items may use the full 48 KiB (20 x 2457 = 49,140 B, 12 B spare), so the header must stay at or under 2 KiB, but held-back messages are listed one notice each (id up to 255 B + RFC 3339 time + label, about 300 B). Five held-back at limit 10 already exceeds the reserve; 20 future-dated messages at limit 20 (a re-synced store with a broken clock; Email/import allows it) render about 55.7 KB, over MAIL_MAX_BYTES. Direction: held-back as a count plus the flag on each item in the data block, and an invariant header at or under HEADER_RESERVE with a test at limit 20 with 20 held back. Sources: pi adv-budget F-2, verify-b N1."
+disposition = "fix-now"
+route = "control"
+response = "sec-4: held back is a count in the header plus held_back: true on the item's core; the header holds only bounded fixed forms and fits HEADER_RESERVE by construction. Control: VT-8 renders the largest header (limit 20, all held back, every clamp, maximal cursor) and must reject per-message held-back notices in the header. Host phase: the pure render module."
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+route = "control"
+response = "sec-4: held back is a count in the header plus held_back: true on the item's core; the header holds only bounded fixed forms and fits HEADER_RESERVE by construction. Control: VT-8 renders the largest header (limit 20, all held back, every clamp, maximal cursor) and must reject per-message held-back notices in the header. Host phase: the pure render module."
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "Verified by pi r3-verify against design rev 36."
+
+[[finding]]
+id = "F-28"
+status = "verified"
+severity = "major"
+title = "List entries have count caps but no byte caps (message_id, references, keywords, ids)"
+detail = "sec-4 per-field caps bound only the entry count of message_id, in_reply_to, references, keywords, mailbox_ids and attachments, and no attachment id fields (part_id, blob_id, cid). One sender-controlled 1 MB Message-ID or References entry passes the projection whole and stubs the message everywhere, and DEC-026 claims every string is bounded. Direction: a byte cap per entry for each list, and VT-8 cases for them. Sources: pi verify-c N2, adv-budget F-8."
+disposition = "fix-now"
+route = "control"
+response = "sec-4 cap table: message_id, in_reply_to, references 256 bytes per entry; keywords 64; attachment name, type, part_id, cid 128; mailbox_ids and blob_id validated as JMAP Ids by the contract schema (sec-5). Control: VT-8 per-field caps must reject count-only caps (a 1 MB References entry). Host phase: the pure projection module."
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+route = "control"
+response = "sec-4 cap table: message_id, in_reply_to, references 256 bytes per entry; keywords 64; attachment name, type, part_id, cid 128; mailbox_ids and blob_id validated as JMAP Ids by the contract schema (sec-5). Control: VT-8 per-field caps must reject count-only caps (a 1 MB References entry). Host phase: the pure projection module."
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "Verified by pi r3-verify against design rev 36."
+
+[[finding]]
+id = "F-29"
+status = "verified"
+severity = "major"
+title = "Aggregate stdout ceiling fails a whole page with no stated recovery"
+detail = "sec-5 Bounded exec. Screwtape bounds only bodies; our field caps apply after the bytes cross the pipe. At limit 20 the 4 MiB ceiling leaves about 210 KB per envelope: 20 messages each with a 2,000-entry References chain and 300 parts (about 235 KB each) give 4.7 MB, so mail_new fails closed with no next. Each envelope is far under 4 MiB, so the stated residual risk understates it, and the design deleted the limit-1 retry rule, so the model has no documented way past the page (the stub never runs at exec level). Direction: state the recovery (on ceiling at limit above 1, retry with limit 1, in the error text and description, or the tool does it) and restate the residual as the single-envelope case only. Sources: pi adv-budget F-5, verify-b N2."
+disposition = "fix-now"
+route = "control"
+response = "sec-5: on the 4 MiB ceiling the error says so and, above limit 1, tells the model to retry with limit 1; the tool descriptions state the rule; the residual is restated as a single envelope over 4 MiB. Control: VT-10 must reject a ceiling error without the retry text at limit above 1, and one with it at limit 1; VT-9 pins the description. Host phase: the adapter and tools modules."
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+route = "control"
+response = "sec-5: on the 4 MiB ceiling the error says so and, above limit 1, tells the model to retry with limit 1; the tool descriptions state the rule; the residual is restated as a single envelope over 4 MiB. Control: VT-10 must reject a ceiling error without the retry text at limit above 1, and one with it at limit 1; VT-9 pins the description. Host phase: the adapter and tools modules."
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "Verified by pi r3-verify against design rev 36."
+
+[[finding]]
+id = "F-30"
+status = "verified"
+severity = "major"
+title = "Stub versus held-back order unstated: an oversize future-dated message can skip mail"
+detail = """sec-4 Cursor and Bounds. "A stub still counts toward next" and "next stops before the first held-back message" conflict for a message that is both, and the stub drops received_at. If held-back is judged on the projected item, X with received_at now + 3 days and oversize fields becomes a stub, next = X's cursor, and every real arrival in the next three days sorts before that cursor and is skipped permanently. Direction: held-back is judged on the raw validated envelope before projection and stubbing; a held-back stub does not advance next and carries the held-back flag; VT-9 adds oversize-and-held-back. Source: pi adv-budget F-6."""
+disposition = "fix-now"
+route = "control"
+response = "The stub is gone (F-25), so no item loses received_at. sec-4 Cursor and DEC-027 now state held back is judged on the validated envelope before projection, and the item carries held_back: true in its core. Control: VT-9 adds held back with cut fields and must reject an implementation that judges held back on the projected item or advances next past a held-back message. Host phase: the tools module."
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+route = "control"
+response = "The stub is gone (F-25), so no item loses received_at. sec-4 Cursor and DEC-027 now state held back is judged on the validated envelope before projection, and the item carries held_back: true in its core. Control: VT-9 adds held back with cut fields and must reject an implementation that judges held back on the projected item or advances next past a held-back message. Host phase: the tools module."
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "Verified by pi r3-verify against design rev 36."
+
+[[finding]]
+id = "F-31"
+status = "verified"
+severity = "major"
+title = "Non-topic create paths have no stated in-commit writer: attach new runs on the union until restart"
+detail = """sec-3 Creation describes init reading the topic record; the table gives attach new the profile default but names no mechanism. Today attach new passes no init (src/conversations.ts:181-183) and defaults will no longer carry extensions (root configure loses them), so the conversation stores no selection; pi-durable then selects every installed extension (harness/agent.js:266-271): on room that is interactive plus mail, both personas rendering key persona (last wins). The next restart backfills interactive and the list changes mid-transcript. DEC-024 (3)'s refusal of any unselected conversation is not carried as a check. Direction: every create path goes through one init that resolves the toolset (topic record or profile default) and writes name and list; reconcile keeps a check that no conversation lacks a selection. Also: cwd is still read before the commit (src/conversations.ts:140-159), so "nothing is read before the commit" holds for the toolset only. Source: pi adv-lifecycle F-1; attach-new code path verified by orchestrator."""
+disposition = "fix-now"
+route = "control"
+response = "sec-3 Creation: every create path passes one init, toolsetInit(profile, topic), and create in src/conversations.ts requires it, so no path can omit it; it resolves (topic record in tx, else profile default), checks, writes the entry toolset and configures extensions; pi-durable applies agent then init in the same commit (harness.js:269-272, verified). The cwd overclaim is fixed: only the toolset is said to be read in the commit. Control: VT-3 attach new must reject an implementation that creates without the init (selection absent, union of installed extensions); the required parameter makes omission a compile error. Host phase: the conversations phase, after the catalog exists."
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+route = "control"
+response = "sec-3 Creation: every create path passes one init, toolsetInit(profile, topic), and create in src/conversations.ts requires it, so no path can omit it; it resolves (topic record in tx, else profile default), checks, writes the entry toolset and configures extensions; pi-durable applies agent then init in the same commit (harness.js:269-272, verified). The cwd overclaim is fixed: only the toolset is said to be read in the commit. Control: VT-3 attach new must reject an implementation that creates without the init (selection absent, union of installed extensions); the required parameter makes omission a compile error. Host phase: the conversations phase, after the catalog exists."
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "Verified by pi r3-verify against design rev 36."
+
+[[finding]]
+id = "F-32"
+status = "verified"
+severity = "major"
+title = "Baseline fixture: capture order not checkable, registry composition unspecified (satan)"
+detail = "sec-7 VT-1 and sec-6 fixture row. Nothing records that the fixture came from pre-change code (no source commit, no registry composition), so regenerating it after the refactor passes trivially, including for the dropped tasks member it exists to catch. satan is not in daemonExtensions (src/daemon-extensions.ts:28-39); it is installed by satanTools (src/daemon-start.ts:162), so a fixture built like test/daemon-sections.test.ts lacks satan while toolsetList names it. Direction: the fixture carries its source commit and registry composition; state whether discovered satan is in the compared set; the design states the capture must precede any change to daemon-extensions.ts (a placement constraint for /plan). Source: pi adv-lifecycle F-3."
+disposition = "fix-now"
+route = "control"
+response = "sec-6 and VT-1: the fixture is built over the static registry (daemonExtensions; satan is discovered at run time and excluded; VT-2 checks a discovered satan is last), records its source commit and registry, and is captured before any change to src/daemon-extensions.ts or src/persona.ts. Control: VT-1 must reject a room list without tasks. Placement constraint for /plan: the capture is the first step of whichever phase first touches those two files, before any edit to them."
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+route = "control"
+response = "sec-6 and VT-1: the fixture is built over the static registry (daemonExtensions; satan is discovered at run time and excluded; VT-2 checks a discovered satan is last), records its source commit and registry, and is captured before any change to src/daemon-extensions.ts or src/persona.ts. Control: VT-1 must reject a room list without tasks. Placement constraint for /plan: the capture is the first step of whichever phase first touches those two files, before any edit to them."
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "Verified by pi r3-verify against design rev 36."
+
+[[finding]]
+id = "F-33"
+status = "verified"
+severity = "minor"
+title = "Fork remedy is wrong: a fork needs the toolset name, not an explicit list"
+detail = "sec-3 fork row (latent: no fork path today). indexConversation writes topic and parent only (src/topics.ts:79-95), so a forked mail conversation gets no entry toolset; reconcile step 1 gives it the default and step 3 rewrites its list to interactive at the next restart, contrary to DEC-025 (1) forks inherit. The stated worry that pi's as-of copy may predate the list is unsupported: AgentDoc is fork asOf and createAgent returns early for forks (harness/agent.js:29-37, 145-147). Direction: a fork's entry inherits the parent entry's toolset (index hook or reconcile step 1), VT-5 adds a fork case on a handcrafted store. Sources: pi adv-lifecycle F-2, verify-a N3."
+disposition = "fix-now"
+response = "sec-3 fork row: the index hook gives a fork's entry its parent entry's toolset, as it already gives the topic (src/topics.ts:85-90); pi-durable copies the agent document as of the fork point, so the list is inherited. The explicit-list remedy is removed. VT-5 adds a fork on a handcrafted store, unchanged across a restart. sec-6 topics row updated."
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+response = "sec-3 fork row: the index hook gives a fork's entry its parent entry's toolset, as it already gives the topic (src/topics.ts:85-90); pi-durable copies the agent document as of the fork point, so the list is inherited. The explicit-list remedy is removed. VT-5 adds a fork on a handcrafted store, unchanged across a restart. sec-6 topics row updated."
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "Verified by pi r3-verify against design rev 36."
+
+[[finding]]
+id = "F-34"
+status = "verified"
+severity = "minor"
+title = 'Reconcile wording: scan predicate, "replaces the bare backfill", unreachable step 4'
+detail = 'sec-3 and sec-6. "Pages conversations the way backfillIndex does" points at unbackfilled, which filters to ownerless records still needing an entry (src/topics.ts:205-215): after backfillIndex that set is empty, so a copied reconcile visits nothing. "Replaces the bare backfill" (sec-3, sec-6) while running after backfillIndex reads as removing the topic backfill, which still indexes every unindexed ownerless conversation. Step 4 covers task-owned conversations, which nothing in src/ creates today (only test/harness-fixture.ts). Direction: state the scan (all conversations, any owner), say backfillIndex stays and the reconcile replaces only the toolset backfill, and keep or drop step 4 deliberately. Sources: pi adv-lifecycle F-4, F-6; verify-a N1 (its ownerless-hole claim does not hold: backfillIndex covers it).'
+disposition = "fix-now"
+response = "sec-3: the reconcile adds the toolset backfill; backfillIndex stays; it scans every conversation whatever its owner. Step 4 is kept deliberately (F-10's verified fix: refusing a task-owned conversation was unrecoverable) and noted as covering a future case. sec-6 session row updated."
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+response = "sec-3: the reconcile adds the toolset backfill; backfillIndex stays; it scans every conversation whatever its owner. Step 4 is kept deliberately (F-10's verified fix: refusing a task-owned conversation was unrecoverable) and noted as covering a future case. sec-6 session row updated."
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "Verified by pi r3-verify against design rev 36."
+
+[[finding]]
+id = "F-35"
+status = "verified"
+severity = "minor"
+title = "Runner keeps an admission writer and stores no toolset name"
+detail = "sec-3 runner row: at create, not only at admission, keeps the admission configure (src/runner/run.ts:365-374) rewriting extensions every run, against DEC-025 (1) never rewritten. The runner opens Harness directly (src/runner/start.ts:152), with no index hook and no reconcile, so job conversations hold a frozen list and no name: the failure sec-3's rationale rejects for daemon conversations. Acceptable while job is the only runner toolset, but the design should say so and decide the admission write. Sources: pi adv-lifecycle F-5, verify-a N2."
+disposition = "fix-now"
+response = "sec-3: the admission configure (src/runner/run.ts:365-374) stops writing extensions; the runner storing no name is stated and accepted while job is its only toolset, with name storage arriving with a second runner toolset, like the mode key. VT-3 checks admission leaves the stored list unchanged."
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+response = "sec-3: the admission configure (src/runner/run.ts:365-374) stops writing extensions; the runner storing no name is stated and accepted while job is its only toolset, with name storage arriving with a second runner toolset, like the mode key. VT-3 checks admission leaves the stored list unchanged."
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "Verified by pi r3-verify against design rev 36."
+
+[[finding]]
+id = "F-36"
+status = "verified"
+severity = "minor"
+title = "VT-4 concurrency test cannot fail"
+detail = "sec-7 VT-4. openTopic is serialised (src/conversations.ts:191), so a simulated race cannot interleave set-topic with creation, and a regression that reads the topic record before the commit still passes. Direction: assert at the store level that resolution happens inside the creating commit (e.g. a set-topic staged in the same commit before init is what the entry records), or name the incorrect implementation the test rejects. Source: pi verify-a N4."
+disposition = "fix-now"
+response = "VT-4 restated at the store level: in one commit, a topic record staged before toolsetInit runs is what the entry records; an implementation reading the record before the commit fails it."
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+response = "VT-4 restated at the store level: in one commit, a topic record staged before toolsetInit runs is what the entry records; an implementation reading the record before the commit fails it."
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "Verified by pi r3-verify against design rev 36."
+
+[[finding]]
+id = "F-37"
+status = "verified"
+severity = "minor"
+title = "Decisions lag the design: DEC-026 and DEC-030"
+detail = "DEC-026 still says the over-budget error (retry with limit 1) can always be satisfied and that limit x max_bytes fits with headroom; design.md has no over-budget error and the headroom holds for raw bytes only. DEC-030 (2) names only the Protocol override, while sec-2 has mail.txt supersede every unlisted tool or write surface too. Direction: refresh both after the bounding mechanism settles. Sources: pi verify-a, verify-b, adv-budget F-8."
+disposition = "fix-now"
+response = "DEC-026 choice rewritten to the rendered-byte core-and-fill mechanism, the ceiling retry rule and per-verb provenance; the stub added to its alternatives. DEC-030 (2) now names the full supersession. DEC-027 refined for held back judged before projection and flagged. Swept DEC-024, DEC-025, DEC-029: consistent with the revised sec-3."
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+response = "DEC-026 choice rewritten to the rendered-byte core-and-fill mechanism, the ceiling retry rule and per-verb provenance; the stub added to its alternatives. DEC-030 (2) now names the full supersession. DEC-027 refined for held back judged before projection and flagged. Swept DEC-024, DEC-025, DEC-029: consistent with the revised sec-3."
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "Verified by pi r3-verify against design rev 36."
+
+[[finding]]
+id = "F-38"
+status = "verified"
+severity = "nit"
+title = "sec-2 cites VT-5 for the baseline; it is VT-1"
+detail = 'sec-2 "VT-5 pins this against a baseline captured before the change"; sec-7 VT-5 is the reconcile, the baseline is VT-1. Source: pi verify-c N3.'
+disposition = "fix-now"
+response = "sec-2 now cites VT-1."
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+response = "sec-2 now cites VT-1."
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "Verified by pi r3-verify against design rev 36."
+
+[[finding]]
+id = "F-39"
+status = "verified"
+severity = "major"
+title = "v1 fields outside the core, the fill order and cut"
+detail = "sec-4 Bounds names core fields, an ordered fill and caps, but v1 also carries is_seen, is_flagged, has_attachment, cursor (summaries), sent_at, size, provenance.email_state, body encoding flags and attachment size/disposition. Rendered unaccounted, at limit 40 (share 1228 B) the booleans plus a 276-byte cursor add about 340 B per item, about 13.6 KiB, over MAIL_MAX_BYTES. Dropped silently, triage cannot see unread or flagged state, which the unread filter presumes. Settle: name every projected field in exactly one of core, fill or not-projected; put the triage booleans in the core and restate the bound. Source: pi r3-adv F1."
+disposition = "fix-now"
+route = "control"
+response = "sec-4: the summary core adds is_seen, is_flagged, has_attachment; the read core adds is_encoding_problem and conversion_failed; the fill adds sent_at and size; attachments carry size and disposition (32 bytes); not projected: the per-item cursor and provenance other than account_id; the projection schema keeps only named fields. Bound restated: summary core at most 1152 bytes (worst case 1023). DEC-026 refreshed. Control: VT-8 asserts fields outside the projection are not rendered, and the largest-core case includes every flag. Host phase: the pure projection and render modules."
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+route = "control"
+response = "sec-4: the summary core adds is_seen, is_flagged, has_attachment; the read core adds is_encoding_problem and conversion_failed; the fill adds sent_at and size; attachments carry size and disposition (32 bytes); not projected: the per-item cursor and provenance other than account_id; the projection schema keeps only named fields. Bound restated: summary core at most 1152 bytes (worst case 1023). DEC-026 refreshed. Control: VT-8 asserts fields outside the projection are not rendered, and the largest-core case includes every flag. Host phase: the pure projection and render modules."
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "Verified by pi r4 against design rev 40."
+
+[[finding]]
+id = "F-40"
+status = "verified"
+severity = "major"
+title = "A required toolsetInit overwrites a fork's inherited toolset"
+detail = "sec-3: the index hook (conversationCreated) runs before agent and init (pi-durable transaction.js:147, types.d.ts:568-569), so it gives a fork its parent's toolset, and then the required toolsetInit(profile, topic) resolves the profile default and writes interactive: a fork of a mail conversation becomes interactive in its creating commit, and reconcile step 2 does not refuse because interactive is allowed. Contrary to DEC-025 (1). VT-5 on a handcrafted store cannot catch the ordering. Settle: toolsetInit keeps a toolset the hook already wrote (a fork) before consulting topic record and default; VT-5 forks through the harness. Source: pi r3-adv F2."
+disposition = "fix-now"
+route = "control"
+response = "sec-3 Creation: toolsetInit resolves in order (1) a toolset the index hook already wrote (only for a fork, from its parent), (2) the topic record in tx, (3) the profile default. Fork row updated. Control: VT-5 forks a mail conversation through the harness and must reject an init that overwrites the hook's toolset; a restart leaves entry and list unchanged."
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+route = "control"
+response = "sec-3 Creation: toolsetInit resolves in order (1) a toolset the index hook already wrote (only for a fork, from its parent), (2) the topic record in tx, (3) the profile default. Fork row updated. Control: VT-5 forks a mail conversation through the harness and must reject an init that overwrites the hook's toolset; a restart leaves entry and list unchanged."
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "Verified by pi r4 against design rev 40."
+
+[[finding]]
+id = "F-41"
+status = "verified"
+severity = "major"
+title = "One envelope over 4 MiB stalls mail_new permanently"
+detail = 'sec-5 residual: an envelope over the ceiling fails read --after at every limit (no exclude list, DEC-027), so next is never produced and every later message is unreachable through mail_new until the message is deleted. Triggers: about 20,000 MIME parts in the attachment list, or a very long References chain; screwtape bounds only bodies. This breaches "a hostile message degrades only itself" at the exec boundary. Settle: per-envelope bounds on list fields in the screwtape contract, an escape that yields the cursor, or an explicitly accepted risk with an owner. Source: pi r3-adv F3.'
+disposition = "fix-now"
+route = "control"
+response = "Operator ruling (2026-10-28, reply: 1. and backlog in screwtape). sec-4 Cursor: when read --after at limit 1 hits the stdout ceiling, mail_new calls listAfter (list --after c --limit 1, same filters; the summary has no body, references or attachments), shows that message's core with unreadable: over 4 MiB, and next is its cursor, subject to the held-back rule. Port gains listAfter (sec-5, sec-6). Residual narrowed to a summary over 4 MiB, accepted. Screwtape-side per-envelope list bounds: screwtape IMP-002. Control: VT-9 must reject an implementation that fails the call or leaves next unchanged at limit 1 on a ceiling failure, and one that advances next past a held-back unreadable message. Host phase: the tools module, with a fake MailSource able to raise the ceiling failure."
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+route = "control"
+response = "Operator ruling (2026-10-28, reply: 1. and backlog in screwtape). sec-4 Cursor: when read --after at limit 1 hits the stdout ceiling, mail_new calls listAfter (list --after c --limit 1, same filters; the summary has no body, references or attachments), shows that message's core with unreadable: over 4 MiB, and next is its cursor, subject to the held-back rule. Port gains listAfter (sec-5, sec-6). Residual narrowed to a summary over 4 MiB, accepted. Screwtape-side per-envelope list bounds: screwtape IMP-002. Control: VT-9 must reject an implementation that fails the call or leaves next unchanged at limit 1 on a ceiling failure, and one that advances next past a held-back unreadable message. Host phase: the tools module, with a fake MailSource able to raise the ceiling failure."
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "Verified by pi r4 against design rev 40."
+
+[[finding]]
+id = "F-42"
+status = "verified"
+severity = "major"
+title = "received_at has a form check but no length bound"
+detail = "sec-4 core bound relies on received_at validated as RFC 3339, whose fractional seconds are 1*DIGIT, unbounded. At limit 40 the core has about 280 B of slack; a received_at with 300+ fractional digits makes each core about 1.5 KB and 40 of them exceed MAIL_MAX_BYTES. Settle: bound it (e.g. render it normalised by our code) and generate it in VT-8. Source: pi r3-verify N1."
+disposition = "fix-now"
+route = "control"
+response = "sec-4: received_at is validated as RFC 3339 and rendered by our code as UTC to the millisecond (24 bytes), never as Screwtape printed it; sec-5 notes it. Control: VT-8 must reject an implementation that renders the raw value: a received_at with long fractional seconds renders as 24 bytes. Host phase: the pure render module."
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+route = "control"
+response = "sec-4: received_at is validated as RFC 3339 and rendered by our code as UTC to the millisecond (24 bytes), never as Screwtape printed it; sec-5 notes it. Control: VT-8 must reject an implementation that renders the raw value: a received_at with long fractional seconds renders as 24 bytes. Host phase: the pure render module."
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "Verified by pi r4 against design rev 40."
+
+[[finding]]
+id = "F-43"
+status = "verified"
+severity = "minor"
+title = "Bounds arithmetic: read core is about 2.6 KiB, and line separators are uncounted"
+detail = "sec-4 states a read core of at most 2 KiB, but its own caps give about 2.6 KiB (message_id 5 x 256 alone is 1280). The share floor(48 KiB / limit) ignores the newline between items: 40 x 1228 = 49,120 leaves 32 B for 39-40 newlines, so a tuned page plus a full header is 8 B over 50 KiB. Settle: subtract the separators from the share and state the read bound from the caps. Sources: pi r3-verify N2, r3-adv F5."
+disposition = "fix-now"
+response = "Contest accepted; it also exposed a wider gap: screwtape's bodies is a list of parts with per-part flags, and the design never projected it, so 'body flags' in the read core grew with the part count. sec-4: bodies fold into one body (texts joined in screwtape order) and one fixed flag set (is_truncated/is_encoding_problem/conversion_failed = any part; truncated_by = distinct reasons; output_truncated = screwtape --max-bytes cut or our body cut). Two named cores: the summary core for mail_new, mail_list, mail_thread; the read core (summary + message_id, account_id, body flags) for mail_read only. mail_new's body flags (cut name body_flags) and body go last in its fill; its message_id/account_id are not shown. Summary worst case recounted to 1064 B (cut name list 165 B), bound 1152 unchanged. VT-8 gains the mail_new core-keys and many-parts cases. DEC-026 updated."
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+response = "sec-4: share = floor((48 KiB - (limit - 1)) / limit), the newlines subtracted (1227 bytes at limit 40); read core stated at most 3 KiB (worst case about 2.7 KiB). VT-8 renders a limit-40 page of items tuned to their share with the largest header, counting newlines."
+
+[[finding.turn]]
+act = "contest"
+role = "raiser"
+note = "mail_new calls readAfter, so its items are read envelopes, but sec-4 gives message_id, account_id and the body flags to mail_read alone. If mail_new used the read core (about 2.7 KiB), limit 20 (share 2456) would overflow; if it uses the summary core, the design must say so and that its body sits in the fill. Orchestrator note: the provenance bullet already lists mail_new among summaries, so this is likely a clarification (summary core plus body in the fill), not a redesign. (pi r4)"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+response = "Contest accepted; it also exposed a wider gap: screwtape's bodies is a list of parts with per-part flags, and the design never projected it, so 'body flags' in the read core grew with the part count. sec-4: bodies fold into one body (texts joined in screwtape order) and one fixed flag set (is_truncated/is_encoding_problem/conversion_failed = any part; truncated_by = distinct reasons; output_truncated = screwtape --max-bytes cut or our body cut). Two named cores: the summary core for mail_new, mail_list, mail_thread; the read core (summary + message_id, account_id, body flags) for mail_read only. mail_new's body flags (cut name body_flags) and body go last in its fill; its message_id/account_id are not shown. Summary worst case recounted to 1064 B (cut name list 165 B), bound 1152 unchanged. VT-8 gains the mail_new core-keys and many-parts cases. DEC-026 updated."
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "Verified by pi r5 against design rev 42."
+
+[[finding]]
+id = "F-44"
+status = "verified"
+severity = "minor"
+title = "next reaches the trusted header as free text"
+detail = "sec-4 Output: the cursor is checked only for control characters and 300 bytes, then written unescaped in the trusted header, the one place outside the untrusted framing where screwtape-supplied bytes reach the model. Settle: write it as an escaped JSON string (keeping the cursor opaque) or validate a fixed form. Source: pi r3-adv F4."
+disposition = "fix-now"
+response = "sec-4 Output: next is written as a JSON string, escaped like the data block, so the cursor stays opaque (DEC-027) and its text is data. VT-8 checks it. DEC-026 notes it."
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+response = "sec-4 Output: next is written as a JSON string, escaped like the data block, so the cursor stays opaque (DEC-027) and its text is data. VT-8 checks it. DEC-026 notes it."
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "Verified by pi r4 against design rev 40."
+
+[[finding]]
+id = "F-45"
+status = "verified"
+severity = "minor"
+title = "Runner list frozen at create, with no installed-name check"
+detail = "sec-3 runner row: removing the admission write freezes a job conversation's list at create; a job queued across an upgrade that renames job-guard runs with no tenancy guard, because pi-durable skips unknown names silently (agent.js:277-281) and the installed-name check exists only on the daemon path. Settle: keep re-deriving the job list at admission (the runner's analogue of reconcile step 3) and run the installed-name check at runner start. Source: pi r3-adv F6."
+disposition = "fix-now"
+response = "Reverses the F-35 change: the admission configure keeps writing the job list, from toolsetList, as the runner's re-derivation (analogue of reconcile step 3); both writes use the same source. Runner start runs the installed-name check, so a renamed job-guard refuses start. sec-3, sec-6, VT-3 updated."
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+response = "Reverses the F-35 change: the admission configure keeps writing the job list, from toolsetList, as the runner's re-derivation (analogue of reconcile step 3); both writes use the same source. Runner start runs the installed-name check, so a renamed job-guard refuses start. sec-3, sec-6, VT-3 updated."
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "Verified by pi r4 against design rev 40."
+
+[[finding]]
+id = "F-46"
+status = "verified"
+severity = "minor"
+title = "Baseline pins section texts rendered from the live corpus"
+detail = "sec-7 VT-1: persona text is read from the corpus at request time (src/persona.ts:37-39). If the fixture is built over ~/satan-corpus, a routine operator edit fails VT-1, and the natural remedy, re-capturing, also erases the guard against a dropped member. Settle: build the baseline and the comparison over a fixed test corpus. Source: pi r3-verify N3."
+disposition = "fix-now"
+response = "sec-6 fixture row and VT-1: the baseline and the comparison are built over a fixed test corpus under test/fixtures/, never ~/satan-corpus."
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+response = "sec-6 fixture row and VT-1: the baseline and the comparison are built over a fixed test corpus under test/fixtures/, never ~/satan-corpus."
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "Verified by pi r4 against design rev 40."
+
+[[finding]]
+id = "F-47"
+status = "verified"
+severity = "minor"
+title = "Unreadable pass cannot identify its object across two calls"
+detail = "sec-4 Cursor: the ceiling failure returns no data and list --after is a second transaction. If a sync between them marks the oversize message A seen (with --unread) or deletes it, list returns B, which mail_new labels unreadable: over 4 MiB, advancing past B without reading it. Settle: label what is known (read failed over 4 MiB; summary shown), state the two-call race as an accepted residual, or compare ids. Source: pi r4 D-1."
+disposition = "fix-now"
+response = "sec-4 Cursor: label states only what is known, unreadable: 'read over 4 MiB'. The two-call race (a sync removes or marks seen the oversize message between read --after and listAfter, so the next message is shown as unreadable and passed) is stated as an accepted residual: the item still carries its id, so mail_read reaches it. No id comparison is possible: the failed read returns no data. VT-9 pins the label. DEC-026 notes the residual."
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+response = "sec-4 Cursor: label states only what is known, unreadable: 'read over 4 MiB'. The two-call race (a sync removes or marks seen the oversize message between read --after and listAfter, so the next message is shown as unreadable and passed) is stated as an accepted residual: the item still carries its id, so mail_read reaches it. No id comparison is possible: the failed read returns no data. VT-9 pins the label. DEC-026 notes the residual."
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "Verified by pi r5 against design rev 42."
+
+[[finding]]
+id = "F-48"
+status = "verified"
+severity = "minor"
+title = "Escaped next can consume most of HEADER_RESERVE"
+detail = """sec-4 Output: next is checked only for control characters and 300 bytes; escaped as JSON with the three escapes at 6 bytes each it can render about 1800 bytes, leaving about 240 B of the 2 KiB reserve for the rest, so "fits by construction" is unproven. Settle: validate cursors to the contract's canonical form (empty or int:JMAP-id, contract C3), or budget the escaped length; VT-8's largest header uses a hostile cursor. Source: pi r4 D-2."""
+disposition = "fix-now"
+response = "sec-4 Inputs: after must be a canonical cursor (contract C3: '' or <ms>:<id>, ms a decimal int64 as screwtape prints it, id in JMAP Id form); sec-5 validation checks each returned cursor the same way, so next is canonical. The form has no character JSON escaping lengthens, so next renders in at most 278 bytes; HEADER_RESERVE now bounds it. VT-8 renders the largest header with a 278-byte next; VT-9 refuses +5:x, 05:x, -0:x and an int64 overflow; VT-10 fails closed on a non-canonical cursor. Sibling fixed: after previously reached argv unchecked."
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+response = "sec-4 Inputs: after must be a canonical cursor (contract C3: '' or <ms>:<id>, ms a decimal int64 as screwtape prints it, id in JMAP Id form); sec-5 validation checks each returned cursor the same way, so next is canonical. The form has no character JSON escaping lengthens, so next renders in at most 278 bytes; HEADER_RESERVE now bounds it. VT-8 renders the largest header with a 278-byte next; VT-9 refuses +5:x, 05:x, -0:x and an int64 overflow; VT-10 fails closed on a non-canonical cursor. Sibling fixed: after previously reached argv unchecked."
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "Verified by pi r5 against design rev 42."
+
+[[finding]]
+id = "F-49"
+status = "verified"
+severity = "minor"
+title = '"No path can omit toolsetInit" does not cover forks'
+detail = "sec-3:111. pi-durable forks through Harness.fork / tx.forkConversation, not malebolge's create wrapper (src/conversations.ts:104-113), and nothing in src/ forks, so toolsetInit's step 1 has no production caller; a fork's real protection is the hook plus AgentDoc fork asOf. VT-5's fork case would hand-wire the init. Settle: say forks are outside create's guarantee and are covered by the hook and the asOf copy (VT-5 asserts that without the init), or route forks through a create-like constructor. Source: pi r4 D-3."
+disposition = "fix-now"
+response = "Observation verified: src/ never forks; malebolge's create (src/conversations.ts:108) is not on pi-durable's fork path. sec-3: toolsetInit loses its fork step (resolution is topic record, then profile default); creation text scopes the guarantee to daemon create paths and says a fork never runs toolsetInit. Fork row: the index hook copies the parent entry's toolset, AgentDoc fork asOf copies the list, and the startup reconcile re-derives the list from the inherited name. VT-5's fork case asserts entry and list with no toolsetInit, and across a restart."
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+response = "Observation verified: src/ never forks; malebolge's create (src/conversations.ts:108) is not on pi-durable's fork path. sec-3: toolsetInit loses its fork step (resolution is topic record, then profile default); creation text scopes the guarantee to daemon create paths and says a fork never runs toolsetInit. Fork row: the index hook copies the parent entry's toolset, AgentDoc fork asOf copies the list, and the startup reconcile re-derives the list from the inherited name. VT-5's fork case asserts entry and list with no toolsetInit, and across a restart."
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "Verified by pi r5 against design rev 42."
+
+[[finding]]
+id = "F-50"
+status = "verified"
+severity = "minor"
+title = "Block delimiters fall outside both budgets"
+detail = """sec-4 Bounds: the 48 KiB item budget subtracts only the limit-1 separators; the <mail-data untrusted="true"> line (29 B), </mail-data> (12 B) and the newlines after the header and the last item are charged to neither HEADER_RESERVE nor the share. Largest header 2048 + 40 items at 1227 (49,119) + about 44 B = 51,211 > 51,200. Settle: charge the wrapper inside HEADER_RESERVE and state it; VT-8's largest-header case uses the reduced header figure. Source: pi r5 NEW-1."""
+disposition = "fix-now"
+response = 'sec-4 Bounds: HEADER_RESERVE (2 KiB) now holds the header and the block wrapper (<mail-data untrusted="true"> and </mail-data> lines and surrounding newlines, 64 B charged); the header itself has 1984 B. VT-8: the largest header fits 1984 B, and with the wrapper fits HEADER_RESERVE. DEC-026 updated.'
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+response = 'sec-4 Bounds: HEADER_RESERVE (2 KiB) now holds the header and the block wrapper (<mail-data untrusted="true"> and </mail-data> lines and surrounding newlines, 64 B charged); the header itself has 1984 B. VT-8: the largest header fits 1984 B, and with the wrapper fits HEADER_RESERVE. DEC-026 updated.'
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "Verified by pi r6 against design rev 44."
+
+[[finding]]
+id = "F-51"
+status = "verified"
+severity = "minor"
+title = "in_store sits in no bucket"
+detail = "sec-4 Core: contract v1 thread items are summary + in_store:true, or {id, in_store:false}; Output says in_store:false items are items too, but the summary core does not name in_store and the projection keeps only named fields, so in-store and missing entries render alike (or the flag is unaccounted). Settle: add in_store to the summary core for thread items and include it in the largest-core case. Source: pi r5 NEW-2."
+disposition = "fix-now"
+response = "sec-4 Core: thread items carry in_store in the summary core; an entry not in the store renders as id and in_store:false only. Summary worst case 1068 B (in_store 17), bound 1152. VT-8 covers both thread shapes and includes in_store in the largest-core case."
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+response = "sec-4 Core: thread items carry in_store in the summary core; an entry not in the store renders as id and in_store:false only. Summary worst case 1068 B (in_store 17), bound 1152. VT-8 covers both thread shapes and includes in_store in the largest-core case."
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "Verified by pi r6 against design rev 44."
+
+[[finding]]
+id = "F-52"
+status = "verified"
+severity = "minor"
+title = "body_flags group has no stated shape or fit rule"
+detail = "sec-4 Fill: 'the body flags, as one group named body_flags in cut' does not say whether they render nested or top-level (mail_read has them top-level), whether the group is added whole, and a dropped group hides output_truncated, including screwtape's --max-bytes cut. Settle: top-level keys, added whole or not at all, a dropped group stated as truncation unknown; pin in VT-8. Source: pi r5 NEW-3."
+disposition = "fix-now"
+response = "Observation accepted; repair differs from the proposal. The body flags render in at most 142 B and mail_new's share at limit 20 is 2456 B, so they always fit: they are now in mail_new's core (summary core plus body flags, at most 1280 B, worst case 1193), as top-level keys like mail_read's. The body_flags cut group and its 'truncation unknown' state are gone; only the body sits in mail_new's fill after the other fields. VT-8 checks the largest mail_new core at limit 20."
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+response = "Observation accepted; repair differs from the proposal. The body flags render in at most 142 B and mail_new's share at limit 20 is 2456 B, so they always fit: they are now in mail_new's core (summary core plus body flags, at most 1280 B, worst case 1193), as top-level keys like mail_read's. The body_flags cut group and its 'truncation unknown' state are gone; only the body sits in mail_new's fill after the other fields. VT-8 checks the largest mail_new core at limit 20."
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "Verified by pi r6 against design rev 44."
+
+[[finding]]
+id = "F-53"
+status = "verified"
+severity = "minor"
+title = "A fork with no parent entry is silently widened"
+detail = "sec-3 fork row: the hook copies the toolset from the parent entry, but writes no entry for a task-owned conversation (src/topics.ts:82-85), so an ownerless fork of a task-owned parent gets an entry with no toolset; reconcile step 1 then gives it the profile default, widening a mail lineage to interactive, which step 2 cannot catch. Settle: reconcile refuses an entry with a parent and no toolset instead of defaulting it; VT-5 case. Source: pi r5 NEW-4."
+disposition = "fix-now"
+response = "Verified: indexConversation returns early for a task-owned record (src/topics.ts:82-85), so a fork of one would have no parent entry to copy from. sec-3 reconcile step 1: an entry with a parent and no toolset refuses startup, naming it, instead of taking the default. VT-5 case added."
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+response = "Verified: indexConversation returns early for a task-owned record (src/topics.ts:82-85), so a fork of one would have no parent entry to copy from. sec-3 reconcile step 1: an entry with a parent and no toolset refuses startup, naming it, instead of taking the default. VT-5 case added."
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "Verified by pi r6 against design rev 44."
+
+[[finding]]
+id = "F-54"
+status = "verified"
+severity = "nit"
+title = "Canonical-cursor rationale overstates screwtape's parse"
+detail = "sec-4 Inputs: 'Screwtape would refuse anything else' is false for the id half: contract cursor.parse splits at the first ':' and keeps later colons, so 5:a:b is canonical to screwtape and refused by us. The rule is fine (fail closed; store ids are JMAP Ids); the justification is wrong. Source: pi r5 F-48 note."
+disposition = "fix-now"
+response = "sec-4 Inputs: rationale now says the check is stricter than screwtape's parse (which accepts ':' in the id) and that store ids are JMAP Ids, so no real cursor is refused."
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+response = "sec-4 Inputs: rationale now says the check is stricter than screwtape's parse (which accepts ':' in the id) and that store ids are JMAP Ids, so no real cursor is refused."
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "Verified by pi r6 against design rev 44."
+
+[[finding]]
+id = "F-55"
+status = "verified"
+severity = "major"
+title = "Fork refusal breaks the one-time backfill"
+detail = "sec-3 reconcile step 1 (rev 44) refuses every entry with a parent and no toolset, but backfillIndex (src/topics.ts:188-196) writes a stored pre-slice fork's entry with its parent, so a legitimate stored fork refuses startup, although its parent entry is defaulted in the same pass and no widening is possible. Settle: refuse only when the parent entry is missing; otherwise take the parent entry's toolset, resolved parent first. VT-5: a stored pre-slice fork is backfilled, not refused. Source: pi r6 NEW-1."
+disposition = "fix-now"
+route = "review"
+response = "Verified: backfillIndex writes a stored fork's entry with its parent (src/topics.ts:188-196). sec-3 step 1: an entry without toolset takes the profile default if it has no parent, else its parent entry's toolset, resolved parent first; only a fork whose parent has no entry refuses startup. VT-5: a stored pre-slice fork is backfilled from its parent; a fork with no parent entry refuses."
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+route = "review"
+response = "Verified: backfillIndex writes a stored fork's entry with its parent (src/topics.ts:188-196). sec-3 step 1: an entry without toolset takes the profile default if it has no parent, else its parent entry's toolset, resolved parent first; only a fork whose parent has no entry refuses startup. VT-5: a stored pre-slice fork is backfilled from its parent; a fork with no parent entry refuses."
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "Verified by pi r7 against design rev 46."
+
+[[finding]]
+id = "F-56"
+status = "verified"
+severity = "nit"
+title = "Body-flag bytes and mail_new worst case miscounted"
+detail = "sec-4 Bounds: states the body flags add at most 142 B and mail_new's worst core 1193. Raiser recount gives 137 and 1205; the 1280 bound holds either way. Source: pi r6 NEW-2."
+disposition = "fix-now"
+response = "Exact maximum computed over every legal flag combination (is_truncated iff truncated_by non-empty), including the leading comma: 141 B. The raiser's 1205 added in_store, which mail_new items do not carry; worst mail_new core is 1051 + 141 = 1192. sec-4 states 141 and 1192; bound 1280 unchanged."
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+response = "Exact maximum computed over every legal flag combination (is_truncated iff truncated_by non-empty), including the leading comma: 141 B. The raiser's 1205 added in_store, which mail_new items do not carry; worst mail_new core is 1051 + 141 = 1192. sec-4 states 141 and 1192; bound 1280 unchanged."
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "Verified by pi r7 against design rev 46."
+
+# Findings are append-only `[[finding]]` tables, added by `review raise`.
+# Empty here at creation — a fresh review is Active, awaiting the raiser.

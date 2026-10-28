@@ -1,0 +1,33 @@
+schema = "doctrine.knowledge"
+version = 1
+
+id = 27
+slug = "mail-cursor-stateless"
+title = "mail_new is stateless: cursor in, next out; no exclude list"
+record_kind = "decision"
+status = "accepted"
+created = "2026-10-27"
+updated = "2026-10-27"
+tags = []
+
+[facet]                         # every field typed; seeded empty (captured later)
+context = "Arrival cursor gaps (screwtape DEC-028): mail entering the window with an older received_at, and messages that start matching a filter after the cursor passed them, are never returned. A future-dated received_at can move a cursor past later arrivals."
+choice = "The caller holds the cursor. mail_new takes after ('' to start, with since) and returns next = cursor of the last item screwtape returned and caught_up = fewer than limit returned; every mail tool is replay: safe. No exclude/seen-ids parameter. The header states the late-arrival and filter gaps. A caller that re-reads an overlap and filters ids pages on the raw page: next and caught_up from screwtape's N items, not the K kept. Refined 2026-10-28 (RV-015 F-5, F-30): when no item is returned, next is the input after. A message whose received_at is later than now plus a skew allowance is held back, judged on the validated envelope before projection: next stops before it (or stays the input after), caught_up is true, and it is shown again, flagged held_back, on each poll until its date arrives; arrivals sort by received_at, so new mail sorts ahead of it and paging never stalls."
+alternatives = ["An exclude list of seen ids in mail_new", "A screwtape --exclude flag (deferred by screwtape DEC-032 until evidence)"]
+rationale = "An exclude list does not close either gap and adds a paging trap; dedup belongs to the cursor holder. Evidence (messages per sync older than the previous newest) can justify a screwtape --exclude later."
+consequences = ["Raw-page rule to be stated in the screwtape README contract (offered by the screwtape agent for SL-003 PHASE-06 EX-1)"]
+decided_by = "operator"
+decided_on = "2026-10-28"
+
+[evidence]                      # free-text citations (supports / contradicts / notes)
+supports    = []
+contradicts = []
+notes       = []
+
+[relationships]                 # verb-written edges (set by doctrine supersede)
+supersedes    = []   # record ids this one replaces (set by doctrine supersede)
+superseded_by = []   # set on superseded predecessor (verb-written)
+
+[[relation]]
+label = "shapes"
+target = "SL-005"

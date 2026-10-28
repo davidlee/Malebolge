@@ -1,0 +1,33 @@
+schema = "doctrine.knowledge"
+version = 1
+
+id = 24
+slug = "explicit-toolset-selection"
+title = "Every conversation carries an explicit toolset selection; stored ones are backfilled at startup"
+record_kind = "decision"
+status = "accepted"
+created = "2026-10-27"
+updated = "2026-10-27"
+tags = []
+
+[facet]                         # every field typed; seeded empty (captured later)
+context = "pi-durable gives a conversation with no stored extensions selection every installed extension (fail open). Daemon conversations, root included, are created without one, and stored conversations have none."
+choice = "(1) Every create path (daemon create, root, runner job) sets extensions from a toolset named as a required argument. (2) At daemon startup, before the session resumes, every stored conversation without a selection is backfilled to its profile's default toolset. (3) A startup check refuses to start if any conversation still lacks an explicit selection. (4) A guard test creates a conversation by every path, including across a restart, and asserts its tools are exactly its toolset's."
+alternatives = ["Defer the backfill until a daemon profile allows a second toolset, guarded by a startup refusal"]
+rationale = "Operator: there are only a couple of stored conversations, so the backfill is cheap now and removes the conditional guard."
+consequences = ["The implicit all-installed selection is unreachable in malebolge", "Backfill follows the existing topic backfill's pattern"]
+decided_by = "operator"
+decided_on = "2026-10-27"
+
+[evidence]                      # free-text citations (supports / contradicts / notes)
+supports    = []
+contradicts = []
+notes       = []
+
+[relationships]                 # verb-written edges (set by doctrine supersede)
+supersedes    = []   # record ids this one replaces (set by doctrine supersede)
+superseded_by = []   # set on superseded predecessor (verb-written)
+
+[[relation]]
+label = "shapes"
+target = "SL-005"

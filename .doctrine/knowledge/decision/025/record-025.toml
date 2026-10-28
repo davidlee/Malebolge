@@ -1,0 +1,33 @@
+schema = "doctrine.knowledge"
+version = 1
+
+id = 25
+slug = "toolset-authority-topic"
+title = "A conversation's toolset is fixed at creation; a daemon topic may name one among its profile's allowed toolsets"
+record_kind = "decision"
+status = "accepted"
+created = "2026-10-27"
+updated = "2026-10-27"
+tags = []
+
+[facet]                         # every field typed; seeded empty (captured later)
+context = "Who may choose a conversation's toolset, and where a mail conversation lives (SL-005 inq-3, inq-7). Runner jobs are repo jobs in the room; a repo-less triage job is satan:RFC-020 OQ-6, out of scope."
+choice = "(1) A conversation's toolset is fixed at creation and never changes; forks inherit it. (2) Runner: a submit names a mode; the mode fixes the toolset; a submit cannot override it. (3) Daemon: a topic record may carry a toolset (beside cwd), written through the topic frame and malebolge-attach --set-topic --toolset, checked against the profile's allowed toolsets (in code). A new conversation's toolset is its topic's, else the profile's default. The daemon installs the extensions its allowed toolsets name, so a mail topic gives a working mail-only conversation."
+alternatives = ["Runner only: no daemon selection; no live consumer in this slice until a repo-less job kind exists (OQ-6)", "Daemon: optional toolset on attach new targets rather than on topics"]
+rationale = "Immutability keeps a transcript that has read mail from ever gaining host tools. Topic-borne selection mirrors the existing topic cwd plumbing (~100 source lines) and gives the slice a live consumer and a real smoke path; runner-hosted triage needs a repo-less job kind, much larger."
+consequences = ["Changing a topic's toolset affects only conversations created afterwards", "The mail extension is built from plain inputs (screwtape path) so daemon and runner can both construct it", "Runner-hosted triage stays with satan:RFC-020 OQ-6"]
+decided_by = "operator"
+decided_on = "2026-10-27"
+
+[evidence]                      # free-text citations (supports / contradicts / notes)
+supports    = []
+contradicts = []
+notes       = []
+
+[relationships]                 # verb-written edges (set by doctrine supersede)
+supersedes    = []   # record ids this one replaces (set by doctrine supersede)
+superseded_by = []   # set on superseded predecessor (verb-written)
+
+[[relation]]
+label = "shapes"
+target = "SL-005"

@@ -1,0 +1,201 @@
+# Implementation plan for SL-005 — the authored, durable phase plan.
+#
+# This is the single source of each phase's objective, criteria, verification,
+# and links. Runtime status lives separately under .doctrine/state/ (phase
+# tracking) — never record progress here. Hand-edit freely: the tool reads this
+# file but does not rewrite it.
+schema  = "doctrine.plan.overview"
+version = 1
+slice   = "SL-005"
+
+# Canonical spec/requirement links — cite ids, never restate what they say. The
+# plan reader does not model these yet, so nothing downstream consumes them.
+[specs]
+primary       = []
+collaborators = []
+
+[requirements]
+targets      = []
+dependencies = []
+
+# One [[phase]] per ordered phase, in execution order — the authored array order
+# IS the order; never sort by id. Ids are PHASE-NN (zero-padded), immutable and
+# never reused once authored — edits append, they never renumber, so the id
+# sequence goes non-monotonic after a split and that is expected. Criterion ids
+# are local to their phase, bare, and equally immutable
+# (`lib:reference/glossary.md` § reference forms). The prefix is
+# the only mode marker; there is no mode field. Reference a criterion from
+# another phase phase-qualified (PHASE-03/EX-8) — bare EX-8 is ambiguous.
+#
+# "Green" = `just check` (fmt-check, lint, typecheck, test) at zero warnings.
+# "design VT-n" cites design.md sec-7; plan VT ids are phase-local.
+# "RV-015 F-n" = a routed finding on the design review (doctrine review show RV-015 -f F-n).
+[[phase]]
+id        = "PHASE-01"
+name      = "Toolset catalog, interactive baseline, persona per toolset"
+objective = "The closed toolset catalog in code and the daemon registry built from it by name, with an interactive conversation unchanged: src/toolsets.ts (Toolset, toolsetList, per-profile default and allowed sets, the installed-name check), daemonExtensions built by name, personaFiles(corpusRoot, toolset, profile) and personaExtension(name, files) (design sec-2, DEC-029, DEC-030). Staging: the room's allowed set is `interactive` only until PHASE-08 adds `mail`, because the mail extension does not exist yet."
+entrance_criteria = [
+  { id = "EN-1", text = "Design SL-005 locked; green at the starting commit." },
+  { id = "EN-2", text = "RV-015 F-32 placement: the first step of this phase, before any edit to src/daemon-extensions.ts or src/persona.ts, captures test/fixtures/interactive-baseline.json (per profile: section keys and texts and ordered offered tool names of a new interactive conversation over the static registry, satan excluded, and a fixed test corpus under test/fixtures/, never ~/satan-corpus), recording its source commit and registry. The capture is committed on its own, or its commit is named in the fixture, so the order is checkable from git." },
+]
+exit_criteria = [
+  { id = "EX-1", text = "src/toolsets.ts: `type Toolset = \"interactive\" | \"mail\" | \"job\"`; toolsetList(toolset, profile) returns the sec-2 lists (interactive/room ends grep, tasks, satan; host without tasks; mail = mail-persona, conversation, mail; job = job-tools, job-guard); per-profile default and allowed sets; an installed-name check over static names (satan is the one dynamic member)." },
+  { id = "EX-2", text = "src/daemon-extensions.ts builds the extensions of the profile's allowed toolsets by name; the daemon installs exactly their union; daemon start refuses when a static name of an allowed toolset is not installed." },
+  { id = "EX-3", text = "src/persona.ts: personaExtension(name, files) renders section key `persona` under either extension name; personaFiles(corpusRoot, toolset, profile) per the sec-2 table; every persona file of every allowed toolset is checked at startup (the existing env-file check generalised)." },
+  { id = "EX-4", text = "test/structure.test.ts: RUNNER_ROOTS gains `toolsets`." },
+  { id = "EX-5", text = "Green." },
+]
+verification = [
+  { id = "VT-1", expects = "design VT-1. A new interactive conversation's section keys and texts and ordered offered tool names equal interactive-baseline.json, room and host. Negative control (RV-015 F-1, F-32): a room list without tasks fails the comparison; the test asserts the fixture records a source commit", test_file = "test/toolsets.test.ts", keywords = ["interactive-baseline.json", "toolsetList", "tasks", "sourceCommit"], waived = false },
+  { id = "VT-2", expects = "design VT-2 (catalog part). mail names none of coding-tools, grep, satan, tasks; every daemon toolset includes conversation; a static name missing from the registry refuses startup; a discovered satan is last in the interactive list", test_file = "test/toolsets.test.ts", keywords = ["coding-tools", "conversation", "satan", "installed"], waived = false },
+  { id = "VT-3", expects = "design VT-6 (persona part). mail persona is scaffold then prompts/mail.txt, no environment file, section key persona; a missing persona file of an allowed toolset refuses startup, and one of a toolset the profile does not allow does not", test_file = "test/persona.test.ts", keywords = ["personaFiles", "mail.txt", "mail-persona"], waived = false },
+]
+specs        = []
+requirements = []
+
+[[phase]]
+id        = "PHASE-02"
+name      = "Explicit toolset at creation: toolsetInit, index entry, runner job"
+objective = "Every create path stores an explicit selection resolved inside the creating commit: IndexEntry.toolset and TopicRecord.toolset (storage only), toolsetInit(profile, topic) required by create in src/conversations.ts, the runner's job list at create and at admission from toolsetList, and the runner's installed-name check (design sec-3 Creation, DEC-024 (1))."
+entrance_criteria = [
+  { id = "EN-1", text = "PHASE-01 exit criteria met." },
+]
+exit_criteria = [
+  { id = "EX-1", text = "src/topics.ts: IndexEntry = { topic, parent?, toolset? } (toolset optional until PHASE-03's backfill), TopicRecord = { cwd?, toolset? }; writeTopicRecord merges toolset the way it merges cwd." },
+  { id = "EX-2", text = "src/conversations.ts: create requires the init (a required parameter, so omission does not compile); toolsetInit resolves in tx the topic record's toolset, else the profile default, checks it against the allowed set, writes the entry's toolset and calls configure(tx, id, { extensions }). Topic new and attach new both pass it." },
+  { id = "EX-3", text = "src/runner/conversations.ts passes agent: { extensions } from toolsetList(\"job\", …) at create; src/runner/run.ts's admission configure takes the same list; src/runner/start.ts runs the installed-name check and refuses start on a missing job name." },
+  { id = "EX-4", text = "test/harness-fixture.ts: toolsetProbe creates a conversation by a named path on a sqlite store and reads its resolved agent (extension names, offered tools, section keys) through conversation.agent(), with no turn." },
+  { id = "EX-5", text = "src/wake/* checked: wake opens conversations through conversations.open and needs no change (record the finding in notes)." },
+  { id = "EX-6", text = "Green." },
+]
+verification = [
+  { id = "VT-1", expects = "design VT-3 (create part). Topic new in a mail-toolset topic record and in a plain topic, and attach new, each yield exactly their toolset's extensions via toolsetProbe, also after a restart. Negative control (RV-015 F-31): attach new created without the init (selection absent, the union of installed extensions) fails", test_file = "test/conversations.test.ts", keywords = ["toolsetProbe", "toolsetInit", "attach"], waived = false },
+  { id = "VT-2", expects = "design VT-4. In one commit, a topic record staged before toolsetInit runs is the toolset the entry records. Negative control (RV-015 F-9): an init that reads the topic record before the commit fails this", test_file = "test/conversations.test.ts", keywords = ["toolsetInit", "commit", "staged"], waived = false },
+  { id = "VT-3", expects = "design VT-3 (runner part). A runner job's stored selection is exactly the job list at create; admission re-derives it; a registry missing a job name refuses runner start. Negative control (RV-015 F-11): a job with no stored selection fails", test_file = "test/runner/conversations.test.ts", keywords = ["toolsetList", "job-guard", "extensions"], waived = false },
+]
+specs        = []
+requirements = []
+
+[[phase]]
+id        = "PHASE-03"
+name      = "Startup reconcile and root's single writer"
+objective = "The startup reconcile in openSession after harness.root(), root's configure and backfillIndex, before resume(), in one commit: refuse forks and task-owned conversations by name (IMP-017), backfill a missing entry toolset with the profile default, refuse a disallowed topic or entry toolset by name, re-derive each indexed conversation's list and log changes; SessionOptions.agent loses extensions (design sec-3 Startup reconcile, DEC-024 (2)-(3))."
+entrance_criteria = [
+  { id = "EN-1", text = "PHASE-02 exit criteria met." },
+]
+exit_criteria = [
+  { id = "EX-1", text = "src/session.ts: the reconcile scans every conversation (scanConversations, paged as backfillIndex pages), in the order and steps of sec-3; backfillIndex stays; each re-derivation logs `conversation <id>: toolset <t> list changed`." },
+  { id = "EX-2", text = "SessionOptions.agent omits extensions in its type; openSession callers in src/ and test/ (models, wake-fixture, daemon-env, topics tests) pass options without it; the reconcile is the only writer of root's list." },
+  { id = "EX-3", text = "IndexEntry.toolset is required once the backfill exists; no stored conversation is left without a selection." },
+  { id = "EX-4", text = "Green." },
+]
+verification = [
+  { id = "VT-1", expects = "design VT-5, each case on a handcrafted store: an entry without toolset gets the default; a list made stale by a test catalog change is re-derived and logged; a disallowed topic record toolset and a disallowed entry toolset each refuse, naming it (RV-015 F-9); a fork and a task-owned conversation each refuse startup naming the conversation, and neither is defaulted (RV-015 F-40, superseded by the rev-47 simplification: refusal replaces inheritance)", test_file = "test/session.test.ts", keywords = ["reconcile", "fork", "owner", "list changed"], waived = false },
+  { id = "VT-2", expects = "design VT-3 (root part). Root's list after a restart equals toolsetList for its profile. Negative control (RV-015 F-16 (2)): a root left with any other list fails", test_file = "test/session.test.ts", keywords = ["root", "toolsetList", "restart"], waived = false },
+]
+specs        = []
+requirements = []
+
+[[phase]]
+id        = "PHASE-04"
+name      = "Topic toolset: frame, CLI and listing"
+objective = "The operator sets a topic's toolset the way they set its directory: the topic frame's toolset (string sets, null clears, absent leaves), setTopic validation against the profile's allowed set, malebolge-attach --toolset / --no-toolset with --set-topic, and the toolset in the topic listing (design sec-3 Topic toolset, DEC-025 (3))."
+entrance_criteria = [
+  { id = "EN-1", text = "PHASE-02 exit criteria met (TopicRecord.toolset storage exists)." },
+]
+exit_criteria = [
+  { id = "EX-1", text = "src/protocol.ts: the topic frame takes toolset: string | null; src/request.ts requestFrameOf carries it." },
+  { id = "EX-2", text = "src/conversations.ts setTopic refuses a name outside the profile's allowed set." },
+  { id = "EX-3", text = "src/attach-invocation.ts and src/attach-main.ts: --toolset <t> and --no-toolset with --set-topic, conflicting as --dir/--no-dir do; usage text updated; the topic listing shows the toolset." },
+  { id = "EX-4", text = "Green." },
+]
+verification = [
+  { id = "VT-1", expects = "design VT-7 (frame). The frame sets, clears and leaves the toolset; a disallowed name is refused", test_file = "test/protocol.test.ts", keywords = ["toolset", "null"], waived = false },
+  { id = "VT-2", expects = "design VT-7 (CLI). --toolset and --no-toolset parse with --set-topic and conflict as --dir does", test_file = "test/attach-invocation.test.ts", keywords = ["--toolset", "--no-toolset"], waived = false },
+  { id = "VT-3", expects = "design VT-7 (storage, listing). writeTopicRecord sets, clears and leaves toolset; the listing shows it", test_file = "test/topics.test.ts", keywords = ["writeTopicRecord", "toolset"], waived = false },
+]
+specs        = []
+requirements = []
+
+[[phase]]
+id        = "PHASE-05"
+name      = "Mail projection and render (pure)"
+objective = "The pure core of the mail tools: v1 projection types and TypeBox schemas (src/mail/source.ts), the projection with rendered-byte sizes and the bodies fold (src/mail/project.ts), and the render: trusted header, escaping, core plus ordered fill per share, the body cut (src/mail/render.ts). Fixtures are v1 envelopes transcribed from screwtape's README § Contract and render/snapshot tests at a recorded screwtape commit (design sec-4 Bounds and Output, DEC-026)."
+entrance_criteria = [
+  { id = "EN-1", text = "Design SL-005 locked (independent of PHASE-01..04)." },
+  { id = "EN-2", text = "test/mail/fixtures/ holds v1 envelopes per verb, each traceable to screwtape README § Contract or a screwtape test, with the screwtape commit recorded in the fixture directory; plus operator-supplied real output (mailboxes, a list page, 3-5 reads, a thread, a read --after page and its follow-up), raw dumps staged outside the repo and anonymised by a consistent-replacement script the agent writes (addresses, names, unsubscribe/tracking URLs, account_id; id and cursor forms and byte lengths preserved), with the scrubbed result checked for leftovers before commit." },
+]
+exit_criteria = [
+  { id = "EX-1", text = "src/mail/source.ts: MailSource port type, v1 projection types and schemas (extra fields allowed; ids in JMAP Id form; canonical cursor; RFC 3339 received_at). The canonical cursor check is one exported function." },
+  { id = "EX-2", text = "src/mail/project.ts and src/mail/render.ts are pure; every size is the UTF-8 length after JSON.stringify and the <, >, & escapes; MAIL_MAX_BYTES, HEADER_RESERVE and the share formula as sec-4." },
+  { id = "EX-3", text = "Green." },
+]
+verification = [
+  { id = "VT-1", expects = "design VT-8 (render). Escaping: a body containing </mail-data> and one of 4096 < each stay in one valid JSON line. Negative controls: at limit 10 a body of 4096 > keeps the core and addresses and is cut with output_truncated, so a stub or a raw-byte measure fails (RV-015 F-3, F-4, F-25); a long to list and a long references list are left out whole and named in cut (RV-015 F-28, superseded by the rev-47 simplification: whole-or-left-out replaces per-field caps); the largest summary core fits at mail_list and mail_thread 40, the largest mail_new core at 20, the read core within 3 KiB (F-25, F-39: every flag); received_at with long fractional seconds renders as 24 bytes, the raw value fails (F-42); fields outside the projection are not rendered (F-39); the largest header (limit 20, all held back, every clamp, 278-byte next) fits 1984 bytes and with the wrapper HEADER_RESERVE, with held back only as a count (F-27); 200 mailboxes with 255-byte ids and escaped names stay within MAIL_MAX_BYTES with shown N of M (F-26)", test_file = "test/mail/render.test.ts", keywords = ["MAIL_MAX_BYTES", "HEADER_RESERVE", "</mail-data>", "output_truncated", "shown", "held_back"], waived = false },
+  { id = "VT-2", expects = "design VT-8 (property). Seeded generated hostile envelopes at every limit (a plain loop, no new dependency): every result within MAIL_MAX_BYTES counting newlines, every item's core whole, no item dropped or replaced (RV-015 F-3, F-4, F-26)", test_file = "test/mail/render.test.ts", keywords = ["hostile", "seed", "MAIL_MAX_BYTES"], waived = false },
+  { id = "VT-3", expects = "design VT-8 (projection). A 300-byte subject and a 7-entry message_id are shortened and named in cut; many body parts with mixed flags and reasons fold to one body and one flag set; a thread entry not in the store is id and in_store: false only; a malformed received_at fails closed", test_file = "test/mail/project.test.ts", keywords = ["bodies", "in_store", "message_id", "truncated_by"], waived = false },
+]
+specs        = []
+requirements = []
+
+[[phase]]
+id        = "PHASE-06"
+name      = "Bounded exec and the Screwtape adapter"
+objective = "Extract grep's bounded exec into src/bounded-exec.ts with an oversize option (fail | count), move grep onto it unchanged, and build the MailSource adapter over it: argv with --config first, a host NodeExecutionEnv with inheritEnv false and env { HOME }, 10 s timeout, the outcome mapping, and fail-closed validation of every stdout line (design sec-5, DEC-028)."
+entrance_criteria = [
+  { id = "EN-1", text = "PHASE-05 exit criteria met (projection schemas and fixtures exist)." },
+]
+exit_criteria = [
+  { id = "EX-1", text = "src/bounded-exec.ts: boundedLineSplitter with a per-line cap and total ceiling, headKeeper for stderr, oversize \"fail\" | \"count\"; src/grep.ts uses it in count mode; test/structure.test.ts RUNNER_ROOTS gains `bounded-exec` (grep is a runner root)." },
+  { id = "EX-2", text = "src/mail/screwtape.ts implements MailSource { mailboxes, list, read, readAfter, thread }: MAIL_STDOUT_MAX 4 MiB per line and total, fail mode; outcome table as sec-5; contract violations from a fixed set; raw stderr never in a message." },
+  { id = "EX-3", text = "Green." },
+]
+verification = [
+  { id = "VT-1", expects = "design VT-10. On the PHASE-05 fixtures through a fake exec: argv with --config first; inheritEnv false and env { HOME } only; outcome mapping for exit 0, 2 with a valid and an invalid code, 1, 137, timeout, abort; no fixture stderr text in any error; bad JSON, wrong version, wrong kind, schema failure (an id outside the JMAP Id form, a non-canonical cursor) and wrong arity each fail closed; extra fields accepted. Negative controls: an inherited environment and an unmapped exit fail (RV-015 F-13); an oversize line or ceiling breach that returns partial data fails (F-12); the ceiling error carries the limit 1 retry text above limit 1 and not at limit 1 (F-29)", test_file = "test/mail/screwtape.test.ts", keywords = ["--config", "inheritEnv", "contract violation", "retry with limit 1", "137"], waived = false },
+  { id = "VT-2", expects = "design VT-11. grep's existing tests pass unchanged on the shared bounded exec, plus a test pinning grep on boundedExec in count mode (an oversize line counted and noticed)", test_file = "test/grep.test.ts", keywords = ["boundedExec", "count"], waived = false },
+]
+specs        = []
+requirements = []
+
+[[phase]]
+id        = "PHASE-07"
+name      = "The five mail tools and the mail extension"
+objective = "mail_new, mail_read, mail_thread, mail_list and mail_mailboxes over the MailSource port: input validation before argv, clamps reported in the header, the cursor rules (next, caught_up, held back, the limit 1 oversize failure), all replay: \"safe\"; the mail extension with its tagged `mail` section stating the untrusted-data rule (design sec-4 tool table, Inputs, Cursor; DEC-026, DEC-027)."
+entrance_criteria = [
+  { id = "EN-1", text = "PHASE-06 exit criteria met." },
+]
+exit_criteria = [
+  { id = "EX-1", text = "src/mail/tools.ts: the five tools with the sec-4 parameters and clamps, the canonical cursor check shared with the adapter (one function, from src/mail/source.ts), held back judged on the validated envelope before projection." },
+  { id = "EX-2", text = "src/mail/extension.ts: the mail extension (tools plus the `mail` section); descriptions state the limit 1 retry and, for mail_list, the offset drift." },
+  { id = "EX-3", text = "Green." },
+]
+verification = [
+  { id = "VT-1", expects = "design VT-9 (inputs). Refused before argv: an id --after (probe, RV-015 F-6), a from with a leading -, since with a non-empty after, non-canonical after values +5:x, 05:x, -0:x and an int64 overflow; clamps reported", test_file = "test/mail/tools.test.ts", keywords = ["--after", "+5:x", "05:x", "-0:x", "clamped"], waived = false },
+  { id = "VT-2", expects = "design VT-9 (cursor). next on an empty page equals after; caught_up; held back first, k-th and all, and held back with cut fields. Negative controls: a next that advances past a held-back message, or is undefined on an empty page, fails (RV-015 F-5); judging held back on the projected item fails (F-30); at limit 1 a ceiling failure returns the oversize-message error and no next, and an implementation returning a next or failing silently fails (F-41, superseded by the rev-47 simplification: no listAfter fallback)", test_file = "test/mail/tools.test.ts", keywords = ["held_back", "caught_up", "next", "limit 1"], waived = false },
+  { id = "VT-3", expects = "design VT-9 (shape, descriptions). Thread header has total and truncated, and one without fails (RV-015 F-15); per-verb core keys exactly; replay safe on all five; descriptions pinned: the limit 1 retry and mail_list offset drift, empty descriptions fail (F-16 (3), F-29)", test_file = "test/mail/tools.test.ts", keywords = ["total", "truncated", "replay", "offset"], waived = false },
+  { id = "VT-4", expects = "design VT-6 (section). The mail section text states the untrusted-data rule (pinned)", test_file = "test/daemon-sections.test.ts", keywords = ["mail-data", "untrusted"], waived = false },
+]
+specs        = []
+requirements = []
+
+[[phase]]
+id        = "PHASE-08"
+name      = "Mail in the room daemon, docs, smoke"
+objective = "Turn mail on for the room: MALEBOLGE_SCREWTAPE and MALEBOLGE_SCREWTAPE_CONFIG read and checked when the profile allows mail, the mail extension built and closed with the daemon, the room's allowed set gains `mail` (ending PHASE-01's staging); README and docs/internals.md; the prompts/mail.txt draft for the operator; the opt-in smoke and the operator check (design sec-5 Location, sec-6, sec-7)."
+entrance_criteria = [
+  { id = "EN-1", text = "PHASE-01..07 exit criteria met." },
+]
+exit_criteria = [
+  { id = "EX-1", text = "src/config.ts, src/daemon-start.ts: the two paths absolute, no PATH lookup, required only when the profile allows mail; the mail extension's env closed with the daemon; room allowed = interactive, mail." },
+  { id = "EX-2", text = "README.md § Where tools run and the tool inventory, docs/internals.md: toolsets, the catalog table, mail absent from interactive, topic --toolset, the Screwtape variables and the deployment order (corpus mail.txt, launcher env, restart)." },
+  { id = "EX-3", text = "A first text of prompts/mail.txt drafted in the slice directory as a proposal for the operator (it lives in ~/satan-corpus; not written there by this slice)." },
+  { id = "EX-4", text = "Green; the smoke is excluded from just check." },
+]
+verification = [
+  { id = "VT-1", expects = "design VT-2 (start). A host daemon starts with no Screwtape variables and its registry has no mail_* tool; a room start refuses when either variable is missing or relative, so a PATH-lookup implementation fails (RV-015 F-16 (1)); a room registry has the mail tools and satan.wake", test_file = "test/daemon-start.test.ts", keywords = ["MALEBOLGE_SCREWTAPE", "MALEBOLGE_SCREWTAPE_CONFIG", "mail_", "satan.wake"], waived = false },
+  { id = "VT-2", expects = "design VT-6 (room persona). A room start refuses without prompts/mail.txt; a host start does not need it", test_file = "test/persona.test.ts", keywords = ["mail.txt", "room", "host"], waived = false },
+  { id = "VT-3", expects = "design VT-12. Opt-in (MALEBOLGE_MAIL_SMOKE=1): the real screwtape read verbs against a temporary copy of the store; the copy's database digest is unchanged afterwards", test_file = "test/mail/smoke.test.ts", keywords = ["MALEBOLGE_MAIL_SMOKE", "digest"], waived = false },
+  { id = "VH-1", expects = "design VH-1. Operator, in Emacs: in a topic set to mail, a new conversation lists only the mail tools, triages recent mail and reads one message" },
+]
+specs        = []
+requirements = []

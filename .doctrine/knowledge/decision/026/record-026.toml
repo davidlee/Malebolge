@@ -1,0 +1,33 @@
+schema = "doctrine.knowledge"
+version = 1
+
+id = 26
+slug = "mail-tool-surface"
+title = "Mail tools: five stateless tools over screwtape contract v1, behind a MailSource port"
+record_kind = "decision"
+status = "accepted"
+created = "2026-10-27"
+updated = "2026-10-27"
+tags = []
+
+[facet]                         # every field typed; seeded empty (captured later)
+context = "screwtape SL-003 (locked) publishes contract v1: CLI JSON envelopes, an opaque arrival cursor, read --after as the one-transaction list-then-read path (screwtape DEC-032), thread --limit. A classifier may later sit on a pipe between screwtape and SATAN (screwtape IDE-001)."
+choice = "Tools: mail_new (read --after <cursor> --limit --max-bytes [filters], primary), mail_read (read <id> --max-bytes), mail_thread (thread <id> --limit), mail_list (list, newest first, offset), mail_mailboxes. They depend on a MailSource port (mailboxes, list, read, readAfter, thread) returning validated envelopes; today's adapter runs screwtape, a classifier stage can replace readAfter later. Output: a trusted header (counts, clamps, next, caught_up, known gaps) then mail in an escaped <mail-data> block marked untrusted; data projected onto chosen v1 fields. Consumer obligations from SL-003 design: always pass --config; first run is after '' with since; in_store:false thread entries rendered as id-only; empty stdout is zero messages; each line must be a complete v1 envelope or the call fails. No per-run aggregate budget in this slice. Bounds (refined 2026-10-28, RV-015 F-3, F-25 to F-29): every size is measured in rendered bytes, after JSON encoding and escaping. A result is at most 50 KiB: a header and the block wrapper that fit a fixed 2 KiB reserve by construction, and items that each get an equal share of the rest. Each item opens with a core that is always shown (ids, received_at rendered normalised by our code, a capped subject, the triage flags is_seen, is_flagged and has_attachment, held_back, the cut list; mail_read adds message_id, account_id and body flags; mail_new's core is the summary core plus the body flags, with its body last in the fill; thread items carry in_store in the core), bounded because the contract schema validates ids and times; the projection keeps only named fields; limits are clamped so a core always fits its share. The other fields fill the share in a fixed order, each whole or left out (only the core's subject and message_id are ever shortened; simplified 2026-10-28, operator); the body comes last and is cut to what remains. No message is replaced or dropped, and no page is cut. Screwtape's list of body parts is folded into one body and one fixed set of body flags (RV-015 F-43). next is written in the header as an escaped JSON string; after and every cursor are checked against the contract's canonical form, which bounds next (F-48). The mailbox list shows what fits and says shown N of M. The bounded exec keeps a hard 4 MiB stdout ceiling and fails the call when hit (no partial result); above limit 1 the error tells the model to retry with limit 1; at limit 1 the call fails with no next, so mail_new cannot pass an envelope over 4 MiB while it is in the store; accepted on operator ruling 2026-10-28, superseding the RV-015 F-41 list --after pass (screwtape IMP-002 proposes contract-side list bounds). Provenance is per verb: summaries carry id, thread_id, received_at and, second in the fill, mailbox_ids; read adds message_id and account_id. thread's total and truncated go in the header."
+alternatives = ["Four tools without read --after (list then read per id: races a sync)", "Graceful cut at a message boundary when the output budget is hit and rewriting next (a second paging mechanism)", "A whole-message stub when an item exceeds its share (measured on raw bytes it hid ordinary quoted mail; RV-015 F-25)"]
+rationale = "Follows the contract's designed consumer path (one snapshot for new mail), keeps one paging rule (SL-003 5.2), and leaves the classifier insertable without changing tools."
+consequences = ["Backlog: synced_at in the screwtape contract (freshness unknown to the model)", "Backlog: per-conversation byte budget, with satan:RFC-020 OQ-6"]
+decided_by = "operator"
+decided_on = "2026-10-28"
+
+[evidence]                      # free-text citations (supports / contradicts / notes)
+supports    = []
+contradicts = []
+notes       = []
+
+[relationships]                 # verb-written edges (set by doctrine supersede)
+supersedes    = []   # record ids this one replaces (set by doctrine supersede)
+superseded_by = []   # set on superseded predecessor (verb-written)
+
+[[relation]]
+label = "shapes"
+target = "SL-005"

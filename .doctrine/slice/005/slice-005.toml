@@ -1,0 +1,192 @@
+id = 5
+slug = "mail-read-tools"
+title = "Mail read tools and tool partitioning by profile"
+status = "ready"
+created = "2026-10-27"
+updated = "2026-10-28"
+tags = []
+
+[relationships]
+needs = []                      # slice→work hard prerequisite
+after = []                      # slice→work soft sequence: { to, rank }
+
+[[selector]]
+selector = "src/mail/**"
+intent = "design-target"
+
+[[selector]]
+selector = "src/daemon-extensions.ts"
+intent = "design-target"
+
+[[selector]]
+selector = "src/runner/tools.ts"
+intent = "scope-relevant"
+
+[[selector]]
+selector = "src/config.ts"
+intent = "design-target"
+
+[[selector]]
+selector = "src/runner/config.ts"
+intent = "scope-relevant"
+
+[[selector]]
+selector = "test/**"
+intent = "scope-relevant"
+
+[[selector]]
+selector = "README.md"
+intent = "design-target"
+
+[[selector]]
+selector = "src/conversations.ts"
+intent = "design-target"
+
+[[selector]]
+selector = "src/session.ts"
+intent = "design-target"
+
+[[selector]]
+selector = "src/topics.ts"
+intent = "design-target"
+
+[[selector]]
+selector = "src/protocol.ts"
+intent = "design-target"
+
+[[selector]]
+selector = "src/attach-invocation.ts"
+intent = "design-target"
+
+[[selector]]
+selector = "src/daemon-start.ts"
+intent = "design-target"
+
+[[selector]]
+selector = "src/grep.ts"
+intent = "design-target"
+
+[[selector]]
+selector = "src/toolsets.ts"
+intent = "design-target"
+
+[[selector]]
+selector = "src/persona.ts"
+intent = "design-target"
+
+[[selector]]
+selector = "src/bounded-exec.ts"
+intent = "design-target"
+
+[[selector]]
+selector = "src/runner/start.ts"
+intent = "design-target"
+
+[[selector]]
+selector = "test/toolsets.test.ts"
+intent = "design-target"
+
+[[selector]]
+selector = "test/mail/**"
+intent = "design-target"
+
+[[selector]]
+selector = "test/session.test.ts"
+intent = "design-target"
+
+[[selector]]
+selector = "test/conversations.test.ts"
+intent = "design-target"
+
+[[selector]]
+selector = "test/topics.test.ts"
+intent = "design-target"
+
+[[selector]]
+selector = "test/protocol.test.ts"
+intent = "design-target"
+
+[[selector]]
+selector = "test/attach-invocation.test.ts"
+intent = "design-target"
+
+[[selector]]
+selector = "test/persona.test.ts"
+intent = "design-target"
+
+[[selector]]
+selector = "test/daemon-sections.test.ts"
+intent = "design-target"
+
+[[selector]]
+selector = "test/daemon-start.test.ts"
+intent = "design-target"
+
+[[selector]]
+selector = "test/grep.test.ts"
+intent = "design-target"
+
+[[selector]]
+selector = "test/harness-fixture.ts"
+intent = "design-target"
+
+[[selector]]
+selector = "docs/internals.md"
+intent = "design-target"
+
+[[selector]]
+selector = "src/runner/conversations.ts"
+intent = "design-target"
+
+[[selector]]
+selector = "test/structure.test.ts"
+intent = "design-target"
+
+[[selector]]
+selector = "test/fixtures/interactive-baseline.json"
+intent = "design-target"
+
+[[selector]]
+selector = "test/runner/**"
+intent = "design-target"
+
+[[selector]]
+selector = "test/models.test.ts"
+intent = "design-target"
+
+[[selector]]
+selector = "test/wake-fixture.ts"
+intent = "design-target"
+
+[[selector]]
+selector = "test/daemon-env.test.ts"
+intent = "design-target"
+
+[[selector]]
+selector = "src/request.ts"
+intent = "design-target"
+
+[[selector]]
+selector = "src/attach-main.ts"
+intent = "design-target"
+
+[[selector]]
+selector = "src/runner/run.ts"
+intent = "design-target"
+
+[[selector]]
+selector = "src/wake/heartbeat.ts"
+intent = "design-target"
+
+[[selector]]
+selector = "test/request.test.ts"
+intent = "design-target"
+
+# STRUCTURAL relations are uniform `[[relation]]` rows, never a typed
+# `[relationships]` axis. Slices carry no typed STRUCTURAL
+# relation axes — the `[relationships]` table above holds only the dep/seq payload
+# (`needs`/`after`). Author a structural edge with the `doctrine link` verb
+# — it validates the (source, label) pair and resolves the target:
+#   doctrine link SL-NNN specs SPEC-NNN
+#   doctrine link SL-NNN governed_by ADR-NNN
+# `doctrine inspect SL-NNN` renders the inbound + outbound edges.

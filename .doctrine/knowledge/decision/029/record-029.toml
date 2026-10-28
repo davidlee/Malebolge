@@ -1,0 +1,33 @@
+schema = "doctrine.knowledge"
+version = 1
+
+id = 29
+slug = "toolset-owns-prompt"
+title = "A toolset is a conversation's complete ordered extension list, prompt included"
+record_kind = "decision"
+status = "accepted"
+created = "2026-10-27"
+updated = "2026-10-27"
+tags = []
+
+[facet]                         # every field typed; seeded empty (captured later)
+context = "DEC-023 split a conversation's extensions into harness-wide prompt extensions plus its toolset's tool extensions. In the daemon that gives a mail conversation the coding prompt: the persona's interactive.txt and env/<profile>.txt describe coding and SATAN tools, and project context, skills and cwd assume coding tools (src/persona.ts, src/daemon-extensions.ts). pi-durable orders a conversation's sections by its stored selection order and silently skips a selected name the registry lacks (selectExtensions in harness/agent.js)."
+choice = "(1) A closed catalog in code of named toolsets: interactive, job, mail. (2) A toolset's extension list is computed from (toolset, profile): the complete ordered list, prompt and tool extensions alike; there are no harness-wide extensions. interactive under room = persona, project_context, skills, cwd, conversation, coding-tools, grep, tasks, satan; under host the same without tasks (room-only, W10). This is today's install order, so an interactive conversation's prompt and tool order are unchanged. mail = mail-persona, conversation, mail. job = job-tools, job-guard. (3) Every daemon toolset includes conversation, and mail names none of coding-tools, grep, satan, tasks (guard tests). (4) Each daemon execution profile has a default toolset (interactive) and a set of allowed toolsets. The harness installs exactly the extensions its allowed toolsets' lists name for that profile, and startup refuses when a static name is not installed. (5) Runner: the job list is selected in code at creation. A [mode.*] toolset key is added only when a second runner toolset exists. (6) A conversation stores its toolset name (in its index entry), fixed at creation; its list is re-derived from (toolset, profile) at every startup. A catalog change therefore reaches existing conversations at the next restart, as the operator's act in code; startup logs each conversation whose list changed. (Refined 2026-10-28 per RV-015 F-1, F-8.)"
+alternatives = ["Harness-wide prompt extensions followed by the toolset's tool extensions (DEC-023): a mail conversation gets the coding prompt", "A shared base persona with only the environment text per toolset: interactive.txt is itself coding-specific and carries the override of the scaffold's batch Protocol", "A runner [mode.*] toolset key now: its only legal value would be job"]
+rationale = "A conversation's prompt describes its tools, so both come from one place. A complete list is the simplest form: no base/overlay merge, the order is explicit, and pi-durable already orders sections by the selection. The startup check closes the silent skip of an unknown name. Interactive is untouched byte for byte."
+consequences = ["Supersedes DEC-023; DEC-024 and DEC-025 stand with toolset meaning this list", "'toolset' now covers prompt as well as tools; the name stays", "SatanKind (satan-mcp's state partition) stays a separate axis: mail has no satan tools", "Runner config is unchanged in this slice", "Fixed at creation (DEC-025) means the toolset name; its contents follow the code"]
+decided_by = "operator"
+decided_on = "2026-10-28"
+
+[evidence]                      # free-text citations (supports / contradicts / notes)
+supports    = []
+contradicts = []
+notes       = []
+
+[relationships]                 # verb-written edges (set by doctrine supersede)
+supersedes    = ["DEC-023"]   # record ids this one replaces (set by doctrine supersede)
+superseded_by = []   # set on superseded predecessor (verb-written)
+
+[[relation]]
+label = "shapes"
+target = "SL-005"
