@@ -25,7 +25,7 @@ import {
   type Tx,
 } from "@earendil-works/pi-durable";
 import { context } from "./context.ts";
-import { DEFAULT_TOPIC } from "./protocol.ts";
+import { DEFAULT_TOPIC, type ThreadMark } from "./protocol.ts";
 import type { DaemonToolset } from "./toolsets.ts";
 
 /**
@@ -364,9 +364,20 @@ export function idsIn(index: IndexDoc, topic: string): number[] {
     .sort((a, b) => b - a);
 }
 
+/**
+ * What created a conversation a thread tool made — its fork's parent, or the
+ * conversation whose `thread_start` started it — and nothing for an operator's own
+ * entry (DEC-037).
+ */
+export function markOf(entry: StoredEntry): ThreadMark | undefined {
+  if (entry.parent !== undefined) {
+    return { forkOf: entry.parent };
+  }
+  return entry.startedBy === undefined ? undefined : { startedBy: entry.startedBy };
+}
+
 /** A conversation a thread tool created: a fork, or a thread_start's child (DEC-037). */
-export const isThread = (entry: StoredEntry): boolean =>
-  entry.parent !== undefined || entry.startedBy !== undefined;
+export const isThread = (entry: StoredEntry): boolean => markOf(entry) !== undefined;
 
 /** The highest id in `topic` that no thread tool created: its latest (DEC-015, DEC-037). */
 export function latestIn(index: IndexDoc, topic: string): number | undefined {

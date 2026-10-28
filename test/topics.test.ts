@@ -20,6 +20,7 @@ import {
   type IndexEntry,
   isThread,
   latestIn,
+  markOf,
   readIndex,
   topicsOf,
   writeTopicRecord,
@@ -200,6 +201,16 @@ it("latestIn skips forks and started threads", () => {
   expect(isThread(fork)).toBe(true);
   expect(isThread(started)).toBe(true);
   expect(isThread(operator)).toBe(false);
+});
+
+// PHASE-08: one predicate and one mark, so a listing says what created a thread.
+it("markOf names what created a thread, and marks an operator's entry with nothing", () => {
+  const operator: IndexEntry = { topic: "work", toolset: "interactive" };
+  const fork: IndexEntry = { topic: "work", parent: 11, toolset: "interactive" };
+  const started: IndexEntry = { topic: "work", startedBy: 11, toolset: "interactive" };
+  expect(markOf(fork)).toEqual({ forkOf: 11 });
+  expect(markOf(started)).toEqual({ startedBy: 11 });
+  expect(markOf(operator)).toBeUndefined();
 });
 
 it("lists default first, then the stored topics by name, each with its directory", () => {

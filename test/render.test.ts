@@ -222,6 +222,18 @@ describe("renderer", () => {
     expect(renderAll([{ type: "conversations", conversations: [], truncated: true }])).toBe("");
   });
 
+  it("marks a thread's listing line with what created it, in both presentations", () => {
+    const frame = {
+      type: "conversations",
+      conversations: [14, 13, 12],
+      truncated: false,
+      marks: { "14": { startedBy: 12 }, "13": { forkOf: 12 } },
+    };
+    const lines = "14\tstarted by 12\n13\tfork of 12\n12\n";
+    expect(renderAll([frame])).toBe(lines);
+    expect(renderAll([frame], { presentation: "emacs" })).toBe(lines);
+  });
+
   it("renders a topics frame as name, directory and toolset, one per line, in both presentations", () => {
     // Every field is empty when unset: `default` has neither directory nor toolset (PHASE-04).
     const frame = {
@@ -544,5 +556,141 @@ describe("terminal presentation", () => {
 
   it("renders a client-local notice as its bracketed text", () => {
     expect(renderAll([clientNotice("connected")])).toBe("[connected]\n");
+  });
+});
+
+// PHASE-08 EX-2, VT-1: a post or wake is an entry of its own, not the operator's
+// typing, so it prints as a labelled input line in both presentations — live,
+// and replayed from a snapshot.
+describe("posts, notices and wakes render as [thread] and [wake] lines in both presentations, live and in a snapshot (VT-1)", () => {
+  const presentations = ["terminal", "emacs"] as const;
+  const origin = { conversation: 12, entry: 340, kind: "human" };
+  /** A post or wake entry as the daemon appends it: its data, and a user-role envelope. */
+  const inputEntry = (kind: string, data: JsonRecord): JsonRecord => ({
+    kind,
+    data,
+    model: [{ role: "user", content: "envelope" }],
+  });
+  const posted = inputEntry("satan.post", {
+    letter: "post",
+    to: 13,
+    from: 12,
+    topic: "research",
+    origin,
+    intent: "look into it",
+    context: "see 340",
+    taskId: 44,
+  });
+  const history = (presentation: (typeof presentations)[number], entry: unknown): string =>
+    renderAll([snapshot([entry])], { presentation });
+  const live = (presentation: (typeof presentations)[number], entry: unknown): string =>
+    renderAll([{ type: "message_end", entry }], { presentation });
+
+  it.each(presentations)(
+    "prints a post's from and topic, its intent, then its context (%s)",
+    (presentation) => {
+      const expected = "[thread] post from 12 (research)\nlook into it\nsee 340\n";
+      expect(history(presentation, posted)).toBe(expected);
+      expect(live(presentation, posted)).toBe(expected);
+    },
+  );
+
+  it.each(presentations)(
+    "prints a post that gives no context as its intent alone (%s)",
+    (presentation) => {
+      const entry = inputEntry("satan.post", {
+        letter: "post",
+        to: 13,
+        from: 12,
+        topic: "research",
+        origin,
+        intent: "look into it",
+        taskId: 44,
+      });
+      const expected = "[thread] post from 12 (research)\nlook into it\n";
+      expect(history(presentation, entry)).toBe(expected);
+      expect(live(presentation, entry)).toBe(expected);
+    },
+  );
+
+  it.each(presentations)(
+    "prints a failed post's post, recipient, outcome and reason (%s)",
+    (presentation) => {
+      const entry = inputEntry("satan.post", {
+        letter: "post-failed",
+        to: 12,
+        origin,
+        post: 44,
+        recipient: 13,
+        outcome: "delivered-incomplete",
+        reason: "unanswered (model_error)",
+        intent: "look into it",
+        taskId: 45,
+      });
+      const expected =
+        "[thread] post 44 to 13 failed (delivered-incomplete): unanswered (model_error)\n";
+      expect(history(presentation, entry)).toBe(expected);
+      expect(live(presentation, entry)).toBe(expected);
+    },
+  );
+
+  it.each(presentations)("prints a reap's origin and reason (%s)", (presentation) => {
+    const entry = inputEntry("satan.post", {
+      letter: "family-reaped",
+      to: 12,
+      origin,
+      reason: "5 active (cap 4)",
+      taskId: 46,
+    });
+    const expected = "[thread] family 12/340 reaped: 5 active (cap 4)\n";
+    expect(history(presentation, entry)).toBe(expected);
+    expect(live(presentation, entry)).toBe(expected);
+  });
+
+  it.each(presentations)(
+    "prints a wake's scheduler and class, then its intent (%s)",
+    (presentation) => {
+      const entry = inputEntry("satan.wake", {
+        taskId: 7,
+        n: 0,
+        at: 0,
+        firedAt: 1,
+        intent: "check the mail",
+        episodeClass: "seclude",
+        scheduledBy: 12,
+      });
+      const expected = "[wake] scheduled by 12 (seclude)\ncheck the mail\n";
+      expect(history(presentation, entry)).toBe(expected);
+      expect(live(presentation, entry)).toBe(expected);
+    },
+  );
+
+  it.each(presentations)(
+    "prints a post whose data fails its guard as the operator's turn (%s)",
+    (presentation) => {
+      // No recipient, no origin: not a post's input, so the entry is only a user message.
+      const entry = inputEntry("satan.post", { letter: "post", intent: "look into it" });
+      const turn = presentation === "terminal" ? "» envelope\n" : "You:\nenvelope\n";
+      expect(history(presentation, entry)).toBe(turn);
+      expect(live(presentation, entry)).toBe(presentation === "terminal" ? "" : turn);
+    },
+  );
+
+  it("still does not echo an ordinary user turn live in terminal", () => {
+    expect(live("terminal", user("hi"))).toBe("");
+  });
+
+  it("cuts a live post into a streaming answer in emacs like a notice", () => {
+    expect(
+      emacs([
+        start(),
+        delta("hello"),
+        { type: "message_end", entry: posted },
+        delta(" world"),
+        { type: "message_end", entry: assistant("hello world") },
+      ]),
+    ).toBe(
+      "Satan:\nhello\n[thread] post from 12 (research)\nlook into it\nsee 340\nSatan (continued):\n world\n\n",
+    );
   });
 });

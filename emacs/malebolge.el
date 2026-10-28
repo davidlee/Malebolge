@@ -23,9 +23,14 @@
 ;; Transcript only: C-c C-e and RET focus the draft.  The transcript is
 ;; read-only for ordinary edits and never submits.  Speaker turns are
 ;; coloured by the turn's label line: `malebolge-user-face' and
-;; `malebolge-satan-face'.  Lines beginning `[tool]' and `[status]'
-;; keep their own faces (`malebolge-tool-face',
-;; `malebolge-status-face').  A transcript window whose point is at the
+;; `malebolge-satan-face'.  A post's header (`[thread] post from 12')
+;; opens a turn in `malebolge-thread-face' and a wake's
+;; (`[wake] scheduled by 12') in `malebolge-user-face', so no body keeps
+;; the previous speaker's colour.  Lines beginning `[tool]' and
+;; `[status]' keep their own faces (`malebolge-tool-face',
+;; `malebolge-status-face'); so do `[thread]' lines
+;; (`malebolge-thread-face') and a reaped family's
+;; (`malebolge-reap-face').  A transcript window whose point is at the
 ;; end follows new output; scrolled back, it keeps its place until you
 ;; move to the end again (M->).
 ;;
@@ -76,6 +81,16 @@
   "Face for SATAN's turns in the transcript."
   :group 'malebolge)
 
+(defface malebolge-thread-face
+  '((t :inherit font-lock-constant-face))
+  "Face for transcript lines reporting another conversation's thread."
+  :group 'malebolge)
+
+(defface malebolge-reap-face
+  '((t :inherit warning))
+  "Face for transcript lines reporting a reaped family."
+  :group 'malebolge)
+
 (defconst malebolge-buffer-name "*malebolge*")
 (defconst malebolge-draft-buffer-name "*malebolge-draft*")
 
@@ -108,22 +123,31 @@
 
 (defvar malebolge--font-lock-keywords
   '(("^\\[tool\\] .*$" 0 'malebolge-tool-face t)
-    ("^\\[status\\] .*$" 0 'malebolge-status-face t))
-  "Font-lock keywords distinguishing tool and status lines.")
+    ("^\\[status\\] .*$" 0 'malebolge-status-face t)
+    ("^\\[thread\\] .*$" 0 'malebolge-thread-face t)
+    ;; Last, so a reap's warning wins over the thread face it starts with.
+    ("^\\[thread\\] family .* reaped.*$" 0 'malebolge-reap-face t))
+  "Font-lock keywords for tool, status, thread and reap lines.")
 
 (defconst malebolge--speaker-labels
   '(("^You:$" . malebolge-user-face)
-    ("^Satan\\(?: ([a-z]+)\\)?:$" . malebolge-satan-face))
-  "Alist of label REGEXP to the face its turn is shown in.")
+    ("^Satan\\(?: ([a-z]+)\\)?:$" . malebolge-satan-face)
+    ("^\\[thread\\] post from .*$" . malebolge-thread-face)
+    ("^\\[wake\\] scheduled by .*$" . malebolge-user-face))
+  "Alist of label REGEXP to the face its turn is shown in.
+Each REGEXP matches a whole line: a label is looked up per line.")
 
 (defconst malebolge--speaker-label-regexp
   (mapconcat #'car malebolge--speaker-labels "\\|")
   "Regexp matching any speaker label line.")
 
 (defun malebolge--label-face (line)
-  "Return the face speaker label LINE opens, or nil."
-  (cdr (assoc line malebolge--speaker-labels
-              (lambda (regexp line) (string-match-p regexp line)))))
+  "Return the face speaker label LINE opens, or nil.
+Each label REGEXP is matched against LINE as a whole."
+  (let (face)
+    (dolist (label malebolge--speaker-labels face)
+      (when (and (not face) (string-match-p (car label) line))
+        (setq face (cdr label))))))
 
 (defun malebolge--face-before (pos)
   "Return the speaker face in force before the line at POS, or nil."
@@ -284,17 +308,27 @@ The client answers and closes; one still running after
      "malebolge: the daemon did not answer the listing in %s seconds"
      malebolge--list-timeout)))
 
+(defun malebolge--candidate-id (candidate)
+  "The conversation id the candidate line CANDIDATE names, or nil.
+A line is either a bare id (`12') or an id, a tab and a non-empty mark
+(`14\tstarted by 12'); prose names nothing."
+  (when (and (stringp candidate)
+             (string-match "\\`\\([0-9]+\\)\\(?:\t[^\t]+\\)?\\'" candidate))
+    (match-string 1 candidate)))
+
 (defun malebolge--conversation-candidates (stdout)
-  "The conversation ids in STDOUT, one per line, in the daemon's order."
+  "The conversation lines in STDOUT, one per line, in the daemon's order.
+A marked line (`id\tmark') is offered whole, so the prompt can show the
+mark; prose is not a candidate, nor is an id whose mark is empty."
   (let (candidates)
     (dolist (line (split-string stdout "\n" t))
-      (when (string-match-p "\\`[0-9]+\\'" line)
+      (when (malebolge--candidate-id line)
         (push line candidates)))
     (nreverse candidates)))
 
 (defun malebolge--choose-target ()
   "Ask which conversation to attach to.
-The daemon's own ids come first, newest first, then `new'.  A listing
+The daemon's own lines come first, newest first, then `new'.  A listing
 the daemon cut short says so as a message, never as a candidate."
   (message "malebolge: asking the daemon which conversations it holds...")
   (redisplay)
@@ -304,9 +338,11 @@ the daemon cut short says so as a message, never as a candidate."
          (diagnostics (string-trim (or (plist-get listing :stderr) ""))))
     ;; Said after the prompt: a message sent before it would be replaced by
     ;; the minibuffer's own prompt before anyone could read it.
-    (prog1 (completing-read "Conversation (new to create): "
-                            (append candidates (list "new"))
-                            nil t)
+    (prog1 (let ((choice (completing-read "Conversation (new to create): "
+                                          (append candidates (list "new"))
+                                          nil t)))
+             ;; A candidate is the whole listing line; the target is its id.
+             (or (malebolge--candidate-id choice) choice))
       (unless (string-empty-p diagnostics)
         (message "malebolge: %s" diagnostics)))))
 
@@ -480,9 +516,14 @@ Colours
 Each speaker turn is shown in its speaker's face: your turns in
 `malebolge-user-face', SATAN's turns in `malebolge-satan-face' (red by
 default).  A turn runs from its label line (`You:', `Satan:',
-`Satan (continued):', `Satan (revised):') to the next label.  Lines beginning
-`[tool]' and `[status]' keep their own faces, `malebolge-tool-face' and
-`malebolge-status-face'.")))
+`Satan (continued):', `Satan (revised):') to the next label.  A post from
+another thread (`[thread] post from 12 (research)') opens a turn of its
+own in `malebolge-thread-face', and a wake (`[wake] scheduled by 12') in
+`malebolge-user-face', so neither colours its body as the previous
+speaker's.  Lines beginning `[tool]' and `[status]' keep their own faces,
+`malebolge-tool-face' and `malebolge-status-face'.  So do `[thread]'
+lines, which take `malebolge-thread-face', except a reaped family's
+(`[thread] family 12/340 reaped: ...'), which takes `malebolge-reap-face'.")))
 
 ;;;###autoload
 (defun malebolge-start ()

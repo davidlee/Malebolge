@@ -23,15 +23,17 @@ import {
 } from "@earendil-works/pi-durable";
 import type { Profile } from "./config.ts";
 import { context } from "./context.ts";
-import { type AttachTarget, type ListQuery } from "./protocol.ts";
+import { type AttachTarget, type ListQuery, type ThreadMark } from "./protocol.ts";
 import type { Session } from "./session.ts";
 import {
   idsIn,
   type IndexDoc,
   isKnownTopic,
   latestIn,
+  markOf,
   type NamedTopic,
   readIndex,
+  readIndexDoc,
   storedTopic,
   topicsOf,
   writeCreated,
@@ -81,10 +83,37 @@ export type PageQuery = Exclude<ListQuery, { kind: "topics" }>;
 /** Conversations read per listing page: small, so a listing never stalls the turn chain. */
 export const LIST_PAGE = 50;
 
-/** One page of a listing: the ids newest first, and whether the page was cut. */
+/** One page of a listing: the ids newest first, the cut, and the threads' marks. */
 export interface ConversationPage {
   ids: number[];
   truncated: boolean;
+  /** Present when an id on the page is a thread: its mark, by id. */
+  marks?: Record<string, ThreadMark>;
+}
+
+/**
+ * The marks of a page's `ids`, read from an index: absent when no id is a thread, so a
+ * page with none keeps the frame's shape (DEC-007).
+ */
+function marksOf(index: IndexDoc, ids: readonly number[]): Record<string, ThreadMark> | undefined {
+  const marks: Record<string, ThreadMark> = {};
+  for (const id of ids) {
+    const entry = index.conversations[String(id)];
+    const mark = entry === undefined ? undefined : markOf(entry);
+    if (mark !== undefined) {
+      marks[String(id)] = mark;
+    }
+  }
+  return Object.keys(marks).length === 0 ? undefined : marks;
+}
+
+/** `ids` as a page, carrying `marks` only when there are any. */
+function pageOf(
+  ids: number[],
+  truncated: boolean,
+  marks: ConversationPage["marks"],
+): ConversationPage {
+  return marks === undefined ? { ids, truncated } : { ids, truncated, marks };
 }
 
 /** The safe positive integer the wire parser accepts, as pi's branded id. */
@@ -225,21 +254,28 @@ function serially<A extends readonly unknown[], R>(
 /** One page of this store's ownerless conversations, newest first (the SL-002 read). */
 async function scanPage(session: Session): Promise<ConversationPage> {
   // One read, one page, no cursor kept: `next` means the page was cut, not "keep going".
-  const page = await session.harness.commit(
-    (tx) => tx.scanConversations({ order: "descending" }, LIST_PAGE),
-    context,
-  );
-  return {
+  // The index is read in the same commit, so its marks describe exactly the ids this page holds.
+  const { ids, marks, truncated } = await session.harness.commit(async (tx) => {
+    const page = await tx.scanConversations({ order: "descending" }, LIST_PAGE);
     // A task-owned conversation is refused at attach, so listing one would be noise.
-    ids: page.items.filter((record) => record.owner === undefined).map((record) => record.id),
-    truncated: page.next !== undefined,
-  };
+    const pageIds = page.items
+      .filter((record) => record.owner === undefined)
+      .map((record) => record.id);
+    return {
+      ids: pageIds,
+      marks: marksOf(await readIndexDoc(tx), pageIds),
+      truncated: page.next !== undefined,
+    };
+  }, context);
+  return pageOf(ids, truncated, marks);
 }
 
 /** One topic's conversations, newest first, cut at `LIST_PAGE` like every page. */
 async function topicPage(session: Session, name: string): Promise<ConversationPage> {
-  const ids = idsIn(await indexOfTopic(session, name), name);
-  return { ids: ids.slice(0, LIST_PAGE), truncated: ids.length > LIST_PAGE };
+  const index = await indexOfTopic(session, name);
+  const ids = idsIn(index, name);
+  const page = ids.slice(0, LIST_PAGE);
+  return pageOf(page, ids.length > LIST_PAGE, marksOf(index, page));
 }
 
 /** `write`'s toolset as the index stores it: absent leaves it, `null` clears it, a name is judged. */

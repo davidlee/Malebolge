@@ -38,7 +38,9 @@
 ;;   string) into the extra argv.
 ;; - `malebolge--list-conversations' is the listing seam: it returns a plist
 ;;   (:stdout TEXT :stderr TEXT).  No ERT case starts a real client.
-;; - `malebolge--conversation-candidates' parses stdout's numeric lines.
+;; - `malebolge--conversation-candidates' parses stdout's lines: a bare id,
+;;   or an id, a tab and a mark, offered whole.  `malebolge--candidate-id'
+;;   names the id of such a line.
 ;; - `malebolge--await-exit' waits boundedly for the client to go, then
 ;;   deletes it.  `malebolge--detach-timeout' bounds the wait, and
 ;;   `malebolge--list-timeout' bounds the synchronous listing.
@@ -457,7 +459,8 @@ created by `malebolge-attach' against the fake process."
 
 (defun malebolge-test--line-face (text)
   "Return the transcript face on the first line containing TEXT.
-`face' (font-lock keywords) wins over `font-lock-face', as in display."
+`face' (font-lock keywords) wins over `font-lock-face', as in display; a
+list of faces is reduced to its first, the one display lets win."
   (with-current-buffer malebolge-buffer-name
     (when (fboundp 'font-lock-ensure)
       (let ((font-lock-support-mode nil))
@@ -465,9 +468,10 @@ created by `malebolge-attach' against the fake process."
     (save-excursion
       (goto-char (point-min))
       (search-forward text)
-      (let ((pos (line-beginning-position)))
-        (or (get-text-property pos 'face)
-            (get-text-property pos 'font-lock-face))))))
+      (let* ((pos (line-beginning-position))
+             (face (or (get-text-property pos 'face)
+                       (get-text-property pos 'font-lock-face))))
+        (if (consp face) (car face) face)))))
 
 (ert-deftest malebolge-speaker-faces-follow-turns ()
   "Each turn's label and body take its speaker's face."
@@ -496,6 +500,30 @@ created by `malebolge-attach' against the fake process."
     (should (eq 'malebolge-tool-face (malebolge-test--line-face "[tool]")))
     (should (eq 'malebolge-satan-face (malebolge-test--line-face "Satan (continued):")))
     (should (eq 'malebolge-satan-face (malebolge-test--line-face "after")))))
+
+(ert-deftest malebolge-thread-face-colours-post-lines-and-bodies ()
+  "A post's header opens a thread turn; a reap and a wake have their own faces.
+The post's body never keeps the previous speaker's colour, the reap line's
+warning wins over the thread face it starts with, and a wake's body is not
+coloured as SATAN's turn."
+  (malebolge-test--with-session
+    (malebolge-test--feed
+     (concat "Satan:\nhi\n"
+             "[thread] post from 12 (research)\nbody line\n"
+             "[thread] family 12/340 reaped: 5 active (cap 4)\n"
+             "[wake] scheduled by 12 (seclude)\nwake intent\n"))
+    (should (eq 'malebolge-thread-face
+                (malebolge-test--line-face
+                 "[thread] post from 12 (research)")))
+    (should (eq 'malebolge-thread-face (malebolge-test--line-face "body line")))
+    (should (eq 'malebolge-reap-face
+                (malebolge-test--line-face
+                 "[thread] family 12/340 reaped")))
+    (should (eq 'malebolge-user-face
+                (malebolge-test--line-face
+                 "[wake] scheduled by 12 (seclude)")))
+    (should (eq 'malebolge-user-face
+                (malebolge-test--line-face "wake intent")))))
 
 ;;; EX-5: output following is per window
 
@@ -717,7 +745,7 @@ The chosen target reaches the command as --conversation N, before --emacs."
 ;;; Candidates come from stdout only
 
 (ert-deftest malebolge-candidates-keep-only-the-numeric-stdout-lines ()
-  "Only whole numeric lines are candidates; prose never becomes one."
+  "Only whole numeric or marked lines are candidates; prose never becomes one."
   (should (equal '("9" "7" "3")
                  (malebolge--conversation-candidates "9\n7\n\n3\n")))
   (should (equal '("9")
@@ -725,6 +753,19 @@ The chosen target reaches the command as --conversation N, before --emacs."
                   (concat "9\nthe listing was truncated: older conversations"
                           " are not shown\n"))))
   (should-not (malebolge--conversation-candidates " 7 \nnew\n")))
+
+(ert-deftest malebolge-candidates-offer-marked-lines-whole-and-reject-malformed-ones ()
+  "A marked line is a candidate offered whole; its id is what it attaches to.
+An id whose mark is empty, or a mark on a non-numeric line, is no candidate."
+  (should (equal '("14\tstarted by 12" "13\tfork of 12" "12")
+                 (malebolge--conversation-candidates
+                  "14\tstarted by 12\n13\tfork of 12\n12\n")))
+  (should-not (malebolge--conversation-candidates
+               "14\t\nx\tfork of 1\n"))
+  (should (equal "14" (malebolge--candidate-id "14\tstarted by 12")))
+  (should (equal "7" (malebolge--candidate-id "7")))
+  (should-not (malebolge--candidate-id "new"))
+  (should-not (malebolge--candidate-id "14\t")))
 
 ;;; The listing's stderr is a message, not a candidate
 
@@ -770,6 +811,20 @@ The client stays attached and the draft survives untouched."
             (malebolge-attach '(4))))
         (should (equal '("--conversation" "7" "--emacs") started))
         (should (string-match-p "\"quit\"" (or quit-before-attach "")))))))
+
+(ert-deftest malebolge-picker-attaches-to-a-marked-id ()
+  "The picker attaches to a marked id: a marked line is offered whole and
+the client starts with the bare id it names."
+  (malebolge-test--with-session
+    (malebolge-test--with-target-choice
+        '(:stdout "14\tstarted by 12\n13\tfork of 12\n12\n" :stderr "")
+        "14\tstarted by 12"
+      (let ((started (malebolge-test--with-fast-detach
+                       (malebolge-test--started-args
+                        (lambda () (malebolge-attach '(4)))))))
+        (should (equal '("14\tstarted by 12" "13\tfork of 12" "12" "new")
+                       malebolge-test--offered))
+        (should (equal '("--conversation" "14" "--emacs") started))))))
 
 (ert-deftest malebolge-switch-leaves-the-transcript-empty-when-the-second-attach-fails ()
   "A failed second attach reports and leaves the transcript empty, never root."

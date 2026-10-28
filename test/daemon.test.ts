@@ -26,7 +26,7 @@ import {
   toolsetInit,
 } from "../src/conversations.ts";
 import { type Daemon, serve } from "../src/daemon.ts";
-import { isRecord } from "../src/json.ts";
+import { isRecord, type JsonRecord } from "../src/json.ts";
 import { encodeLine } from "../src/ndjson.ts";
 import type { ConversationsMessage, TopicSummary, TopicsMessage } from "../src/protocol.ts";
 import { type Printable, toPrintable } from "../src/render.ts";
@@ -44,6 +44,7 @@ import {
 import {
   createTaskOwned,
   FAUX_MODEL,
+  forkConversation,
   NAME_RULE,
   indexOf,
   openFauxHarness,
@@ -235,6 +236,22 @@ describe("daemon", () => {
       throw new Error(`not a listing: ${JSON.stringify(value)}`);
     }
     return { type: "conversations", conversations: ids, truncated };
+  };
+
+  /**
+   * One `list` frame's reply as the daemon wrote it, before any parser: the keys a
+   * listing carries on the wire are what an older client reads (DEC-007).
+   */
+  const wireList = async (): Promise<JsonRecord> => {
+    const client = await lineClient<unknown>(socketPath, (value) => value);
+    clients.push(client);
+    client.send({ type: "list" });
+    const reply = await client.next(() => true);
+    await client.closed();
+    if (!isRecord(reply) || reply["type"] !== "conversations") {
+      throw new Error(`not a listing: ${JSON.stringify(reply)}`);
+    }
+    return reply;
   };
 
   /** One topic as a `topics` reply shows it, strictly. */
@@ -784,6 +801,16 @@ describe("daemon", () => {
     expect((await replyTo({ type: "list", page: 2 }, isError)).message).toBe(
       "list: unknown key page",
     );
+  });
+
+  it("passes a listed thread's mark through, and marks nothing when no id is a thread (EX-1)", async () => {
+    await start();
+    const api = conversations(test, DEFAULTS, "host");
+    const operator = await api.open({ kind: "new" });
+    // A store with no thread: the reply has no `marks` key at all.
+    expect(Object.hasOwn(await wireList(), "marks")).toBe(false);
+    const forked = await forkConversation(test.harness, operator);
+    expect((await wireList())["marks"]).toEqual({ [String(forked.id)]: { forkOf: operator.id } });
   });
 
   it("keeps the shipped list reply's shape, so SL-002's clients still read it (EX-4)", async () => {

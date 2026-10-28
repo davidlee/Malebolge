@@ -188,11 +188,13 @@ async function bindTarget(
   }
 }
 
-/** The `list` frame's reply: one page of this store's ids, and whether the page was cut. */
+/** The `list` frame's reply: one page of this store's ids, and its threads' marks. */
 const listReply = (page: ConversationPage): ConversationsMessage => ({
   type: "conversations",
   conversations: page.ids,
   truncated: page.truncated,
+  // Absent when the page holds no thread, so an unmarked reply is unchanged on the wire.
+  ...(page.marks === undefined ? {} : { marks: page.marks }),
 });
 
 /** The `topics` reply, for a listing or a write: the records, and whose path space they are in. */

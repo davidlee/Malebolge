@@ -417,6 +417,35 @@ describe("conversations", () => {
     ]);
   });
 
+  // PHASE-08 EX-1, VT-2: one listing, marked for exactly the ids a thread tool created.
+  it("--list marks forks and started threads", async () => {
+    const session = await passive();
+    const api = conversations(session, DEFAULTS, "host");
+    await api.setTopic({ name: "work" });
+    const operator = await api.open({ kind: "topic", name: "work", new: true });
+    const thread = await startThread(session.harness, operator, "work", "room");
+    const forked = await forkConversation(session.harness, operator);
+    const marks = {
+      [String(thread.id)]: { startedBy: operator.id },
+      [String(forked.id)]: { forkOf: operator.id },
+    };
+    // Both listings mark exactly the threads: every conversation, and the topic's own.
+    expect(await api.list({ kind: "all" })).toEqual({
+      ids: [forked.id, thread.id, operator.id, session.root.id],
+      truncated: false,
+      marks,
+    });
+    expect(await api.list({ kind: "topic", name: "work" })).toEqual({
+      ids: [forked.id, thread.id, operator.id],
+      truncated: false,
+      marks,
+    });
+    // A page no thread is on carries no `marks` key at all: the frame is unchanged (DEC-007).
+    const unmarked = await api.list({ kind: "topic", name: "default" });
+    expect(unmarked).toEqual({ ids: [session.root.id], truncated: false });
+    expect(Object.hasOwn(unmarked, "marks")).toBe(false);
+  });
+
   it("toolsetInit with a started thread records startedBy", async () => {
     const session = await passive();
     const api = conversations(session, DEFAULTS, "host");

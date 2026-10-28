@@ -8,8 +8,12 @@ import type {
   AttachedMessage,
   ConversationsMessage,
   ErrorMessage,
+  ThreadMark,
   TopicsMessage,
 } from "./protocol.ts";
+import { isEpisodeClass, originKey } from "./threads/origin.ts";
+import { isPostInput, POST_KIND, type PostInput } from "./threads/task.ts";
+import { type EpisodeClass, WAKE_KIND } from "./wake/task.ts";
 
 /** A notice the client makes for itself; it never reaches the daemon. */
 export interface ClientNotice {
@@ -129,6 +133,20 @@ function withoutTrailingNewlines(text: string, shown: string): string {
     : text.replace(/\n+$/, "");
 }
 
+/** Which label an input entry's line carries: a post, or a wake. */
+type InputKind = "thread" | "wake";
+
+/** An input entry as the transcript words it: its label, and the text under the header. */
+interface InputRendering {
+  kind: InputKind;
+  header: string;
+  body: string;
+}
+
+/** An input entry's lines: `[<kind>] <header>`, then the body's own. */
+const inputLine = (kind: InputKind, header: string, body: string): string =>
+  line(`[${kind}] ${header}`) + lineUnlessEmpty(body);
+
 /**
  * What the two presentations word differently. Everything else — the answer in
  * flight, snapshots, the notices — is shared.
@@ -136,6 +154,8 @@ function withoutTrailingNewlines(text: string, shown: string): string {
 interface PresentationTable {
   /** A user turn; history always, live only where the client does not echo. */
   userTurn: (text: string) => string;
+  /** A post or wake; live even where the client shows the operator's typing. */
+  input: (kind: InputKind, header: string, body: string) => string;
   /** Whether the client shows the user's typing, making a live echo a repeat. */
   echoesTyping: boolean;
   /** An assistant turn already complete in transcript history. */
@@ -159,6 +179,7 @@ interface PresentationTable {
 
 const TERMINAL: PresentationTable = {
   userTurn: (text) => line(`» ${text}`),
+  input: inputLine,
   echoesTyping: true,
   answer: lineUnlessEmpty,
   // A rewrite cannot overwrite printed text, so it opens a line.
@@ -174,6 +195,7 @@ const TERMINAL: PresentationTable = {
 
 const EMACS: PresentationTable = {
   userTurn: (text) => line("You:") + line(text),
+  input: inputLine,
   echoesTyping: false,
   answer: (text) => (text === "" ? "" : line(EMACS_CUES.heading) + text + afterBlankLine(text)),
   start: (cause, atLineStart) => `${atLineStart ? "" : "\n"}${line(EMACS_CUES[cause])}`,
@@ -189,7 +211,65 @@ const PRESENTATIONS: Record<Presentation, PresentationTable> = {
   emacs: EMACS,
 };
 
+/** A wake entry's fields a transcript line reads (src/wake/task.ts `entryOf`). */
+interface WakeEntryData {
+  scheduledBy: number;
+  episodeClass: EpisodeClass;
+  intent: string;
+}
+
+/** Whether entry data reads as a wake's: the fields its line prints. */
+const isWakeEntry = (value: unknown): value is WakeEntryData =>
+  isRecord(value) &&
+  typeof value["scheduledBy"] === "number" &&
+  isEpisodeClass(value["episodeClass"]) &&
+  typeof value["intent"] === "string";
+
+/** A post as a transcript line: its letter decides both header and body. */
+const postRendering = (post: PostInput): InputRendering => {
+  switch (post.letter) {
+    case "post":
+      return {
+        kind: "thread",
+        header: `post from ${String(post.from)} (${post.topic})`,
+        body: [post.intent, ...(post.context === undefined ? [] : [post.context])].join("\n"),
+      };
+    case "post-failed":
+      return {
+        kind: "thread",
+        header: `post ${String(post.post)} to ${String(post.recipient)} failed (${post.outcome}): ${post.reason}`,
+        body: "",
+      };
+    case "family-reaped":
+      return {
+        kind: "thread",
+        header: `family ${originKey(post.origin)} reaped: ${post.reason}`,
+        body: "",
+      };
+  }
+};
+
+/** A wake as a transcript line: who scheduled it and its class, then its intent. */
+const wakeRendering = (wake: WakeEntryData): InputRendering => ({
+  kind: "wake",
+  header: `scheduled by ${String(wake.scheduledBy)} (${wake.episodeClass})`,
+  body: wake.intent,
+});
+
+/** An entry's input, if it is a post or a wake; anything else renders as it did. */
+function inputOf(entry: EntryRecord): InputRendering | undefined {
+  const data = entry.data;
+  if (entry.kind === POST_KIND && isPostInput(data)) {
+    return postRendering(data);
+  }
+  return entry.kind === WAKE_KIND && isWakeEntry(data) ? wakeRendering(data) : undefined;
+}
+
 function transcriptLine(p: PresentationTable, entry: EntryRecord): string {
+  const input = inputOf(entry);
+  if (input !== undefined) {
+    return p.input(input.kind, input.header, input.body);
+  }
   const message = messageOf(entry);
   if (message?.role === "user") {
     return p.userTurn(textOf(message));
@@ -229,6 +309,14 @@ function applyChange(blocks: string[], change: MessageChange): string[] {
   }
 }
 
+/** A thread mark as a listing prints it: what created the id. */
+const markText = (mark: ThreadMark): string =>
+  "forkOf" in mark ? `fork of ${String(mark.forkOf)}` : `started by ${String(mark.startedBy)}`;
+
+/** One listing line: the id alone, or the id and its thread mark after a tab. */
+const lineOf = (id: number, mark: ThreadMark | undefined): string =>
+  mark === undefined ? `${String(id)}\n` : `${String(id)}\t${markText(mark)}\n`;
+
 /**
  * What events outside the answer in flight print; most print nothing. Those
  * that print go through `interrupt`, which cuts into the answer in flight.
@@ -256,8 +344,9 @@ function notices(p: PresentationTable, interrupt: (out: string) => string): Noti
     error: (event) => interrupt(p.notice(`error: ${event.message}`)),
     attached: (event) =>
       interrupt(p.notice(`attached to conversation ${String(event.conversation)}`)),
-    // Bare ids, one per line: the listing reads the same text in both presents.
-    conversations: (event) => event.conversations.map((id) => `${String(id)}\n`).join(""),
+    // `id<TAB>mark` when the id is a thread, the bare id otherwise: same text in both presents.
+    conversations: (event) =>
+      event.conversations.map((id) => lineOf(id, event.marks?.[String(id)])).join(""),
     // `name<TAB>cwd<TAB>toolset`, one per line: every field a topic leaves unset prints empty.
     topics: (event) =>
       event.topics
@@ -351,6 +440,11 @@ export function createRenderer(options: RendererOptions = {}): (event: Printable
       return advance(blocks.join(""));
     },
     message_end: (event) => {
+      const input = inputOf(event.entry);
+      if (input !== undefined) {
+        // No client typed a post or wake: print it live even where typing is echoed.
+        return interrupt(p.input(input.kind, input.header, input.body));
+      }
       const message = messageOf(event.entry);
       if (message?.role === "user") {
         // A turn from this or another client can land mid-answer: it cuts in like a notice.

@@ -78,6 +78,12 @@ export interface TopicMessage {
 }
 
 /**
+ * How a listing marks a thread (DEC-037): the conversation it was forked from, or
+ * the one whose `thread_start` created it.
+ */
+export type ThreadMark = { forkOf: number } | { startedBy: number };
+
+/**
  * The daemon's reply to a `list` frame: bare ids, newest first, and whether the
  * page was cut. A framed object rather than a bare array so keys can widen
  * additively (DEC-007).
@@ -86,6 +92,8 @@ export interface ConversationsMessage {
   type: "conversations";
   conversations: number[];
   truncated: boolean;
+  /** Present when any listed id is a thread: its mark, by id. */
+  marks?: Record<string, ThreadMark>;
 }
 
 /** One topic as a `topics` reply shows it: its name, its directory and its toolset. */
