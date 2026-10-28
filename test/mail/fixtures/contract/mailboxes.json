@@ -1,0 +1,1 @@
+{"version":1,"kind":"mailboxes","data":{"items":[{"id":"mbx1","name":"Inbox","parent_id":null,"role":"inbox","sort_order":1,"total_emails":10,"unread_emails":3},{"id":"mbx2","name":"Projects","parent_id":"mbx1","role":null,"sort_order":5,"total_emails":4,"unread_emails":0}]}}

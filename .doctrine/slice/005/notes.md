@@ -240,6 +240,16 @@ exist, but none includes mail.
   RED tests (32 req, $0.049), implementation (17 req, $0.028). pi got
   nothing material wrong; it shared one set/clear/leave helper between
   --dir and --toolset as briefed. Host gate green (2340/2340), `ef28d62`.
+- 2026-10-28, PHASE-05 (sub-orchestrator). Claude Sonnet `capsule-worker`
+  wrote the RED contract tests (263 tests, contract fixtures, helpers;
+  checked them against a throwaway reference implementation and 16
+  mutations). quotient `implement` run wrote src/mail (27 req, $0.088),
+  green first time. pi got nothing material wrong; it left a duplicated
+  cut helper (merged by the orchestrator) and noted the list schema let
+  both `offset` and `after` through (fixed with a test). The orchestrator
+  re-ran 6 mutations against the real code (raw measure, no reserve,
+  dropped body, no `&` escape, raw received_at, 7 message ids): each
+  caught. Host gate green (2603/2603).
 - PHASE-02 carry-forward: VT-1's mail case calls `toolsetInit` with a
   policy seam allowing mail; PHASE-08 (room allows mail) should exercise
   it through `conversations().open`. Runner start's installed-name check
@@ -314,3 +324,7 @@ Standing rulings from the operator (tier 1), binding on every charter:
 - PHASE-03: `SessionOptions.policy?` test seam for the reconcile, mirroring toolsetInit's; production never passes it. Why: PHASE-02 VT-1's mail-topic reopen would otherwise be refused while the room disallows mail (until PHASE-08). Tier: decide.
 - PHASE-03: `assignTopic` deleted; test fixtures create through `toolsetInit` (an index entry without toolset now reads as unindexed). persona VT-3 selects `mail-persona` explicitly (root no longer gets every installed extension). Why: fixtures model production creates; no parallel implementation. Tier: decide.
 - PHASE-04: `requireAllowed` takes a string and returns the allowed `DaemonToolset` (the frame's name arrives unchecked; one checker); the disallowed-name refusal is tested at setTopic (test/conversations.test.ts), not in protocol.test.ts, since the frame does not judge names; `--topics` lines gain a third field `TOOLSET` (no Emacs consumer parses them); `toolset` added to the client's skew keys. Why: the policy, not the parser, owns names; design "listing shows it". Tier: decide.
+- PHASE-05: `typebox` 1.3.27 declared in package.json (already locked as pi-ai's and pi-durable's exact dependency, so no new package; `Type` already came through pi-ai, and `Value.Check` is only reachable from `typebox/value`); flake `npmDepsHash` updated to match the lock (runner builds). Why: the design's TypeBox validation needs `Value`; a phantom import of an undeclared package was the alternative. Tier: decide (flagged to the seat).
+- PHASE-05: `test/mail/fixtures/**` excluded from biome (biome.json). Why: the fixtures are screwtape's bytes, committed as is by operator ruling; biome would reformat them. Tier: decide.
+- PHASE-05: fixtures laid out as `test/mail/fixtures/real/` (scrubbed set, unchanged, with SCRUB.md) and `contract/` (transcribed from screwtape README § Contract), provenance and screwtape `e61d01b` in `SOURCE.md`. Header line forms, cut-list placement (last in the core, always present), `truncated_by` as a list in fixed order, and the fill's worst-case reservation of later cut names fixed by the orchestrator (design names the content, not the format). Tier: decide.
+- PHASE-05: `ListSchema` refuses a page carrying both `offset` and `after` (contract: exactly one). Tier: decide.

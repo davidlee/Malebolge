@@ -2,6 +2,14 @@
   "$schema": "./node_modules/@biomejs/biome/configuration_schema.json",
   "formatter": { "indentStyle": "space", "indentWidth": 2, "lineWidth": 100 },
   "files": {
-    "includes": ["src/**", "test/**", "*.json", "!package-lock.json", "!.mcp.json", "!!**/.direnv"]
+    "includes": [
+      "src/**",
+      "test/**",
+      "*.json",
+      "!package-lock.json",
+      "!test/mail/fixtures/**",
+      "!.mcp.json",
+      "!!**/.direnv"
+    ]
   }
 }
