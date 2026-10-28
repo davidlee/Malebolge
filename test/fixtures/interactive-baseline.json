@@ -1,0 +1,77 @@
+{
+  "sourceCommit": "76790160fde7c2f225cbc18c4a341d4227388932",
+  "note": "captured before any SL-005 edit to src/daemon-extensions.ts or src/persona.ts; never regenerate",
+  "profiles": {
+    "room": {
+      "registry": [
+        "persona",
+        "project_context",
+        "skills",
+        "cwd",
+        "conversation",
+        "coding-tools",
+        "grep",
+        "tasks"
+      ],
+      "extensions": [
+        "persona",
+        "project_context",
+        "skills",
+        "cwd",
+        "conversation",
+        "coding-tools",
+        "grep",
+        "tasks"
+      ],
+      "sections": [
+        {
+          "persona": "scaffold fixture\n\ninteractive fixture\n\nroom fixture\n",
+          "project_context": "<project_context>\nbaseline project context\n</project_context>",
+          "skills": "The following skills provide specialized instructions for specific tasks.\nUse the read tool to load a skill's file when the task matches its description.\nWhen a skill file references a relative path, resolve it against the skill directory (parent of SKILL.md / dirname of the path) and use that absolute path in tool commands.\n\n<available_skills>\n  <skill>\n    <name>baseline</name>\n    <description>Does baseline.</description>\n    <location>/skills/baseline/SKILL.md</location>\n  </skill>\n</available_skills>",
+          "cwd": "Current working directory: /work",
+          "conversation": "Conversation: <id>"
+        }
+      ],
+      "tools": [
+        "read",
+        "write",
+        "edit",
+        "bash",
+        "grep",
+        "wake_schedule",
+        "wake_cancel",
+        "wake_list"
+      ]
+    },
+    "host": {
+      "registry": [
+        "persona",
+        "project_context",
+        "skills",
+        "cwd",
+        "conversation",
+        "coding-tools",
+        "grep"
+      ],
+      "extensions": [
+        "persona",
+        "project_context",
+        "skills",
+        "cwd",
+        "conversation",
+        "coding-tools",
+        "grep"
+      ],
+      "sections": [
+        {
+          "persona": "scaffold fixture\n\ninteractive fixture\n\nhost fixture\n",
+          "project_context": "<project_context>\nbaseline project context\n</project_context>",
+          "skills": "The following skills provide specialized instructions for specific tasks.\nUse the read tool to load a skill's file when the task matches its description.\nWhen a skill file references a relative path, resolve it against the skill directory (parent of SKILL.md / dirname of the path) and use that absolute path in tool commands.\n\n<available_skills>\n  <skill>\n    <name>baseline</name>\n    <description>Does baseline.</description>\n    <location>/skills/baseline/SKILL.md</location>\n  </skill>\n</available_skills>",
+          "cwd": "Current working directory: /work",
+          "conversation": "Conversation: <id>"
+        }
+      ],
+      "tools": ["read", "write", "edit", "bash", "grep"]
+    }
+  }
+}
