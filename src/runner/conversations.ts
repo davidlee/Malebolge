@@ -5,6 +5,7 @@
 
 import type { Conversation, Harness, Session } from "@earendil-works/pi-durable";
 import { context } from "../context.ts";
+import { selectionOf, toolsetList } from "../toolsets.ts";
 import { conversationIdOf, conversationText } from "./durable-ids.ts";
 import type { Job, JobStore } from "./store.ts";
 
@@ -13,12 +14,23 @@ export interface Conversations {
   create: () => Promise<string>;
 }
 
-/** Ownerless conversations on `harness`. Creating one schedules nothing (I14). */
+/**
+ * Ownerless conversations on `harness`, selecting the `job` toolset (design sec-3):
+ * creating one schedules nothing (I14).
+ */
 export function harnessConversations(harness: Pick<Harness, "createConversation">): Conversations {
   return {
     create: async () =>
       conversationText(
-        (await harness.createConversation({ ownership: { kind: "ownerless" } }, context)).id,
+        (
+          await harness.createConversation(
+            {
+              ownership: { kind: "ownerless" },
+              agent: { extensions: selectionOf(toolsetList("job")) },
+            },
+            context,
+          )
+        ).id,
       ),
   };
 }

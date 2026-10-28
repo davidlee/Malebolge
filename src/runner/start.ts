@@ -20,11 +20,12 @@ import { constants } from "node:fs";
 import { access, mkdir, readFile, stat } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import type { Models } from "@earendil-works/pi-ai/models";
-import { Harness } from "@earendil-works/pi-durable";
+import { type Extension, Harness } from "@earendil-works/pi-durable";
 import type { Connection } from "@earendil-works/pi-env";
 import { context } from "../context.ts";
 import { registryOf } from "../registry.ts";
 import { daemonConnection } from "../room/connection.ts";
+import { requireInstalled, toolsetList } from "../toolsets.ts";
 import { abortableSleep } from "./backoff.ts";
 import { type CollectDeps, retryPendingCollection } from "./collect.ts";
 import { parseRunnerConfig, type RepoConfig, type RunnerConfig } from "./config.ts";
@@ -134,6 +135,14 @@ async function closingOnFailure<T>(harness: Pick<Harness, "close">, step: Promis
   }
 }
 
+/**
+ * The job toolset must be installed (design sec-3): a conversation selects it by
+ * name, so a name missing here would seat a job with no tools and no guard.
+ */
+function requireJobToolset(extensions: readonly Extension[]): void {
+  requireInstalled(toolsetList("job"), new Set(extensions.map((extension) => extension.name)));
+}
+
 export async function startRunner(env: Env, options: StartOptions): Promise<Runner> {
   const paths = runnerPaths(env);
   const config = await loadConfig(paths.config, paths.home);
@@ -145,6 +154,7 @@ export async function startRunner(env: Env, options: StartOptions): Promise<Runn
   const now = Date.now;
   const tenancy = roomTenancy();
   const extensions = [JobTools, jobGuard({ currentJob: tenancy.guarded, jobs, now })];
+  requireJobToolset(extensions);
   const models = options.models ?? (await loadGatewayModels(config.gateway, env));
   // Built before the harness it sits in: usage is unreadable until it opens (I10).
   const usage = harnessUsage();
@@ -174,7 +184,6 @@ export async function startRunner(env: Env, options: StartOptions): Promise<Runn
     harness,
     conversations,
     tenancy,
-    extensions,
     readPrompt: () => readFile(config.promptFile, "utf8"),
     now,
     sleep: abortableSleep,

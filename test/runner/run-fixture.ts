@@ -16,7 +16,12 @@ import {
 } from "@earendil-works/pi-ai/providers/faux";
 import type { AssistantMessage, Message, ToolResultMessage } from "@earendil-works/pi-ai";
 import type { Models } from "@earendil-works/pi-ai/models";
-import type { Harness, JsonObject } from "@earendil-works/pi-durable";
+import {
+  defineExtension,
+  type Extension,
+  type Harness,
+  type JsonObject,
+} from "@earendil-works/pi-durable";
 import type { Connection } from "@earendil-works/pi-env";
 import { onTestFinished } from "vitest";
 import { retryPendingCollection } from "../../src/runner/collect.ts";
@@ -192,6 +197,18 @@ export interface RunWorldOptions {
 /** The process died at a write boundary (`crashAt`). */
 export class Crash extends Error {}
 
+/** `extension` also offering `extra`'s tools: a test's tool rides the job toolset's own name. */
+const withTools = (extension: Extension, extra: Extension): Extension => ({
+  ...extension,
+  tools: [...(extension.tools ?? []), ...(extra.tools ?? [])],
+});
+
+/**
+ * Every name this harness installs, `persona` included so the registry's union differs
+ * from the job toolset: what a run that selected the whole registry would store.
+ */
+export const REGISTRY_NAMES = ["job-tools", "job-guard", "persona"];
+
 /** An event as `kind`, or `transition:<to>`: what `kinds` lists and `crashAt` names. */
 export const eventLabel = ({ kind, payload }: Pick<JobEvent, "kind" | "payload">): string =>
   kind === "transition" ? `transition:${String(payload["to"])}` : kind;
@@ -324,10 +341,12 @@ async function openProcess(shared: Shared, process: ProcessOptions): Promise<Run
   const slept: number[] = [];
   const logs: string[] = [];
   const blocking = blockingTool("wait");
+  // A job's selection is names only, so the test's blocking tool rides the job toolset's
+  // own name: `deps` no longer carries an extension list of its own.
   const extensions = [
-    JobTools,
+    withTools(JobTools, blocking.extension),
     jobGuard({ currentJob: tenancy.guarded, jobs, now }),
-    blocking.extension,
+    defineExtension({ name: "persona" }),
   ];
   // The model gate as start.ts wires it: built before the harness it sits in.
   const usage = harnessUsage();
@@ -385,7 +404,6 @@ async function openProcess(shared: Shared, process: ProcessOptions): Promise<Run
       const local = localConnection();
       return options.connection?.(local) ?? local;
     },
-    extensions,
     readPrompt: () => {
       jobs.check("prompt");
       return Promise.resolve("You are the patch agent.");

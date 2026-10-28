@@ -218,6 +218,25 @@ exist, but none includes mail.
   message (accepted: type narrowing under `noUncheckedIndexedAccess`).
   Host gate green (2281/2281).
 
+- 2026-10-28, PHASE-02 (sub-orchestrator). quotient `implement` runs:
+  RED tests (45 req, $0.073), implementation (61 req, hit the 60 ceiling,
+  $0.067) plus a continuation (21 req, $0.020). pi got wrong: its first
+  VT-3 admission test replayed the configure call itself (a run.ts still
+  writing the registry list would pass); re-briefed, the impl run added a
+  run-fixture test with a negative control. Impl left run.ts unformatted
+  (biome not runnable in its form); fixed on host. Host gate green
+  (2290/2290).
+- PHASE-02 EX-5: src/wake creates only through `conversations.open`
+  (src/wake/heartbeat.ts:38); no wake change. The only other
+  `createConversation` callers are src/conversations.ts and
+  src/runner/conversations.ts.
+- PHASE-02 carry-forward: VT-1's mail case calls `toolsetInit` with a
+  policy seam allowing mail; PHASE-08 (room allows mail) should exercise
+  it through `conversations().open`. Runner start's installed-name check
+  is unit-tested via `requireInstalled` only (startRunner hardcodes its
+  two extensions). `assignTopic` stays in src/topics.ts: no src caller
+  left, but tests use it and IndexDocument may not be named outside
+  topics.ts.
 ## Planning (2026-10-28)
 
 - Plan authored: 8 phases, two tracks (toolsets 01-04, mail 05-07) joined
@@ -275,3 +294,4 @@ Standing rulings from the operator (tier 1), binding on every charter:
 ## Autonomy log
 - PHASE-01: baseline capture committed alone (976262d); conversation-id normalisation narrowed to the `conversation` section (pi's version rewrote the id in every string). Why: EN-2 order checkable from git; avoid a false match on id "1". Tier: decide.
 - PHASE-01: API fixed by the orchestrator beyond the design's names: `DaemonToolset`, `allowedNames`, `requireInstalled(names, installed)`, `requirePersonaFiles(corpusRoot, profile)` (personaFiles made pure); `toolsets.ts` takes `import type { Profile }` from config.ts (structure test checks direct edges only). Why: design sec-2 names the behaviour, not the helpers. Tier: decide.
+- PHASE-02: `toolsetInit(profile, topic, policy = PROFILE_TOOLSETS[profile])` gains a test seam; `selectionOf(names)` passes name-only extension references to `configure` (pi-durable stores names only); `toolsetList("job")` overload so the runner needs no profile. Why: room allows only `interactive` until PHASE-08, so VT-1's mail-topic case needs a policy allowing mail; the runner has no execution profile. Tier: decide.

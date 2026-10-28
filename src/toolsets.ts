@@ -2,6 +2,7 @@
 // so a name outside it does not compile, and pure functions, so the daemon, the
 // runner and their tests read one order.
 
+import { defineExtension, type Extension } from "@earendil-works/pi-durable";
 import type { Profile } from "./config.ts";
 
 /** A run kind. The daemon builds its own; the runner selects `job` in code. */
@@ -9,6 +10,12 @@ export type Toolset = "interactive" | "mail" | "job";
 
 /** What a daemon may install, profile by profile. */
 export type DaemonToolset = Exclude<Toolset, "job">;
+
+/** A profile's toolset policy: what a new conversation takes, and what it may (design sec-3). */
+export interface ProfileToolsets {
+  readonly default: DaemonToolset;
+  readonly allowed: readonly DaemonToolset[];
+}
 
 /** The catalogue's one dynamic member: discovery installs it before the session resumes. */
 export const SATAN = "satan";
@@ -34,18 +41,27 @@ const CATALOG: Readonly<Record<Toolset, readonly string[]>> = {
 const ROOM_ONLY: ReadonlySet<string> = new Set(["tasks"]);
 
 /** `toolset`'s extension names on `profile`, in system prompt and tool order. */
-export function toolsetList(toolset: Toolset, profile: Profile): readonly string[] {
+export function toolsetList(toolset: "job"): readonly string[];
+export function toolsetList(toolset: Toolset, profile: Profile): readonly string[];
+export function toolsetList(toolset: Toolset, profile?: Profile): readonly string[] {
   const names = CATALOG[toolset];
   return profile === "host" ? names.filter((name) => !ROOM_ONLY.has(name)) : names;
+}
+
+/**
+ * `configure`'s selection of `names` (design sec-3): pi-durable stores a selection as
+ * its names (dist/harness/agent.js:111-118), so a name-only reference stands for the
+ * installed extension of that name — and for nothing when none is installed.
+ */
+export function selectionOf(names: readonly string[]): Extension[] {
+  return names.map((name) => defineExtension({ name }));
 }
 
 /**
  * Each profile's default toolset and the ones it may use. STAGING: the design's
  * end state lets the room use `mail` too; PHASE-08 adds it, with its manifest.
  */
-export const PROFILE_TOOLSETS: Readonly<
-  Record<Profile, { readonly default: DaemonToolset; readonly allowed: readonly DaemonToolset[] }>
-> = {
+export const PROFILE_TOOLSETS: Readonly<Record<Profile, ProfileToolsets>> = {
   room: { default: "interactive", allowed: ["interactive"] },
   host: { default: "interactive", allowed: ["interactive"] },
 };

@@ -354,7 +354,7 @@ describe("wake tools (SL-034 sec-13)", () => {
   it("VT-1b a topic target is its latest conversation when scheduled (W8)", async () => {
     const world = wakeWorld();
     const session = await world.open();
-    await writeTopicRecord(session.harness, "work", undefined);
+    await writeTopicRecord(session.harness, "work", {});
     const earlier = await talking(session, assignTopic("work"));
     const later = await talking(session, assignTopic("work"));
     expect(later.id).toBeGreaterThan(earlier.id);
@@ -389,7 +389,7 @@ describe("wake tools (SL-034 sec-13)", () => {
     expect(tasks.filter((task) => task.record.kind === "satan.wake")).toEqual([]);
     expect((await indexOf(session.harness)).topics).toEqual(before.topics);
     // Written but empty: known, yet nothing to wake in.
-    await writeTopicRecord(session.harness, "empty", undefined);
+    await writeTopicRecord(session.harness, "empty", {});
     const empty = await callTool(world, session, session.root, "wake_schedule", {
       intent: "nobody here",
       episode_class: "attend",

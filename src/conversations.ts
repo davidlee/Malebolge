@@ -16,26 +16,28 @@ import {
   type AgentChange,
   type AgentEventStream,
   type Conversation,
+  configure,
   type ConversationId,
   type ConversationInit,
   watchEvents,
 } from "@earendil-works/pi-durable";
 import type { Profile } from "./config.ts";
 import { context } from "./context.ts";
-import type { AttachTarget, ListQuery } from "./protocol.ts";
+import { type AttachTarget, type ListQuery } from "./protocol.ts";
 import type { Session } from "./session.ts";
 import {
-  assignTopic,
   idsIn,
   type IndexDoc,
+  isKnownTopic,
   latestIn,
   type NamedTopic,
   readIndex,
-  isKnownTopic,
   storedTopic,
   topicsOf,
+  writeCreated,
   writeTopicRecord,
 } from "./topics.ts";
+import { PROFILE_TOOLSETS, type ProfileToolsets, selectionOf, toolsetList } from "./toolsets.ts";
 
 /** The daemon's creation defaults; `cwd` is required so the fallback is always a string. */
 export type ConversationDefaults = AgentChange & { cwd: string };
@@ -104,19 +106,39 @@ async function resolveExisting(session: Session, id: ConversationId): Promise<Co
   return conversation;
 }
 
-/** A new ownerless conversation: model, cwd and the topic entry land in one commit. */
+/**
+ * The `init` every create passes (design sec-3): the topic's toolset, else the
+ * profile's default, checked against `policy` and selected in the creating
+ * commit — the entry it writes and the selection it configures are one read.
+ * A `mail` topic needs a `policy` that allows it until PHASE-08 installs that
+ * manifest; production callers never pass one.
+ */
+export function toolsetInit(
+  profile: Profile,
+  topic: string | undefined,
+  policy: ProfileToolsets = PROFILE_TOOLSETS[profile],
+): ConversationInit {
+  return async (tx, conversationId) => {
+    const toolset = await writeCreated(tx, conversationId, topic, (record) => {
+      const chosen = record?.toolset ?? policy.default;
+      if (!policy.allowed.includes(chosen)) {
+        throw new Error(`toolset ${chosen} is not allowed on profile ${profile}`);
+      }
+      return chosen;
+    });
+    await configure(tx, conversationId, { extensions: selectionOf(toolsetList(toolset, profile)) });
+  };
+}
+
+/** A new ownerless conversation: model, cwd, the topic entry and its selection in one commit. */
 function create(
   session: Session,
   defaults: ConversationDefaults,
   cwd: string,
-  init?: ConversationInit,
+  init: ConversationInit,
 ): Promise<Conversation> {
   return session.harness.createConversation(
-    {
-      ownership: { kind: "ownerless" },
-      agent: { ...defaults, cwd },
-      ...(init === undefined ? {} : { init }),
-    },
+    { ownership: { kind: "ownerless" }, agent: { ...defaults, cwd }, init },
     context,
   );
 }
@@ -142,6 +164,7 @@ function creationCwd(
 /** The conversation a `topic` target binds: its latest, or a first one in that topic. */
 async function openTopic(
   session: Session,
+  profile: Profile,
   defaults: ConversationDefaults,
   target: Extract<AttachTarget, { kind: "topic" }>,
 ): Promise<Conversation> {
@@ -153,7 +176,8 @@ async function openTopic(
     }
     return resolveExisting(session, latest);
   }
-  return create(session, defaults, creationCwd(index, target, defaults), assignTopic(target.name));
+  const cwd = creationCwd(index, target, defaults);
+  return create(session, defaults, cwd, toolsetInit(profile, target.name));
 }
 
 /** `run`, one call at a time: each starts once the one before it settles, failed or not. */
@@ -195,7 +219,10 @@ export function conversations(
 ): Conversations {
   // The find and the create are two commits: two attaches to an empty topic must
   // not each find it empty. One daemon owns the store, so in-process order suffices.
-  const openTopicSerially = serially(openTopic);
+  const openTopicSerially = serially(
+    (target: Extract<AttachTarget, { kind: "topic" }>): Promise<Conversation> =>
+      openTopic(session, profile, defaults, target),
+  );
   return {
     root: session.root,
     profile,
@@ -211,9 +238,14 @@ export function conversations(
           return resolveExisting(session, id);
         }
         case "new":
-          return create(session, defaults, target.cwd ?? defaults.cwd);
+          return create(
+            session,
+            defaults,
+            target.cwd ?? defaults.cwd,
+            toolsetInit(profile, undefined),
+          );
         case "topic":
-          return openTopicSerially(session, defaults, target);
+          return openTopicSerially(target);
       }
     },
     watch: (conversation) => watchEvents(session.harness, conversation.id, context),
@@ -226,6 +258,6 @@ export function conversations(
       }
     },
     topics: async () => topicsOf(await readIndex(session.harness)),
-    setTopic: (topic) => writeTopicRecord(session.harness, topic.name, topic.cwd),
+    setTopic: (topic) => writeTopicRecord(session.harness, topic.name, { cwd: topic.cwd }),
   };
 }

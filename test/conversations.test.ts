@@ -3,7 +3,16 @@
 // The reopen case proves a created conversation is never reconfigured.
 
 import { join } from "node:path";
-import { type Conversation, MemoryStorage } from "@earendil-works/pi-durable";
+import {
+  type Conversation,
+  type ConversationId,
+  type ConversationInit,
+  configure,
+  defineExtension,
+  type Extension,
+  MemoryStorage,
+  type Registry,
+} from "@earendil-works/pi-durable";
 import { NodeExecutionEnv } from "@earendil-works/pi-durable/env/node";
 import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite/node";
 import { CodingTools } from "@earendil-works/pi-durable/tools";
@@ -14,10 +23,25 @@ import {
   conversations,
   isConversationKey,
   LIST_PAGE,
+  toolsetInit,
 } from "../src/conversations.ts";
 import { registryOf } from "../src/registry.ts";
 import { openSession, type Session } from "../src/session.ts";
-import { indexConversation, IndexDocument } from "../src/topics.ts";
+import {
+  indexConversation,
+  IndexDocument,
+  readIndex,
+  storedEntry,
+  storedTopic,
+  writeTopicRecord,
+} from "../src/topics.ts";
+import {
+  type DaemonToolset,
+  PROFILE_TOOLSETS,
+  SATAN,
+  selectionOf,
+  toolsetList,
+} from "../src/toolsets.ts";
 import { tempDir } from "./fixtures.ts";
 import {
   callThenAnswer,
@@ -30,12 +54,68 @@ import {
   textOf,
   toolResults,
   type TestHarness,
+  toolsetProbe,
 } from "./harness-fixture.ts";
 
 const DEFAULTS: ConversationDefaults = { model: FAUX_MODEL, cwd: "/daemon-default" };
 
 const nodeEnv = ({ cwd }: { cwd?: string }): NodeExecutionEnv =>
   new NodeExecutionEnv({ cwd: cwd ?? process.cwd() });
+
+/** Name-only extension stubs: a selection resolves them, and none offers a tool or a section. */
+const nameOnly = (names: readonly string[]): Extension[] =>
+  names.map((name) => defineExtension({ name }));
+
+/**
+ * The room's registry in the toolset tests: every interactive name but the dynamic `satan`,
+ * plus mail's, so it differs from either toolset's list.
+ */
+const ROOM_UNION = [
+  ...new Set([
+    ...toolsetList("interactive", "room").filter((name) => name !== SATAN),
+    ...toolsetList("mail", "room"),
+  ]),
+];
+
+/** The policy seam's mail case: the room's default, allowed mail (STAGING: PHASE-08 adds it). */
+const ALLOWS_MAIL = { ...PROFILE_TOOLSETS.room, allowed: ["interactive", "mail"] as const };
+
+/** The interactive toolset's names as a registry can resolve them: `satan` is not installed. */
+const INTERACTIVE = toolsetList("interactive", "room").filter((name) => name !== SATAN);
+
+/** A room session over the sqlite file at `path`: the store a reopen reads again. */
+const openRoomStore = async (path: string, registry: Registry): Promise<Session> =>
+  openSession(await openNodeSqliteStorage(path), {
+    models: fauxModels().models,
+    registry,
+    agent: { model: FAUX_MODEL },
+    env: nodeEnv,
+  });
+
+/** The conversation `id` names in `session`; fails when the store lost it. */
+async function reopened(session: Session, id: ConversationId): Promise<Conversation> {
+  const conversation = await session.harness.conversation(id, context);
+  if (conversation === undefined) {
+    throw new Error(`no conversation ${String(id)}`);
+  }
+  return conversation;
+}
+
+/**
+ * An init that resolved the toolset from a pre-read snapshot: the stale read the design's
+ * "read inside the creating commit" forbids (RV-015 F-9's negative control).
+ */
+const staleInit =
+  (toolset: DaemonToolset): ConversationInit =>
+  async (tx, id) => {
+    const index = await tx.doc(IndexDocument);
+    const entry = index.conversations[String(id)];
+    if (entry === undefined) {
+      throw new Error(`no index entry for ${String(id)}`);
+    }
+    index.conversations[String(id)] = { ...entry, toolset };
+    await configure(tx, id, { extensions: selectionOf(toolsetList(toolset, "room")) });
+  };
 
 describe("conversations", () => {
   let test: TestHarness | undefined;
@@ -248,6 +328,7 @@ describe("conversations", () => {
     expect((await created.agent(context)).cwd).toBe("/topic-work");
     expect((await indexOf(session.harness)).conversations[String(created.id)]).toEqual({
       topic: "work",
+      toolset: "interactive",
     });
   });
 
@@ -425,5 +506,117 @@ describe("conversations", () => {
       { name: "bare" },
       { name: "work", cwd: "/w" },
     ]);
+  });
+
+  it("VT-1 records each create's toolset and resolves it again after a reopen", async () => {
+    const tmp = await tempDir();
+    const path = join(tmp.dir, "toolsets.sqlite");
+    const registry = registryOf(nameOnly(ROOM_UNION));
+    let session: Session | undefined;
+    const close = async (): Promise<void> => {
+      if (session !== undefined) {
+        await session.harness.close(context);
+      }
+      session = undefined;
+    };
+    try {
+      const first = await openRoomStore(path, registry);
+      session = first;
+      // (a) The policy seam admits mail; the production policy refuses it until PHASE-08.
+      await writeTopicRecord(first.harness, "mailbox", { toolset: "mail" });
+      const mailTopic = await first.harness.createConversation(
+        { ownership: { kind: "ownerless" }, init: toolsetInit("room", "mailbox", ALLOWS_MAIL) },
+        context,
+      );
+      // (b) A plain topic, and (c) attach `new`: the profile default.
+      await writeTopicRecord(first.harness, "work", {});
+      const plain = await conversations(first, DEFAULTS, "room").open({
+        kind: "topic",
+        name: "work",
+        new: true,
+      });
+      const fresh = await conversations(first, DEFAULTS, "room").open({ kind: "new" });
+
+      const probes = {
+        mail: await toolsetProbe(mailTopic),
+        plain: await toolsetProbe(plain),
+        fresh: await toolsetProbe(fresh),
+      };
+      expect(probes.mail.extensions).toEqual([...toolsetList("mail", "room")]);
+      expect(probes.plain.extensions).toEqual(INTERACTIVE);
+      expect(probes.fresh.extensions).toEqual(INTERACTIVE);
+
+      const index = await readIndex(first.harness);
+      expect(storedEntry(index, mailTopic.id)?.toolset).toBe("mail");
+      expect(storedEntry(index, plain.id)?.toolset).toBe("interactive");
+      expect(storedEntry(index, fresh.id)?.toolset).toBe("interactive");
+      await close();
+
+      const second = await openRoomStore(path, registry);
+      session = second;
+      expect(await toolsetProbe(() => reopened(second, mailTopic.id))).toEqual(probes.mail);
+      expect(await toolsetProbe(() => reopened(second, plain.id))).toEqual(probes.plain);
+      expect(await toolsetProbe(() => reopened(second, fresh.id))).toEqual(probes.fresh);
+    } finally {
+      await close();
+      await tmp.cleanup();
+    }
+  });
+
+  it("VT-1 refusal: the production policy refuses a mail conversation and creates none", async () => {
+    const session = await passive();
+    const api = conversations(session, DEFAULTS, "room");
+    await writeTopicRecord(session.harness, "mailbox", { toolset: "mail" });
+    await expect(api.open({ kind: "topic", name: "mailbox", new: true })).rejects.toThrow(
+      "toolset mail is not allowed",
+    );
+    expect(await api.list({ kind: "topic", name: "mailbox" })).toEqual({
+      ids: [],
+      truncated: false,
+    });
+    expect((await api.list({ kind: "all" })).ids).toEqual([session.root.id]);
+  });
+
+  it("VT-1 negative control: a conversation created with no init takes the whole registry (RV-015 F-31)", async () => {
+    const session = await passive({ extensions: nameOnly(ROOM_UNION) });
+    const unselected = await session.harness.createConversation(
+      { ownership: { kind: "ownerless" } },
+      context,
+    );
+    const probe = await toolsetProbe(unselected);
+    expect(probe.extensions).toEqual(ROOM_UNION);
+    expect(probe.extensions).not.toEqual(INTERACTIVE);
+  });
+
+  it("VT-2 records the topic's toolset as the creating commit reads it (RV-015 F-9)", async () => {
+    const session = await passive({ extensions: nameOnly(ROOM_UNION) });
+    // Commit 1 stages the topic; commit 2 is the create, which resolves the toolset in its tx.
+    await writeTopicRecord(session.harness, "staged", { toolset: "mail" });
+    const staged = await session.harness.createConversation(
+      { ownership: { kind: "ownerless" }, init: toolsetInit("room", "staged", ALLOWS_MAIL) },
+      context,
+    );
+    // A change between a pre-read and the create: the create's own read wins.
+    const before = await readIndex(session.harness);
+    await writeTopicRecord(session.harness, "staged", { toolset: "interactive" });
+    const current = await session.harness.createConversation(
+      { ownership: { kind: "ownerless" }, init: toolsetInit("room", "staged", ALLOWS_MAIL) },
+      context,
+    );
+    const index = await readIndex(session.harness);
+    expect(storedEntry(index, staged.id)?.toolset).toBe("mail");
+    expect(storedEntry(index, current.id)?.toolset).toBe("interactive");
+    expect((await toolsetProbe(current)).extensions).toEqual(INTERACTIVE);
+
+    // Negative control: the same create, resolving from `before`, records the stale toolset.
+    const stale = await session.harness.createConversation(
+      {
+        ownership: { kind: "ownerless" },
+        init: staleInit(storedTopic(before, "staged")?.toolset ?? PROFILE_TOOLSETS.room.default),
+      },
+      context,
+    );
+    expect(storedEntry(await readIndex(session.harness), stale.id)?.toolset).toBe("mail");
+    expect((await toolsetProbe(stale)).extensions).toEqual([...toolsetList("mail", "room")]);
   });
 });

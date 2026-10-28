@@ -177,7 +177,7 @@ it("lists default first, then the stored topics by name, each with its directory
 
 it("refuses to store the reserved default topic (DEC-015)", async () => {
   const test = await openIndexedHarness();
-  await expect(writeTopicRecord(test.harness, DEFAULT_TOPIC, undefined)).rejects.toThrow(
+  await expect(writeTopicRecord(test.harness, DEFAULT_TOPIC, {})).rejects.toThrow(
     "topic: default is reserved",
   );
   expect((await indexOf(test.harness)).topics).toEqual({});

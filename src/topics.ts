@@ -27,12 +27,19 @@ import {
 } from "@earendil-works/pi-durable";
 import { context } from "./context.ts";
 import { DEFAULT_TOPIC } from "./protocol.ts";
+import type { DaemonToolset } from "./toolsets.ts";
 
 /** One conversation's place in the index; `parent` is the conversation it was forked from. */
-export type IndexEntry = { topic: string; parent?: number };
+export type IndexEntry = { topic: string; parent?: number; toolset?: DaemonToolset };
 
-/** What a topic carries: its directory, when it has one (D3). */
-export type TopicRecord = { cwd?: string };
+/** What a topic carries: its directory (D3), and the toolset its conversations take (design sec-3). */
+export type TopicRecord = { cwd?: string; toolset?: DaemonToolset };
+
+/** A topic write: an absent key is unchanged, `null` clears it, a value sets it. */
+export type TopicChange = {
+  cwd?: string | null | undefined;
+  toolset?: DaemonToolset | null | undefined;
+};
 
 /** The whole index, one session-scoped document. */
 export type IndexDoc = {
@@ -55,22 +62,16 @@ export const IndexDocument = defineDoc<IndexDoc>({
   checkpointWhen: (_value, _ops, info) => info.deltasSinceBase >= 50,
 });
 
+/** The keys a create writes into `id`'s entry; a key it leaves out keeps the entry's own. */
+export type EntryChange = { topic: string; parent?: ConversationId; toolset?: DaemonToolset };
+
 /**
- * Set conversation `id`'s topic, keeping every other key its entry carries, so
- * a field a later slice writes (D4's titles, archive flags) survives.
+ * Set `change`'s keys on conversation `id`'s entry, keeping every other key it
+ * carries, so a field a later slice writes (D4's titles, archive flags) survives.
  */
-function writeTopic(
-  index: IndexDoc,
-  id: ConversationId,
-  topic: string,
-  parent?: ConversationId,
-): void {
+export function writeEntry(index: IndexDoc, id: ConversationId, change: EntryChange): void {
   const key = String(id);
-  index.conversations[key] = {
-    ...index.conversations[key],
-    topic,
-    ...(parent === undefined ? {} : { parent }),
-  };
+  index.conversations[key] = { ...index.conversations[key], ...change };
 }
 
 /**
@@ -89,13 +90,33 @@ export async function indexConversation(tx: Tx, record: ConversationRecord): Pro
     parent === undefined
       ? DEFAULT_TOPIC
       : (index.conversations[String(parent.conversationId)]?.topic ?? DEFAULT_TOPIC);
-  writeTopic(index, record.id, topic, parent?.conversationId);
+  writeEntry(index, record.id, {
+    topic,
+    ...(parent === undefined ? {} : { parent: parent.conversationId }),
+  });
+}
+
+/**
+ * Write what a create puts in `id`'s entry: its topic, and the toolset `choose`
+ * picks from the topic's record — read here, in the creating commit, never
+ * before it (design sec-3). Returns the toolset it wrote, for the selection.
+ */
+export async function writeCreated(
+  tx: Tx,
+  id: ConversationId,
+  topic: string | undefined,
+  choose: (record: TopicRecord | undefined) => DaemonToolset,
+): Promise<DaemonToolset> {
+  const index = await tx.doc(IndexDocument);
+  const toolset = choose(topic === undefined ? undefined : storedTopic(index, topic));
+  writeEntry(index, id, { topic: topic ?? DEFAULT_TOPIC, toolset });
+  return toolset;
 }
 
 /** The `init` a caller naming a topic passes: it runs after the hook and overwrites the topic. */
 export function assignTopic(name: string): ConversationInit {
   return async (tx, conversationId) => {
-    writeTopic(await tx.doc(IndexDocument), conversationId, name);
+    writeEntry(await tx.doc(IndexDocument), conversationId, { topic: name });
   };
 }
 
@@ -141,31 +162,48 @@ export async function readIndex(session: IndexReader): Promise<IndexDoc> {
   return (await session.snapshot(IndexDocument, context)) ?? IndexDocument.definition.initial();
 }
 
-/** `record` with its directory removed: what a cleared topic keeps. */
-function withoutCwd(record: TopicRecord): TopicRecord {
+/** The keys a topic record carries, in write order. */
+const KEYS = ["cwd", "toolset"] as const;
+
+/** `record` with `key` removed: what a cleared key leaves. */
+function without(record: TopicRecord, key: keyof TopicRecord): TopicRecord {
   const rest = { ...record };
-  delete rest.cwd;
+  // eslint-disable-next-line @typescript-eslint/no-dynamic-delete -- the record's own keys, both optional
+  delete rest[key];
   return rest;
 }
 
-/** `current` after a write of `cwd`: unchanged, cleared, or carrying the new directory. */
-function writtenRecord(current: TopicRecord, cwd: string | null | undefined): TopicRecord {
-  if (cwd === undefined) {
+/** `current` after a write of `value` to `key`: unchanged, cleared, or carrying the new value. */
+function written(
+  current: TopicRecord,
+  key: keyof TopicRecord,
+  value: string | null | undefined,
+): TopicRecord {
+  if (value === undefined) {
     return current;
   }
-  return cwd === null ? withoutCwd(current) : { ...current, cwd };
+  return value === null ? without(current, key) : { ...current, [key]: value };
+}
+
+/** `current` with every key `change` names merged as `written` does. */
+function merged(current: TopicRecord, change: TopicChange): TopicRecord {
+  let record = current;
+  for (const key of KEYS) {
+    record = written(record, key, change[key]);
+  }
+  return record;
 }
 
 /**
- * Write `name`'s record in one commit (design sec-4's `topic` frame): absent
- * `cwd` creates the topic or leaves its record as it is, a string sets its
- * directory, `null` clears it. Merged, never replaced, so a key a later slice
- * adds survives; the name is the caller's, already checked by the parser.
+ * Write `name`'s record in one commit (design sec-4's `topic` frame): absent keys
+ * create the topic or leave its record as it is, a value sets one, `null` clears
+ * it. Merged, never replaced, so a key a later slice adds survives; the name is
+ * the caller's, already checked by the parser.
  */
 export async function writeTopicRecord(
   session: Pick<Session, "commit">,
   name: string,
-  cwd: string | null | undefined,
+  change: TopicChange,
 ): Promise<NamedTopic> {
   if (name === DEFAULT_TOPIC) {
     // DEC-015 restated where the write lands, not only in the parser.
@@ -173,7 +211,7 @@ export async function writeTopicRecord(
   }
   return session.commit(async (tx) => {
     const index = await tx.doc(IndexDocument);
-    const record = writtenRecord(storedTopic(index, name) ?? {}, cwd);
+    const record = merged(storedTopic(index, name) ?? {}, change);
     index.topics[name] = record;
     return { name, ...record };
   }, context);
@@ -190,7 +228,11 @@ export async function backfillIndex(session: Pick<Session, "commit">): Promise<v
     const index = await tx.doc(IndexDocument);
     for (const record of await unbackfilled(tx, index)) {
       const topic = index.conversations[String(record.id)]?.topic ?? DEFAULT_TOPIC;
-      writeTopic(index, record.id, topic, record.parent?.conversationId);
+      const parent = record.parent?.conversationId;
+      writeEntry(index, record.id, {
+        topic,
+        ...(parent === undefined ? {} : { parent }),
+      });
     }
   }, context);
 }

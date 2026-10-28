@@ -35,7 +35,6 @@
 import { withAbortSignal } from "@earendil-works/chord/context";
 import type {
   Conversation,
-  Extension,
   Harness,
   SettledSubmissionRecord,
   Submission,
@@ -45,6 +44,7 @@ import { parseModel } from "../models.ts";
 import { context } from "../context.ts";
 import type { JsonRecord } from "../json.ts";
 import { ChannelFailed, roomShell } from "../room/shell.ts";
+import { selectionOf, toolsetList } from "../toolsets.ts";
 import type { Sleep } from "./backoff.ts";
 import { type CeilingLatch, ceilingLatch } from "./ceiling-latch.ts";
 import { type CollectDeps, collectJob } from "./collect.ts";
@@ -77,8 +77,6 @@ export interface RunDeps extends CollectDeps {
   harness: Pick<Harness, "conversation" | "commit">;
   conversations: Conversations;
   tenancy: Tenancy;
-  /** What a job's conversation selects: its tools and the guard (installed at open). */
-  extensions: readonly Extension[];
   /** The corpus prompt text, read per job. */
   readPrompt: () => Promise<string>;
   now: () => number;
@@ -366,7 +364,8 @@ async function admit(
     {
       model: parseModel(policy.model),
       thinkingLevel: policy.thinkingLevel ?? null,
-      extensions: deps.extensions,
+      // The job toolset, re-derived here: a stored selection an upgrade drifted comes back right.
+      extensions: selectionOf(toolsetList("job")),
       cwd: repo.guestPath,
     },
     context,

@@ -10,11 +10,13 @@ import type { Connection } from "@earendil-works/pi-env";
 import { describe, expect, it } from "vitest";
 import { context } from "../../src/context.ts";
 import { conversationIdOf } from "../../src/runner/durable-ids.ts";
+import { jobConversation } from "../../src/runner/conversations.ts";
+import { toolsetList } from "../../src/toolsets.ts";
 import type { GitChannel } from "../../src/runner/door.ts";
 import { type RunDeps, runJob } from "../../src/runner/run.ts";
 import { RunControl } from "../../src/runner/scheduler.ts";
 import type { Job } from "../../src/runner/store.ts";
-import { textOf } from "../harness-fixture.ts";
+import { textOf, toolsetProbe } from "../harness-fixture.ts";
 import { FailingConnection, lostError } from "../room/connection-fixture.ts";
 import { narrowedModes } from "./config-fixture.ts";
 import {
@@ -24,6 +26,7 @@ import {
   eventOf,
   jobToolResults,
   kinds,
+  REGISTRY_NAMES,
   runWorld,
   SETTLE_MS,
   settled,
@@ -492,5 +495,22 @@ describe("runJob: project context (PHASE-04, design §4.2-4.4)", () => {
     expect(prompt).toContain(`Working directory: ${guest}`);
     expect(block).toBeLessThan(prompt.indexOf("# patch-agent job"));
     expect(kinds(await w.events(job.id))).not.toContain("context_degraded");
+  });
+});
+
+describe("runJob: the job toolset at admission (VT-3)", () => {
+  it("VT-3 admission: an admitted job selects the job toolset, not the registry's union", async () => {
+    const w = await runWorld();
+    w.faux.setResponses([answer()]);
+    const queued = await w.submit();
+    const job = await settled(w, queued.id);
+    const conversation = await jobConversation(w.harness, job.conversationId ?? "");
+    if (conversation === undefined) {
+      throw new Error("the job's conversation is missing");
+    }
+    const probe = await toolsetProbe(conversation);
+    // run.ts admission's own `configure`: `deps.extensions` (the registry) would be the union.
+    expect(probe.extensions).toEqual([...toolsetList("job")]);
+    expect(probe.extensions).not.toEqual(REGISTRY_NAMES);
   });
 });

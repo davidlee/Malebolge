@@ -185,6 +185,29 @@ export function indexOf(harness: IndexReader): Promise<IndexDoc> {
   return readIndex(harness);
 }
 
+/** A conversation's resolved agent, by name: its selection, the tools offered, and its sections. */
+export interface ToolsetProbe {
+  extensions: string[];
+  tools: string[];
+  sections: string[];
+}
+
+/**
+ * What `conversation` — or the one `open` creates — resolves to, without a turn, so a
+ * test can probe, close the store, reopen it and probe again.
+ */
+export async function toolsetProbe(
+  conversation: Conversation | (() => Promise<Conversation>),
+): Promise<ToolsetProbe> {
+  const of = typeof conversation === "function" ? await conversation() : conversation;
+  const agent = await of.agent(context);
+  return {
+    extensions: agent.extensions.map((extension) => extension.name),
+    tools: agent.tools.map((tool) => tool.name),
+    sections: agent.sections.map((section) => section.key),
+  };
+}
+
 /** `harness`, closed when the test ends. */
 export function closing<T extends Harness>(harness: T): T {
   onTestFinished(() => harness.close(context));
