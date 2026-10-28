@@ -505,7 +505,7 @@ list of faces is reduced to its first, the one display lets win."
   "A post's header opens a thread turn; a reap and a wake have their own faces.
 The post's body never keeps the previous speaker's colour, the reap line's
 warning wins over the thread face it starts with, and a wake's body is not
-coloured as SATAN's turn."
+coloured as SATAN's turn or the operator's."
   (malebolge-test--with-session
     (malebolge-test--feed
      (concat "Satan:\nhi\n"
@@ -519,11 +519,14 @@ coloured as SATAN's turn."
     (should (eq 'malebolge-reap-face
                 (malebolge-test--line-face
                  "[thread] family 12/340 reaped")))
-    (should (eq 'malebolge-user-face
+    (should (eq 'malebolge-wake-face
                 (malebolge-test--line-face
                  "[wake] scheduled by 12 (seclude)")))
-    (should (eq 'malebolge-user-face
-                (malebolge-test--line-face "wake intent")))))
+    (should (eq 'malebolge-wake-face
+                (malebolge-test--line-face "wake intent")))
+    ;; A wake is input SATAN made, like a post: it reads as one by default.
+    (should (eq 'malebolge-thread-face
+                (face-attribute 'malebolge-wake-face :inherit)))))
 
 (ert-deftest malebolge-reload-replaces-font-lock-keywords ()
   "Reloading malebolge.el over a stale keyword list brings in the new rules.

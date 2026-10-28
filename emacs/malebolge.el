@@ -25,7 +25,7 @@
 ;; coloured by the turn's label line: `malebolge-user-face' and
 ;; `malebolge-satan-face'.  A post's header (`[thread] post from 12')
 ;; opens a turn in `malebolge-thread-face' and a wake's
-;; (`[wake] scheduled by 12') in `malebolge-user-face', so no body keeps
+;; (`[wake] scheduled by 12') in `malebolge-wake-face', so no body keeps
 ;; the previous speaker's colour.  Lines beginning `[tool]' and
 ;; `[status]' keep their own faces (`malebolge-tool-face',
 ;; `malebolge-status-face'); so do `[thread]' lines
@@ -86,6 +86,11 @@
   "Face for transcript lines reporting another conversation's thread."
   :group 'malebolge)
 
+(defface malebolge-wake-face
+  '((t :inherit malebolge-thread-face))
+  "Face for a wake's turn: input SATAN scheduled, like a post."
+  :group 'malebolge)
+
 (defface malebolge-reap-face
   '((t :inherit warning))
   "Face for transcript lines reporting a reaped family."
@@ -133,7 +138,7 @@
   '(("^You:$" . malebolge-user-face)
     ("^Satan\\(?: ([a-z]+)\\)?:$" . malebolge-satan-face)
     ("^\\[thread\\] post from .*$" . malebolge-thread-face)
-    ("^\\[wake\\] scheduled by .*$" . malebolge-user-face))
+    ("^\\[wake\\] scheduled by .*$" . malebolge-wake-face))
   "Alist of label REGEXP to the face its turn is shown in.
 Each REGEXP matches a whole line: a label is looked up per line.")
 
@@ -519,7 +524,7 @@ default).  A turn runs from its label line (`You:', `Satan:',
 `Satan (continued):', `Satan (revised):') to the next label.  A post from
 another thread (`[thread] post from 12 (research)') opens a turn of its
 own in `malebolge-thread-face', and a wake (`[wake] scheduled by 12') in
-`malebolge-user-face', so neither colours its body as the previous
+`malebolge-wake-face', so neither colours its body as the previous
 speaker's.  Lines beginning `[tool]' and `[status]' keep their own faces,
 `malebolge-tool-face' and `malebolge-status-face'.  So do `[thread]'
 lines, which take `malebolge-thread-face', except a reaped family's
