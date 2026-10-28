@@ -96,7 +96,10 @@ export function writeEntry(index: IndexDoc, id: ConversationId, change: EntryCha
 
 /**
  * The `conversationCreated` hook (DEC-012): the entry every commit that creates
- * or forks a conversation writes. It reads documents only, never a table, so
+ * or forks a conversation writes. A fork copies its parent entry's topic and
+ * toolset, so it runs on its parent's set; a parent with no entry or no toolset
+ * throws, which fails the forking commit, so a fork without a toolset is never
+ * written (design sec-3). It reads documents only, never a table, so
  * `ReadAfterWrite` cannot fire; a throw fails the creating commit.
  */
 export async function indexConversation(tx: Tx, record: ConversationRecord): Promise<void> {
@@ -106,13 +109,20 @@ export async function indexConversation(tx: Tx, record: ConversationRecord): Pro
   }
   const index = await tx.doc(IndexDocument);
   const parent = record.parent;
-  const topic =
-    parent === undefined
-      ? DEFAULT_TOPIC
-      : (index.conversations[String(parent.conversationId)]?.topic ?? DEFAULT_TOPIC);
+  if (parent === undefined) {
+    writeEntry(index, record.id, { topic: DEFAULT_TOPIC });
+    return;
+  }
+  const entry = ownKey(index.conversations, String(parent.conversationId));
+  if (entry?.toolset === undefined) {
+    throw new Error(
+      `conversation ${String(record.id)}: fork of ${String(parent.conversationId)}, which has no toolset`,
+    );
+  }
   writeEntry(index, record.id, {
-    topic,
-    ...(parent === undefined ? {} : { parent: parent.conversationId }),
+    topic: entry.topic,
+    parent: parent.conversationId,
+    toolset: entry.toolset,
   });
 }
 
@@ -185,6 +195,14 @@ export function storedEntry(index: IndexDoc, id: ConversationId): IndexEntry | u
  */
 export async function readIndex(session: IndexReader): Promise<IndexDoc> {
   return (await session.snapshot(IndexDocument, context)) ?? IndexDocument.definition.initial();
+}
+
+/**
+ * The index as a commit reads it, for a caller that must read it before any table
+ * write (the reconcile's step 0). The module stays `IndexDocument`'s only owner.
+ */
+export function readIndexDoc(tx: Tx): Promise<IndexDoc> {
+  return tx.doc(IndexDocument);
 }
 
 /** The keys a topic record carries, in write order. */

@@ -1,8 +1,8 @@
 // The threads module's dependencies (SL-006 design § Components and boundaries),
 // bound late in two steps as the wake's are: the extension is built before the
-// session exists. PHASE-04 registered the satan.post task; PHASE-05 adds the
-// thread_post tool and the `threads` section its prompt carries. thread_start and
-// thread_fork follow.
+// session exists. PHASE-04 registered the satan.post task; PHASE-05 added the
+// thread_post tool and the `threads` section its prompt carries; PHASE-07 adds
+// thread_start and thread_fork.
 
 import {
   defineExtension,
@@ -16,7 +16,7 @@ import type { ConversationDefaults } from "../conversations.ts";
 import { type LateBinding, lateBinding } from "../late-binding.ts";
 import type { Log, SatanTools } from "../satan-tools.ts";
 import { type PostInput, type PostResult, type PostState, postTask } from "./task.ts";
-import { threadPost } from "./tools.ts";
+import { threadFork, threadPost, threadStart } from "./tools.ts";
 
 export interface ThreadDeps {
   profile: Profile;
@@ -53,7 +53,7 @@ export const THREADS_SECTION =
   "A <family-reaped> says an activity was stopped for fan-out: too many posts at once from one starting input. " +
   "Its posts not yet read are withdrawn, and posts and thread starts from that activity are refused.";
 
-/** The room's `threads` extension: the satan.post task, the thread_post tool and its section. */
+/** The room's `threads` extension: the satan.post task, the thread tools and their section. */
 export const threadsExtension = (
   deps: () => ThreadDeps,
   task: Task<PostInput, PostState, PostResult, object> = postTask(deps),
@@ -61,6 +61,6 @@ export const threadsExtension = (
   defineExtension({
     name: "threads",
     tasks: [task],
-    tools: [threadPost(deps, task)],
+    tools: [threadPost(deps, task), threadStart(deps, task), threadFork(deps, task)],
     sections: [section("threads", () => THREADS_SECTION, { tag: true })],
   });

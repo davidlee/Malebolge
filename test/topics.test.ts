@@ -86,7 +86,35 @@ it("records a fork's parent's topic and its parent's id", async () => {
   expect((await indexOf(test.harness)).conversations[String(forked.id)]).toEqual({
     topic: "work",
     parent: parent.id,
+    toolset: "interactive",
   });
+});
+
+it("the hook copies a fork's toolset from its parent, and fails the commit when the parent has none", async () => {
+  const test = await openIndexedHarness();
+  // A topic whose toolset is not the profile default, so a default would be caught.
+  await writeTopicRecord(test.harness, "inbox", { toolset: "mail" });
+  const parent = await createConversation(test.harness, toolsetInit("room", "inbox"));
+  const forked = await forkConversation(test.harness, parent);
+  expect((await indexOf(test.harness)).conversations[String(forked.id)]).toEqual({
+    topic: "inbox",
+    parent: parent.id,
+    toolset: "mail",
+  });
+
+  // A parent whose entry carries no toolset: the fork's commit fails and writes nothing.
+  const bare = await createConversation(test.harness);
+  const before = await indexOf(test.harness);
+  await expect(forkConversation(test.harness, bare)).rejects.toThrow(
+    new RegExp(`^conversation \\d+: fork of ${String(bare.id)}, which has no toolset$`),
+  );
+  expect(await indexOf(test.harness)).toEqual(before);
+  expect(await conversationIds(test.harness)).toEqual([
+    test.root.id,
+    parent.id,
+    forked.id,
+    bare.id,
+  ]);
 });
 
 it("indexes a conversation created by a raw transaction in the default topic", async () => {

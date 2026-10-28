@@ -13,8 +13,8 @@ import {
 } from "@earendil-works/pi-durable";
 import type { Profile } from "../config.ts";
 import { isRecord } from "../json.ts";
-import { requireSameTalkSet } from "../toolsets.ts";
-import { IndexDocument, storedEntry } from "../topics.ts";
+import { type DaemonToolset, requireSameTalkSet } from "../toolsets.ts";
+import { type IndexDoc, IndexDocument, isKnownTopic, storedEntry } from "../topics.ts";
 import { WAKE_KIND } from "../wake/task.ts";
 import { isEpisodeClass, isOrigin, type Origin } from "./origin.ts";
 import { POST_KIND } from "./task.ts";
@@ -28,6 +28,23 @@ export const GLOBAL_CAP = 12;
 
 /** A call refused with a text the model reads. */
 export class Refusal extends Error {}
+
+/**
+ * Refuse a toolset outside the caller's talk set (design § The thread tools): a start's
+ * topic and a post's target are judged the same way, and both read the same refusal.
+ */
+export function refuseOutsideTalkSet(
+  profile: Profile,
+  caller: DaemonToolset,
+  target: DaemonToolset,
+  targetLabel: string,
+): void {
+  try {
+    requireSameTalkSet(profile, caller, target, targetLabel);
+  } catch (error) {
+    throw new Refusal(error instanceof Error ? error.message : String(error));
+  }
+}
 
 /** Entries read per scan page: a turn's tail is short, so a couple of pages reach its input. */
 const PAGE = 16;
@@ -86,6 +103,43 @@ export interface PostAdmission {
 }
 
 /**
+ * What a caller's admission yields: what a post's holds, plus the caller's own toolset —
+ * which a started thread's toolset is judged against — and the index it read.
+ */
+export interface CallerAdmission extends PostAdmission {
+  /** The caller's toolset, read from its index entry. */
+  toolset: DaemonToolset;
+  /** The index the admission read, so the caller's commit needs no second read of it. */
+  index: IndexDoc;
+}
+
+/**
+ * The caller's half of every admission (design § The thread tools, shared steps 1 and 3):
+ * the index and the caller's entry in it, its turn's origin, and its tombstone. Every
+ * read, so the caller's one commit may follow. A caller that no topic indexes, or whose
+ * turn has no input to take an origin from, is refused; so is a reaped origin.
+ */
+export async function admitCaller(tx: Tx, caller: ConversationId): Promise<CallerAdmission> {
+  const index = await tx.doc(IndexDocument);
+  const callerEntry = storedEntry(index, caller);
+  if (callerEntry === undefined) {
+    throw new Refusal("this conversation has no index entry");
+  }
+  const origin = await callerOrigin(tx, caller);
+  const doc = await threadsDoc(tx);
+  if (isReaped(doc, origin)) {
+    throw new Refusal(reapedRefusal(origin));
+  }
+  return {
+    topic: callerEntry.topic,
+    origin,
+    toolset: callerEntry.toolset,
+    index,
+    reaped: new Set(Object.keys(doc.reaped)),
+  };
+}
+
+/**
  * A post's admission (design § The thread tools, shared steps 1-2): the caller is
  * indexed, the target exists and is indexed, the two share a talk set, and the
  * caller's turn has an origin, and that origin has not been reaped. Every read, so
@@ -101,33 +155,39 @@ export async function admitPost(
   if (to === caller) {
     throw new Refusal("a conversation cannot post to itself");
   }
-  const index = await tx.doc(IndexDocument);
-  const callerEntry = storedEntry(index, caller);
-  if (callerEntry === undefined) {
-    throw new Refusal("this conversation has no index entry");
-  }
-  const target = await tx.conversation(to);
-  if (target === undefined) {
+  const admitted = await admitCaller(tx, caller);
+  if ((await tx.conversation(to)) === undefined) {
     throw new Refusal(`no conversation ${String(to)}`);
   }
-  const targetEntry = storedEntry(index, to);
-  if (targetEntry === undefined) {
+  const target = storedEntry(admitted.index, to);
+  if (target === undefined) {
     throw new Refusal(`conversation ${String(to)} is not in a topic (a task's conversation)`);
   }
-  try {
-    requireSameTalkSet(
-      profile,
-      callerEntry.toolset,
-      targetEntry.toolset,
-      `conversation ${String(to)}`,
-    );
-  } catch (error) {
-    throw new Refusal(error instanceof Error ? error.message : String(error));
+  refuseOutsideTalkSet(profile, admitted.toolset, target.toolset, `conversation ${String(to)}`);
+  return admitted;
+}
+
+/** A thread start's admission: the caller's admission, plus the topic its child is born in. */
+export interface StartAdmission extends CallerAdmission {
+  /** The topic the started conversation takes: the call's, else the caller's. */
+  childTopic: string;
+}
+
+/**
+ * A thread start's admission (design § The thread tools): the caller's, then the topic
+ * its child is born in — the call's, else the caller's. Threads never create topics, so
+ * a name no index entry knows is refused. Every read, so the creating commit may follow.
+ * The toolset the topic resolves to is judged inside that commit, not here.
+ */
+export async function admitStart(
+  tx: Tx,
+  caller: ConversationId,
+  topic?: string,
+): Promise<StartAdmission> {
+  const admitted = await admitCaller(tx, caller);
+  const childTopic = topic ?? admitted.topic;
+  if (!isKnownTopic(admitted.index, childTopic)) {
+    throw new Refusal(`unknown topic: ${childTopic}`);
   }
-  const origin = await callerOrigin(tx, caller);
-  const doc = await threadsDoc(tx);
-  if (isReaped(doc, origin)) {
-    throw new Refusal(reapedRefusal(origin));
-  }
-  return { topic: callerEntry.topic, origin, reaped: new Set(Object.keys(doc.reaped)) };
+  return { ...admitted, childTopic };
 }

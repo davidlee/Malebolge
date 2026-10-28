@@ -23,6 +23,7 @@ import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite
 import { CodingTools } from "@earendil-works/pi-durable/tools";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Profile } from "../src/config.ts";
+import { toolsetInit } from "../src/conversations.ts";
 import { context } from "../src/context.ts";
 import { registryOf } from "../src/registry.ts";
 import type { Log } from "../src/satan-tools.ts";
@@ -479,16 +480,30 @@ describe("startup reconcile", () => {
     );
   });
 
-  it("refuses a fork, names it, and leaves the backfill uncommitted", async () => {
+  it("a fork without a toolset is not supported", async () => {
     const { path, dir } = await store();
     const raw = await rawStore(path);
     const rootId = raw.root.id;
+    // The hook copies a fork's toolset, so the store is made to hold one without.
     const parent = await createConversation(raw.harness);
+    await raw.harness.commit(async (tx) => {
+      writeEntry(await tx.doc(IndexDocument), parent.id, {
+        topic: "default",
+        toolset: "interactive",
+      });
+    }, context);
     const forked = await forkConversation(raw.harness, parent);
+    // Strip both entries' toolset: the fork's to reach the refusal, the parent's so
+    // nothing but the reconcile's backfill could give either one back.
+    await raw.harness.commit(async (tx) => {
+      const index = await tx.doc(IndexDocument);
+      index.conversations[String(forked.id)] = { topic: "default", parent: parent.id };
+      index.conversations[String(parent.id)] = { topic: "default" };
+    }, context);
     await raw.harness.close(context);
 
     await expect(open(path, dir, "room")).rejects.toThrow(
-      `conversation ${String(forked.id)}: forks are not supported`,
+      `conversation ${String(forked.id)}: a fork without a toolset is not supported`,
     );
 
     // The refusal threw, so the reconcile's backfill and list writes rolled back.
@@ -497,6 +512,18 @@ describe("startup reconcile", () => {
     expect(await entryToolset(reopened.harness, rootId)).toBeUndefined();
     expect(await entryToolset(reopened.harness, parent.id)).toBeUndefined();
     await reopened.harness.close(context);
+  });
+
+  it("opens a store holding a fork with a toolset", async () => {
+    const { path, dir } = await store();
+    const raw = await rawStore(path);
+    const parent = await createConversation(raw.harness, toolsetInit("room", "work"));
+    const forked = await forkConversation(raw.harness, parent);
+    await raw.harness.close(context);
+
+    const session = await open(path, dir, "room");
+    expect(await entryToolset(session.harness, forked.id)).toBe(PROFILE_TOOLSETS.room.default);
+    await session.harness.close(context);
   });
 
   it("refuses a task-owned conversation, names it, and leaves root's entry unbackfilled", async () => {

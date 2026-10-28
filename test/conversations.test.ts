@@ -3,6 +3,8 @@
 // The reopen case proves a created conversation is never reconfigured.
 
 import { join } from "node:path";
+import { createModels, type Models } from "@earendil-works/pi-ai/models";
+import { fauxAssistantMessage, fauxText } from "@earendil-works/pi-ai/providers/faux";
 import {
   type Conversation,
   type ConversationId,
@@ -16,7 +18,7 @@ import {
 import { NodeExecutionEnv } from "@earendil-works/pi-durable/env/node";
 import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite/node";
 import { CodingTools } from "@earendil-works/pi-durable/tools";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { context } from "../src/context.ts";
 import {
   type ConversationDefaults,
@@ -27,6 +29,7 @@ import {
 } from "../src/conversations.ts";
 import { registryOf } from "../src/registry.ts";
 import { openSession, type Session } from "../src/session.ts";
+import { threadsExtension } from "../src/threads/extension.ts";
 import {
   indexConversation,
   IndexDocument,
@@ -60,6 +63,17 @@ import {
   type TestHarness,
   toolsetProbe,
 } from "./harness-fixture.ts";
+import {
+  answeredChild,
+  attemptCall,
+  CONTEXT,
+  conversationOf,
+  createIndexedThread,
+  INTENT,
+  type ThreadWorld,
+  threadWorld,
+} from "./thread-fixture.ts";
+import { WAIT } from "./wake-fixture.ts";
 
 const DEFAULTS: ConversationDefaults = { model: FAUX_MODEL, cwd: "/daemon-default" };
 
@@ -84,15 +98,37 @@ const ROOM_UNION = [
 /** The interactive toolset's names as a registry can resolve them: `satan` is not installed. */
 const INTERACTIVE = toolsetList("interactive", "room").filter((name) => name !== SATAN);
 
-/** A room session over the sqlite file at `path`: the store a reopen reads again. */
-const openRoomStore = async (path: string, registry: Registry): Promise<Session> =>
+/** A catalog holding `world`'s one faux provider, so both sessions script the same turns. */
+const catalogOf = (world: ThreadWorld): Models => {
+  const models = createModels();
+  models.setProvider(world.faux.provider);
+  return models;
+};
+
+/**
+ * A room session over the sqlite file at `path`: the store a reopen reads again. `world`
+ * gives it the scripted faux model the thread tools' turns read, and the second binding
+ * step `threadWorld().open` runs, so the world's deps read this session's harness.
+ */
+const openRoomStore = async (
+  path: string,
+  registry: Registry,
+  world?: ThreadWorld,
+): Promise<Session> =>
   openSession(await openNodeSqliteStorage(path), {
-    models: fauxModels().models,
+    models: world === undefined ? fauxModels().models : catalogOf(world),
     registry,
     agent: { model: FAUX_MODEL },
     profile: "room",
     log: () => undefined,
     env: nodeEnv,
+    ...(world === undefined
+      ? {}
+      : {
+          beforeResume: (session: Session): void => {
+            world.threads.harness = session.harness;
+          },
+        }),
   });
 
 /** The conversation `id` names in `session`; fails when the store lost it. */
@@ -370,6 +406,7 @@ describe("conversations", () => {
     expect(index.conversations[String(forked.id)]).toEqual({
       topic: "work",
       parent: operator.id,
+      toolset: "interactive",
     });
     expect((await api.open({ kind: "topic", name: "work", new: false })).id).toBe(operator.id);
     // A listing still shows every conversation of the topic, threads included.
@@ -627,7 +664,14 @@ describe("conversations", () => {
   it("VT-1 records each create's toolset and resolves it again after a reopen", async () => {
     const tmp = await tempDir();
     const path = join(tmp.dir, "toolsets.sqlite");
-    const registry = registryOf(nameOnly(ROOM_UNION));
+    // The room's stubs, with the real `threads` extension in the stub's place: its tools
+    // create the last two probes below, in this same store.
+    const world = threadWorld();
+    const registry = registryOf(
+      nameOnly(ROOM_UNION).map((extension) =>
+        extension.name === "threads" ? threadsExtension(() => world.threads) : extension,
+      ),
+    );
     let session: Session | undefined;
     const close = async (): Promise<void> => {
       if (session !== undefined) {
@@ -636,7 +680,7 @@ describe("conversations", () => {
       session = undefined;
     };
     try {
-      const first = await openRoomStore(path, registry);
+      const first = await openRoomStore(path, registry, world);
       session = first;
       // (a) The production path creates the mail topic's conversation: the room allows mail.
       await writeTopicRecord(first.harness, "mailbox", { toolset: "mail" });
@@ -654,27 +698,79 @@ describe("conversations", () => {
       });
       const fresh = await conversations(first, DEFAULTS, "room").open({ kind: "new" });
 
+      // (d) The thread tools' own creates: one started in `work`, one forked from a caller.
+      // The caller holds the whole interactive list, as a plain create does, so the fork
+      // copies it rather than the fixture's default `threads`-only selection.
+      const caller = await createIndexedThread(
+        first.harness,
+        "work",
+        toolsetList("interactive", "room"),
+      );
+      const base = { world, session: first, caller };
+      const startedChild = await conversationOf(
+        first.harness,
+        answeredChild(
+          await attemptCall(base, "thread_start", {
+            intent: INTENT,
+            context: CONTEXT,
+            topic: "work",
+          }),
+        ),
+      );
+      // The start's child post turn is held: wait until every response the turn scripts is
+      // read, so the fork's queue is not taken by the start's child.
+      await vi.waitFor(() => {
+        expect(world.faux.getPendingResponseCount()).toBe(0);
+      }, WAIT);
+      const forkedChild = await conversationOf(
+        first.harness,
+        answeredChild(await attemptCall(base, "thread_fork", { intent: INTENT, context: CONTEXT })),
+      );
+
       const probes = {
         mail: await toolsetProbe(mailTopic),
         plain: await toolsetProbe(plain),
         fresh: await toolsetProbe(fresh),
+        started: await toolsetProbe(startedChild),
+        forked: await toolsetProbe(forkedChild),
       };
       expect(probes.mail.extensions).toEqual([...toolsetList("mail", "room")]);
+      // The started child takes the topic's interactive list, as a plain create does; the
+      // fork copies its caller's, which this guard gives the whole list.
       expect(probes.plain.extensions).toEqual(INTERACTIVE);
       expect(probes.fresh.extensions).toEqual(INTERACTIVE);
+      expect(probes.started.extensions).toEqual(INTERACTIVE);
+      expect(probes.forked.extensions).toEqual(INTERACTIVE);
 
       const index = await readIndex(first.harness);
       expect(storedEntry(index, mailTopic.id)?.toolset).toBe("mail");
       expect(storedEntry(index, plain.id)?.toolset).toBe("interactive");
       expect(storedEntry(index, fresh.id)?.toolset).toBe("interactive");
+      expect(storedEntry(index, startedChild.id)).toEqual({
+        topic: "work",
+        toolset: "interactive",
+        startedBy: caller.id,
+      });
+      expect(storedEntry(index, forkedChild.id)).toEqual({
+        topic: "work",
+        toolset: "interactive",
+        parent: caller.id,
+      });
       await close();
 
-      // The store holds mail: the production policy reopens it.
-      const second = await openRoomStore(path, registry);
+      // The close cuts off the children's held post turns: plain answers let whatever the
+      // reopen resumes (a retried post, or its failed-post notice) finish harmlessly.
+      world.faux.setResponses(
+        Array.from({ length: 8 }, () => fauxAssistantMessage([fauxText("posted")])),
+      );
+      // The store holds mail and both thread children: the production policy reopens it.
+      const second = await openRoomStore(path, registry, world);
       session = second;
       expect(await toolsetProbe(() => reopened(second, mailTopic.id))).toEqual(probes.mail);
       expect(await toolsetProbe(() => reopened(second, plain.id))).toEqual(probes.plain);
       expect(await toolsetProbe(() => reopened(second, fresh.id))).toEqual(probes.fresh);
+      expect(await toolsetProbe(() => reopened(second, startedChild.id))).toEqual(probes.started);
+      expect(await toolsetProbe(() => reopened(second, forkedChild.id))).toEqual(probes.forked);
     } finally {
       await close();
       await tmp.cleanup();

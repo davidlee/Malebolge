@@ -3,8 +3,8 @@
 // the last process left unfinished resumed.
 //
 // The startup reconcile (design sec-3) is what makes a stored conversation's
-// extensions a function of its toolset: it refuses a fork or a task-owned
-// conversation, backfills an entry written without a toolset, refuses a
+// extensions a function of its toolset: it refuses a fork without a toolset or a
+// task-owned conversation, backfills an entry written without a toolset, refuses a
 // toolset the profile does not allow, and re-derives every list that drifted.
 // It runs in one commit, so a refusal rolls back the backfill with it.
 
@@ -29,9 +29,12 @@ import type { Log } from "./satan-tools.ts";
 import {
   backfillIndex,
   entryToolsets,
+  type IndexDoc,
   type NamedTopic,
   indexConversation,
+  readIndexDoc,
   scanAll,
+  storedEntry,
 } from "./topics.ts";
 import {
   type DaemonToolset,
@@ -90,12 +93,17 @@ function sameNames(stored: AgentState["extensions"], list: readonly string[]): b
 
 /**
  * Step 0: refuse what this slice cannot reconcile, naming the first in scan order,
- * so neither a fork nor a task-owned conversation is ever given a default toolset.
+ * so no fork without a toolset and no task-owned conversation is ever given a
+ * default toolset. A fork's toolset is the one its parent's entry carries, which
+ * the hook copies in the creating commit; this runs before the backfill, so a
+ * fork is never silently given the profile's default.
  */
-function refuseUnsupported(records: readonly ConversationRecord[]): void {
+function refuseUnsupported(records: readonly ConversationRecord[], index: IndexDoc): void {
   for (const record of records) {
-    if (record.parent !== undefined) {
-      throw new Error(`conversation ${String(record.id)}: forks are not supported`);
+    if (record.parent !== undefined && storedEntry(index, record.id) === undefined) {
+      throw new Error(
+        `conversation ${String(record.id)}: a fork without a toolset is not supported`,
+      );
     }
     if (record.owner !== undefined) {
       throw new Error(
@@ -147,7 +155,8 @@ async function reconcileToolsets(
   await harness.commit(async (tx) => {
     // Step 0: every scan first — a table read after a table write is pi-durable's `ReadAfterWrite`.
     const records = await scanAll(tx);
-    refuseUnsupported(records);
+    // The index is a document read, which `ReadAfterWrite` does not cover.
+    refuseUnsupported(records, await readIndexDoc(tx));
 
     // Steps 1-2: an entry written without a toolset takes the profile's default, then the checks.
     const { entries, topics } = await entryToolsets(

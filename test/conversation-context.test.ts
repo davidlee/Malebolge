@@ -16,15 +16,8 @@ import {
   type SatanKind,
   satanIdentity,
 } from "../src/conversation-context.ts";
-import { context } from "../src/context.ts";
 import { DEFAULT_TOPIC } from "../src/protocol.ts";
-import {
-  type IndexDoc,
-  type IndexEntry,
-  IndexDocument,
-  type IndexReader,
-  writeEntry,
-} from "../src/topics.ts";
+import { type IndexDoc, type IndexEntry, IndexDocument, type IndexReader } from "../src/topics.ts";
 import {
   createConversation,
   createTaskOwned,
@@ -132,10 +125,6 @@ it("reads a fork's own id, its topic and its parent", async () => {
   const test = await openIndexedHarness();
   const parent = await createConversation(test.harness, toolsetInit("room", "work"));
   const forked = await forkConversation(test.harness, parent);
-  // Forks are unsupported (refused at startup, IMP-017): write the toolset a reconcile would.
-  await test.harness.commit(async (tx) => {
-    writeEntry(await tx.doc(IndexDocument), forked.id, { topic: "work", toolset: "interactive" });
-  }, context);
   expect(await contextOf(test.harness, forked.id)).toEqual({
     id: forked.id,
     entry: { topic: "work", parent: parent.id, toolset: "interactive" },

@@ -3,9 +3,16 @@
 // a recipient with one probe tool, and a post created in a commit. The
 // re-openable store, scripted turns and entry readers are wake-fixture's.
 
-import { Type } from "@earendil-works/pi-ai";
+import { type ToolResultMessage, Type } from "@earendil-works/pi-ai";
 import { createModels } from "@earendil-works/pi-ai/models";
-import { type FauxProviderHandle, fauxProvider } from "@earendil-works/pi-ai/providers/faux";
+import {
+  type FauxResponseFactory,
+  type FauxProviderHandle,
+  fauxAssistantMessage,
+  fauxProvider,
+  fauxText,
+  fauxToolCall,
+} from "@earendil-works/pi-ai/providers/faux";
 import {
   type Conversation,
   type ConversationId,
@@ -23,7 +30,7 @@ import {
 } from "@earendil-works/pi-durable";
 import { expect, vi } from "vitest";
 import { context } from "../src/context.ts";
-import { toolsetInit } from "../src/conversations.ts";
+import { isConversationKey, toolsetInit } from "../src/conversations.ts";
 import { isRecord, type JsonRecord } from "../src/json.ts";
 import { registryOf } from "../src/registry.ts";
 import type { Log, SatanTools } from "../src/satan-tools.ts";
@@ -40,8 +47,9 @@ import {
   postTask,
 } from "../src/threads/task.ts";
 import { type ThreadsDoc, threadsDoc, tombstone } from "../src/threads/tombstones.ts";
+import { type IndexEntry, IndexDocument, storedEntry } from "../src/topics.ts";
 import { selectionOf } from "../src/toolsets.ts";
-import { closing, FAUX_MODEL, nodeEnv } from "./harness-fixture.ts";
+import { closing, FAUX_MODEL, nodeEnv, textOf, toolResults } from "./harness-fixture.ts";
 import {
   answer,
   entriesOf,
@@ -84,9 +92,10 @@ export interface ThreadWorld {
   /**
    * The next session over the world's one store, closed when the test ends. `registered`
    * replaces the satan.post the session's registry installs: a test reopens under a
-   * definition too old to run the post its store holds.
+   * definition too old to run the post its store holds. `extra` installs further
+   * extensions beside the world's: a test-local tool its conversations select by name.
    */
-  open(registered?: ThreadWorld["task"]): Promise<ThreadSession>;
+  open(registered?: ThreadWorld["task"], extra?: readonly Extension[]): Promise<ThreadSession>;
 }
 
 /** Model turns a held run burns, one per session: each reopen re-runs the placed turn held. */
@@ -126,12 +135,19 @@ export function threadWorld(): ThreadWorld {
     calls,
     lines,
     faux,
-    open: async (registered?: ThreadWorld["task"]): Promise<ThreadSession> => {
+    open: async (
+      registered?: ThreadWorld["task"],
+      extra: readonly Extension[] = [],
+    ): Promise<ThreadSession> => {
       const models = createModels();
       models.setProvider(faux.provider);
       const session = await openSession(storage, {
         models,
-        registry: registryOf([threadsExtension(() => threads, registered ?? task), probeExtension]),
+        registry: registryOf([
+          threadsExtension(() => threads, registered ?? task),
+          probeExtension,
+          ...extra,
+        ]),
         agent: { model: FAUX_MODEL },
         profile: "room",
         log: () => undefined,
@@ -185,6 +201,110 @@ export function createIndexedThread(
     },
     context,
   );
+}
+
+/** The call id every scripted thread call uses: the id a fork's sole-call check matches. */
+export const CALL_ID = "call-1";
+
+/** The intent and context every scripted thread call sends. */
+export const INTENT = "Summarise the failing test runs";
+export const CONTEXT = "see /tmp/runs.txt";
+
+/** The setup every thread case starts from: a world, its session and an indexed caller. */
+export interface CallerThread {
+  readonly world: ThreadWorld;
+  readonly session: ThreadSession;
+  readonly caller: Conversation;
+}
+
+/** A fresh world, and a caller indexed on `room` in it. */
+export async function callerThread(): Promise<CallerThread> {
+  const world = threadWorld();
+  const session = await world.open();
+  const caller = await createIndexedThread(session.harness, "room");
+  return { world, session, caller };
+}
+
+/** Whether `request` is a recipient's turn: its transcript carries the post's envelope. */
+export const postedTurn = (request: Parameters<FauxResponseFactory>[0]): boolean =>
+  JSON.stringify(request.messages).includes("<post from=");
+
+/**
+ * The answer after a thread call, for whichever conversation asks next: a recipient's
+ * (or a fork's) post turn is held, so its post task stays live while a test reads it,
+ * and the caller's continuation answers, in either order.
+ */
+export const afterToolCall: FauxResponseFactory = (request, options, state, model) =>
+  postedTurn(request)
+    ? heldUntilCutOff(request, options, state, model)
+    : fauxAssistantMessage([fauxText("posted")]);
+
+/**
+ * One scripted caller turn that calls `name` with `args` and answers the tool result the
+ * model read (the newest, when an earlier turn on `caller` already read one). A
+ * conversation the call made, when it is admitted, is held as its post turn, so its post
+ * task is still live (and counted) while the test reads it; the caller's continuation
+ * answers. `continuation` replaces that script for a test that captures a request.
+ */
+export async function attemptCall(
+  { world, session, caller }: CallerThread,
+  name: string,
+  args: Parameters<typeof fauxToolCall>[1],
+  continuation: FauxResponseFactory = afterToolCall,
+): Promise<ToolResultMessage> {
+  world.faux.setResponses([
+    fauxAssistantMessage([fauxToolCall(name, args, { id: CALL_ID })], { stopReason: "toolUse" }),
+    continuation,
+    continuation,
+  ]);
+  await (await caller.submit({ type: "input", content: "go" }, context)).wait(context);
+  const latest = (await toolResults(session.harness, caller)).at(-1);
+  if (latest === undefined) {
+    throw new Error("the call produced no tool result");
+  }
+  return latest;
+}
+
+/** The envelope the started or forked conversation's first turn reads: the caller's post. */
+export const envelopeOf = (from: ConversationId, topic: string): string =>
+  `<post from="${String(from)}" topic="${topic}"><intent>${INTENT}</intent><context>${CONTEXT}</context></post>`;
+
+/** The conversation `id` names; fails unless it exists. */
+export async function conversationOf(harness: Harness, id: ConversationId): Promise<Conversation> {
+  const conversation = await harness.conversation(id, context);
+  if (conversation === undefined) {
+    throw new Error(`no conversation ${String(id)}`);
+  }
+  return conversation;
+}
+
+/** The conversation id a thread call answered, read from the JSON the model saw. */
+export function answeredChild(result: ToolResultMessage): ConversationId {
+  const parsed: unknown = JSON.parse(textOf(result));
+  if (!isRecord(parsed) || typeof parsed["conversation"] !== "number") {
+    throw new Error(`tool result ${textOf(result)} names no conversation`);
+  }
+  const id = parsed["conversation"];
+  if (!isConversationKey(id)) {
+    throw new Error(`tool result ${textOf(result)} names no conversation`);
+  }
+  return id;
+}
+
+/** The child's index entry, copied out of its commit. */
+export const indexEntryOf = (
+  session: ThreadSession,
+  id: ConversationId,
+): Promise<IndexEntry | undefined> =>
+  session.harness.commit(async (tx) => storedEntry(await tx.doc(IndexDocument), id), context);
+
+/** How many conversations the store holds: a refused call must create none. */
+export async function conversationCount(harness: Harness): Promise<number> {
+  const page = await harness.commit(
+    (tx) => tx.scanConversations({ order: "descending" }, 100),
+    context,
+  );
+  return page.items.length;
 }
 
 export interface CreatePostOptions {

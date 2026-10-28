@@ -185,8 +185,8 @@ describe("toolset catalogue", () => {
       sections: [
         { ...promptSections(baseline), threads: `<threads>\n${THREADS_SECTION}\n</threads>` },
       ],
-      // The wake tools are the baseline's last; thread_post follows them.
-      tools: [...baseline.tools, "thread_post"],
+      // The wake tools are the baseline's last; the thread tools follow them.
+      tools: [...baseline.tools, "thread_post", "thread_start", "thread_fork"],
     });
     // Room only: the host's snapshot is still exactly the baseline.
     expect(await snapshotOf("host")).toEqual(expectedSnapshot(BASELINE.profiles.host));

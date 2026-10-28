@@ -36,7 +36,7 @@ import {
   waitQueuedPost,
   writeTombstone,
 } from "./thread-fixture.ts";
-import { heldTurn, heldUntilCutOff, only, submissionOf, WAIT } from "./wake-fixture.ts";
+import { heldTurn, heldUntilCutOff, submissionOf, WAIT } from "./wake-fixture.ts";
 
 /** An origin stamped as a caller's first human input: what a post carries. */
 const originOf = (from: ConversationId): Origin => ({
@@ -77,6 +77,15 @@ function ownSubmission(
   postId: number,
 ): Promise<SubmissionRecord | undefined> {
   return submissionOf(harness, recipient, postRequestId(postId));
+}
+
+/** How many conversations the store holds: a refused start must create none. */
+async function conversationCount(harness: Harness): Promise<number> {
+  const page = await harness.commit(
+    (tx) => tx.scanConversations({ order: "descending" }, 100),
+    context,
+  );
+  return page.items.length;
 }
 
 describe("tombstones and their enforcement (PHASE-06 EX-1, EX-2, EX-3, VT-1, VT-2)", () => {
@@ -209,7 +218,7 @@ describe("tombstones and their enforcement (PHASE-06 EX-1, EX-2, EX-3, VT-1, VT-
     expect(world.lines).toEqual([]);
   });
 
-  it("a turn started by family-reaped cannot post", async () => {
+  it("a turn started by family-reaped cannot post or start threads", async () => {
     const world = threadWorld();
     const session = await world.open();
     const caller = await createIndexedThread(session.harness, "room");
@@ -224,12 +233,20 @@ describe("tombstones and their enforcement (PHASE-06 EX-1, EX-2, EX-3, VT-1, VT-
             { to: recipient.id, intent: "Summarise the failing test runs" },
             { id: "call-1" },
           ),
+          // The same turn also tries to start a thread: a reaped origin refuses both.
+          fauxToolCall(
+            "thread_start",
+            { intent: "Summarise the failing test runs" },
+            { id: "call-2" },
+          ),
         ],
         { stopReason: "toolUse" },
       ),
       fauxAssistantMessage([fauxText("refused")]),
+      fauxAssistantMessage([fauxText("refused")]),
     ]);
 
+    const before = await conversationCount(session.harness);
     const notice = await createPost(session, world.task, {
       letter: "family-reaped",
       to: caller.id,
@@ -238,13 +255,17 @@ describe("tombstones and their enforcement (PHASE-06 EX-1, EX-2, EX-3, VT-1, VT-
     });
     expect(await postResult(session.harness, notice)).toEqual({ outcome: "delivered" });
 
-    const result = only(await toolResults(session.harness, caller));
-    expect(result.isError).toBe(true);
-    expect(textOf(result)).toBe(
-      `origin ${originKey(origin)} was reaped for fan-out; posts and thread starts from it are refused`,
-    );
+    const refusal = `origin ${originKey(origin)} was reaped for fan-out; posts and thread starts from it are refused`;
+    const results = await toolResults(session.harness, caller);
+    expect(results).toHaveLength(2);
+    for (const result of results) {
+      expect(result.isError).toBe(true);
+      expect(textOf(result)).toBe(refusal);
+    }
+    expect(await conversationCount(session.harness)).toBe(before);
     expect(await postTasks(session.harness)).toEqual([]);
     expect(world.lines.filter((line) => line.startsWith("post "))).toEqual([]);
+    expect(world.lines.filter((line) => line.startsWith("thread start "))).toEqual([]);
   });
 });
 
