@@ -418,3 +418,27 @@ Standing rulings from the operator (tier 1), binding on every charter:
 - PHASE-08: MALEBOLGE_SCREWTAPE must be the unwrapped binary: the Home Manager wrapper bakes `--config` before "$@", so ours would come second (screwtape needs `--config` first). Documented in docs/internals.md. Tier: decide.
 - PHASE-08: smoke (VT-3) run on the host by the orchestrator, 4/4: wrapper parsed for binary and config; store file-copied (no sidecars present), copy checkpointed, temp config with `session_url` at 127.0.0.1:9 and a non-existent credential; read verbs only; copy digest unchanged; real store size/mtime unchanged. Exit-2 diagnostic confirmed against the real binary: `list --limit 0` gives a usage error with a code, and an unknown id gives `screwtape usage error: unknown_message` (pinned). Closes the PHASE-06 flag. No content printed. Tier: decide.
 - PHASE-08: prompts/mail.txt drafted as .doctrine/slice/005/mail-prompt-draft.txt (EX-3) for the operator to place in ~/satan-corpus; the room refuses to start until it exists there. VH-1 left open for the operator. Tier: decide.
+
+## VH-1 (2026-10-28, operator; the line client, not Emacs: IMP-018)
+
+The operator ran a `mail`-topic conversation in the room and pasted its
+report (cut off at the end). Evidence: all five tools ran against the real
+store. Adjudicated:
+
+- **Defect, `since`:** `mail_new` checks `since` as RFC 3339 (`tools.ts`
+  `sinceOf`), but screwtape's `--since` takes `YYYY-MM-DD` (screwtape README
+  `list` row; `argv.gleam` `invalid_since`). Every RFC 3339 value is passed on
+  and refused. Design sec-4 says "the contract's date form"; the
+  implementation and VT-9 used the wrong one. For audit.
+- **Not a defect, empty Spam / HBR, and nothing at offset 10000:** the store
+  mirrors a window (config: mailboxes `inbox`, 30 days, 2000 messages), while
+  `mail_mailboxes` reports the server's totals. Gap: neither the tool
+  descriptions nor `prompts/mail.txt` say so, so the model reads it as data
+  loss. For audit (a description or persona line).
+- **By design:** `mail_thread` returns entries without bodies (screwtape's
+  `thread` verb); `after` must be a cursor; clamps report in the header
+  (`offset: -1` gives `offset clamped to 0`, which the report called silent);
+  no attachment reads (not in scope).
+- **Untested live:** `held_back` (no message dated in the future).
+- **Not shown in the paste:** that the conversation listed only the mail
+  tools (VH-1 part 1).
