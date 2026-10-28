@@ -165,6 +165,59 @@ it("lists default first, then the stored topics by name, each with its directory
   ]);
 });
 
+it("lists a topic's toolset beside its directory, both empty when unset (PHASE-04 VT-3)", () => {
+  const index: IndexDoc = {
+    topics: { bare: {}, mail: { cwd: "/mail", toolset: "mail" } },
+    conversations: {},
+  };
+  expect(topicsOf(index)).toEqual([
+    { name: "default" },
+    { name: "bare" },
+    { name: "mail", cwd: "/mail", toolset: "mail" },
+  ]);
+});
+
+// PHASE-04 VT-3: the topic's toolset is written exactly as its directory is (design sec-3).
+it("sets, clears and leaves a topic's toolset, the directory surviving every write", async () => {
+  const test = await openIndexedHarness();
+  expect(await writeTopicRecord(test.harness, "work", { cwd: "/w", toolset: "mail" })).toEqual({
+    name: "work",
+    cwd: "/w",
+    toolset: "mail",
+  });
+  // An absent key leaves the record as it is, whichever of the two the write names.
+  expect(await writeTopicRecord(test.harness, "work", {})).toEqual({
+    name: "work",
+    cwd: "/w",
+    toolset: "mail",
+  });
+  expect(await writeTopicRecord(test.harness, "work", { cwd: "/elsewhere" })).toEqual({
+    name: "work",
+    cwd: "/elsewhere",
+    toolset: "mail",
+  });
+  expect(await writeTopicRecord(test.harness, "work", { toolset: "interactive" })).toEqual({
+    name: "work",
+    cwd: "/elsewhere",
+    toolset: "interactive",
+  });
+  // The two keys clear independently: neither write takes the other with it.
+  expect(await writeTopicRecord(test.harness, "work", { cwd: null })).toEqual({
+    name: "work",
+    toolset: "interactive",
+  });
+  expect(await writeTopicRecord(test.harness, "work", { cwd: "/back" })).toEqual({
+    name: "work",
+    cwd: "/back",
+    toolset: "interactive",
+  });
+  expect(await writeTopicRecord(test.harness, "work", { toolset: null })).toEqual({
+    name: "work",
+    cwd: "/back",
+  });
+  expect((await indexOf(test.harness)).topics).toEqual({ work: { cwd: "/back" } });
+});
+
 it("refuses to store the reserved default topic (DEC-015)", async () => {
   const test = await openIndexedHarness();
   await expect(writeTopicRecord(test.harness, DEFAULT_TOPIC, {})).rejects.toThrow(

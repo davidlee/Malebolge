@@ -474,6 +474,41 @@ describe("conversations", () => {
     });
   });
 
+  // PHASE-04 VT-1: a toolset is written like a directory, and the profile's policy judges it.
+  it.each(["room", "host"] as const)(
+    "refuses a toolset the %s profile's policy does not allow, writing nothing",
+    async (profile) => {
+      const session = await passive();
+      const api = conversations(session, DEFAULTS, profile);
+      await api.setTopic({ name: "work", cwd: "/w" });
+      const before = await indexOf(session.harness);
+      // The throw may be synchronous or a rejection: both are the same refusal.
+      const writing = async (): Promise<unknown> => api.setTopic({ name: "work", toolset: "mail" });
+      await expect(writing()).rejects.toThrow(`toolset mail is not allowed on profile ${profile}`);
+      expect(await indexOf(session.harness)).toEqual(before);
+    },
+  );
+
+  it("stores a toolset the policy allows, leaving it when a write omits it (VT-1)", async () => {
+    const session = await passive();
+    const api = conversations(session, DEFAULTS, "host");
+    expect(await api.setTopic({ name: "work", toolset: "interactive" })).toEqual({
+      name: "work",
+      toolset: "interactive",
+    });
+    // Absent `toolset` leaves the record alone; `null` clears it, keeping the directory.
+    expect(await api.setTopic({ name: "work", cwd: "/w" })).toEqual({
+      name: "work",
+      cwd: "/w",
+      toolset: "interactive",
+    });
+    expect(await api.setTopic({ name: "work", toolset: null })).toEqual({
+      name: "work",
+      cwd: "/w",
+    });
+    expect((await indexOf(session.harness)).topics).toEqual({ work: { cwd: "/w" } });
+  });
+
   it("lists one topic's ids newest first, leaving other topics out (EX-4)", async () => {
     const session = await passive();
     const api = conversations(session, DEFAULTS, "host");

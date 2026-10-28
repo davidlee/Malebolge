@@ -32,12 +32,14 @@ interface AttachArgs {
   cwd?: string;
   dir?: string;
   setTopic?: string;
+  toolset?: string;
   isNew: boolean;
   here: boolean;
   emacs: boolean;
   list: boolean;
   topics: boolean;
   noDir: boolean;
+  noToolset: boolean;
 }
 
 /** The options `parseArgs` reads, named as the user writes them. */
@@ -49,10 +51,12 @@ const OPTIONS = {
   dir: { type: "string" },
   here: { type: "boolean" },
   "set-topic": { type: "string" },
+  toolset: { type: "string" },
   emacs: { type: "boolean" },
   list: { type: "boolean" },
   topics: { type: "boolean" },
   "no-dir": { type: "boolean" },
+  "no-toolset": { type: "boolean" },
 } as const;
 
 /** `parseArgs`, strict, with every one of its throws turned into a `UsageError`. */
@@ -71,6 +75,7 @@ function parseAttachArgs(args: string[]): AttachArgs {
       list: values.list === true,
       topics: values.topics === true,
       noDir: values["no-dir"] === true,
+      noToolset: values["no-toolset"] === true,
     };
     if (values.conversation !== undefined) {
       parsed.conversation = values.conversation;
@@ -87,6 +92,9 @@ function parseAttachArgs(args: string[]): AttachArgs {
     if (values["set-topic"] !== undefined) {
       parsed.setTopic = values["set-topic"];
     }
+    if (values.toolset !== undefined) {
+      parsed.toolset = values.toolset;
+    }
     return parsed;
   } catch (error) {
     throw new UsageError(messageOf(error));
@@ -102,6 +110,8 @@ function flagsOf(args: AttachArgs): ReadonlyMap<string, boolean> {
     ["cwd", args.cwd !== undefined],
     ["dir", args.dir !== undefined],
     ["no-dir", args.noDir],
+    ["toolset", args.toolset !== undefined],
+    ["no-toolset", args.noToolset],
     ["here", args.here],
     ["emacs", args.emacs],
     ["list", args.list],
@@ -188,6 +198,8 @@ export interface SetTopicInvocation<T = string> {
   name: string;
   /** A string sets the directory, `null` clears it, absent leaves it unchanged. */
   cwd: T | null | undefined;
+  /** The same three cases for the toolset; the profile's policy judges a name. */
+  toolset?: string | null | undefined;
 }
 
 /** The modes that ask one question over one connection, and print its one reply. */
@@ -231,12 +243,22 @@ function newTargetFrom({ conversation, cwd }: AttachArgs): AttachTarget {
   return cwd === undefined ? { kind: "new" } : { kind: "new", cwd };
 }
 
-/** The target the parsed flags name; every refusal is a `UsageError`. */
-function targetFrom(args: AttachArgs): AttachTarget<string | Here> {
-  // Before any target: a topic's directory is written only by `--set-topic`, never by an attach.
+/**
+ * A topic's directory and toolset are written only by `--set-topic`, never by an
+ * attach: either pair given without it is a refusal, before any target is named.
+ */
+function requireSetTopic(args: AttachArgs): void {
   if (args.dir !== undefined || args.noDir) {
     throw new UsageError("dir needs set-topic");
   }
+  if (args.toolset !== undefined || args.noToolset) {
+    throw new UsageError("toolset needs set-topic");
+  }
+}
+
+/** The target the parsed flags name; every refusal is a `UsageError`. */
+function targetFrom(args: AttachArgs): AttachTarget<string | Here> {
+  requireSetTopic(args);
   if (args.here) {
     return topicTargetFrom<Here>(HERE, args);
   }
@@ -266,16 +288,27 @@ export function attachTargetOf(args: string[]): AttachTarget<string | Here> {
   return invocation.target;
 }
 
-/** The directory a `--set-topic` writes: a path sets it, `--no-dir` clears it, neither leaves it. */
-function directoryOf({ dir, noDir }: AttachArgs): string | null | undefined {
-  if (dir !== undefined && noDir) {
-    throw new UsageError("dir and no-dir are exclusive");
+/**
+ * One field a `--set-topic` writes: `value` sets it, `clear` clears it, neither
+ * leaves it unchanged. Both of the write's fields take this one reading.
+ */
+function writeOf<T>(value: T | undefined, clear: boolean, name: string): T | null | undefined {
+  if (value !== undefined && clear) {
+    throw new UsageError(`${name} and no-${name} are exclusive`);
   }
-  if (dir !== undefined) {
-    return dir;
+  if (value !== undefined) {
+    return value;
   }
-  return noDir ? null : undefined;
+  return clear ? null : undefined;
 }
+
+/** The directory a `--set-topic` writes: a path sets it, `--no-dir` clears it, neither leaves it. */
+const directoryOf = ({ dir, noDir }: AttachArgs): string | null | undefined =>
+  writeOf(dir, noDir, "dir");
+
+/** The toolset a `--set-topic` writes: a name sets it, `--no-toolset` clears it, neither leaves it. */
+const toolsetOf = ({ toolset, noToolset }: AttachArgs): string | null | undefined =>
+  writeOf(toolset, noToolset, "toolset");
 
 /** The one parse of a command line: what it asks, or a `UsageError` refusing it. */
 export function attachInvocationOf(args: string[]): AttachInvocation {
@@ -288,13 +321,14 @@ export function attachInvocationOf(args: string[]): AttachInvocation {
     return { mode: "topics", wait: LIST_WAIT };
   }
   if (parsed.setTopic !== undefined) {
-    checkAlone("set-topic", ["dir", "no-dir", "here"], given);
+    checkAlone("set-topic", ["dir", "no-dir", "here", "toolset", "no-toolset"], given);
     return {
       mode: "set-topic",
       wait: LIST_WAIT,
       name: topicNamed(parsed.setTopic),
       // The git root, once resolved, is the directory; nothing else is a directory.
       cwd: parsed.here ? HERE : directoryOf(parsed),
+      toolset: toolsetOf(parsed),
     };
   }
   if (parsed.list) {
@@ -326,7 +360,12 @@ export class HereRefusedError extends Error {
 /** `--here` stands where a topic's name or a directory would, so it takes neither. */
 function checkHereAlone(here: boolean, given: ReadonlyMap<string, boolean>): void {
   if (here) {
-    checkAlone("here", ["new", "cwd", "emacs", "list", "set-topic"], given);
+    // `--set-topic --here` still takes the toolset: `--here` names the directory alone.
+    checkAlone(
+      "here",
+      ["new", "cwd", "emacs", "list", "set-topic", "toolset", "no-toolset"],
+      given,
+    );
   }
 }
 

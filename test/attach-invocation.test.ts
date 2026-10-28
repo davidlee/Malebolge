@@ -32,6 +32,16 @@ const HERE = { here: true } as const;
 /** A request-reply invocation's connect wait: a listing runs against a daemon already up. */
 const LIST_WAIT = { intervalMs: 200, timeoutMs: 1_000 };
 
+/** What `attachInvocationOf` refuses `args` with: the one line `attach-main` prints, then exit 2. */
+function usageErrorOf(args: string[]): string | undefined {
+  try {
+    attachInvocationOf(args);
+    return undefined;
+  } catch (error) {
+    return messageOf(error);
+  }
+}
+
 const ROOT_LINES = { target: { kind: "root" }, inputMode: "lines", presentation: "terminal" };
 const ROOT_FRAMES = { target: { kind: "root" }, inputMode: "frames", presentation: "emacs" };
 
@@ -83,6 +93,10 @@ describe("attachTargetOf", () => {
     // A directory without a topic write names no target at all.
     [["--dir", "/x"]],
     [["--no-dir"]],
+    // ...and neither does a toolset: it is the topic write's too (PHASE-04).
+    [["--toolset", "mail"]],
+    [["--no-toolset"]],
+    [["--new", "--toolset", "mail"]],
     // ...and beside a topic target it is still not one: `--cwd` is the attach's directory.
     [["--topic", "work", "--dir", "/x"]],
     [["--topic", "work", "--new", "--dir", "/x"]],
@@ -126,6 +140,29 @@ describe("attachInvocationOf", () => {
       ["--set-topic", "work", "--no-dir"],
       { mode: "set-topic", wait: LIST_WAIT, name: "work", cwd: null },
     ],
+    // `toolset` beside `cwd`: a name sets it, `--no-toolset` clears it, neither leaves it.
+    [
+      ["--set-topic", "work", "--toolset", "mail"],
+      { mode: "set-topic", wait: LIST_WAIT, name: "work", cwd: undefined, toolset: "mail" },
+    ],
+    [
+      ["--set-topic", "work", "--no-toolset"],
+      { mode: "set-topic", wait: LIST_WAIT, name: "work", cwd: undefined, toolset: null },
+    ],
+    // The two pairs are independent: either directory, either toolset.
+    [
+      ["--set-topic", "work", "--dir", "/tmp/x", "--toolset", "mail"],
+      { mode: "set-topic", wait: LIST_WAIT, name: "work", cwd: "/tmp/x", toolset: "mail" },
+    ],
+    [
+      ["--set-topic", "work", "--no-dir", "--toolset", "mail"],
+      { mode: "set-topic", wait: LIST_WAIT, name: "work", cwd: null, toolset: "mail" },
+    ],
+    // `--here` names the directory; the toolset it was given stays with it.
+    [
+      ["--set-topic", "work", "--here", "--toolset", "mail"],
+      { mode: "set-topic", wait: LIST_WAIT, name: "work", cwd: HERE, toolset: "mail" },
+    ],
     // `--here` parses to a marker, where a topic's name or a directory would stand.
     [["--here"], { ...ROOT_LINES, target: { kind: "topic", name: HERE, new: false } }],
     [
@@ -139,6 +176,20 @@ describe("attachInvocationOf", () => {
     ],
   ])("%j → %j", (args, invocation) => {
     expect(attachInvocationOf(args)).toEqual(invocation);
+  });
+
+  // PHASE-04 VT-2: `--toolset` writes a topic's toolset exactly as `--dir` writes its directory.
+  it.each<[string[], string]>([
+    [
+      ["--set-topic", "work", "--toolset", "mail", "--no-toolset"],
+      "toolset and no-toolset are exclusive",
+    ],
+    [["--toolset", "mail"], "toolset needs set-topic"],
+    [["--no-toolset"], "toolset needs set-topic"],
+    [["--new", "--toolset", "mail"], "toolset needs set-topic"],
+    [["--topic", "work", "--no-toolset"], "toolset needs set-topic"],
+  ])("%j refuses with %j", (args, message) => {
+    expect(usageErrorOf(args)).toBe(message);
   });
 
   it("still refuses an unknown flag", () => {
@@ -158,6 +209,8 @@ describe("checkAlone: exclusive flags", () => {
     [["--topics", "--emacs"]],
     [["--topics", "--dir", "/x"]],
     [["--topics", "--no-dir"]],
+    [["--topics", "--toolset", "mail"]],
+    [["--topics", "--no-toolset"]],
     [["--topics", "--set-topic", "work"]],
     // --set-topic takes a directory and nothing else.
     [["--set-topic", "work", "--dir", "/x", "--no-dir"]],
@@ -177,6 +230,8 @@ describe("checkAlone: exclusive flags", () => {
     [["--emacs", "--list"]],
     [["--list", "--dir", "/x"]],
     [["--list", "--no-dir"]],
+    [["--list", "--toolset", "mail"]],
+    [["--list", "--no-toolset"]],
     [["--list", "--topic", "work", "--conversation", "3"]],
     // --here stands where a topic's name or a directory would: it cannot also be given.
     [["--here", "--topic", "work"]],
@@ -194,6 +249,7 @@ describe("checkAlone: exclusive flags", () => {
   it.each<string[][]>([
     [["--set-topic", "Work"]],
     [["--set-topic", ""]],
+    [["--set-topic", "work", "--toolset"]],
     [["--list", "--topic", "Work"]],
     [["--list", "--topic"]],
   ])("%j is a usage error: a name off the rule, or none at all", (args) => {
@@ -341,6 +397,26 @@ describe("resolveHere: --set-topic --here (EX-3)", () => {
     if (resolved.mode === "set-topic") {
       expect(resolved.cwd).toBe("/repo");
       expect(requestFrameOf(resolved)).toEqual({ type: "topic", name: "fresh", cwd: "/repo" });
+    }
+  });
+
+  it("keeps the toolset the write was given when --here names the directory (PHASE-04 VT-2)", async () => {
+    const { path } = await answering(topicsReply("host", []));
+    const resolved = await resolvedHere(
+      ["--set-topic", "fresh", "--here", "--toolset", "mail"],
+      path,
+      "/repo",
+    );
+    expect(resolved.mode).toBe("set-topic");
+    if (resolved.mode === "set-topic") {
+      expect(resolved.cwd).toBe("/repo");
+      expect(resolved.toolset).toBe("mail");
+      expect(requestFrameOf(resolved)).toEqual({
+        type: "topic",
+        name: "fresh",
+        cwd: "/repo",
+        toolset: "mail",
+      });
     }
   });
 

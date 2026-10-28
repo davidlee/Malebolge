@@ -3,7 +3,7 @@
 //   client → daemon   ClientMessage, or a first-line frame: `attach`, which names
 //                     the conversation the connection binds to, `list`, which
 //                     asks for the conversations this store holds or its topics,
-//                     or `topic`, which writes one topic's directory
+//                     or `topic`, which writes one topic's directory and toolset
 //   daemon → client   AgentEvent (pi-durable `watchEvents`, the first a `snapshot`)
 //                     | AttachedMessage, the reply to a successful attach
 //                     | ConversationsMessage, the reply to a `list` frame
@@ -67,12 +67,14 @@ export interface ListMessage {
   query: ListQuery;
 }
 
-/** The `topic` frame: create one topic, set its directory, or leave it unchanged. */
+/** The `topic` frame: create one topic, set its directory or toolset, or leave it unchanged. */
 export interface TopicMessage {
   type: "topic";
   name: string;
   /** Absent creates or leaves unchanged; a string sets the directory; `null` clears it. */
   cwd?: string | null;
+  /** The same three cases for the toolset, which the profile's policy judges in `setTopic`. */
+  toolset?: string | null;
 }
 
 /**
@@ -86,10 +88,11 @@ export interface ConversationsMessage {
   truncated: boolean;
 }
 
-/** One topic as a `topics` reply shows it: the name it is filed under, and its directory. */
+/** One topic as a `topics` reply shows it: its name, its directory and its toolset. */
 export interface TopicSummary {
   name: string;
   cwd?: string;
+  toolset?: string;
 }
 
 /**
@@ -127,7 +130,7 @@ const ATTACH_KEYS: readonly string[] = ["type", "conversation", "new", "cwd", "t
 const LIST_KEYS: readonly string[] = ["type", "topic", "topics"];
 
 /** Strict: a `topic` write names the name and the directory, nothing else. */
-const TOPIC_KEYS: readonly string[] = ["type", "name", "cwd"];
+const TOPIC_KEYS: readonly string[] = ["type", "name", "cwd", "toolset"];
 
 /**
  * The topic every conversation starts in: it always exists and is never stored
@@ -283,8 +286,28 @@ function listFrame(message: JsonRecord): ListMessage {
 const CONTROL_CHARACTER = /[\u0000-\u001f\u007f]/u;
 
 /**
- * The `topic` frame, parsed strictly. `cwd` absent creates or leaves the topic
- * unchanged (so the frame is idempotent), a string sets it, `null` clears it.
+ * One optional field of a `topic` frame, checked as `cwd` and `toolset` both are:
+ * `undefined` when the frame leaves it out, a string or `null` otherwise.
+ */
+function topicField(message: JsonRecord, key: "cwd" | "toolset"): string | null | undefined {
+  const value = message[key];
+  if (value === undefined) {
+    return undefined;
+  }
+  if (typeof value === "string" && CONTROL_CHARACTER.test(value)) {
+    // `--topics` prints `NAME<TAB>DIR<TAB>TOOLSET` lines: each value is one field of one line.
+    frameRefused("topic", `${key} must not contain a control character`);
+  }
+  if (value === null || typeof value === "string") {
+    return value;
+  }
+  frameRefused("topic", `${key} must be a string or null`);
+}
+
+/**
+ * The `topic` frame, parsed strictly. `cwd` and `toolset` absent create or leave
+ * the topic unchanged (so the frame is idempotent), a string sets one, `null`
+ * clears it. The frame does not judge a toolset's name: the profile's policy does.
  */
 function topicFrame(message: JsonRecord): TopicMessage {
   const unknown = unknownKey(message, TOPIC_KEYS);
@@ -295,18 +318,17 @@ function topicFrame(message: JsonRecord): TopicMessage {
   if (name === DEFAULT_TOPIC) {
     frameRefused("topic", "default is reserved");
   }
-  const cwd = message["cwd"];
-  if (cwd === undefined) {
-    return { type: "topic", name };
+  // Built key by key, so a field the frame left out stays absent.
+  const frame: TopicMessage = { type: "topic", name };
+  const cwd = topicField(message, "cwd");
+  if (cwd !== undefined) {
+    frame.cwd = cwd;
   }
-  if (typeof cwd === "string" && CONTROL_CHARACTER.test(cwd)) {
-    // `--topics` prints `NAME<TAB>DIR` lines, so a directory is one field of one line.
-    frameRefused("topic", "cwd must not contain a control character");
+  const toolset = topicField(message, "toolset");
+  if (toolset !== undefined) {
+    frame.toolset = toolset;
   }
-  if (cwd === null || typeof cwd === "string") {
-    return { type: "topic", name, cwd };
-  }
-  frameRefused("topic", "cwd must be a string or null");
+  return frame;
 }
 
 /**

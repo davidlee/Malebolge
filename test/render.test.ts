@@ -222,15 +222,20 @@ describe("renderer", () => {
     expect(renderAll([{ type: "conversations", conversations: [], truncated: true }])).toBe("");
   });
 
-  it("renders a topics frame as name and directory, one per line, in both presentations", () => {
-    // A topic with no directory (always `default`) leaves its second field empty.
+  it("renders a topics frame as name, directory and toolset, one per line, in both presentations", () => {
+    // Every field is empty when unset: `default` has neither directory nor toolset (PHASE-04).
     const frame = {
       type: "topics",
       profile: "host",
-      topics: [{ name: "default" }, { name: "work", cwd: "/tmp/work" }],
+      topics: [
+        { name: "default" },
+        { name: "work", cwd: "/tmp/work" },
+        { name: "mail", cwd: "/tmp/mail", toolset: "mail" },
+      ],
     };
-    expect(renderAll([frame])).toBe("default\t\nwork\t/tmp/work\n");
-    expect(renderAll([frame], { presentation: "emacs" })).toBe("default\t\nwork\t/tmp/work\n");
+    const lines = "default\t\t\nwork\t/tmp/work\t\nmail\t/tmp/mail\tmail\n";
+    expect(renderAll([frame])).toBe(lines);
+    expect(renderAll([frame], { presentation: "emacs" })).toBe(lines);
     expect(renderAll([{ type: "topics", profile: "room", topics: [] }])).toBe("");
   });
 

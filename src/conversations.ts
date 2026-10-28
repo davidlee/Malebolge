@@ -38,6 +38,7 @@ import {
   writeTopicRecord,
 } from "./topics.ts";
 import {
+  type DaemonToolset,
   PROFILE_TOOLSETS,
   type ProfileToolsets,
   requireAllowed,
@@ -48,10 +49,12 @@ import {
 /** The daemon's creation defaults; `cwd` is required so the fallback is always a string. */
 export type ConversationDefaults = AgentChange & { cwd: string };
 
-/** What a `topic` write names: the name, and the directory to set, leave, or clear. */
+/** What a `topic` write names: the name, and the directory and toolset to set, leave, or clear. */
 export interface TopicWrite {
   name: string;
   cwd?: string | null;
+  /** A name is checked against the profile's policy; `null` clears it; absent leaves it. */
+  toolset?: string | null;
 }
 
 export interface Conversations {
@@ -216,6 +219,16 @@ async function topicPage(session: Session, name: string): Promise<ConversationPa
   return { ids: ids.slice(0, LIST_PAGE), truncated: ids.length > LIST_PAGE };
 }
 
+/** `write`'s toolset as the index stores it: absent leaves it, `null` clears it, a name is judged. */
+function toolsetChange(write: TopicWrite, profile: Profile): DaemonToolset | null | undefined {
+  const { toolset } = write;
+  if (toolset === undefined || toolset === null) {
+    return toolset;
+  }
+  // The profile's policy, not the frame, decides which names a topic may take.
+  return requireAllowed(toolset, profile);
+}
+
 export function conversations(
   session: Session,
   defaults: ConversationDefaults,
@@ -262,6 +275,10 @@ export function conversations(
       }
     },
     topics: async () => topicsOf(await readIndex(session.harness)),
-    setTopic: (topic) => writeTopicRecord(session.harness, topic.name, { cwd: topic.cwd }),
+    setTopic: (topic) =>
+      writeTopicRecord(session.harness, topic.name, {
+        cwd: topic.cwd,
+        toolset: toolsetChange(topic, profile),
+      }),
   };
 }

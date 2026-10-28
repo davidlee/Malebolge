@@ -75,21 +75,25 @@ export function allowedNames(profile: Profile): string[] {
 }
 
 /**
- * Refuse `toolset` when `policy` does not allow it, naming `subject` when given
- * (`topic inbox: toolset mail is not allowed on profile host`). The policy is
- * code, so only a code change causes this and only a code change remedies it
- * (design sec-3): a caller refuses rather than widens the toolset silently.
+ * `toolset` as `policy` allows it, refusing one it does not, naming `subject`
+ * when given (`topic inbox: toolset mail is not allowed on profile host`). The
+ * name arrives unchecked (a wire frame's, say), so this is the one place the
+ * policy judges it. The policy is code, so only a code change causes this and
+ * only a code change remedies it (design sec-3): a caller refuses rather than
+ * widens the toolset silently.
  */
 export function requireAllowed(
-  toolset: DaemonToolset,
+  toolset: string,
   profile: Profile,
   policy: ProfileToolsets = PROFILE_TOOLSETS[profile],
   subject?: string,
-): void {
-  if (!policy.allowed.includes(toolset)) {
+): DaemonToolset {
+  const allowed = policy.allowed.find((name) => name === toolset);
+  if (allowed === undefined) {
     const refusal = `toolset ${toolset} is not allowed on profile ${profile}`;
     throw new Error(subject === undefined ? refusal : `${subject}: ${refusal}`);
   }
+  return allowed;
 }
 
 /** Refuses the first static name of `names` that `installed` lacks: a catalogue error. */

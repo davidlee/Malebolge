@@ -109,6 +109,7 @@ describe("parseConnectionMessage", () => {
   });
 
   const CONTROL_REFUSAL = "topic: cwd must not contain a control character";
+  const TOOLSET_CONTROL_REFUSAL = "topic: toolset must not contain a control character";
 
   /** Every refusal of the widened frames, in design sec-4's words (PHASE-03 EX-1). */
   it.each([
@@ -135,6 +136,17 @@ describe("parseConnectionMessage", () => {
     ['{"type":"topic","name":"work","cwd":"/a\\tb"}', CONTROL_REFUSAL],
     ['{"type":"topic","name":"work","cwd":"/a\\nb"}', CONTROL_REFUSAL],
     ['{"type":"topic","name":"work","cwd":"/a\\u007fb"}', CONTROL_REFUSAL],
+    // A toolset is one field of a `--topics` line too: no tab, newline or other control.
+    // The frame does not judge the name itself: the profile's policy does, in setTopic.
+    ['{"type":"topic","name":"work","toolset":1}', "topic: toolset must be a string or null"],
+    ['{"type":"topic","name":"work","toolset":false}', "topic: toolset must be a string or null"],
+    [
+      '{"type":"topic","name":"work","toolset":["mail"]}',
+      "topic: toolset must be a string or null",
+    ],
+    ['{"type":"topic","name":"work","toolset":"mai\\tl"}', TOOLSET_CONTROL_REFUSAL],
+    ['{"type":"topic","name":"work","toolset":"mai\\nl"}', TOOLSET_CONTROL_REFUSAL],
+    ['{"type":"topic","name":"work","toolset":"mai\\u007fl"}', TOOLSET_CONTROL_REFUSAL],
     ['{"type":"topic","name":"A"}', `topic: ${NAME_RULE}`],
     ['{"type":"topic"}', `topic: ${NAME_RULE}`],
     ['{"type":"topic","name":"work","conversation":3}', "topic: unknown key conversation"],
@@ -168,8 +180,30 @@ describe("parseConnectionMessage", () => {
       { type: "topic", name: "work", cwd: "" },
       { type: "topic", name: "work", cwd: "" },
     ],
+    // `toolset` is parsed exactly as `cwd`: a string sets it, `null` clears it (PHASE-04 VT-1).
+    [
+      { type: "topic", name: "work", toolset: "mail" },
+      { type: "topic", name: "work", toolset: "mail" },
+    ],
+    [
+      { type: "topic", name: "work", toolset: null },
+      { type: "topic", name: "work", toolset: null },
+    ],
+    [
+      { type: "topic", name: "work", toolset: "" },
+      { type: "topic", name: "work", toolset: "" },
+    ],
+    [
+      { type: "topic", name: "work", cwd: "/tmp", toolset: "mail" },
+      { type: "topic", name: "work", cwd: "/tmp", toolset: "mail" },
+    ],
   ])("parses %j as the frame it is", (message, frame) => {
     expect(parseConnectionMessage(JSON.stringify(message))).toEqual(frame);
+  });
+
+  it("leaves toolset out of a frame that left it out, so absent stays absent (VT-1)", () => {
+    const frame = parseConnectionMessage('{"type":"topic","name":"work","cwd":"/tmp"}');
+    expect(Object.hasOwn(frame, "toolset")).toBe(false);
   });
 
   it.each([

@@ -45,6 +45,9 @@ function requested(
 /** A mode's reply as `attach-main` prints it: one renderer per reply, as the CLI makes one. */
 const printed = (reply: ConversationsMessage | TopicsMessage): string => createRenderer()(reply);
 
+/** A request-reply invocation's connect wait: a listing runs against a daemon already up. */
+const LIST_WAIT = { intervalMs: 200, timeoutMs: 1_000 };
+
 // ---------------------------------------------------------------------------
 // `malebolge-attach --list`: one frame, the typed reply out, its own wait (DEC-008).
 // ---------------------------------------------------------------------------
@@ -201,7 +204,7 @@ describe("request --topics and --set-topic", () => {
     const { reply, errors } = requested(path, ["--topics"]);
     const topics = await reply;
     expect(topics).toEqual({ type: "topics", profile: "host", topics: [{ name: "default" }] });
-    expect(printed(topics)).toBe("default\t\n");
+    expect(printed(topics)).toBe("default\t\t\n");
     expect(errors()).toBe("");
   });
 
@@ -221,6 +224,27 @@ describe("request --topics and --set-topic", () => {
 });
 
 // ---------------------------------------------------------------------------
+// The frame a topic write sends (PHASE-04 VT-2): `toolset` rides beside `cwd`.
+// ---------------------------------------------------------------------------
+
+describe("requestFrameOf", () => {
+  it.each<[string, string | null | undefined, Record<string, unknown>]>([
+    ["a name", "mail", { type: "topic", name: "work", toolset: "mail" }],
+    ["a cleared toolset", null, { type: "topic", name: "work", toolset: null }],
+    ["no toolset at all", undefined, { type: "topic", name: "work" }],
+  ])("sends %s as the frame's `toolset`", (_case, toolset, frame) => {
+    const invocation = {
+      mode: "set-topic" as const,
+      wait: LIST_WAIT,
+      name: "work",
+      cwd: undefined,
+      toolset,
+    };
+    expect(requestFrameOf(invocation)).toEqual(frame);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Skew (inq-7): an older daemon fails a new shape in one of two ways.
 // ---------------------------------------------------------------------------
 
@@ -231,6 +255,8 @@ describe("skewOf", () => {
     ["attach: unknown key topic", "topic"],
     ["list: unknown key topics", "topics"],
     ["list: unknown key topic", "topic"],
+    // A daemon that predates `toolset` refuses the key it does not know (PHASE-04).
+    ["topic: unknown key toolset", "toolset"],
     // Not a skew: an ordinary failure, a refusal of a key we still know, and a name rule.
     ["listing failed", undefined],
     ["list: unknown key page", undefined],
@@ -247,6 +273,7 @@ describe("request: version skew", () => {
     [["--set-topic", "work"], 'unknown message type "topic"', "topic"],
     [["--topics"], "list: unknown key topics", "topics"],
     [["--list", "--topic", "work"], "list: unknown key topic", "topic"],
+    [["--set-topic", "work", "--toolset", "mail"], "topic: unknown key toolset", "toolset"],
   ])("%j prints the restart hint for %j", async (args, message, feature) => {
     const path = await socketPath();
     const fake = await fakeDaemon(path, (socket) => {

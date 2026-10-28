@@ -258,8 +258,11 @@ function notices(p: PresentationTable, interrupt: (out: string) => string): Noti
       interrupt(p.notice(`attached to conversation ${String(event.conversation)}`)),
     // Bare ids, one per line: the listing reads the same text in both presents.
     conversations: (event) => event.conversations.map((id) => `${String(id)}\n`).join(""),
-    // `name<TAB>cwd`, one per line: a topic with no directory leaves the field empty.
-    topics: (event) => event.topics.map((topic) => `${topic.name}\t${topic.cwd ?? ""}\n`).join(""),
+    // `name<TAB>cwd<TAB>toolset`, one per line: every field a topic leaves unset prints empty.
+    topics: (event) =>
+      event.topics
+        .map((topic) => `${topic.name}\t${topic.cwd ?? ""}\t${topic.toolset ?? ""}\n`)
+        .join(""),
     client_notice: (event) => interrupt(p.notice(event.text)),
     agent_changed: silent,
     auto_retry_end: silent,
