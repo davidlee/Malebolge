@@ -1,0 +1,68 @@
+id = 6
+slug = "threads"
+title = "Threads: start, fork and post among interactive conversations"
+status = "design"
+created = "2026-10-28"
+updated = "2026-10-28"
+tags = ["malebolge", "conversations", "threads", "topics"]
+
+[relationships]
+needs = []                      # slice→work hard prerequisite
+after = []                      # slice→work soft sequence: { to, rank }
+
+[[selector]]
+selector = "src/topics.ts"
+intent = "scope-relevant"
+
+[[selector]]
+selector = "src/session.ts"
+intent = "scope-relevant"
+
+[[selector]]
+selector = "src/conversations.ts"
+intent = "scope-relevant"
+
+[[selector]]
+selector = "src/toolsets.ts"
+intent = "scope-relevant"
+
+[[selector]]
+selector = "src/daemon-extensions.ts"
+intent = "scope-relevant"
+
+[[selector]]
+selector = "src/daemon.ts"
+intent = "scope-relevant"
+
+[[selector]]
+selector = "src/protocol.ts"
+intent = "scope-relevant"
+
+[[selector]]
+selector = "src/threads/**"
+intent = "scope-relevant"
+
+[[selector]]
+selector = "test/**"
+intent = "scope-relevant"
+
+[[relation]]
+label = "related"
+target = "RFC-003"
+
+[[relation]]
+label = "related"
+target = "RSK-002"
+
+[[relation]]
+label = "related"
+target = "IMP-017"
+
+# STRUCTURAL relations are uniform `[[relation]]` rows, never a typed
+# `[relationships]` axis. Slices carry no typed STRUCTURAL
+# relation axes — the `[relationships]` table above holds only the dep/seq payload
+# (`needs`/`after`). Author a structural edge with the `doctrine link` verb
+# — it validates the (source, label) pair and resolves the target:
+#   doctrine link SL-NNN specs SPEC-NNN
+#   doctrine link SL-NNN governed_by ADR-NNN
+# `doctrine inspect SL-NNN` renders the inbound + outbound edges.
