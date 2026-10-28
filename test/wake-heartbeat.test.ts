@@ -16,28 +16,25 @@ import {
 } from "@earendil-works/pi-durable";
 import { describe, expect, it, onTestFinished, vi } from "vitest";
 import { context } from "../src/context.ts";
+import { sweepBlockedTasks } from "../src/task-sweep.ts";
+import type { IndexReader } from "../src/topics.ts";
 import { type WakeDeps, wakeBinding } from "../src/wake/extension.ts";
 import { ensureHeartbeat, HEARTBEAT_INTENT } from "../src/wake/heartbeat.ts";
-import { sweepBlockedWakes } from "../src/wake/sweep.ts";
+import { wakeSweptKind } from "../src/wake/sweep.ts";
 import {
-  liveWakes,
   type LiveWake,
+  liveWakes,
+  WAKE_KIND,
   type WakeInput,
   type WakeResult,
-  WAKE_KIND,
   wakeRequestId,
 } from "../src/wake/task.ts";
 import {
   CEILING,
-  HOUR,
-  START,
-  WAIT,
-  type Sleeping,
-  type WakeSession,
-  type WakeWorld,
   createWake,
   failingOnce,
   firedResult,
+  HOUR,
   heldTurn,
   heldUntilCutOff,
   inspection,
@@ -45,7 +42,12 @@ import {
   only,
   recordedTurn,
   recording,
+  type Sleeping,
+  START,
   submissionOf,
+  WAIT,
+  type WakeSession,
+  type WakeWorld,
   waitPlaced,
   waitQueued,
   waitSleeping,
@@ -99,13 +101,17 @@ function createHeartbeat(
   );
 }
 
+/** The daemon start's sweep, with wake as its one row. */
+const sweepWakes = (wake: WakeDeps, read: IndexReader): Promise<void> =>
+  sweepBlockedTasks(wake.harness, [wakeSweptKind(wake, read)], wake.log, context);
+
 /** The daemon start's two calls, after `resume()`: sweep, then ensure the heartbeat. */
 async function sweepAndEnsure(
   world: WakeWorld,
   session: WakeSession,
   task = world.task,
 ): Promise<Heartbeat | undefined> {
-  await sweepBlockedWakes(world.wake, session.harness, context);
+  await sweepWakes(world.wake, session.harness);
   return ensureHeartbeat(world.wake, task, context);
 }
 
@@ -433,7 +439,7 @@ describe("VT-1: the heartbeat", () => {
     // The restart whose registry cannot run it: swept and aborted, no replacement yet.
     const oldTask = tooOld(world);
     const crashed = await world.open(defineExtension({ name: "tasks", tasks: [oldTask] }));
-    await sweepBlockedWakes(world.wake, crashed.harness, context);
+    await sweepWakes(world.wake, crashed.harness);
     await waitTerminal(crashed.harness, old);
     expect(await liveWakes(crashed.harness, context)).toEqual([]);
     await crashed.harness.close(context);
@@ -606,9 +612,7 @@ describe("VT-2: the start sweep", () => {
     // The process dies as it is about to abort: the input is already withdrawn.
     const dying = recordingHarness(crashed.harness, true);
     world.wake.harness = dying.deps;
-    await expect(sweepBlockedWakes(world.wake, crashed.harness, context)).rejects.toThrow(
-      "the process died",
-    );
+    await expect(sweepWakes(world.wake, crashed.harness)).rejects.toThrow("the process died");
     expect(dying.aborted).toEqual([taskId]);
     await expectWithdrawn(stuck, crashed);
     expect((await crashed.harness.getTask(taskId, context))?.state.status).not.toBe("terminal");
@@ -633,9 +637,7 @@ describe("VT-2: the start sweep", () => {
     // The process dies as it is about to abort: a report moved after the abort would be lost.
     const dying = recordingHarness(crashed.harness, true);
     world.wake.harness = dying.deps;
-    await expect(sweepBlockedWakes(world.wake, crashed.harness, context)).rejects.toThrow(
-      "the process died",
-    );
+    await expect(sweepWakes(world.wake, crashed.harness)).rejects.toThrow("the process died");
     expect(dying.aborted).toEqual([taskId]);
     const failed = (lines: readonly string[]): string[] =>
       lines.filter((line) => line.includes("failed: blocked (task_too_old)"));
@@ -684,7 +686,7 @@ describe("VT-2: the start sweep", () => {
 
     const recorder = recordingHarness(session.harness);
     world.wake.harness = recorder.deps;
-    await sweepBlockedWakes(world.wake, session.harness, context);
+    await sweepWakes(world.wake, session.harness);
 
     await waitTerminal(session.harness, taskId);
     await expectWithdrawn(stuck, session);
@@ -722,7 +724,7 @@ describe("VT-2: the start sweep", () => {
 
     const recorder = recordingHarness(session.harness);
     world.wake.harness = recorder.deps;
-    await sweepBlockedWakes(world.wake, session.harness, context);
+    await sweepWakes(world.wake, session.harness);
 
     expect(recorder.answers).toEqual([]);
     expect(linesOf(world, beat)).toContain(`wake ${String(beat)} withdrew 0 queued input(s)`);
@@ -781,7 +783,7 @@ describe("VT-2: the start sweep", () => {
       },
     };
 
-    await sweepBlockedWakes({ ...world.wake, harness }, session.harness, context);
+    await sweepWakes({ ...world.wake, harness }, session.harness);
 
     // Withdrawn first, then aborted: a cancelled wake gets no failure report.
     expect(calls).toEqual([`withdraw ${String(submission.id)}`, `abort ${String(id)}`]);

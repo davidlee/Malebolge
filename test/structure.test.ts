@@ -32,6 +32,16 @@ const ROOM_ROOTS = ["context", "fields", "json", "project-context", "truncate"];
 const ROOM_DOOR = "room/door.ts";
 const ROOM_DOOR_READERS = ["config.ts", "runner/config.ts", "runner/door.ts"];
 
+/** The wake/threads seam (SL-006 design, coupling rules): neither imports the other. */
+const WAKE_DIR = "wake/";
+const THREADS_DIR = "threads/";
+/** The start sweep: wake and threads each export a row, but it imports neither tier. */
+const TASK_SWEEP = "task-sweep.ts";
+/** The only wake module threads/ may read: its constants, not its behaviour (DEC-035). */
+const THREADS_WAKE_READS = ["wake/task.ts"];
+/** The only modules outside threads/ that may import it (entry kind and data shape only). */
+const THREADS_READERS = ["daemon-extensions.ts", "daemon-start.ts", "render.ts"];
+
 /** Source text by path relative to src/. */
 type Sources = Readonly<Record<string, string>>;
 
@@ -57,6 +67,17 @@ function tierOf(path: string): Tier {
   return path.includes("/") ? "other" : "root";
 }
 
+/** Whether `file` may import `target` across the wake/threads seam (both src/-relative). */
+function seamAllows(file: string, target: string): boolean {
+  if (target.startsWith(THREADS_DIR)) {
+    return file.startsWith(THREADS_DIR) || THREADS_READERS.includes(file);
+  }
+  if (!target.startsWith(WAKE_DIR)) {
+    return true;
+  }
+  return file.startsWith(THREADS_DIR) ? THREADS_WAKE_READS.includes(target) : file !== TASK_SWEEP;
+}
+
 /** `roots`, or a sibling tier in `tiers`: what a module of a confined tier may import. */
 const within =
   (tiers: readonly Tier[], roots: readonly string[]) =>
@@ -80,7 +101,8 @@ function violations(sources: Sources): string[] {
         .filter(
           (target) =>
             !ALLOWS[tierOf(file)](target, file) ||
-            (target === ROOM_DOOR && !ROOM_DOOR_READERS.includes(file)),
+            (target === ROOM_DOOR && !ROOM_DOOR_READERS.includes(file)) ||
+            !seamAllows(file, target),
         )
         .map((target) => `${file} -> ${target}`),
     )
@@ -161,6 +183,39 @@ describe("violations: the allowlist checker", () => {
       "room/shell.ts -> room/door.ts",
     ]);
     expect(rejects("runner/config.ts", source)).toEqual([]);
+  });
+
+  it("rejects a wake module importing threads", () => {
+    expect(rejects("wake/tools.ts", 'import { postTools } from "../threads/tools.ts";')).toEqual([
+      "wake/tools.ts -> threads/tools.ts",
+    ]);
+  });
+
+  it("rejects threads importing wake beyond its constants", () => {
+    expect(
+      rejects("threads/admission.ts", 'import { sweepBlockedWakes } from "../wake/sweep.ts";'),
+    ).toEqual(["threads/admission.ts -> wake/sweep.ts"]);
+    expect(rejects("threads/admission.ts", 'import { WAKE_KIND } from "../wake/task.ts";')).toEqual(
+      [],
+    );
+  });
+
+  it("rejects the start sweep importing wake or threads", () => {
+    expect(rejects("task-sweep.ts", 'import { WAKE_KIND } from "./wake/task.ts";')).toEqual([
+      "task-sweep.ts -> wake/task.ts",
+    ]);
+    expect(
+      rejects("task-sweep.ts", 'import { threadSweptKind } from "./threads/task.ts";'),
+    ).toEqual(["task-sweep.ts -> threads/task.ts"]);
+  });
+
+  it("rejects importing threads/ outside its three readers", () => {
+    expect(rejects("conversations.ts", 'import { postTools } from "./threads/tools.ts";')).toEqual([
+      "conversations.ts -> threads/tools.ts",
+    ]);
+    for (const reader of ["daemon-extensions.ts", "daemon-start.ts", "render.ts"]) {
+      expect(rejects(reader, 'import { threadKind } from "./threads/extension.ts";')).toEqual([]);
+    }
   });
 
   it("accepts the runner importing room/, a listed root module and packages", () => {

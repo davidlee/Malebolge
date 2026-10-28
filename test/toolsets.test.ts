@@ -16,11 +16,13 @@ import {
   type DaemonToolset,
   PROFILE_TOOLSETS,
   requireInstalled,
+  requireSameTalkSet,
   SATAN,
+  TALK_SETS,
+  type TalkSet,
   toolsetList,
 } from "../src/toolsets.ts";
 import { tasksExtension, wakeBinding } from "../src/wake/extension.ts";
-import { fakeMailSource } from "./mail/mail-fixtures.ts";
 import {
   BASELINE_CORPUS,
   BASELINE_PATH,
@@ -29,6 +31,7 @@ import {
   type InteractiveSnapshot,
   interactiveSnapshot,
 } from "./interactive-baseline.ts";
+import { fakeMailSource } from "./mail/mail-fixtures.ts";
 
 const PROFILES: readonly Profile[] = ["room", "host"];
 
@@ -211,5 +214,52 @@ describe("toolset catalogue", () => {
       expect(PROFILE_TOOLSETS[profile].default).toBe("interactive");
       expect(PROFILE_TOOLSETS[profile].allowed).toContain(PROFILE_TOOLSETS[profile].default);
     }
+  });
+});
+
+describe("talk sets", () => {
+  it("VT-1: TALK_SETS names only toolsets each profile allows", () => {
+    expect(Object.keys(TALK_SETS)).toEqual(Object.keys(PROFILE_TOOLSETS));
+    for (const profile of PROFILES) {
+      const named = DAEMON_TOOLSETS.filter((toolset) => TALK_SETS[profile][toolset] !== undefined);
+      expect(Object.keys(TALK_SETS[profile])).toEqual([...named]);
+      for (const toolset of named) {
+        expect(PROFILE_TOOLSETS[profile].allowed).toContain(toolset);
+      }
+      expect(TALK_SETS[profile].mail).toBeUndefined();
+    }
+    expect(TALK_SETS.host).toEqual({});
+  });
+
+  describe("VT-2: requireSameTalkSet refuses mail, host and mixed sets", () => {
+    it("caller mail has no talk set on profile room", () => {
+      expect(() => requireSameTalkSet("room", "mail", "interactive", "conversation 13")).toThrow(
+        "toolset mail has no talk set on profile room",
+      );
+    });
+
+    it("caller interactive has no talk set on profile host", () => {
+      expect(() =>
+        requireSameTalkSet("host", "interactive", "interactive", "conversation 13"),
+      ).toThrow("toolset interactive has no talk set on profile host");
+    });
+
+    it("a mail target is outside the interactive set, named as a conversation", () => {
+      expect(() => requireSameTalkSet("room", "interactive", "mail", "conversation 13")).toThrow(
+        "conversation 13 (toolset mail) is outside this conversation's talk set (interactive)",
+      );
+    });
+
+    it("a mail target is outside the interactive set, named as a topic", () => {
+      expect(() => requireSameTalkSet("room", "interactive", "mail", "topic inbox")).toThrow(
+        "topic inbox (toolset mail) is outside this conversation's talk set (interactive)",
+      );
+    });
+
+    it("two interactives share the interactive set", () => {
+      expect(requireSameTalkSet("room", "interactive", "interactive", "topic inbox")).toBe(
+        "interactive" satisfies TalkSet,
+      );
+    });
   });
 });

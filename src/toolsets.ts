@@ -63,6 +63,39 @@ export const PROFILE_TOOLSETS: Readonly<Record<Profile, ProfileToolsets>> = {
   host: { default: "interactive", allowed: ["interactive"] },
 };
 
+/** A set of toolsets that may talk to each other (design sec-11; DEC-032). */
+export type TalkSet = "interactive";
+
+/** Which talk set each toolset belongs to, profile by profile; absent means none (DEC-032). */
+export const TALK_SETS: Readonly<Record<Profile, Partial<Record<DaemonToolset, TalkSet>>>> = {
+  room: { interactive: "interactive" },
+  host: {},
+};
+
+/**
+ * The talk set `caller` and `target` share on `profile`, refusing when either has none or they
+ * differ. `targetLabel` names the target in the refusal (`conversation 13`, `topic inbox`).
+ * Start, fork and post call it alike.
+ */
+export function requireSameTalkSet(
+  profile: Profile,
+  caller: DaemonToolset,
+  target: DaemonToolset,
+  targetLabel: string,
+): TalkSet {
+  const sets = TALK_SETS[profile];
+  const callerSet = sets[caller];
+  if (callerSet === undefined) {
+    throw new Error(`toolset ${caller} has no talk set on profile ${profile}`);
+  }
+  if (sets[target] !== callerSet) {
+    throw new Error(
+      `${targetLabel} (toolset ${target}) is outside this conversation's talk set (${callerSet})`,
+    );
+  }
+  return callerSet;
+}
+
 /** The names a daemon on `profile` must install: the allowed union, `SATAN` left out. */
 export function allowedNames(profile: Profile): string[] {
   const names = PROFILE_TOOLSETS[profile].allowed.flatMap((toolset) =>

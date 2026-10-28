@@ -24,6 +24,7 @@ import { registryOf } from "./registry.ts";
 import { type Log, SATAN_EXTENSION, type SatanTools, satanTools } from "./satan-tools.ts";
 import { openSession, type Session, type SessionOptions } from "./session.ts";
 import { loadSkills, type Skill } from "./skills.ts";
+import { sweepBlockedTasks } from "./task-sweep.ts";
 import {
   type EarlyWakeDeps,
   tasksExtension,
@@ -33,7 +34,7 @@ import {
 } from "./wake/extension.ts";
 import { ensureHeartbeat } from "./wake/heartbeat.ts";
 import { v0Policy } from "./wake/policy.ts";
-import { sweepBlockedWakes } from "./wake/sweep.ts";
+import { wakeSweptKind } from "./wake/sweep.ts";
 import { wakeTask } from "./wake/task.ts";
 
 type WakeTask = ReturnType<typeof wakeTask>;
@@ -87,7 +88,12 @@ const startWakes = async (
   if (profile !== "room") {
     return;
   }
-  await sweepBlockedWakes(deps(), session.harness, context);
+  await sweepBlockedTasks(
+    deps().harness,
+    [wakeSweptKind(deps(), session.harness)],
+    deps().log,
+    context,
+  );
   await ensureHeartbeat(deps(), task, context);
 };
 

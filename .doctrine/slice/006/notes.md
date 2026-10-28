@@ -173,6 +173,13 @@ Seat: /super-orchestrator (2026-10-29, operator asleep). Main worktree, no dispa
 - plan / caps window PHASE-05..06: accepted; no daemon run from PHASE-05 commits. decided.
 - plan / S4: post request id `post:<id>:` (delimiter-terminated) diverges from design § "The satan.post task and its notices" (`post:<id>`) to avoid prefix collision (post:44 vs post:440). deferred -> /reconcile (design drift).
 - plan / design-drift items 1-3 from round 1 (SweptKind journal noun; requireSameTalkSet target label; DEC-042 test rewrites in premises phase). deferred -> /reconcile.
+- PHASE-01 / SweptKind gains `noun` (journal name, `wake N blocked ...`), keeping wake lines byte-identical; design-drift item 1 applied as a local correction. decided; -> /reconcile.
+- PHASE-01 / requireSameTalkSet(profile, caller, target, targetLabel): the label yields `conversation 13` / `topic inbox` in the refusal; design-drift item 2 applied. decided; -> /reconcile.
+- PHASE-01 / VT-2 "mixed sets" read as caller in a set, target in none (TalkSet has one value, so two distinct sets cannot exist yet). decided.
+- PHASE-01 / test helper `sweepWakes(wake, read)` in wake-heartbeat.test.ts collapses the 7 sweep call sites (refactor, no expectation changed). decided.
+
+## Pi passes (implementation)
+- PHASE-01: 4 parallel `implement` runs (A lateBinding, B task-sweep, C talk sets, D structure rules), ~$0.06 total, all green first time. Misses: D named its may-import predicate `crosses` (inverted polarity; renamed `seamAllows`); B left 7 repeated 4-line sweep calls (helper extracted). Sandbox: repo-local biome binary missing, workers used nix biome 2.5.15.
 
 ## Harvest
 <!-- single-copy: updated in place each harvest; ids only, never restated content -->
