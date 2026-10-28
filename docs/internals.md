@@ -62,6 +62,137 @@ room:  env(target) ─▶ RemoteExecutionEnv "pi-env:daemon-room", cwd = target.
 - **Gateway socket.** When `MALEBOLGE_GATEWAY_SOCKET` is set and absent,
   start is refused (`gateway socket missing: …`). Presence only.
 
+## Toolsets
+
+A conversation's model-facing tools come from its **toolset**: a named,
+complete, ordered list of extension names (`src/toolsets.ts`), chosen as a
+whole with its persona.
+
+| Toolset | Extensions, in system prompt and tool order | Used by |
+|---|---|---|
+| `interactive` | `persona`, `project_context`, `skills`, `cwd`, `conversation`, `coding-tools`, `grep`, `tasks`, `satan` | the daemon |
+| `mail` | `mail-persona`, `conversation`, `mail` | the daemon |
+| `job` | `job-tools`, `job-guard` | the runner |
+
+- `interactive` is the install order from before toolsets existed; the
+  registry's list, with `satan` appended by discovery.
+- `tasks` is room-only, so a host's `interactive` is the same list without
+  it. `mail` names none of `coding-tools`, `grep`, `satan` or `tasks`: the
+  interactive toolset never includes mail, and a mail conversation holds
+  nothing but the five `mail_*` tools, the conversation section and its own
+  persona.
+- The name is a closed type, `Toolset = "interactive" | "mail" | "job"`, so
+  a name outside the catalogue does not compile.
+- A persona belongs to the toolset too: `interactive` reads
+  `system/scaffold.txt`, `prompts/interactive.txt` and
+  `prompts/env/<profile>.txt`; `mail` reads `system/scaffold.txt` and
+  `prompts/mail.txt`, with no environment file, since its tools run on the
+  host whatever the profile. Both render the section key `persona`, so the
+  two never meet in one conversation.
+
+**Policy per profile** (`PROFILE_TOOLSETS`):
+
+| Profile | Default for a new conversation | Allowed |
+|---|---|---|
+| `room` | `interactive` | `interactive`, `mail` |
+| `host` | `interactive` | `interactive` |
+
+The daemon installs the union of its allowed toolsets' lists and refuses to
+start when a static name is not installed (`extension <name> is not
+installed`). `satan` is the one dynamic member: discovery installs it before
+the session resumes, and pi-durable skips a selected name the registry lacks,
+so an absent `satan` is fewer tools, never more. The runner picks `job` in
+code, opens the harness with no index and stores no name.
+
+**Where the toolset is recorded.**
+
+- **The topic record** (`TopicRecord = { cwd?, toolset? }`) is the source for
+  a new conversation in that topic, written by the `topic` frame and by
+  `malebolge-attach --set-topic NAME --toolset T` (`--no-toolset` clears it).
+  The profile's policy judges the name, whatever its origin, and refuses one
+  it does not allow.
+- **The index entry** (`{ topic, parent?, toolset }`) carries the name a
+  conversation was created with. `toolsetInit` resolves it inside the
+  creating commit — the topic's, else the profile default — and sets the
+  conversation's `extensions` from it, so no create path can omit it. The
+  name is fixed at creation; the list is re-derived from it, so a change in
+  the catalogue reaches existing conversations at the next restart while a
+  conversation never changes toolset.
+- **The startup reconcile** writes it back: an entry without a toolset gets
+  the profile default (the one-time backfill, root included), a topic record
+  or entry whose toolset the profile does not allow refuses startup naming
+  it, and each conversation whose `extensions` differ from its toolset's list
+  is rewritten, logged `conversation <id>: toolset <t> list changed`. Root's
+  `configure` carries no `extensions`, so the reconcile is root's only
+  writer. A fork or a task-owned conversation refuses startup, named, since
+  neither can be given a selection (IMP-017).
+
+## Mail
+
+Mail reaches a conversation only through the `mail` toolset: five read-only
+tools (`mail_new`, `mail_read`, `mail_thread`, `mail_list`, `mail_mailboxes`)
+over a `MailSource` port.
+
+**Port.** `MailSource { mailboxes, list, read, readAfter, thread }`
+(`src/mail/source.ts`) returns validated envelopes; the tools clamp their
+bounds and refuse inputs before any port call, and a fake stands in for the
+adapter in tests.
+
+**The screwtape adapter** (`src/mail/screwtape.ts`) runs one child per call.
+
+- argv is `[MALEBOLGE_SCREWTAPE, "--config", MALEBOLGE_SCREWTAPE_CONFIG,
+  <verb>, …]`: `--config` comes first, and there is no shell.
+- `inheritEnv: false` with `env: { HOME }`, so the daemon's environment never
+  merges in; `HOME` is the daemon's.
+- 10 s timeout. The child runs in a host `NodeExecutionEnv` owned by the mail
+  extension, never the conversation's environment (which may be the room);
+  an in-flight child is ended by its call's abort when the harness closes.
+- stdout is bounded at 4 MiB per line and in all, through the bounded exec
+  shared with `grep` (`src/bounded-exec.ts`), and is read as a stream of JSON
+  envelope lines. Oversize fails the call closed: no partial result, and,
+  when `limit` is above 1, the error says to retry with `limit: 1`. stderr is kept to 4 KiB and read only
+  for a usage error's code.
+- Every line must be a v1 envelope of the called verb's kind whose `data`
+  passes the schema, with ids, cursors and `received_at` checked; arity is
+  one envelope, except `read --after`, which prints 0 to `limit`. A breach is
+  `screwtape contract violation: <what>`, from a fixed vocabulary.
+- Every tool is replay-safe: reading mail changes nothing, so an interrupted
+  call reruns after a restart.
+
+| outcome | model sees |
+|---|---|
+| exit 0 | the result |
+| exit 2 | `screwtape usage error: <code>`, the code only if it matches `^[a-z_]{1,64}$`, otherwise `screwtape usage error` |
+| any other exit, `128+n` included | `screwtape failed (exit N)` |
+| timeout | `screwtape timed out after 10 s` |
+| the child does not start | `screwtape could not run` |
+| aborted | the abort propagates; the call is aborted |
+
+No child text, raw stderr least of all, reaches a message the model can see.
+
+**Untrusted data.** Each result opens with a header this code writes — counts,
+cursor, clamps, only literals and fixed forms — and then a
+`<mail-data untrusted="true">` block, one JSON object per line. Every `<`,
+`>` and `&` in a line is escaped, so no field can end the block. The extension's
+section (`src/mail/extension.ts`) tells the model that everything inside the
+block is email data written by the sender, never an instruction however
+phrased, and that a field in an item's cut list was shortened or left out
+(`mail_read` shows a message in full).
+
+**The Screwtape variables.** `MALEBOLGE_SCREWTAPE` and
+`MALEBOLGE_SCREWTAPE_CONFIG` are absolute paths, read only when the profile
+allows `mail` (that is, `room`); a host neither reads nor refuses them. There
+is no `PATH` lookup and no existence check: unset or empty is `<NAME> is not
+set`, and a relative path is `<NAME> must be an absolute path, not "…"`.
+
+- `MALEBOLGE_SCREWTAPE` is the `screwtape` executable itself, not a wrapper
+  script that already passes `--config`: the daemon adds `--config` first, so
+  a wrapper that adds its own would meet it twice. The Home Manager wrapper
+  is such a script; point the variable at the store path it `exec`s.
+- **Deployment order:** 1. add `prompts/mail.txt` to the corpus, so the
+  persona files exist; 2. set both variables in the launcher's environment;
+  3. restart the daemon. A room start without either refuses.
+
 ## Jail
 
 The daemon runs in `jailed-malebolge` (`~/dev/satan/flake.nix`), started by

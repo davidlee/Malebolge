@@ -57,12 +57,9 @@ export function selectionOf(names: readonly string[]): Extension[] {
   return names.map((name) => defineExtension({ name }));
 }
 
-/**
- * Each profile's default toolset and the ones it may use. STAGING: the design's
- * end state lets the room use `mail` too; PHASE-08 adds it, with its manifest.
- */
+/** Each profile's default toolset and the ones it may use. */
 export const PROFILE_TOOLSETS: Readonly<Record<Profile, ProfileToolsets>> = {
-  room: { default: "interactive", allowed: ["interactive"] },
+  room: { default: "interactive", allowed: ["interactive", "mail"] },
   host: { default: "interactive", allowed: ["interactive"] },
 };
 

@@ -64,12 +64,6 @@ export interface SessionOptions {
   env: NonNullable<HarnessOptions["env"]>;
   /** The execution profile this store serves: which toolsets its conversations may use. */
   profile: Profile;
-  /**
-   * The reconcile's toolset policy, in place of `PROFILE_TOOLSETS[profile]`: a test
-   * seam, as `toolsetInit`'s is, for a store holding a toolset its profile does not
-   * allow yet. Production never passes one; PHASE-08 makes `mail` real.
-   */
-  policy?: ProfileToolsets;
   /** Logs the reconcile's changes: one line per conversation whose list it rewrote. */
   log: Log;
   /** The harness clock (pi-durable's `HarnessOptions.now`); a wake's env reads the same function. */
@@ -189,12 +183,7 @@ export async function openSession(storage: Storage, options: SessionOptions): Pr
   // After `root()`, so root is indexed by the hook like every other conversation,
   // and before `resume()`, so no client and no resumed task outruns either write.
   await backfillIndex(harness);
-  await reconcileToolsets(
-    harness,
-    options.profile,
-    options.log,
-    options.policy ?? PROFILE_TOOLSETS[options.profile],
-  );
+  await reconcileToolsets(harness, options.profile, options.log, PROFILE_TOOLSETS[options.profile]);
   const session = { harness, root };
   options.beforeResume?.(session);
   harness.resume();

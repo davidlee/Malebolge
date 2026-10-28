@@ -4,15 +4,16 @@ import { dirname, join } from "node:path";
 import type { Message } from "@earendil-works/pi-ai";
 import type { Models } from "@earendil-works/pi-ai/models";
 import { type FauxProviderHandle } from "@earendil-works/pi-ai/providers/faux";
-import { Harness } from "@earendil-works/pi-durable";
+import { type Extension, Harness } from "@earendil-works/pi-durable";
 import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite/node";
 import { describe, expect, it, onTestFinished, vi } from "vitest";
-import type { Config, Profile } from "../src/config.ts";
+import { type Config, type Profile, resolveConfig } from "../src/config.ts";
 import { context } from "../src/context.ts";
 import { type DaemonEnv, daemonEnv } from "../src/daemon-env.ts";
 import { daemonExtensions } from "../src/daemon-extensions.ts";
 import { type DaemonHandle, startDaemon } from "../src/daemon-start.ts";
 import { acquireInstanceLock, InstanceLocked } from "../src/instance-lock.ts";
+import { mailExtension } from "../src/mail/extension.ts";
 import { registryOf } from "../src/registry.ts";
 import { openSession } from "../src/session.ts";
 import { storedEntry } from "../src/topics.ts";
@@ -20,6 +21,7 @@ import { serveUnix, SocketInUse } from "../src/unix-socket.ts";
 import { tasksExtension, wakeBinding } from "../src/wake/extension.ts";
 import { liveWakes, type WakeInput } from "../src/wake/task.ts";
 import { type FakeTool, fakeMcpServer, rejection, staleSocket, tempDir } from "./fixtures.ts";
+import { fakeMailSource } from "./mail/mail-fixtures.ts";
 import {
   callThenAnswer,
   FAUX_MODEL,
@@ -250,10 +252,18 @@ async function roomWorld(wakes: { enabled: boolean }): Promise<World> {
   const { corpusRoot } = w.config;
   await writeFile(join(corpusRoot, "prompts", "env", "room.txt"), "room\n");
   await writeFile(join(corpusRoot, "prompts", "wake.md"), "FRAGMENT TEXT\n");
+  await writeFile(join(corpusRoot, "prompts", "mail.txt"), "mail\n");
   w.config.execution = {
     profile: "room",
     // Never connected: `environment` stands in for the room.
     room: { host: "room", user: "u", hostKeyAlias: "room", knownHosts: "/dev/null" },
+    home: w.cwd,
+  };
+  // Absolute and never spawned: the daemon starts without calling screwtape.
+  const bin = join(dirname(w.cwd), "bin");
+  w.config.screwtape = {
+    binary: join(bin, "screwtape"),
+    config: join(bin, "screwtape.toml"),
     home: w.cwd,
   };
   w.config.wakes.enabled = wakes.enabled;
@@ -262,6 +272,10 @@ async function roomWorld(wakes: { enabled: boolean }): Promise<World> {
   });
   return w;
 }
+
+/** The mail extension a room registry installs, over a fake source; the host installs none. */
+const mailParts = (profile: Profile): { mail?: Extension } =>
+  profile === "room" ? { mail: mailExtension({ source: fakeMailSource(), now: () => 0 }) } : {};
 
 /** The satan-mcp tools a wake calls, answering as a room user who is away. */
 const wakeTools: FakeTool[] = [
@@ -294,6 +308,7 @@ async function inStore<T>(
           skills: [],
           profile,
           tasks: tasksExtension(wakeBinding().deps),
+          ...mailParts(profile),
         }),
       ),
       env: nodeEnv,
@@ -413,6 +428,7 @@ describe("startDaemon wakes", () => {
           skills: [],
           profile: "room",
           tasks: tasksExtension(wakeBinding().deps),
+          ...mailParts("room"),
         }),
       ),
       agent: { model: FAUX_MODEL, cwd: w.cwd },
@@ -483,5 +499,124 @@ describe("startDaemon wakes", () => {
     w.config.wakes.topic = "room";
     await started(w);
     expect(createdHeartbeats(w)).toHaveLength(1);
+  });
+});
+
+const SCREWTAPE = "MALEBOLGE_SCREWTAPE";
+const SCREWTAPE_CONFIG = "MALEBOLGE_SCREWTAPE_CONFIG";
+
+const DOOR_PATH = "/h/.config/malebolge/door.toml";
+const DOOR = `[door]
+room = "assistant"
+user = "satan"
+known_hosts = "/var/lib/capsule/room/assistant/known_hosts"
+host_key_alias = "room-assistant"
+identity = "~/.ssh/malebolge-vm.key"
+home = "/home/satan"
+`;
+
+type Env = Record<string, string | undefined>;
+
+const hostEnv: Env = { HOME: "/h", XDG_RUNTIME_DIR: "/run/u", MALEBOLGE_PROFILE: "host" };
+const roomEnv: Env = {
+  HOME: "/h",
+  XDG_RUNTIME_DIR: "/run/u",
+  MALEBOLGE_PROFILE: "room",
+  MALEBOLGE_DOOR: DOOR_PATH,
+  MALEBOLGE_SSH_CONFIG: "/nix/store/x-ssh_config",
+  [SCREWTAPE]: "/opt/screwtape/bin/screwtape",
+  [SCREWTAPE_CONFIG]: "/opt/screwtape/config.toml",
+};
+
+/** `resolveConfig` over a file system holding only the door file, as config.test.ts does. */
+const resolve = (env: Env): Config =>
+  resolveConfig(env, "/cwd", (path) => {
+    if (path !== DOOR_PATH) {
+      throw new Error(`ENOENT: ${path}`);
+    }
+    return DOOR;
+  });
+
+describe("startDaemon mail", () => {
+  it("VT-1 host: no screwtape config, no mail tools, and the Screwtape variables are neither read nor refused", async () => {
+    expect(resolve(hostEnv).screwtape).toBeUndefined();
+    // Relative and empty values would refuse in the room; a host does not look at them.
+    expect(
+      resolve({ ...hostEnv, [SCREWTAPE]: "screwtape", [SCREWTAPE_CONFIG]: "" }).screwtape,
+    ).toBeUndefined();
+
+    const w = await world();
+    const handle = await started(w);
+    expect(handle.mailTools).toBe(0);
+    const registry = registryOf(
+      daemonExtensions({
+        personaFiles: () => [],
+        projectContext: undefined,
+        skills: [],
+        profile: "host",
+        tasks: tasksExtension(wakeBinding().deps),
+      }),
+    );
+    expect(registry.snapshot().extension("mail")).toBeUndefined();
+  });
+
+  it("VT-1 room: resolveConfig carries both absolute paths and the host HOME, not the room user's", () => {
+    // Mail runs on the host whatever the profile (DEC-028): the door's `home` is the jail's.
+    expect(resolve(roomEnv).screwtape).toEqual({
+      binary: "/opt/screwtape/bin/screwtape",
+      config: "/opt/screwtape/config.toml",
+      home: "/h",
+    });
+  });
+
+  describe.each([SCREWTAPE, SCREWTAPE_CONFIG])("VT-1 room refusals for %s", (name) => {
+    const refuses = (value: string | undefined): string => {
+      try {
+        resolve({ ...roomEnv, [name]: value });
+      } catch (error) {
+        return error instanceof Error ? error.message : String(error);
+      }
+      throw new Error("resolved");
+    };
+
+    it.each([undefined, ""])("refuses when it is %j (unset or empty)", (value) => {
+      expect(refuses(value)).toBe(`${name} is not set`);
+    });
+
+    // A bare `screwtape` is what a PATH lookup would accept (RV-015 F-16 (1)).
+    it.each(["screwtape", "./bin/screwtape", "bin/screwtape", "../screwtape"])(
+      "refuses the relative path %j",
+      (value) => {
+        expect(refuses(value)).toBe(
+          `${name} must be an absolute path, not ${JSON.stringify(value)}`,
+        );
+      },
+    );
+  });
+
+  it("VT-1 room start: five mail tools and the satan.wake heartbeat", async () => {
+    const w = await roomWorld({ enabled: true });
+    const handle = await started(w);
+    expect(handle.mailTools).toBe(5);
+    expect(
+      (mailExtension({ source: fakeMailSource(), now: () => 0 }).tools ?? []).map(
+        (tool) => tool.name,
+      ),
+    ).toEqual(["mail_new", "mail_read", "mail_thread", "mail_list", "mail_mailboxes"]);
+    // The satan.wake task is still registered: its recurring heartbeat was created.
+    expect(createdHeartbeats(w)).toHaveLength(1);
+    await handle.stop();
+    const wakes = await wakesInStore(w, "room");
+    expect(wakes).toHaveLength(1);
+    expect(wakes[0]?.input.recurring).toBe(true);
+  });
+
+  it("VT-1 negative control: a room Config without screwtape refuses to start", async () => {
+    const w = await roomWorld({ enabled: true });
+    delete w.config.screwtape;
+    const failed = start(w);
+    track(failed);
+    await expect(failed).rejects.toThrow("extension mail is not installed");
+    lockFree(w.config);
   });
 });

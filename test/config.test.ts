@@ -20,6 +20,8 @@ const room: Env = {
   MALEBOLGE_PROFILE: "room",
   MALEBOLGE_DOOR: DOOR_PATH,
   MALEBOLGE_SSH_CONFIG: "/nix/store/x-ssh_config",
+  MALEBOLGE_SCREWTAPE: "/opt/screwtape/bin/screwtape",
+  MALEBOLGE_SCREWTAPE_CONFIG: "/opt/screwtape/config.toml",
 };
 
 /** A file system holding `files`; reading anything else throws, as readFileSync does. */

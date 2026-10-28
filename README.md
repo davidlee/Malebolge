@@ -178,6 +178,7 @@ refused rather than silently starting a separate line of work.
 node src/attach-main.ts --set-topic NAME               # create it, no directory
 node src/attach-main.ts --set-topic NAME --dir DIR     # create it, or re-point it
 node src/attach-main.ts --set-topic NAME --no-dir      # clear its directory
+node src/attach-main.ts --set-topic NAME --toolset T   # mail-only, or --no-toolset
 node src/attach-main.ts --topic NAME                   # its latest conversation
 node src/attach-main.ts --topic NAME --new [--cwd DIR] # a fresh one in that topic
 node src/attach-main.ts --topics                       # topics, one per line
@@ -187,12 +188,14 @@ node src/attach-main.ts --list --topic NAME            # that topic's ids
 A name matches `[a-z0-9][a-z0-9._-]{0,63}`. `--set-topic` writes one record and
 prints it; without `--dir` it leaves the directory as it was, and on a topic it
 has to create, that means none. `--topics` prints `default` first, then the
-rest by name, as `NAME<TAB>DIR`, the tab and empty directory included, so a
-script can read it. A topic's directory is only a default: it reaches
-conversations created in that topic afterwards, and a conversation already made
-keeps the directory it was created with. `--topic NAME` binds the topic's
-latest conversation (highest id), starts its first when it has none, and
-`--new` always starts a fresh one. `--topics` takes no other flag, `--set-topic`
+rest by name, as `NAME<TAB>DIR<TAB>TOOLSET`, the tabs and empty fields
+included, so a script can read it. A topic's toolset works the same way and is
+written the same way ([Where tools run](#where-tools-run)). A topic's
+directory is only a default: it reaches conversations created in that topic
+afterwards, and a conversation already made keeps the directory it was created
+with. `--topic NAME` binds the topic's latest conversation (highest id),
+starts its first when it has none, and `--new` always starts a fresh one.
+`--topics` takes no other flag, `--set-topic`
 takes neither an attach nor a list flag, `--topic` and `--conversation` are
 exclusive, and `--dir` and `--no-dir` are exclusive: each is one usage line and
 exit 2. A refused topic — an unwritten name, a bad name, `default` written to, a
@@ -287,6 +290,8 @@ Set through environment variables:
 | `MALEBOLGE_GATEWAY_CATALOG` | gateway model catalog (JSON file) | `~/.config/malebolge/gateway-models.json` |
 | `MALEBOLGE_GATEWAY_KEY_FILE` | file holding the daemon's gateway key (names a file; never carries the key) | `~/.config/llm-gateway/keys/malebolge` |
 | `MALEBOLGE_SKILLS` | Agent Skill directories, `:`-separated, each holding a `SKILL.md`; use absolute paths; listed once at start, bodies read on use | none |
+| `MALEBOLGE_SCREWTAPE` | the `screwtape` executable the mail tools run, as an absolute path; the binary itself, not a wrapper that adds `--config` | required when the profile allows `mail` (`room`) |
+| `MALEBOLGE_SCREWTAPE_CONFIG` | the config file it is given as `--config`, as an absolute path; no `PATH` lookup, no existence check | required for `room` |
 | `MALEBOLGE_SOCKET` | where clients attach (clients default to the room's) | `$XDG_RUNTIME_DIR/satan/durable/<profile>/durable.sock` |
 | `SATAN_MCP_SOCKET` | where SATAN's tools are | `$XDG_RUNTIME_DIR/satan/mcp/mcp.sock` |
 | `SATAN_CORPUS_ROOT` | SATAN's persona files | `~/satan-corpus` |
@@ -318,6 +323,65 @@ All six are always set, in both profiles, and each conversation's tools see
 its own values. One with nothing to say is empty, never absent, so an inherited
 `SATAN_*` variable of one of these six names cannot show through. These are what
 the tools receive, not daemon configuration: nothing above sets them.
+
+## Where tools run
+
+Every conversation gets its model-facing tools from one **toolset**: a named,
+fixed list of extensions, chosen as a whole with the prompt that goes with it.
+
+| Toolset | Holds | Used by |
+|---|---|---|
+| `interactive` | the persona, project context, skills, cwd and conversation sections, coding tools (`read`, `write`, `edit`, `bash`), `grep`, `tasks`, SATAN's MCP tools | the daemon |
+| `mail` | a mail persona, the conversation section, the five `mail_*` tools | the daemon |
+| `job` | the job tools and the job guard | the runner |
+
+`interactive` never includes mail, and `mail` holds no coding tool, no `grep`,
+no `tasks` and no SATAN tool: a conversation is one or the other. On the `host`
+profile `interactive` is the same list without `tasks`, which wakes a room
+only.
+
+Each profile decides what its daemon offers:
+
+| Profile | Default for a new conversation | Allowed |
+|---|---|---|
+| `room` | `interactive` | `interactive`, `mail` |
+| `host` | `interactive` | `interactive` |
+
+So a host daemon holds no `mail_*` tool and needs no Screwtape setup, while a
+room daemon can host mail conversations as well as interactive ones.
+
+**Choosing a topic's toolset.** A conversation takes its toolset when it is
+created: its topic's, else the profile default. A change reaches the
+conversations created afterwards, never an existing one.
+
+```sh
+node src/attach-main.ts --set-topic NAME --toolset mail   # mail-only from now on
+node src/attach-main.ts --set-topic NAME --no-toolset     # the profile default
+```
+
+The toolset is written by `--set-topic`, as the directory is, and the flags
+pair the same way: `--toolset` sets it, `--no-toolset` clears it, one without
+the other leaves it as it was, and both together are one usage line and exit
+2. A name the profile does not allow is refused: `toolset mail is not allowed
+on profile host`.
+
+**The mail tools** read one mail store through Screwtape's command line, and
+change nothing:
+
+| Tool | Reads |
+|---|---|
+| `mail_new` | new mail in arrival order, from a cursor the caller passes back; filters by mailbox, unread and sender |
+| `mail_read` | one message by id: its headers, attachment list and a bounded body |
+| `mail_thread` | the last entries of a thread, by its thread id |
+| `mail_list` | messages newest first, a page at a time |
+| `mail_mailboxes` | the mailboxes: ids, names, roles and counts |
+
+They run on the host whatever the profile, in an execution environment of
+their own rather than the conversation's, and reach nothing but the read-only
+verbs of the `screwtape` binary named by `MALEBOLGE_SCREWTAPE`. What a mail
+tool returns is untrusted email, sent to the model as data: nothing inside it
+is an instruction. [docs/internals.md](docs/internals.md) has the adapter and
+the deployment order.
 
 ## Patch jobs
 

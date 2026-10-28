@@ -8,6 +8,7 @@ import { describe, expect, it } from "vitest";
 import type { Profile } from "../src/config.ts";
 import { daemonExtensions } from "../src/daemon-extensions.ts";
 import { isRecord } from "../src/json.ts";
+import { mailExtension } from "../src/mail/extension.ts";
 import { personaFiles } from "../src/persona.ts";
 import {
   allowedNames,
@@ -18,6 +19,7 @@ import {
   toolsetList,
 } from "../src/toolsets.ts";
 import { tasksExtension, wakeBinding } from "../src/wake/extension.ts";
+import { fakeMailSource } from "./mail/mail-fixtures.ts";
 import {
   BASELINE_CORPUS,
   BASELINE_PATH,
@@ -99,15 +101,20 @@ const expectedSnapshot = ({
   tools: [...tools],
 });
 
-/** The interactive extensions as the daemon builds them once the catalogue lands. */
-const extensionsOf = (profile: Profile): Extension[] =>
-  daemonExtensions({
+/** The interactive extensions as the daemon builds them, out of the room's whole union. */
+const extensionsOf = (profile: Profile): Extension[] => {
+  const interactive = new Set(toolsetList("interactive", profile));
+  return daemonExtensions({
     personaFiles: (toolset) => personaFiles(BASELINE_CORPUS, toolset, profile),
     projectContext: BASELINE_PROJECT_CONTEXT,
     skills: [BASELINE_SKILL],
     profile,
     tasks: tasksExtension(wakeBinding().deps),
-  });
+    ...(profile === "room"
+      ? { mail: mailExtension({ source: fakeMailSource(), now: () => 0 }) }
+      : {}),
+  }).filter(({ name }) => interactive.has(name));
+};
 
 /** What a new interactive conversation offers on `profile`. */
 const snapshotOf = (profile: Profile): Promise<InteractiveSnapshot> =>

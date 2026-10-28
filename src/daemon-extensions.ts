@@ -21,11 +21,13 @@ export interface DaemonParts {
   profile: Profile;
   /** The room's `tasks` extension (wakes); the host never installs it (W10). */
   tasks: Extension;
+  /** The mail extension; absent when the profile does not allow mail. */
+  mail?: Extension;
 }
 
 /** One builder per name this module can construct; a name absent here is a catalogue error. */
-const builders = (parts: DaemonParts): ReadonlyMap<string, () => Extension> =>
-  new Map<string, () => Extension>([
+const builders = (parts: DaemonParts): ReadonlyMap<string, () => Extension> => {
+  const byName = new Map<string, () => Extension>([
     ["persona", (): Extension => personaExtension("persona", parts.personaFiles("interactive"))],
     ["mail-persona", (): Extension => personaExtension("mail-persona", parts.personaFiles("mail"))],
     ["project_context", (): Extension => projectContextExtension(parts.projectContext)],
@@ -36,6 +38,13 @@ const builders = (parts: DaemonParts): ReadonlyMap<string, () => Extension> =>
     ["grep", (): Extension => grepExtension],
     ["tasks", (): Extension => parts.tasks],
   ]);
+  // A room start without it is refused by `requireInstalled` rather than left unbuilt.
+  const { mail } = parts;
+  if (mail !== undefined) {
+    byName.set("mail", () => mail);
+  }
+  return byName;
+};
 
 /** `name`'s extension; `requireInstalled` has already refused a name nothing builds. */
 const build = (byName: ReadonlyMap<string, () => Extension>, name: string): Extension => {

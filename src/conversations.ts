@@ -40,7 +40,6 @@ import {
 import {
   type DaemonToolset,
   PROFILE_TOOLSETS,
-  type ProfileToolsets,
   requireAllowed,
   selectionOf,
   toolsetList,
@@ -119,14 +118,9 @@ async function resolveExisting(session: Session, id: ConversationId): Promise<Co
  * The `init` every create passes (design sec-3): the topic's toolset, else the
  * profile's default, checked against `policy` and selected in the creating
  * commit — the entry it writes and the selection it configures are one read.
- * A `mail` topic needs a `policy` that allows it until PHASE-08 installs that
- * manifest; production callers never pass one.
  */
-export function toolsetInit(
-  profile: Profile,
-  topic: string | undefined,
-  policy: ProfileToolsets = PROFILE_TOOLSETS[profile],
-): ConversationInit {
+export function toolsetInit(profile: Profile, topic: string | undefined): ConversationInit {
+  const policy = PROFILE_TOOLSETS[profile];
   return async (tx, conversationId) => {
     const toolset = await writeCreated(tx, conversationId, topic, (record) => {
       const chosen = record?.toolset ?? policy.default;

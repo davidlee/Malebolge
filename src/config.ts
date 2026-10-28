@@ -4,7 +4,7 @@
 // picks the execution profile; the store and socket are the profile's
 // (design §4.2, DEC-077, DEC-078).
 
-import { basename, dirname, join } from "node:path";
+import { basename, dirname, isAbsolute, join } from "node:path";
 import {
   onlyKeys,
   optionalRecord,
@@ -20,6 +20,7 @@ import { DEFAULT_TOPIC, topicNameOf } from "./protocol.ts";
 import type { RoomConnection } from "./room/connection.ts";
 import { readRoomDoor, ROOM_DOOR_KEYS, type RoomDoor, roomConnectionOf } from "./room/door.ts";
 import { DEFAULT_SATAN_IDLE_MS } from "./satan-pool.ts";
+import { PROFILE_TOOLSETS } from "./toolsets.ts";
 import type { QuietWindow, WakeSettings } from "./wake/policy.ts";
 
 export type Profile = "room" | "host";
@@ -35,6 +36,16 @@ export type Execution =
       /** The gateway client socket the jail binds (§4.4). */
       gatewaySocket?: string;
     };
+
+/** The mail extension's screwtape: absolute paths, never a PATH lookup (design sec-5). */
+export interface ScrewtapePaths {
+  /** MALEBOLGE_SCREWTAPE: the screwtape executable itself (not a wrapper that adds --config). */
+  binary: string;
+  /** MALEBOLGE_SCREWTAPE_CONFIG */
+  config: string;
+  /** The child's HOME: the daemon's HOME. */
+  home: string;
+}
 
 export interface Config {
   corpusRoot: string;
@@ -56,6 +67,8 @@ export interface Config {
   skillDirs: string[];
   /** When SATAN may wake itself in the room (SL-034; host keeps the defaults, disabled). */
   wakes: WakeSettings;
+  /** Present exactly when the profile allows `mail` (the room). */
+  screwtape?: ScrewtapePaths;
   /** Where the agent's tools run; daemon-env.ts turns it into their environment and cwd. */
   execution: Execution;
 }
@@ -68,6 +81,31 @@ function requireEnv(env: Env, name: string): string {
     throw new Error(`${name} is not set`);
   }
   return value;
+}
+
+/** `env[name]` as an absolute path: no PATH lookup, and no existence check (design sec-5). */
+function absolutePathEnv(env: Env, name: string): string {
+  const value = requireEnv(env, name);
+  if (!isAbsolute(value)) {
+    throw new Error(`${name} must be an absolute path, not ${JSON.stringify(value)}`);
+  }
+  return value;
+}
+
+/**
+ * The room's screwtape, and exactly the profiles that allow `mail` read it: a host
+ * neither reads nor refuses the variables. `home` is the daemon's own HOME on the
+ * host, never the room user's: mail runs on the host whatever the profile (DEC-028).
+ */
+export function screwtapeOf(env: Env, profile: Profile, home: string): ScrewtapePaths | undefined {
+  if (!PROFILE_TOOLSETS[profile].allowed.includes("mail")) {
+    return undefined;
+  }
+  return {
+    binary: absolutePathEnv(env, "MALEBOLGE_SCREWTAPE"),
+    config: absolutePathEnv(env, "MALEBOLGE_SCREWTAPE_CONFIG"),
+    home,
+  };
 }
 
 function profileOf(value: string | undefined): Profile {
@@ -241,21 +279,25 @@ export function resolveConfig(env: Env, cwd: string, readFile: (path: string) =>
   const stateRoot = join(env["XDG_STATE_HOME"] ?? join(home, ".local", "state"), "satan");
   const runtime = join(requireEnv(env, "XDG_RUNTIME_DIR"), "satan");
   const profileState = join(stateRoot, "durable", profile);
-  return {
-    corpusRoot: env["SATAN_CORPUS_ROOT"] ?? join(home, "satan-corpus"),
-    storagePath: join(profileState, "session.sqlite"),
-    lockPath: join(profileState, "daemon.lock"),
-    mcpSocket: env["SATAN_MCP_SOCKET"] ?? join(runtime, "mcp", "mcp.sock"),
-    satanIdleMs: msOf(env, "MALEBOLGE_SATAN_IDLE_MS", DEFAULT_SATAN_IDLE_MS),
-    daemonSocket: inProfileDir("daemonSocket", daemonSocket(env, profile), profile),
-    model: parseModel(env["MALEBOLGE_MODEL"] ?? DEFAULT_MODEL),
-    gatewayCatalog:
-      env["MALEBOLGE_GATEWAY_CATALOG"] ?? join(home, ".config", "malebolge", "gateway-models.json"),
-    gatewayKeyFile:
-      env["MALEBOLGE_GATEWAY_KEY_FILE"] ??
-      join(home, ".config", "llm-gateway", "keys", "malebolge"),
-    skillDirs: (env["MALEBOLGE_SKILLS"] ?? "").split(":").filter((dir) => dir !== ""),
-    wakes: wakesOf(env),
-    execution,
-  };
+  return setDefined<Config>(
+    {
+      corpusRoot: env["SATAN_CORPUS_ROOT"] ?? join(home, "satan-corpus"),
+      storagePath: join(profileState, "session.sqlite"),
+      lockPath: join(profileState, "daemon.lock"),
+      mcpSocket: env["SATAN_MCP_SOCKET"] ?? join(runtime, "mcp", "mcp.sock"),
+      satanIdleMs: msOf(env, "MALEBOLGE_SATAN_IDLE_MS", DEFAULT_SATAN_IDLE_MS),
+      daemonSocket: inProfileDir("daemonSocket", daemonSocket(env, profile), profile),
+      model: parseModel(env["MALEBOLGE_MODEL"] ?? DEFAULT_MODEL),
+      gatewayCatalog:
+        env["MALEBOLGE_GATEWAY_CATALOG"] ??
+        join(home, ".config", "malebolge", "gateway-models.json"),
+      gatewayKeyFile:
+        env["MALEBOLGE_GATEWAY_KEY_FILE"] ??
+        join(home, ".config", "llm-gateway", "keys", "malebolge"),
+      skillDirs: (env["MALEBOLGE_SKILLS"] ?? "").split(":").filter((dir) => dir !== ""),
+      wakes: wakesOf(env),
+      execution,
+    },
+    { screwtape: screwtapeOf(env, profile, home) },
+  );
 }

@@ -4,26 +4,30 @@
 import { mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import type { Models } from "@earendil-works/pi-ai/models";
-import type { Registry } from "@earendil-works/pi-durable";
+import type { Extension, Registry } from "@earendil-works/pi-durable";
+import { NodeExecutionEnv } from "@earendil-works/pi-durable/env/node";
 import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite/node";
 import { orientationOf } from "./boot-context.ts";
-import type { Config, Profile } from "./config.ts";
+import type { Config, Profile, ScrewtapePaths } from "./config.ts";
 import { context } from "./context.ts";
 import { type Conversations, type ConversationDefaults, conversations } from "./conversations.ts";
 import { type DaemonEnv, daemonEnv, requireGatewaySocket } from "./daemon-env.ts";
 import { daemonExtensions } from "./daemon-extensions.ts";
 import { type Daemon, serve } from "./daemon.ts";
 import { acquireInstanceLock } from "./instance-lock.ts";
+import { mailExtension } from "./mail/extension.ts";
+import { screwtapeSource } from "./mail/screwtape.ts";
 import { loadGatewayModels, type ModelRef } from "./models.ts";
 import { personaFiles, readPersona, requirePersonaFiles } from "./persona.ts";
 import { renderProjectContext } from "./project-context.ts";
 import { registryOf } from "./registry.ts";
 import { type Log, SATAN_EXTENSION, type SatanTools, satanTools } from "./satan-tools.ts";
 import { openSession, type Session, type SessionOptions } from "./session.ts";
-import { loadSkills } from "./skills.ts";
+import { loadSkills, type Skill } from "./skills.ts";
 import {
   type EarlyWakeDeps,
   tasksExtension,
+  type WakeBinding,
   wakeBinding,
   type WakeDeps,
 } from "./wake/extension.ts";
@@ -118,9 +122,53 @@ const lockOrClose = (config: Config, environment: DaemonEnv): { release: () => v
   }
 };
 
-/** How many satan-mcp tools the last refresh registered. */
-const satanToolCount = (registry: Registry): number =>
-  registry.snapshot().extension(SATAN_EXTENSION)?.tools?.length ?? 0;
+/** How many tools the registry's `name` extension registered. */
+const toolCount = (registry: Registry, name: string): number =>
+  registry.snapshot().extension(name)?.tools?.length ?? 0;
+
+/**
+ * The mail extension over `screwtape`, or none where the profile allows no mail.
+ * Its environment is a host `NodeExecutionEnv` holding no resources (no `close`):
+ * an in-flight child ends with its call's abort signal when the harness closes,
+ * so "closed with the daemon" needs no extra code. It is never the room's env.
+ */
+const mailPart = (
+  screwtape: ScrewtapePaths | undefined,
+  now: () => number,
+): Extension | undefined =>
+  screwtape === undefined
+    ? undefined
+    : mailExtension({
+        source: screwtapeSource({
+          ...screwtape,
+          env: new NodeExecutionEnv({ cwd: screwtape.home }),
+        }),
+        now,
+      });
+
+/** The registry the daemon installs: the profile's catalogue, and mail where it has a screwtape. */
+const daemonRegistry = (
+  config: Config,
+  parts: {
+    projectContext: string | undefined;
+    skills: readonly Skill[];
+    wakes: WakeBinding;
+    task: WakeTask;
+  },
+  now: () => number,
+): Registry => {
+  const mail = mailPart(config.screwtape, now);
+  return registryOf(
+    daemonExtensions({
+      personaFiles: (toolset) => personaFiles(config.corpusRoot, toolset, config.execution.profile),
+      projectContext: parts.projectContext,
+      skills: parts.skills,
+      profile: config.execution.profile,
+      tasks: tasksExtension(parts.wakes.deps, parts.task),
+      ...(mail === undefined ? {} : { mail }),
+    }),
+  );
+};
 
 /** A started daemon and the facts its entry script reports. */
 export interface DaemonHandle {
@@ -130,6 +178,8 @@ export interface DaemonHandle {
   profile: Profile;
   cwd: string;
   satanTools: number;
+  /** The mail tools the registry's `mail` extension registered (0 on a host). */
+  mailTools: number;
   skills: number;
   hasProjectContext: boolean;
   storagePath: string;
@@ -156,15 +206,7 @@ export async function startDaemon(config: Config, deps: StartDeps): Promise<Daem
   const projectContext = renderProjectContext(await environment.readContext());
   const wakes = wakeBinding();
   const task = wakeTask(wakes.deps);
-  const registry = registryOf(
-    daemonExtensions({
-      personaFiles: (toolset) => personaFiles(config.corpusRoot, toolset, config.execution.profile),
-      projectContext,
-      skills,
-      profile: config.execution.profile,
-      tasks: tasksExtension(wakes.deps, task),
-    }),
-  );
+  const registry = daemonRegistry(config, { projectContext, skills, wakes, task }, now);
 
   const lock = lockOrClose(config, environment);
   // Construction never connects, so nothing here can fail before the `try`.
@@ -225,7 +267,8 @@ export async function startDaemon(config: Config, deps: StartDeps): Promise<Daem
     model: config.model,
     profile: config.execution.profile,
     cwd: environment.cwd,
-    satanTools: satanToolCount(registry),
+    satanTools: toolCount(registry, SATAN_EXTENSION),
+    mailTools: toolCount(registry, "mail"),
     skills: skills.length,
     hasProjectContext: projectContext !== undefined,
     storagePath: config.storagePath,

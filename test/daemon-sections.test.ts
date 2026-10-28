@@ -209,6 +209,9 @@ describe("daemonExtensions tasks", () => {
       skills: [],
       profile,
       tasks: defineExtension({ name: "tasks" }),
+      ...(profile === "room"
+        ? { mail: mailExtension({ source: fakeMailSource(), now: () => 0 }) }
+        : {}),
     }).map(({ name }) => name);
 
   it("VT-3 e: the room installs the tasks extension and the host never does (W10)", () => {

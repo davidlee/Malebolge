@@ -26,7 +26,7 @@ import {
   toolsetInit,
 } from "../src/conversations.ts";
 import { registryOf } from "../src/registry.ts";
-import { openSession, type Session, type SessionOptions } from "../src/session.ts";
+import { openSession, type Session } from "../src/session.ts";
 import {
   indexConversation,
   IndexDocument,
@@ -77,18 +77,11 @@ const ROOM_UNION = [
   ]),
 ];
 
-/** The policy seam's mail case: the room's default, allowed mail (STAGING: PHASE-08 adds it). */
-const ALLOWS_MAIL = { ...PROFILE_TOOLSETS.room, allowed: ["interactive", "mail"] as const };
-
 /** The interactive toolset's names as a registry can resolve them: `satan` is not installed. */
 const INTERACTIVE = toolsetList("interactive", "room").filter((name) => name !== SATAN);
 
 /** A room session over the sqlite file at `path`: the store a reopen reads again. */
-const openRoomStore = async (
-  path: string,
-  registry: Registry,
-  policy?: SessionOptions["policy"],
-): Promise<Session> =>
+const openRoomStore = async (path: string, registry: Registry): Promise<Session> =>
   openSession(await openNodeSqliteStorage(path), {
     models: fauxModels().models,
     registry,
@@ -96,7 +89,6 @@ const openRoomStore = async (
     profile: "room",
     log: () => undefined,
     env: nodeEnv,
-    ...(policy === undefined ? {} : { policy }),
   });
 
 /** The conversation `id` names in `session`; fails when the store lost it. */
@@ -475,6 +467,7 @@ describe("conversations", () => {
   });
 
   // PHASE-04 VT-1: a toolset is written like a directory, and the profile's policy judges it.
+  // `job` is the one catalogue member no profile allows: the runner selects it in code.
   it.each(["room", "host"] as const)(
     "refuses a toolset the %s profile's policy does not allow, writing nothing",
     async (profile) => {
@@ -483,8 +476,8 @@ describe("conversations", () => {
       await api.setTopic({ name: "work", cwd: "/w" });
       const before = await indexOf(session.harness);
       // The throw may be synchronous or a rejection: both are the same refusal.
-      const writing = async (): Promise<unknown> => api.setTopic({ name: "work", toolset: "mail" });
-      await expect(writing()).rejects.toThrow(`toolset mail is not allowed on profile ${profile}`);
+      const writing = async (): Promise<unknown> => api.setTopic({ name: "work", toolset: "job" });
+      await expect(writing()).rejects.toThrow(`toolset job is not allowed on profile ${profile}`);
       expect(await indexOf(session.harness)).toEqual(before);
     },
   );
@@ -568,12 +561,13 @@ describe("conversations", () => {
     try {
       const first = await openRoomStore(path, registry);
       session = first;
-      // (a) The policy seam admits mail; the production policy refuses it until PHASE-08.
+      // (a) The production path creates the mail topic's conversation: the room allows mail.
       await writeTopicRecord(first.harness, "mailbox", { toolset: "mail" });
-      const mailTopic = await first.harness.createConversation(
-        { ownership: { kind: "ownerless" }, init: toolsetInit("room", "mailbox", ALLOWS_MAIL) },
-        context,
-      );
+      const mailTopic = await conversations(first, DEFAULTS, "room").open({
+        kind: "topic",
+        name: "mailbox",
+        new: true,
+      });
       // (b) A plain topic, and (c) attach `new`: the profile default.
       await writeTopicRecord(first.harness, "work", {});
       const plain = await conversations(first, DEFAULTS, "room").open({
@@ -598,8 +592,8 @@ describe("conversations", () => {
       expect(storedEntry(index, fresh.id)?.toolset).toBe("interactive");
       await close();
 
-      // The store holds mail: only the policy that admits it may reopen it (STAGING).
-      const second = await openRoomStore(path, registry, ALLOWS_MAIL);
+      // The store holds mail: the production policy reopens it.
+      const second = await openRoomStore(path, registry);
       session = second;
       expect(await toolsetProbe(() => reopened(second, mailTopic.id))).toEqual(probes.mail);
       expect(await toolsetProbe(() => reopened(second, plain.id))).toEqual(probes.plain);
@@ -610,12 +604,12 @@ describe("conversations", () => {
     }
   });
 
-  it("VT-1 refusal: the production policy refuses a mail conversation and creates none", async () => {
+  it("VT-1 refusal: the host profile refuses a mail topic's conversation and creates none", async () => {
     const session = await passive();
-    const api = conversations(session, DEFAULTS, "room");
+    const api = conversations(session, DEFAULTS, "host");
     await writeTopicRecord(session.harness, "mailbox", { toolset: "mail" });
     await expect(api.open({ kind: "topic", name: "mailbox", new: true })).rejects.toThrow(
-      "toolset mail is not allowed",
+      "toolset mail is not allowed on profile host",
     );
     expect(await api.list({ kind: "topic", name: "mailbox" })).toEqual({
       ids: [],
@@ -640,14 +634,14 @@ describe("conversations", () => {
     // Commit 1 stages the topic; commit 2 is the create, which resolves the toolset in its tx.
     await writeTopicRecord(session.harness, "staged", { toolset: "mail" });
     const staged = await session.harness.createConversation(
-      { ownership: { kind: "ownerless" }, init: toolsetInit("room", "staged", ALLOWS_MAIL) },
+      { ownership: { kind: "ownerless" }, init: toolsetInit("room", "staged") },
       context,
     );
     // A change between a pre-read and the create: the create's own read wins.
     const before = await readIndex(session.harness);
     await writeTopicRecord(session.harness, "staged", { toolset: "interactive" });
     const current = await session.harness.createConversation(
-      { ownership: { kind: "ownerless" }, init: toolsetInit("room", "staged", ALLOWS_MAIL) },
+      { ownership: { kind: "ownerless" }, init: toolsetInit("room", "staged") },
       context,
     );
     const index = await readIndex(session.harness);

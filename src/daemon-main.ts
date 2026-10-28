@@ -24,7 +24,7 @@ try {
 }
 const { provider, modelId } = handle.model;
 log(
-  `${provider}/${modelId} · ${String(handle.satanTools)} SATAN tools · ${String(handle.skills)} skills · ${handle.hasProjectContext ? "" : "no "}project context`,
+  `${provider}/${modelId} · ${String(handle.satanTools)} SATAN tools · ${String(handle.mailTools)} mail tools · ${String(handle.skills)} skills · ${handle.hasProjectContext ? "" : "no "}project context`,
 );
 log(`profile ${handle.profile} · cwd ${handle.cwd}`);
 log(`session ${handle.storagePath}`);

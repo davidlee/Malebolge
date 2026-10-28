@@ -99,7 +99,7 @@ describe("persona", () => {
     expect(prompts).toEqual([{ persona: "scaffold\n" }]);
   });
 
-  it("VT-3 startup check: a room corpus without the mail prompt is enough at this stage", async () => {
+  it("VT-2: a room corpus without the mail prompt refuses startup, naming prompts/mail.txt", async () => {
     const dir = await corpus({
       "system/scaffold.txt": "scaffold\n",
       "prompts/interactive.txt": "interactive\n",
@@ -107,6 +107,17 @@ describe("persona", () => {
     });
     expect(() => {
       requirePersonaFiles(dir, "room");
+    }).toThrow(`no persona file for toolset mail: ${join(dir, "prompts", "mail.txt")}`);
+  });
+
+  it("VT-2: a host corpus without the mail prompt passes", async () => {
+    const dir = await corpus({
+      "system/scaffold.txt": "scaffold\n",
+      "prompts/interactive.txt": "interactive\n",
+      "prompts/env/host.txt": "host\n",
+    });
+    expect(() => {
+      requirePersonaFiles(dir, "host");
     }).not.toThrow();
   });
 
