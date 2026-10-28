@@ -1,0 +1,18 @@
+schema = "doctrine.observation"
+schema_version = 1
+uid = "01a1803a-c571-7f52-8d57-86acaba4b745"
+recorded_at = "2026-10-28T01:58:17.713133083Z"
+kind = "friction"
+summary = "super-orchestrator: no step for operator-supplied fixtures that carry private data; raw staging inside the root (handover) would expose it to pi/external models"
+detail = "Add a preflight item: operator-supplied inputs are captured and scrubbed while the operator is present; raw stays outside the root; repo entry needs operator confirmation."
+
+[facets.execution]
+schema_version = 1
+interface = "cli"
+interface_origin = "automatic"
+product_surface = "doctrine"
+product_surface_origin = "automatic"
+command = "observation record"
+command_origin = "automatic"
+repository_context = "primary"
+repository_context_origin = "automatic"

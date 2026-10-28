@@ -1,0 +1,18 @@
+schema = "doctrine.observation"
+schema_version = 1
+uid = "01a1813f-4f76-7c60-b2a7-ea627b44e470"
+recorded_at = "2026-10-28T06:42:52.406091535Z"
+kind = "friction"
+summary = "Two sub-orchestrators ran SL-005 PHASE-08 concurrently in the main worktree"
+detail = "Within a minute of this sub-orchestrator writing .doctrine/state/slice/005/p08-api.md, another writer overwrote it with a different spec and began writing .doctrine/slice/005/mail-prompt-draft.txt. No pi runs of this session were active. This sub-orchestrator stopped and handed back escalated."
+
+[facets.execution]
+schema_version = 1
+interface = "cli"
+interface_origin = "automatic"
+product_surface = "doctrine"
+product_surface_origin = "automatic"
+command = "observation record"
+command_origin = "automatic"
+repository_context = "primary"
+repository_context_origin = "automatic"

@@ -1,0 +1,18 @@
+schema = "doctrine.observation"
+schema_version = 1
+uid = "01a18117-6f5c-78d3-bc27-4fecd9f2f320"
+recorded_at = "2026-10-28T05:59:19.132758069Z"
+kind = "friction"
+summary = "vitest subset runs exit non-zero under the global coverage threshold"
+detail = "SL-005 PHASE-05: npx vitest run test/mail fails the 85% lines threshold over src/**; worker done-checks must pass --coverage.enabled=false."
+
+[facets.execution]
+schema_version = 1
+interface = "cli"
+interface_origin = "automatic"
+product_surface = "doctrine"
+product_surface_origin = "automatic"
+command = "observation record"
+command_origin = "automatic"
+repository_context = "primary"
+repository_context_origin = "automatic"

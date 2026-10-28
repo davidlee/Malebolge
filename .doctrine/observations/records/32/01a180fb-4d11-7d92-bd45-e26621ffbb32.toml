@@ -1,0 +1,18 @@
+schema = "doctrine.observation"
+schema_version = 1
+uid = "01a180fb-4d11-7d92-bd45-e26621ffbb32"
+recorded_at = "2026-10-28T05:28:35.345348683Z"
+kind = "friction"
+summary = "sub-orchestrator cannot commit its notes.md lines while the seat holds uncommitted edits there"
+detail = "SL-005 PHASE-03/04: notes.md carried the seat's uncommitted preflight lines; committing my autonomy-log lines would have committed the seat's too, so notes.md was left uncommitted for the seat."
+
+[facets.execution]
+schema_version = 1
+interface = "cli"
+interface_origin = "automatic"
+product_surface = "doctrine"
+product_surface_origin = "automatic"
+command = "observation record"
+command_origin = "automatic"
+repository_context = "primary"
+repository_context_origin = "automatic"

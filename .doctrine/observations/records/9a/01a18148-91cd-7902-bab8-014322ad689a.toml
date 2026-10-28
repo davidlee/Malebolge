@@ -1,0 +1,18 @@
+schema = "doctrine.observation"
+schema_version = 1
+uid = "01a18148-91cd-7902-bab8-014322ad689a"
+recorded_at = "2026-10-28T06:52:59.213138039Z"
+kind = "friction"
+summary = "super-orchestrator never moves the slice to started; it reached 8/8 phases while still 'ready'"
+detail = "Seat should flip ready→started before the first charter."
+
+[facets.execution]
+schema_version = 1
+interface = "cli"
+interface_origin = "automatic"
+product_surface = "doctrine"
+product_surface_origin = "automatic"
+command = "observation record"
+command_origin = "automatic"
+repository_context = "primary"
+repository_context_origin = "automatic"

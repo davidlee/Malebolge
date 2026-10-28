@@ -1,0 +1,18 @@
+schema = "doctrine.observation"
+schema_version = 1
+uid = "01a180ce-98e6-72b0-aacf-8d54e8451f8a"
+recorded_at = "2026-10-28T04:39:45.638844805Z"
+kind = "friction"
+summary = "pi_agent_wait caps at 45s, so waiting on a multi-minute pi run costs repeated tool calls in the orchestrator's context"
+detail = "SL-005 PHASE-01 sub-orchestrator: each wait call ~400 tokens; a 3-minute run needs 4-5 calls. Reading the result from artifacts/transcript.md via sed is cheaper than the wait payload. Per-run request maximum (60) is not stated in the agent definition or skill; a ceiling of 70 was refused."
+
+[facets.execution]
+schema_version = 1
+interface = "cli"
+interface_origin = "automatic"
+product_surface = "doctrine"
+product_surface_origin = "automatic"
+command = "observation record"
+command_origin = "automatic"
+repository_context = "primary"
+repository_context_origin = "automatic"

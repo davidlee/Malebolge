@@ -1,0 +1,18 @@
+schema = "doctrine.observation"
+schema_version = 1
+uid = "01a1803a-c56e-70b0-9b5b-981c07db018d"
+recorded_at = "2026-10-28T01:58:17.710306625Z"
+kind = "friction"
+summary = "super-orchestrator preflight: form probe tests tools exist and typecheck runs, but not the full gate; biome missing and 4 sandbox-only test failures surfaced only by running each gate recipe"
+detail = "Probe should run every just check sub-recipe in the write form and diff test failures against a host run, so sandbox-only failures are known before the first charter."
+
+[facets.execution]
+schema_version = 1
+interface = "cli"
+interface_origin = "automatic"
+product_surface = "doctrine"
+product_surface_origin = "automatic"
+command = "observation record"
+command_origin = "automatic"
+repository_context = "primary"
+repository_context_origin = "automatic"

@@ -1,0 +1,18 @@
+schema = "doctrine.observation"
+schema_version = 1
+uid = "01a1813a-5f0c-7ba0-be8e-ce0bc6d0288e"
+recorded_at = "2026-10-28T06:37:28.716502524Z"
+kind = "friction"
+summary = "super-orchestrator: no procedure for a seat restart mid-charter"
+detail = "Claude restarted while the PHASE-07 charter ran; the charter stopped with uncommitted partial work. Resuming it via SendMessage (transcript intact) beat a fresh charter. The skill's 'never resume a tired one' should distinguish an interrupted charter (resume, telling it in-flight pi runs may be lost) from a tired one."
+
+[facets.execution]
+schema_version = 1
+interface = "cli"
+interface_origin = "automatic"
+product_surface = "doctrine"
+product_surface_origin = "automatic"
+command = "observation record"
+command_origin = "automatic"
+repository_context = "primary"
+repository_context_origin = "automatic"

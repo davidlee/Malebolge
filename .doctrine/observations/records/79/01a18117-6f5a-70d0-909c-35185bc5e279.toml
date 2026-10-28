@@ -1,0 +1,18 @@
+schema = "doctrine.observation"
+schema_version = 1
+uid = "01a18117-6f5a-70d0-909c-35185bc5e279"
+recorded_at = "2026-10-28T05:59:19.130167082Z"
+kind = "friction"
+summary = "just check does not build the nix package, so a package-lock change passes the gate with a stale npmDepsHash"
+detail = "SL-005 PHASE-05: declaring typebox changed package-lock.json; just check stayed green but nix build .#runner failed until npmDepsHash was updated. Briefs or the gate should build the package when package.json/lock change."
+
+[facets.execution]
+schema_version = 1
+interface = "cli"
+interface_origin = "automatic"
+product_surface = "doctrine"
+product_surface_origin = "automatic"
+command = "observation record"
+command_origin = "automatic"
+repository_context = "primary"
+repository_context_origin = "automatic"

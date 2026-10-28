@@ -1,0 +1,17 @@
+schema = "doctrine.observation"
+schema_version = 1
+uid = "01a1803a-c573-7f93-a12a-ad7bf774384e"
+recorded_at = "2026-10-28T01:58:17.715620168Z"
+kind = "friction"
+summary = "Agent spawn of general-purpose/sonnet ran in background despite the brief asking foreground; the skill's 'spawn in the foreground' has no lever in this harness"
+
+[facets.execution]
+schema_version = 1
+interface = "cli"
+interface_origin = "automatic"
+product_surface = "doctrine"
+product_surface_origin = "automatic"
+command = "observation record"
+command_origin = "automatic"
+repository_context = "primary"
+repository_context_origin = "automatic"

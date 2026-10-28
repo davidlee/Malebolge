@@ -1,0 +1,18 @@
+schema = "doctrine.observation"
+schema_version = 1
+uid = "01a180e1-1056-77f2-ab9a-970b9301ce4a"
+recorded_at = "2026-10-28T04:59:55.862242624Z"
+kind = "friction"
+summary = "sub-orchestrator: pi briefs needing a shared spec file must put it under the repo (.doctrine/state, gitignored); the session scratchpad is outside the pi root"
+detail = "SL-005 PHASE-01/02. Also: biome is intermittently unrunnable inside the implement form (npm binary missing; nix biome on PATH in one run, absent in another), so pi output may be unformatted; host biome format --write fixes it. doctrine slice phase --status completed warns when a phase spans two commits; record-delta is the fix and the agent definition does not mention it."
+
+[facets.execution]
+schema_version = 1
+interface = "cli"
+interface_origin = "automatic"
+product_surface = "doctrine"
+product_surface_origin = "automatic"
+command = "observation record"
+command_origin = "automatic"
+repository_context = "primary"
+repository_context_origin = "automatic"
