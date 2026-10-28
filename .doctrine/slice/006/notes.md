@@ -157,6 +157,23 @@ Arbiter rulings (seat, operator asleep; reversible, logged for audit):
 
 Design-drift item for audit: (4) `postRequestId` is `post:<id>:` (design shows `post:44` and `post:<task>`).
 
+Sol verify-only pass (resumed thread): S1-S3 fixed; S4 fixed, but the fix diverges from the locked design (`postRequestId` = `post:<id>:` vs design § "The satan.post task and its notices" `post:<id>`; also the sequence diagram and § reaping text `post:<familyTaskId>`). Seat ruling (operator asleep; reversible: one-character id format, no persisted data yet): keep the delimiter-terminated id; do not hand-edit the locked design (`design adopt` is reconcile's crossing); carried as Autonomy log drift for /audit -> /reconcile. Review stopped here per stop rule: findings narrowed to one contract-text slip.
+
+## Implementation run
+Seat: /super-orchestrator (2026-10-29, operator asleep). Main worktree, no dispatch.
+- Host gate: `nix develop -c just check` (fmt-check, lint, typecheck, test). Green at 4ecb060: 87 files / 3234 tests.
+- Emacs: `nix develop -c just ert` on the host (pi form has no emacs). Green at baseline. Required by PHASE-08 VA-1.
+- pi form (`implement` profile): biome, eslint, `npx tsc`, vitest all green in sandbox; root writable. No form change needed.
+- Known hazard: two concurrent vitest runs with coverage collide on `coverage/.tmp` (ENOENT). Never run the full suite concurrently (pi + host); workers run targeted tests with `--coverage.enabled=false`; the seat/sub-orchestrator host gate is authoritative.
+- biome warns about 4 broken symlinks under `.quotient/`: harmless.
+- No operator-supplied inputs needed.
+
+## Autonomy log
+- plan / F14: DEC-042 after the premise tests (design placement). decided.
+- plan / caps window PHASE-05..06: accepted; no daemon run from PHASE-05 commits. decided.
+- plan / S4: post request id `post:<id>:` (delimiter-terminated) diverges from design § "The satan.post task and its notices" (`post:<id>`) to avoid prefix collision (post:44 vs post:440). deferred -> /reconcile (design drift).
+- plan / design-drift items 1-3 from round 1 (SweptKind journal noun; requireSameTalkSet target label; DEC-042 test rewrites in premises phase). deferred -> /reconcile.
+
 ## Harvest
 <!-- single-copy: updated in place each harvest; ids only, never restated content -->
 fresh-as-of: 2026-10-29 · plan authored (not yet ready), pi review findings recorded · head 3efcd6c + this notes edit

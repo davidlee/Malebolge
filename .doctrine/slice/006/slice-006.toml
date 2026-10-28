@@ -1,7 +1,7 @@
 id = 6
 slug = "threads"
 title = "Threads: start, fork and post among interactive conversations"
-status = "plan"
+status = "started"
 created = "2026-10-28"
 updated = "2026-10-28"
 tags = ["malebolge", "conversations", "threads", "topics"]
