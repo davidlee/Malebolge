@@ -121,7 +121,7 @@
 
 (malebolge--init-keymaps)
 
-(defvar malebolge--font-lock-keywords
+(defconst malebolge--font-lock-keywords
   '(("^\\[tool\\] .*$" 0 'malebolge-tool-face t)
     ("^\\[status\\] .*$" 0 'malebolge-status-face t)
     ("^\\[thread\\] .*$" 0 'malebolge-thread-face t)

@@ -525,6 +525,14 @@ coloured as SATAN's turn."
     (should (eq 'malebolge-user-face
                 (malebolge-test--line-face "wake intent")))))
 
+(ert-deftest malebolge-reload-replaces-font-lock-keywords ()
+  "Reloading malebolge.el over a stale keyword list brings in the new rules.
+An upgrade is a reload into a running Emacs, so a `defvar' would keep the
+old list and `[thread]' lines would stay uncoloured."
+  (let ((malebolge--font-lock-keywords '(("^stale$" 0 'default t))))
+    (load (locate-library "malebolge.el") nil t)
+    (should (assoc "^\\[thread\\] .*$" malebolge--font-lock-keywords))))
+
 ;;; EX-5: output following is per window
 
 (defun malebolge-test--feed (text)
