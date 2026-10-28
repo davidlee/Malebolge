@@ -29,3 +29,8 @@ Proposed:
    reap -> `warning` bold + underline. SATAN stays `error` (red), status
    `shadow` (grey).
 Open: should wakes look different from posts?
+
+Done 2026-10-29: package part in 52dcfbf (`malebolge-wake-face`, ERT-pinned);
+operator config `:custom-face` added to ~/.config/emacs/apps/dl-satan.el
+(tool -> success, thread -> warning normal, reap -> warning bold underline),
+left uncommitted in that repo for the operator. Wakes read as posts (amber).
