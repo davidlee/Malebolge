@@ -1,0 +1,33 @@
+schema = "doctrine.backlog"
+version = 1
+
+id = 3
+slug = "reaped-family-wake-escape"
+title = "A reaped thread family can restart its fan-out through wake_schedule"
+kind = "risk"
+status = "open"
+resolution = ""                 # seeded empty so `backlog edit` sets it in place
+created = "2026-10-28"
+updated = "2026-10-28"
+tags = []
+
+[facet]                         # risk only — every field typed; seeded empty
+likelihood = "low"                 # low | medium | high | critical
+impact     = "low"                 # low | medium | high | critical
+origin     = "SL-006 design review r1 (Sol F-6)"
+controls   = ["family cap K and global cap N reap each new family", "wake scheduling is clamped and jittered"]
+
+# outbound-only. Cross-kind structural edges (e.g. references with a role
+# — `originates_from` for backlog→slice provenance — governed_by, related, drift) are
+# uniform `[[relation]]` rows — author them with
+# `doctrine link RSK-NNN <label> <target>`; `doctrine inspect RSK-NNN` renders
+# them. The dep/seq axes below stay typed (they carry per-edge payloads).
+[relationships]
+needs    = []                   # item→item hard prerequisite
+after    = []                   # item→item soft sequence: { to, rank? }
+triggers = []                   # watched source globs: { globs, note? }
+
+[[relation]]
+label = "references"
+role = "originates_from"
+target = "SL-006"

@@ -1,0 +1,38 @@
+schema = "doctrine.knowledge"
+version = 1
+
+id = 44
+slug = "reap-tombstone-first"
+title = "A reap writes the origin's tombstone first, and every post task enforces its origin's tombstone"
+record_kind = "decision"
+status = "accepted"
+created = "2026-10-28"
+updated = "2026-10-28"
+tags = []
+
+[facet]                         # every field typed; seeded empty (captured later)
+context = "DEC-036 reaps by withdrawing a family's queued posts one by one (each Submission.abort its own commit, dist/harness/submissions.js:85-97) and then tombstoning the origin. A crash mid-reap leaves no tombstone, so surviving turns post again; a post task not yet submitted escapes the withdrawal snapshot; age-only pruning can drop a tombstone while its origin can still act (Sol review r1 F-4)."
+choice = "Refines DEC-036: the tombstone is the reap's one durable fact and is written first. The same commit creates the <family-reaped> notice's delivery task, so pi-durable recovers the notice after a crash, with no notice-owed flag and no startup scan. Every satan.post task checks its origin's tombstone whenever it runs or re-runs (before submitting and on recovery); if reaped it withdraws its own input if still queued and settles without delivering. Admission already refuses posts whose origin is tombstoned. Tombstones are never pruned (one small entry per reaped origin): less code, and age pruning could revive an origin whose turn outlives the age."
+alternatives = ["Keep DEC-036's order: a crash mid-reap can let the family continue.", "A resumable cleanup obligation driven by the reaper: more state than one rule enforced by each post task."]
+rationale = "One rule enforced where each post runs covers a crash mid-reap and posts not yet submitted, with no reaper journal."
+consequences = ["The satan.post task reads the tombstone record on each run.", "A placed post is not withdrawn; its turn runs and cannot post (admission refuses it).", "VT: a crash after the tombstone and before any withdrawal leaves no post delivered after restart; a post task created before the reap and not yet submitted withdraws itself; a notice owed at crash is delivered once after restart."]
+decided_by = "operator"
+decided_on = "2026-10-29"
+
+[evidence]                      # free-text citations (supports / contradicts / notes)
+supports    = []
+contradicts = []
+notes       = []
+
+[relationships]                 # verb-written edges (set by doctrine supersede)
+supersedes    = []   # record ids this one replaces (set by doctrine supersede)
+superseded_by = []   # set on superseded predecessor (verb-written)
+
+[[relation]]
+label = "references"
+role = "concerns"
+target = "DEC-036"
+
+[[relation]]
+label = "shapes"
+target = "SL-006"

@@ -1,0 +1,43 @@
+schema = "doctrine.knowledge"
+version = 1
+
+id = 45
+slug = "post-failed-outcome"
+title = "<post-failed> carries an outcome: withdrawn or delivered-incomplete"
+record_kind = "decision"
+status = "accepted"
+created = "2026-10-28"
+updated = "2026-10-28"
+tags = []
+
+[facet]                         # every field typed; seeded empty (captured later)
+context = "DEC-040 says <post-failed> means a message did not land, but DEC-035 also sends it when the recipient's turn ends other than done or the task is aborted after placement; Submission.abort then returns already_placed and withdraws nothing (dist/harness/submissions.js:96), and the recipient may have read the post and acted. Wake already treats placed as fired (src/wake/task.ts:574-578) (Sol review r1 F-5)."
+choice = """Refines DEC-035 and DEC-040: one notice, one new attribute. <post-failed post="44" to="13" outcome="withdrawn|delivered-incomplete" reason="…">. withdrawn: the input was never placed (target unreachable, submit threw, withdrawn while queued); the recipient never read it. delivered-incomplete: the input was placed but its turn did not end done, or the task was aborted after placement; the recipient may have acted. The threads section's prose states both meanings."""
+alternatives = ["Two notice kinds: two mechanisms for one event.", "Send nothing when the post was placed: silent, against the explicit-denial goal."]
+rationale = "Keeps DEC-035's single notice and makes its claim true, so the sender does not repeat a request the recipient may have acted on."
+consequences = ["DEC-040's 'did not land' wording is replaced by the two outcomes.", "VT: abort after placement and a recipient run failing after a tool succeeded both report delivered-incomplete; failure before placement reports withdrawn."]
+decided_by = "operator"
+decided_on = "2026-10-29"
+
+[evidence]                      # free-text citations (supports / contradicts / notes)
+supports    = []
+contradicts = []
+notes       = []
+
+[relationships]                 # verb-written edges (set by doctrine supersede)
+supersedes    = []   # record ids this one replaces (set by doctrine supersede)
+superseded_by = []   # set on superseded predecessor (verb-written)
+
+[[relation]]
+label = "references"
+role = "concerns"
+target = "DEC-035"
+
+[[relation]]
+label = "references"
+role = "concerns"
+target = "DEC-040"
+
+[[relation]]
+label = "shapes"
+target = "SL-006"

@@ -1,0 +1,38 @@
+schema = "doctrine.knowledge"
+version = 1
+
+id = 41
+slug = "thread-tools-sequential"
+title = "Thread tools run sequentially, so one turn's parallel calls cannot pass the post caps"
+record_kind = "decision"
+status = "accepted"
+created = "2026-10-28"
+updated = "2026-10-28"
+tags = []
+
+[facet]                         # every field typed; seeded empty (captured later)
+context = "DEC-036 counts active posts with harness.inspect and accepted an off-by-one under concurrency. pi-durable runs a turn's tool calls in parallel by default (dist/harness/agent.js:53) and inspect serialises only its own read (dist/harness/harness.js:194-200), so N thread calls in one assistant message all read the same count and all pass K and N: unbounded overshoot, not off-by-one (Sol review r1 F-1)."
+choice = "Refines DEC-036: thread_start, thread_fork and thread_post declare executionMode 'sequential' (dist/harness/types.d.ts:245; one sequential call makes its whole round sequential), so each call's inspect sees the previous call's committed post task. Overshoot across concurrently running turns stays the accepted residual."
+alternatives = ["A daemon-local lock around inspect, check and commit in the three tools: also covers concurrent turns, but is new state for a residual DEC-036 already accepts.", "tx.scanTasks in the creating commit: the exact count DEC-036 rejected for consistency with liveWakes."]
+rationale = "A one-line declaration the harness already supports turns unbounded overshoot within a turn into the bounded cross-turn residual DEC-036 accepted."
+consequences = ["VT: one assistant message issuing more thread calls than K admits K and the crossing call reaps the family.", "A turn's other tool calls run sequentially in any round that includes a thread call."]
+decided_by = "operator"
+decided_on = "2026-10-29"
+
+[evidence]                      # free-text citations (supports / contradicts / notes)
+supports    = []
+contradicts = []
+notes       = []
+
+[relationships]                 # verb-written edges (set by doctrine supersede)
+supersedes    = []   # record ids this one replaces (set by doctrine supersede)
+superseded_by = []   # set on superseded predecessor (verb-written)
+
+[[relation]]
+label = "references"
+role = "concerns"
+target = "DEC-036"
+
+[[relation]]
+label = "shapes"
+target = "SL-006"

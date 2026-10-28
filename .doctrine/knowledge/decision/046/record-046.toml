@@ -1,0 +1,47 @@
+schema = "doctrine.knowledge"
+version = 1
+
+id = 46
+slug = "reaped-family-wake-escape-accepted"
+title = "A wake scheduled from a reaped family opens a new, capped family; the escape is an accepted risk"
+record_kind = "decision"
+status = "accepted"
+created = "2026-10-28"
+updated = "2026-10-28"
+tags = []
+
+[facet]                         # every field typed; seeded empty (captured later)
+context = "wake_schedule (src/wake/tools.ts:92-115) records no origin and DEC-036 gives every wake turn a fresh origin, so a reaped family's surviving turn, or its <family-reaped> notice turn, can schedule a wake that restarts the fan-out as a new family, contradicting DEC-040's 'cannot be restarted from that turn' (Sol review r1 F-6)."
+choice = "Refines DEC-036 and DEC-040: allow it. wake_schedule is unchanged and carries no origin; a wake turn opens a new origin, capped at K and reaped like any other. DEC-040's wording narrows to: the reaped family's activity was stopped for fan-out, and its posts and thread starts are refused from that origin. The escape and its deferred resolution are RSK-003."
+alternatives = ["wake_schedule refuses when the caller's origin is tombstoned (recommended in review): a loud refusal reusing the tombstone lookup; deferred to RSK-003 until the escape proves an issue."]
+rationale = "The harm is bounded: each new family is capped and reaped, and wake timing is clamped and jittered. No mechanism until it proves an issue."
+consequences = ["A reaped activity can resume later through a wake as a new family.", "RSK-003 records the signal to act and the deferred refusal."]
+decided_by = "operator"
+decided_on = "2026-10-29"
+
+[evidence]                      # free-text citations (supports / contradicts / notes)
+supports    = []
+contradicts = []
+notes       = []
+
+[relationships]                 # verb-written edges (set by doctrine supersede)
+supersedes    = []   # record ids this one replaces (set by doctrine supersede)
+superseded_by = []   # set on superseded predecessor (verb-written)
+
+[[relation]]
+label = "references"
+role = "concerns"
+target = "DEC-036"
+
+[[relation]]
+label = "references"
+role = "concerns"
+target = "DEC-040"
+
+[[relation]]
+label = "shapes"
+target = "SL-006"
+
+[[relation]]
+label = "spawns"
+target = "RSK-003"

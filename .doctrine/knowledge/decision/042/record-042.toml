@@ -1,0 +1,38 @@
+schema = "doctrine.knowledge"
+version = 1
+
+id = 42
+slug = "after-failed-run-continue"
+title = "A failed run starts the next run with the inputs queued behind it (afterFailedRun 'continue')"
+record_kind = "decision"
+status = "accepted"
+created = "2026-10-28"
+updated = "2026-10-28"
+tags = []
+
+[facet]                         # every field typed; seeded empty (captured later)
+context = "The daemon uses pi-durable's default afterFailedRun 'keep' (dist/harness/agent.js:58; dist/harness/types.d.ts:509-511): inputs queued behind a failed run (model_error, no_model) stay queued until another input arrives. Threads get neither the heartbeat nor human input (DEC-037), so an unbounded satan.post (DEC-035) behind a failed thread turn waits forever, holds a cap slot and sends no notice; DEC-035's rationale 'turns end' does not hold (Sol review r1 F-2)."
+choice = "Refines DEC-035: the daemon's harness settings set afterFailedRun 'continue', daemon-wide. A failed run starts the next run with the inputs queued behind it, as an answer would. A post queued behind a failed run is placed in that next run; if that run also fails, the post ends in failure and its sender gets <post-failed> (DEC-035, outcome per inq-16)."
+alternatives = ["'withdraw': queued posts settle unanswered and fail into <post-failed>, but the operator's own queued input is dropped after a failure.", "Keep 'keep' and accept stranded posts as a residual."]
+rationale = "Every queued input progresses without new mechanism, and DEC-035's 'turns end' becomes true again."
+consequences = ["Behaviour change beyond threads: a wake or a human input queued behind a failed run is now answered in the next run instead of waiting for another input. Tests pinning 'keep' (test/wake-wait.test.ts behindFailure recipe) are rewritten in the post phase.", "A persistent model outage fails each queued run in turn; each failed post answers its sender once.", "VT: a post queued behind a failed recipient run is placed with no further input; and across a restart."]
+decided_by = "operator"
+decided_on = "2026-10-29"
+
+[evidence]                      # free-text citations (supports / contradicts / notes)
+supports    = []
+contradicts = []
+notes       = []
+
+[relationships]                 # verb-written edges (set by doctrine supersede)
+supersedes    = []   # record ids this one replaces (set by doctrine supersede)
+superseded_by = []   # set on superseded predecessor (verb-written)
+
+[[relation]]
+label = "references"
+role = "concerns"
+target = "DEC-035"
+
+[[relation]]
+label = "shapes"
+target = "SL-006"

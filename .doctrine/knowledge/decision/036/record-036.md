@@ -5,3 +5,12 @@
      never structurally parsed (the storage rule). -->
 
 Addendum 2026-10-29 (operator: "I like cheap optionality"): a wake origin also records its wake's episodeClass (attend or seclude); a human origin records none, the operator being present by definition. Nothing in SL-006 acts on it: posts are not presence-gated, so a family started before the quiet window runs through it. A later gate or prioritiser reads it from the origin, cheapest at the family root rather than per post. A delayed thread (start or fork at a future time, or by presence) is wake plus thread start composed later, out of SL-006.
+
+
+Refined 2026-10-29 after design review r1 (Sol F-1, F-4, F-6), not superseded:
+- DEC-041: thread tools run sequentially, so one turn's parallel calls cannot pass the caps; 'off-by-one under concurrency' now means across concurrently running turns only.
+- DEC-044: the reap order is reversed — tombstone (with a notice-owed flag) first, and every satan.post task enforces its origin's tombstone when it runs; tombstones are pruned by a long age.
+- DEC-046: a wake scheduled from a reaped family opens a new, capped family (accepted; RSK-003).
+
+
+Noted 2026-10-29 (design d1 review, pi F-7): a post is active until the recipient's turn ends, and a reply is sent during that turn, so a two-party loop holds up to two active posts, not one. K = 4 admits two co-resident loops per origin; the design states it.

@@ -1,0 +1,47 @@
+schema = "doctrine.knowledge"
+version = 1
+
+id = 43
+slug = "thread-tool-interruption-residual"
+title = "An interrupted thread tool call stays ambiguous to its caller; crash-safe receipts are backlog work"
+record_kind = "decision"
+status = "accepted"
+created = "2026-10-28"
+updated = "2026-10-28"
+tags = []
+
+[facet]                         # every field typed; seeded empty (captured later)
+context = "Thread tools keep replay 'unsafe' (research F-5, X-2). pi-durable checkpoints intent before execution (dist/harness/tool.js:99-102) and records the result in a later commit (:526-550); recovery reports 'interrupted and may have partially run' (:118). A crash between the creating commit and the result leaves the child or post existing while its caller cannot tell; a model retry duplicates it (Sol review r1 F-3)."
+choice = "Refines DEC-034 and DEC-035: accept the ambiguity as a residual. The tools stay replay 'unsafe'; no receipt is stored. A started child's first reply names it via from, and --list marks threads (DEC-039). Call-keyed receipts with safe replay are IMP-020."
+alternatives = ["Store a call-keyed receipt in the creating commit and make the tools replay 'safe', returning the stored result: correct, but new mechanism for a narrow crash window."]
+rationale = "The window is a daemon crash inside one tool call; the cost is at most one duplicate thread or post, which the caps bound."
+consequences = ["A retry after an interrupted call can duplicate a thread or a post.", "IMP-020 holds the receipt design."]
+decided_by = "operator"
+decided_on = "2026-10-29"
+
+[evidence]                      # free-text citations (supports / contradicts / notes)
+supports    = []
+contradicts = []
+notes       = []
+
+[relationships]                 # verb-written edges (set by doctrine supersede)
+supersedes    = []   # record ids this one replaces (set by doctrine supersede)
+superseded_by = []   # set on superseded predecessor (verb-written)
+
+[[relation]]
+label = "references"
+role = "concerns"
+target = "DEC-034"
+
+[[relation]]
+label = "references"
+role = "concerns"
+target = "DEC-035"
+
+[[relation]]
+label = "shapes"
+target = "SL-006"
+
+[[relation]]
+label = "spawns"
+target = "IMP-020"

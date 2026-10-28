@@ -12,39 +12,103 @@ after = []                      # slice→work soft sequence: { to, rank }
 
 [[selector]]
 selector = "src/topics.ts"
-intent = "scope-relevant"
+intent = "design-target"
 
 [[selector]]
 selector = "src/session.ts"
-intent = "scope-relevant"
+intent = "design-target"
 
 [[selector]]
 selector = "src/conversations.ts"
-intent = "scope-relevant"
+intent = "design-target"
 
 [[selector]]
 selector = "src/toolsets.ts"
-intent = "scope-relevant"
+intent = "design-target"
 
 [[selector]]
 selector = "src/daemon-extensions.ts"
-intent = "scope-relevant"
+intent = "design-target"
 
 [[selector]]
 selector = "src/daemon.ts"
-intent = "scope-relevant"
+intent = "design-target"
 
 [[selector]]
 selector = "src/protocol.ts"
-intent = "scope-relevant"
+intent = "design-target"
 
 [[selector]]
 selector = "src/threads/**"
-intent = "scope-relevant"
+intent = "design-target"
 
 [[selector]]
 selector = "test/**"
 intent = "scope-relevant"
+
+[[selector]]
+selector = "src/late-binding.ts"
+intent = "design-target"
+
+[[selector]]
+selector = "src/wake/extension.ts"
+intent = "design-target"
+
+[[selector]]
+selector = "src/daemon-start.ts"
+intent = "design-target"
+
+[[selector]]
+selector = "src/render.ts"
+intent = "design-target"
+
+[[selector]]
+selector = "emacs/malebolge.el"
+intent = "design-target"
+
+[[selector]]
+selector = "test/thread-fixture.ts"
+intent = "design-target"
+
+[[selector]]
+selector = "test/threads-*.test.ts"
+intent = "design-target"
+
+[[selector]]
+selector = "test/wake-wait.test.ts"
+intent = "design-target"
+
+[[selector]]
+selector = "test/session.test.ts"
+intent = "design-target"
+
+[[selector]]
+selector = "test/toolsets.test.ts"
+intent = "design-target"
+
+[[selector]]
+selector = "test/conversations.test.ts"
+intent = "design-target"
+
+[[selector]]
+selector = "test/topics.test.ts"
+intent = "design-target"
+
+[[selector]]
+selector = "test/render.test.ts"
+intent = "design-target"
+
+[[selector]]
+selector = "test/malebolge-ert.el"
+intent = "design-target"
+
+[[selector]]
+selector = "src/wake/sweep.ts"
+intent = "design-target"
+
+[[selector]]
+selector = "src/task-sweep.ts"
+intent = "design-target"
 
 [[relation]]
 label = "related"
