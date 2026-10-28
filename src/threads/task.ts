@@ -24,7 +24,7 @@ import {
 import { isRecord } from "../json.ts";
 import { notifyBestEffort, reasonOf, scheduledKey } from "../task-support.ts";
 import type { SweptKind } from "../task-sweep.ts";
-import { type Origin, originKey } from "./admission.ts";
+import { isOrigin, type Origin, originKey } from "./admission.ts";
 import type { ThreadDeps } from "./extension.ts";
 
 /** The task kind, and the entry kind its input is placed as. */
@@ -62,12 +62,9 @@ export const isPostInput = (value: unknown): value is PostInput => {
   if (!isRecord(value)) {
     return false;
   }
-  const origin = value["origin"];
   return (
     typeof value["to"] === "number" &&
-    isRecord(origin) &&
-    typeof origin["conversation"] === "number" &&
-    typeof origin["entry"] === "number" &&
+    isOrigin(value["origin"]) &&
     (value["letter"] === "post" ||
       value["letter"] === "post-failed" ||
       value["letter"] === "family-reaped")

@@ -10,10 +10,10 @@ import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite
 import { orientationOf } from "./boot-context.ts";
 import type { Config, Profile, ScrewtapePaths } from "./config.ts";
 import { context } from "./context.ts";
-import { type Conversations, type ConversationDefaults, conversations } from "./conversations.ts";
+import { type ConversationDefaults, type Conversations, conversations } from "./conversations.ts";
+import { type Daemon, serve } from "./daemon.ts";
 import { type DaemonEnv, daemonEnv, requireGatewaySocket } from "./daemon-env.ts";
 import { daemonExtensions } from "./daemon-extensions.ts";
-import { type Daemon, serve } from "./daemon.ts";
 import { acquireInstanceLock } from "./instance-lock.ts";
 import { mailExtension } from "./mail/extension.ts";
 import { screwtapeSource } from "./mail/screwtape.ts";
@@ -25,12 +25,14 @@ import { type Log, SATAN_EXTENSION, type SatanTools, satanTools } from "./satan-
 import { openSession, type Session, type SessionOptions } from "./session.ts";
 import { loadSkills, type Skill } from "./skills.ts";
 import { sweepBlockedTasks } from "./task-sweep.ts";
+import { type ThreadDeps, threadBinding, threadsExtension } from "./threads/extension.ts";
+import { postSweptKind, postTask } from "./threads/task.ts";
 import {
   type EarlyWakeDeps,
   tasksExtension,
   type WakeBinding,
-  wakeBinding,
   type WakeDeps,
+  wakeBinding,
 } from "./wake/extension.ts";
 import { ensureHeartbeat } from "./wake/heartbeat.ts";
 import { v0Policy } from "./wake/policy.ts";
@@ -78,10 +80,11 @@ const earlyWakeDeps = (
   };
 };
 
-/** Room only (W10), after `resume()`: the start sweep, then exactly one heartbeat (W5). */
-const startWakes = async (
+/** Room only (W10), after `resume()`: the start sweep of both rows, then exactly one heartbeat (W5). */
+const startRoomTasks = async (
   profile: Profile,
   deps: () => WakeDeps,
+  threadDeps: () => ThreadDeps,
   session: Session,
   task: WakeTask,
 ): Promise<void> => {
@@ -90,7 +93,7 @@ const startWakes = async (
   }
   await sweepBlockedTasks(
     deps().harness,
-    [wakeSweptKind(deps(), session.harness)],
+    [wakeSweptKind(deps(), session.harness), postSweptKind(threadDeps())],
     deps().log,
     context,
   );
@@ -160,6 +163,7 @@ const daemonRegistry = (
     skills: readonly Skill[];
     wakes: WakeBinding;
     task: WakeTask;
+    threads: Extension;
   },
   now: () => number,
 ): Registry => {
@@ -171,6 +175,7 @@ const daemonRegistry = (
       skills: parts.skills,
       profile: config.execution.profile,
       tasks: tasksExtension(parts.wakes.deps, parts.task),
+      threads: parts.threads,
       ...(mail === undefined ? {} : { mail }),
     }),
   );
@@ -212,7 +217,13 @@ export async function startDaemon(config: Config, deps: StartDeps): Promise<Daem
   const projectContext = renderProjectContext(await environment.readContext());
   const wakes = wakeBinding();
   const task = wakeTask(wakes.deps);
-  const registry = daemonRegistry(config, { projectContext, skills, wakes, task }, now);
+  const threads = threadBinding();
+  const postTaskDef = postTask(threads.deps);
+  const registry = daemonRegistry(
+    config,
+    { projectContext, skills, wakes, task, threads: threadsExtension(threads.deps, postTaskDef) },
+    now,
+  );
 
   const lock = lockOrClose(config, environment);
   // Construction never connects, so nothing here can fail before the `try`.
@@ -222,6 +233,7 @@ export async function startDaemon(config: Config, deps: StartDeps): Promise<Daem
   try {
     mkdirSync(dirname(config.daemonSocket), { recursive: true });
     wakes.bindEarly(earlyWakeDeps(config, satan, log, now));
+    threads.bindEarly({ profile: config.execution.profile, defaults, now, log, satan });
     // Resolved in `beforeResume`, so a client's continuation runs after `resume()`.
     const conversationsReady = Promise.withResolvers<Conversations>();
     daemon = await serve({
@@ -242,10 +254,11 @@ export async function startDaemon(config: Config, deps: StartDeps): Promise<Daem
       beforeResume: (opened) => {
         const shared = conversations(opened, defaults, config.execution.profile);
         wakes.bindLate({ harness: opened.harness, conversations: shared });
+        threads.bindLate({ harness: opened.harness });
         conversationsReady.resolve(shared);
       },
     });
-    await startWakes(config.execution.profile, wakes.deps, session, task);
+    await startRoomTasks(config.execution.profile, wakes.deps, threads.deps, session, task);
   } catch (error) {
     // In reverse, the lock last: a session that resumed may already run wakes.
     await session?.harness.close(context);

@@ -10,12 +10,12 @@ import {
   type JsonObject,
   type Task,
   type ToolExecutionApi,
-  type ToolExecutionResult,
   type ToolRegistration,
 } from "@earendil-works/pi-durable";
 import { contextOf } from "../conversation-context.ts";
 import { isConversationKey } from "../conversations.ts";
 import { isRecord } from "../json.ts";
+import { answer, refusal } from "../tool-results.ts";
 import { isKnownTopic, latestIn, readIndex } from "../topics.ts";
 import type { WakeDeps } from "./extension.ts";
 import { localIso } from "./local-time.ts";
@@ -30,17 +30,6 @@ import {
 type WakeTask = Task<WakeInput, WakeState, WakeResult, object>;
 
 const MINUTE = 60_000;
-
-/** A result the model reads as JSON. */
-const answer = (value: object): ToolExecutionResult => ({
-  output: [{ type: "text", text: JSON.stringify(value) }],
-});
-
-/** A refusal: the call did nothing. */
-const refusal = (text: string): ToolExecutionResult => ({
-  output: [{ type: "text", text }],
-  isError: true,
-});
 
 /** The conversation a wake goes to, or why there is none: the caller, or a known topic's latest now (W8). */
 const targetOf = async (

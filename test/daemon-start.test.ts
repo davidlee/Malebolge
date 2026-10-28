@@ -3,8 +3,8 @@ import { mkdir, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import type { Message } from "@earendil-works/pi-ai";
 import type { Models } from "@earendil-works/pi-ai/models";
-import { type FauxProviderHandle } from "@earendil-works/pi-ai/providers/faux";
-import { type Extension, Harness } from "@earendil-works/pi-durable";
+import type { FauxProviderHandle } from "@earendil-works/pi-ai/providers/faux";
+import { defineExtension, defineTask, type Extension, Harness } from "@earendil-works/pi-durable";
 import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite/node";
 import { describe, expect, it, onTestFinished, vi } from "vitest";
 import { type Config, type Profile, resolveConfig } from "../src/config.ts";
@@ -16,23 +16,24 @@ import { acquireInstanceLock, InstanceLocked } from "../src/instance-lock.ts";
 import { mailExtension } from "../src/mail/extension.ts";
 import { registryOf } from "../src/registry.ts";
 import { openSession } from "../src/session.ts";
+import { threadBinding, threadsExtension } from "../src/threads/extension.ts";
 import { storedEntry } from "../src/topics.ts";
-import { serveUnix, SocketInUse } from "../src/unix-socket.ts";
+import { SocketInUse, serveUnix } from "../src/unix-socket.ts";
 import { tasksExtension, wakeBinding } from "../src/wake/extension.ts";
 import { liveWakes, type WakeInput } from "../src/wake/task.ts";
 import { type FakeTool, fakeMcpServer, rejection, staleSocket, tempDir } from "./fixtures.ts";
-import { fakeMailSource } from "./mail/mail-fixtures.ts";
 import {
   callThenAnswer,
   FAUX_MODEL,
-  fakeClock,
   type FakeClock,
+  fakeClock,
   fauxModels,
   indexOf,
   nodeEnv,
   textOf,
   toolResults,
 } from "./harness-fixture.ts";
+import { fakeMailSource } from "./mail/mail-fixtures.ts";
 import {
   heldUntilCutOff,
   IDLE,
@@ -308,6 +309,7 @@ async function inStore<T>(
           skills: [],
           profile,
           tasks: tasksExtension(wakeBinding().deps),
+          threads: threadsExtension(threadBinding().deps),
           ...mailParts(profile),
         }),
       ),
@@ -380,6 +382,50 @@ async function overdueHeartbeat(
   return { w, clock, id: id ?? "" };
 }
 
+/** A `satan.post` at a version the daemon's own definition cannot run: a start sweep's blocked post. */
+const TOO_NEW_POST = defineTask({
+  name: "satan.post",
+  version: 2,
+  initial: () => ({ phase: "deliver" as const }),
+  phases: { deliver: () => Promise.resolve() },
+  abort: () => Promise.resolve(),
+});
+
+/** A live `TOO_NEW_POST` task seeded into `w`'s store, as a crash leaving a newer build's post would. */
+async function seededBlockedPost(w: World): Promise<number> {
+  await mkdir(dirname(w.config.storagePath), { recursive: true });
+  const harness = await Harness.open(
+    await openNodeSqliteStorage(w.config.storagePath),
+    {
+      models: w.models,
+      registry: registryOf([defineExtension({ name: "threads", tasks: [TOO_NEW_POST] })]),
+      env: nodeEnv,
+    },
+    context,
+  );
+  try {
+    const root = await harness.root(context, { agent: { model: FAUX_MODEL } });
+    return await harness.commit(
+      (tx) =>
+        tx.createTask(
+          TOO_NEW_POST,
+          {
+            letter: "post" as const,
+            to: root.id,
+            from: root.id,
+            topic: "room",
+            origin: { conversation: root.id, entry: 1, kind: "human" as const },
+            intent: "seeded",
+          },
+          { ownership: { kind: "conversation" }, conversationId: root.id, background: true },
+        ),
+      context,
+    );
+  } finally {
+    await harness.close(context);
+  }
+}
+
 describe("startDaemon wakes", () => {
   it("VT-3 a: a fresh room start creates one recurring heartbeat in the wake topic, and a restart none", async () => {
     const w = await roomWorld({ enabled: true });
@@ -428,6 +474,7 @@ describe("startDaemon wakes", () => {
           skills: [],
           profile: "room",
           tasks: tasksExtension(wakeBinding().deps),
+          threads: threadsExtension(threadBinding().deps),
           ...mailParts("room"),
         }),
       ),
@@ -500,6 +547,23 @@ describe("startDaemon wakes", () => {
     await started(w);
     expect(createdHeartbeats(w)).toHaveLength(1);
   });
+
+  it("PHASE-05 EX-3: a room start sweeps the post row: a blocked post is reported and aborted", async () => {
+    const w = await roomWorld({ enabled: true });
+    const post = await seededBlockedPost(w);
+
+    await (await started(w)).stop();
+
+    expect(
+      logged(w, new RegExp(`^post ${String(post)} blocked \\(task_too_old\\); aborting$`)),
+    ).toBe(true);
+    expect(
+      logged(
+        w,
+        new RegExp(`^post ${String(post)} failed: blocked \\(task_too_old\\) origin \\d+/`),
+      ),
+    ).toBe(true);
+  });
 });
 
 const SCREWTAPE = "MALEBOLGE_SCREWTAPE";
@@ -555,6 +619,7 @@ describe("startDaemon mail", () => {
         skills: [],
         profile: "host",
         tasks: tasksExtension(wakeBinding().deps),
+        threads: threadsExtension(threadBinding().deps),
       }),
     );
     expect(registry.snapshot().extension("mail")).toBeUndefined();

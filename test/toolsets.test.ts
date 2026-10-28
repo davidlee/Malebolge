@@ -11,6 +11,7 @@ import { daemonExtensions } from "../src/daemon-extensions.ts";
 import { isRecord } from "../src/json.ts";
 import { mailExtension } from "../src/mail/extension.ts";
 import { personaFiles } from "../src/persona.ts";
+import { THREADS_SECTION, threadBinding, threadsExtension } from "../src/threads/extension.ts";
 import {
   allowedNames,
   type DaemonToolset,
@@ -114,15 +115,30 @@ const extensionsOf = (profile: Profile): Extension[] => {
     skills: [BASELINE_SKILL],
     profile,
     tasks: tasksExtension(wakeBinding().deps),
+    threads: threadsExtension(threadBinding().deps),
     ...(profile === "room"
       ? { mail: mailExtension({ source: fakeMailSource(), now: () => 0 }) }
       : {}),
   }).filter(({ name }) => interactive.has(name));
 };
 
+/** The extensions `profile` installs, less the threads extension the baseline predates. */
+const withoutThreads = (extensions: readonly Extension[]): Extension[] =>
+  extensions.filter(({ name }) => name !== "threads");
+
 /** What a new interactive conversation offers on `profile`. */
 const snapshotOf = (profile: Profile): Promise<InteractiveSnapshot> =>
   interactiveSnapshot(extensionsOf(profile));
+
+/** A baseline profile's recorded prompt sections: the one object, keys in catalogue order. */
+const promptSections = ({ sections }: BaselineProfile): Record<string, unknown> => {
+  const records: readonly unknown[] = Array.isArray(sections) ? sections : [];
+  const [record, ...others] = records;
+  if (!isRecord(record) || others.length > 0) {
+    throw new Error("a baseline profile's sections are one object");
+  }
+  return record;
+};
 
 /** The catalogue's union: each allowed toolset in order, deduplicated, SATAN left out. */
 const unionOf = (profile: Profile): string[] => {
@@ -140,13 +156,40 @@ const unionOf = (profile: Profile): string[] => {
 describe("toolset catalogue", () => {
   it("VT-1: a new interactive conversation is the frozen baseline, profile for profile", async () => {
     for (const profile of PROFILES) {
-      const snapshot = await snapshotOf(profile);
+      // The baseline predates threads (PHASE-05), so compare the room without its extension.
+      const snapshot = await interactiveSnapshot(withoutThreads(extensionsOf(profile)));
       expect(snapshot).toEqual(expectedSnapshot(BASELINE.profiles[profile]));
       // SATAN's tools arrive by discovery, so the static list names no `satan`.
       expect(snapshot.extensions).toEqual(
-        toolsetList("interactive", profile).filter((name) => name !== SATAN),
+        toolsetList("interactive", profile).filter((name) => name !== SATAN && name !== "threads"),
       );
     }
+  });
+
+  it("VT-5: the room snapshot is the baseline plus exactly what threads adds", async () => {
+    const baseline = BASELINE.profiles.room;
+    const afterTasks = baseline.extensions.indexOf("tasks") + 1;
+    expect(afterTasks).toBeGreaterThan(0);
+    const extensions = [...baseline.extensions];
+    extensions.splice(afterTasks, 0, "threads");
+
+    const room = await snapshotOf("room");
+    // Key order is prompt order, which toEqual ignores: threads comes last.
+    expect(Object.keys(promptSections(room))).toEqual([
+      ...Object.keys(promptSections(baseline)),
+      "threads",
+    ]);
+    expect(room).toEqual({
+      extensions,
+      // Catalogue order puts the tagged section after every earlier extension's.
+      sections: [
+        { ...promptSections(baseline), threads: `<threads>\n${THREADS_SECTION}\n</threads>` },
+      ],
+      // The wake tools are the baseline's last; thread_post follows them.
+      tools: [...baseline.tools, "thread_post"],
+    });
+    // Room only: the host's snapshot is still exactly the baseline.
+    expect(await snapshotOf("host")).toEqual(expectedSnapshot(BASELINE.profiles.host));
   });
 
   it("VT-1 negative control: dropping the tasks extension no longer matches the baseline", async () => {
@@ -173,12 +216,15 @@ describe("toolset catalogue", () => {
     }
   });
 
-  it("VT-2: satan is last in interactive, and only the room installs tasks", () => {
+  it("VT-2: satan is last in interactive, and only the room installs tasks and threads", () => {
     for (const profile of PROFILES) {
       expect(toolsetList("interactive", profile).at(-1)).toBe(SATAN);
     }
-    expect(toolsetList("interactive", "room")).toContain("tasks");
+    const room = toolsetList("interactive", "room");
+    expect(room).toContain("tasks");
+    expect(room[room.indexOf("tasks") + 1]).toBe("threads");
     expect(toolsetList("interactive", "host")).not.toContain("tasks");
+    expect(toolsetList("interactive", "host")).not.toContain("threads");
   });
 
   it("VT-2: the job list is the runner's two extensions, whatever the profile", () => {

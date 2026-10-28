@@ -1,12 +1,14 @@
 // The threads module's dependencies (SL-006 design § Components and boundaries),
 // bound late in two steps as the wake's are: the extension is built before the
-// session exists. PHASE-04 registers the satan.post task only; tools and the
-// prompt section follow in PHASE-05.
+// session exists. PHASE-04 registered the satan.post task; PHASE-05 adds the
+// thread_post tool and the `threads` section its prompt carries. thread_start and
+// thread_fork follow.
 
 import {
   defineExtension,
   type Extension,
   type Harness,
+  section,
   type Task,
 } from "@earendil-works/pi-durable";
 import type { Profile } from "../config.ts";
@@ -14,6 +16,7 @@ import type { ConversationDefaults } from "../conversations.ts";
 import { type LateBinding, lateBinding } from "../late-binding.ts";
 import type { Log, SatanTools } from "../satan-tools.ts";
 import { type PostInput, type PostResult, type PostState, postTask } from "./task.ts";
+import { threadPost } from "./tools.ts";
 
 export interface ThreadDeps {
   profile: Profile;
@@ -36,7 +39,21 @@ export type ThreadBinding = LateBinding<EarlyThreadDeps, LateThreadDeps>;
 
 export const threadBinding = (): ThreadBinding => lateBinding("threads");
 
-/** The room's `threads` extension: the satan.post task, and nothing else yet. */
+/**
+ * What the `threads` section tells the model (design § The `threads` section): the
+ * post, post-failed and family-reaped envelopes' facts only, one line per paragraph.
+ * Pinned by test; SATAN's conduct about peers is persona prose, not this.
+ */
+export const THREADS_SECTION =
+  "A <post> comes from another of your own conversations, a peer thread, not from the operator. " +
+  "Its from is the conversation that sent it; reply with thread_post to that id. " +
+  "A fork's thread_fork result names the conversation it was forked from; its purpose arrives as its first post.\n\n" +
+  'A <post-failed> says a post of yours failed, and why. outcome="withdrawn": the recipient never read it. ' +
+  'outcome="delivered-incomplete": the recipient read it but its turn did not complete; it may have acted on it.\n\n' +
+  "A <family-reaped> says an activity was stopped for fan-out: too many posts at once from one starting input. " +
+  "Its posts not yet read are withdrawn, and posts and thread starts from that activity are refused.";
+
+/** The room's `threads` extension: the satan.post task, the thread_post tool and its section. */
 export const threadsExtension = (
   deps: () => ThreadDeps,
   task: Task<PostInput, PostState, PostResult, object> = postTask(deps),
@@ -44,4 +61,6 @@ export const threadsExtension = (
   defineExtension({
     name: "threads",
     tasks: [task],
+    tools: [threadPost(deps, task)],
+    sections: [section("threads", () => THREADS_SECTION, { tag: true })],
   });

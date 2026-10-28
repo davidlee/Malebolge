@@ -4,24 +4,23 @@ import { defineExtension, MemoryStorage } from "@earendil-works/pi-durable";
 import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite/node";
 import { afterEach, describe, expect, it } from "vitest";
 import { context } from "../src/context.ts";
-import { conversations } from "../src/conversations.ts";
 import { conversationExtension } from "../src/conversation-context.ts";
+import { conversations } from "../src/conversations.ts";
 import { cwdExtension } from "../src/cwd.ts";
-import { isRecord } from "../src/json.ts";
 import { type DaemonParts, daemonExtensions } from "../src/daemon-extensions.ts";
-import { mailExtension, MAIL_SECTION } from "../src/mail/extension.ts";
+import { isRecord } from "../src/json.ts";
+import { MAIL_SECTION, mailExtension } from "../src/mail/extension.ts";
 import { personaExtension } from "../src/persona.ts";
-import { DEFAULT_TOPIC } from "../src/protocol.ts";
 import {
   gitRootDirs,
   nodeSourceReader,
   readSources,
   renderProjectContext,
 } from "../src/project-context.ts";
+import { DEFAULT_TOPIC } from "../src/protocol.ts";
 import { type Skill, skillsExtension } from "../src/skills.ts";
 import { selectionOf } from "../src/toolsets.ts";
 import { tempDir } from "./fixtures.ts";
-import { fakeMailSource } from "./mail/mail-fixtures.ts";
 import {
   closing,
   FAUX_MODEL,
@@ -29,11 +28,13 @@ import {
   openTestHarness,
   systemPromptSections,
 } from "./harness-fixture.ts";
+import { fakeMailSource } from "./mail/mail-fixtures.ts";
 
-/** The host profile: section order is the profile's, and the host installs no tasks. */
-const HOST: Pick<DaemonParts, "profile" | "tasks"> = {
+/** The host profile: section order is the profile's, and the host installs no tasks or threads. */
+const HOST: Pick<DaemonParts, "profile" | "tasks" | "threads"> = {
   profile: "host",
   tasks: defineExtension({ name: "tasks" }),
+  threads: defineExtension({ name: "threads" }),
 };
 
 const skill: Skill = {
@@ -209,6 +210,7 @@ describe("daemonExtensions tasks", () => {
       skills: [],
       profile,
       tasks: defineExtension({ name: "tasks" }),
+      threads: defineExtension({ name: "threads" }),
       ...(profile === "room"
         ? { mail: mailExtension({ source: fakeMailSource(), now: () => 0 }) }
         : {}),

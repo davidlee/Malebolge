@@ -21,6 +21,8 @@ export interface DaemonParts {
   profile: Profile;
   /** The room's `tasks` extension (wakes); the host never installs it (W10). */
   tasks: Extension;
+  /** The room's `threads` extension; the host never installs it (W10). */
+  threads: Extension;
   /** The mail extension; absent when the profile does not allow mail. */
   mail?: Extension;
 }
@@ -37,6 +39,7 @@ const builders = (parts: DaemonParts): ReadonlyMap<string, () => Extension> => {
     ["coding-tools", (): Extension => CodingTools],
     ["grep", (): Extension => grepExtension],
     ["tasks", (): Extension => parts.tasks],
+    ["threads", (): Extension => parts.threads],
   ]);
   // A room start without it is refused by `requireInstalled` rather than left unbuilt.
   const { mail } = parts;

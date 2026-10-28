@@ -9,6 +9,7 @@ import { type FauxProviderHandle, fauxProvider } from "@earendil-works/pi-ai/pro
 import {
   type Conversation,
   type ConversationId,
+  configure,
   defineExtension,
   defineTool,
   type EntryRecord,
@@ -22,6 +23,7 @@ import {
 } from "@earendil-works/pi-durable";
 import { expect, vi } from "vitest";
 import { context } from "../src/context.ts";
+import { toolsetInit } from "../src/conversations.ts";
 import { isRecord, type JsonRecord } from "../src/json.ts";
 import { registryOf } from "../src/registry.ts";
 import type { Log, SatanTools } from "../src/satan-tools.ts";
@@ -36,6 +38,7 @@ import {
   postRequestId,
   postTask,
 } from "../src/threads/task.ts";
+import { selectionOf } from "../src/toolsets.ts";
 import { closing, FAUX_MODEL, nodeEnv } from "./harness-fixture.ts";
 import {
   answer,
@@ -154,6 +157,33 @@ export const createRecipient = (
     },
     context,
   );
+
+/**
+ * An indexed conversation on `interactive` in `topic`, ownerless and on the faux model,
+ * selecting the extensions `names` (default: `threads`, so the model is offered
+ * thread_post). `toolsetInit` writes the entry and the catalogue's list; the catalogue
+ * gains `threads` only when a later phase lists it, so the selection is written again
+ * in the same commit. This makes a caller; a recipient takes the same shape with no
+ * extension of its own.
+ */
+export function createIndexedThread(
+  harness: Harness,
+  topic: string,
+  names: readonly string[] = ["threads"],
+): Promise<Conversation> {
+  const init = toolsetInit("room", topic);
+  return harness.createConversation(
+    {
+      ownership: { kind: "ownerless" },
+      agent: { model: FAUX_MODEL, cwd: process.cwd() },
+      init: async (tx, id): Promise<void> => {
+        await init(tx, id);
+        await configure(tx, id, { extensions: selectionOf(names) });
+      },
+    },
+    context,
+  );
+}
 
 export interface CreatePostOptions {
   /**
