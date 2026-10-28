@@ -1,9 +1,9 @@
-// satan.post v1 (SL-006 design § The satan.post task and its notices): one task
-// definition for posts and the two notices. A post delivers through wake's
-// submission idiom without a bound, and answers its sender when it fails; a
-// notice that fails journals and notifies, and never sends another notice.
-// The tombstone check (deliver step 1 and the step-5 re-check) lands with the
-// reap.
+// satan.post v1 (SL-006 design § The satan.post task and its notices, § One phase:
+// deliver): one task definition for posts and the two notices. A post delivers
+// through wake's submission idiom without a bound, and answers its sender when it
+// fails; a notice that fails journals and notifies, and never sends another notice.
+// A post checks its origin's tombstone before it submits and again when its input
+// fails, so a reap is enforced wherever the task runs; notices skip both checks.
 
 import type { Context } from "@earendil-works/chord/context";
 import {
@@ -24,8 +24,9 @@ import {
 import { isRecord } from "../json.ts";
 import { notifyBestEffort, reasonOf, scheduledKey } from "../task-support.ts";
 import type { SweptKind } from "../task-sweep.ts";
-import { isOrigin, type Origin, originKey } from "./admission.ts";
+import { isOrigin, type Origin, originKey } from "./origin.ts";
 import type { ThreadDeps } from "./extension.ts";
+import { isReaped, threadsDoc } from "./tombstones.ts";
 
 /** The task kind, and the entry kind its input is placed as. */
 export const POST_KIND = "satan.post";
@@ -239,6 +240,16 @@ const failed = async (
   await notifyBestEffort(deps.satan, scheduledKey(input.to), "SATAN thread notice failed", line);
 };
 
+/** Whether `origin` is reaped, read in one commit: deliver's step 1 and its step-5 re-check. */
+const reaped = async (runtime: Runtime, origin: Origin, ctx: Context): Promise<boolean> => {
+  let tombstoned = false;
+  await runtime.commit(async (tx) => {
+    tombstoned = isReaped(await threadsDoc(tx), origin);
+    return undefined;
+  }, ctx);
+  return tombstoned;
+};
+
 /** The deliver phase: open the recipient, submit, wait, and settle or answer the sender. */
 const deliver = async (
   deps: ThreadDeps,
@@ -247,9 +258,25 @@ const deliver = async (
   runtime: Runtime,
   ctx: Context,
 ): Promise<void> => {
-  const ending = await placed(runtime, running.input, ctx);
+  const input = running.input;
+  if (input.letter === "post" && (await reaped(runtime, input.origin, ctx))) {
+    // Withdraw this task's own input if a re-run finds it queued: one input by its id,
+    // never the conversation. A check commits nothing, so a crash before the submit
+    // re-runs it from the same durable state.
+    const submission = await admitted(runtime, input, ctx);
+    if (submission?.status === "queued") {
+      await deps.harness.abortSubmission(submission.id, ctx, input.to);
+    }
+    await runtime.commit(() => completed("reaped"), ctx);
+    return;
+  }
+  const ending = await placed(runtime, input, ctx);
   if (ending.kind === "delivered") {
     await runtime.commit(() => completed("delivered"), ctx);
+    return;
+  }
+  if (input.letter === "post" && (await reaped(runtime, input.origin, ctx))) {
+    await runtime.commit(() => completed("reaped"), ctx);
     return;
   }
   await failed(deps, task, running, runtime, ctx, ending, completed);

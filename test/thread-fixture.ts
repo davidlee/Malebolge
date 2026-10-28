@@ -28,6 +28,7 @@ import { isRecord, type JsonRecord } from "../src/json.ts";
 import { registryOf } from "../src/registry.ts";
 import type { Log, SatanTools } from "../src/satan-tools.ts";
 import { openSession } from "../src/session.ts";
+import type { Origin } from "../src/threads/origin.ts";
 import { type ThreadDeps, threadsExtension } from "../src/threads/extension.ts";
 import {
   createPostTask,
@@ -38,6 +39,7 @@ import {
   postRequestId,
   postTask,
 } from "../src/threads/task.ts";
+import { type ThreadsDoc, threadsDoc, tombstone } from "../src/threads/tombstones.ts";
 import { selectionOf } from "../src/toolsets.ts";
 import { closing, FAUX_MODEL, nodeEnv } from "./harness-fixture.ts";
 import {
@@ -238,9 +240,33 @@ export async function postTasks(harness: Harness): Promise<TaskInspection[]> {
 export const inputOf = (task: TaskInspection): JsonRecord =>
   isRecord(task.record.input) ? task.record.input : {};
 
+/** The session's tombstones, as a test reads them. */
+export function reapedOrigins(harness: Harness): Promise<ThreadsDoc["reaped"]> {
+  // The draft is only usable inside its commit, so the values are copied out there.
+  return harness.commit(async (tx) => {
+    const { reaped } = await threadsDoc(tx);
+    return Object.fromEntries(
+      Object.entries(reaped).map(([key, value]) => [key, { at: value.at, reason: value.reason }]),
+    );
+  }, context);
+}
+
+/** Writes `origin`'s tombstone in its own commit, as the reap's one write does. */
+export function writeTombstone(harness: Harness, origin: Origin, reason: string): Promise<boolean> {
+  return harness.commit(
+    async (tx) => tombstone(await threadsDoc(tx), origin, reason, Date.now()),
+    context,
+  );
+}
+
 /** The live notice tasks: what a failed post created, and what a failed notice must not. */
 export async function noticeTasks(harness: Harness): Promise<TaskInspection[]> {
   return (await postTasks(harness)).filter((task) => inputOf(task)["letter"] === "post-failed");
+}
+
+/** The live `family-reaped` notice tasks: one per reap, and none for a reap whose commit rolled back. */
+export async function reapedNotices(harness: Harness): Promise<TaskInspection[]> {
+  return (await postTasks(harness)).filter((task) => inputOf(task)["letter"] === "family-reaped");
 }
 
 /** The task's outcome, polled: a phase commits its outcome asynchronously. */

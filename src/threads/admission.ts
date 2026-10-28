@@ -1,6 +1,7 @@
-// Admission's data (SL-006 design § The origin): the origin a post carries, how
-// journals, tombstones and envelopes name it, and the caller's-origin read.
-// Every other refusal and the caps' use follow in later phases.
+// Admission's data (SL-006 design § The origin and § The tombstone record): the
+// origin a post carries, how journals, tombstones and envelopes name it, the
+// caller's-origin read, and the refusal a reaped origin's post reads. It answers the
+// reaped keys it read, which the caller's count uses (PHASE-06 EX-4..EX-7).
 
 import {
   type ConversationId,
@@ -14,7 +15,10 @@ import type { Profile } from "../config.ts";
 import { isRecord } from "../json.ts";
 import { requireSameTalkSet } from "../toolsets.ts";
 import { IndexDocument, storedEntry } from "../topics.ts";
-import { type EpisodeClass, WAKE_KIND } from "../wake/task.ts";
+import { WAKE_KIND } from "../wake/task.ts";
+import { isEpisodeClass, isOrigin, type Origin } from "./origin.ts";
+import { POST_KIND } from "./task.ts";
+import { isReaped, reapedRefusal, threadsDoc } from "./tombstones.ts";
 
 /** K: active posts per origin (DEC-036). */
 export const FAMILY_CAP = 4;
@@ -25,50 +29,8 @@ export const GLOBAL_CAP = 12;
 /** A call refused with a text the model reads. */
 export class Refusal extends Error {}
 
-export interface Origin {
-  /** The conversation whose input opened the cascade. */
-  conversation: ConversationId;
-  /** That input's entry. pi-durable mints entry ids from one store-wide sequence, so a higher id is younger. */
-  entry: number;
-  kind: "human" | "wake";
-  /** A wake origin's episode class; absent for a human origin. Recorded only (DEC-036 addendum). */
-  episodeClass?: EpisodeClass;
-}
-
-/** How journals, tombstones and envelopes name an origin: "12/340". */
-export const originKey = (origin: Origin): string =>
-  `${String(origin.conversation)}/${String(origin.entry)}`;
-
-/**
- * `satan.post`'s entry kind. `./task.ts` exports the same string, but importing it
- * here would close an import cycle (task.ts already imports this module), so the
- * kind and its data check stay local.
- */
-const POST_ENTRY_KIND = "satan.post";
-
 /** Entries read per scan page: a turn's tail is short, so a couple of pages reach its input. */
 const PAGE = 16;
-
-/** A positive safe integer as pi-durable's branded conversation id (there is no public parser). */
-const isConversationId = (value: unknown): value is ConversationId =>
-  typeof value === "number" && Number.isSafeInteger(value) && value > 0;
-
-/** A wake episode class, as its entry's data carries it. */
-const isEpisodeClass = (value: unknown): value is EpisodeClass =>
-  value === "attend" || value === "seclude";
-
-/** Whether `value` reads as an origin: a wake origin carries its episode class. */
-export const isOrigin = (value: unknown): value is Origin => {
-  if (!isRecord(value)) {
-    return false;
-  }
-  const kind = value["kind"];
-  return (
-    isConversationId(value["conversation"]) &&
-    typeof value["entry"] === "number" &&
-    (kind === "human" || (kind === "wake" && isEpisodeClass(value["episodeClass"])))
-  );
-};
 
 /** `entry.data[key]`, checked by `is`; an input entry lacking it is malformed. */
 const dataOf = <T>(entry: EntryRecord, key: string, is: (value: unknown) => value is T): T => {
@@ -88,7 +50,7 @@ const originOf = (entry: EntryRecord, caller: ConversationId): Origin | undefine
     const episodeClass = dataOf(entry, "episodeClass", isEpisodeClass);
     return { conversation: caller, entry: entry.id, kind: "wake", episodeClass };
   }
-  return entry.kind === POST_ENTRY_KIND ? dataOf(entry, "origin", isOrigin) : undefined;
+  return entry.kind === POST_KIND ? dataOf(entry, "origin", isOrigin) : undefined;
 };
 
 /**
@@ -115,17 +77,20 @@ export async function callerOrigin(tx: Tx, caller: ConversationId): Promise<Orig
   throw new Refusal("no input entry to take an origin from");
 }
 
-/** What a post's admission yields: the caller's topic, and the origin the post carries. */
+/** What a post's admission yields: the caller's topic, the origin the post carries, and the reaped origins it read. */
 export interface PostAdmission {
   topic: string;
   origin: Origin;
+  /** Every reaped origin key the admission read, so counting needs no second read. */
+  reaped: ReadonlySet<string>;
 }
 
 /**
  * A post's admission (design § The thread tools, shared steps 1-2): the caller is
  * indexed, the target exists and is indexed, the two share a talk set, and the
- * caller's turn has an origin. Every read, so the caller's one commit may follow.
- * Tombs, counts and the verdict join it in PHASE-06.
+ * caller's turn has an origin, and that origin has not been reaped. Every read, so
+ * the caller's one commit may follow. The reaped keys it read are returned for the
+ * count the caller makes next.
  */
 export async function admitPost(
   tx: Tx,
@@ -160,5 +125,9 @@ export async function admitPost(
     throw new Refusal(error instanceof Error ? error.message : String(error));
   }
   const origin = await callerOrigin(tx, caller);
-  return { topic: callerEntry.topic, origin };
+  const doc = await threadsDoc(tx);
+  if (isReaped(doc, origin)) {
+    throw new Refusal(reapedRefusal(origin));
+  }
+  return { topic: callerEntry.topic, origin, reaped: new Set(Object.keys(doc.reaped)) };
 }

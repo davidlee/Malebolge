@@ -14,7 +14,8 @@ import {
 } from "@earendil-works/pi-durable";
 import { describe, expect, it } from "vitest";
 import { context } from "../src/context.ts";
-import { callerOrigin, type Origin, Refusal } from "../src/threads/admission.ts";
+import { callerOrigin, Refusal } from "../src/threads/admission.ts";
+import type { Origin } from "../src/threads/origin.ts";
 import { POST_KIND } from "../src/threads/task.ts";
 import { WAKE_KIND } from "../src/wake/task.ts";
 import { createConversation, openIndexedHarness } from "./harness-fixture.ts";

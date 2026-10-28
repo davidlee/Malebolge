@@ -9,7 +9,7 @@ import type { ConversationId, Harness } from "@earendil-works/pi-durable";
 import { describe, expect, it, vi } from "vitest";
 import { context } from "../src/context.ts";
 import { sweepBlockedTasks } from "../src/task-sweep.ts";
-import { type Origin, originKey } from "../src/threads/admission.ts";
+import { type Origin, originKey } from "../src/threads/origin.ts";
 import { type PostInput, postRequestId, postSweptKind } from "../src/threads/task.ts";
 import {
   createPost,
