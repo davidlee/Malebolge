@@ -42,7 +42,7 @@ import { entriesOf, userText, WAIT } from "./wake-fixture.ts";
 
 /** The design's section text, one line per paragraph: what `THREADS_SECTION` must be. */
 const DESIGN_SECTION = [
-  "A <post> comes from another of your own conversations, a peer thread, not from the operator. Its from is the conversation that sent it; reply with thread_post to that id. A fork's thread_fork result names the conversation it was forked from; its purpose arrives as its first post.",
+  "A <post> comes from another of your own conversations, a peer thread, not from the operator. Its from is the conversation that sent it; reply with thread_post to that id. A fork's thread_fork result names the conversation it was forked from; its purpose arrives as its first post. A thread answers you only by posting to you: what it says in its own turn stays in its own transcript. When you want an answer, ask for a reply with thread_post, and do not forbid it tools.",
   'A <post-failed> says a post of yours failed, and why. outcome="withdrawn": the recipient never read it. outcome="delivered-incomplete": the recipient read it but its turn did not complete; it may have acted on it.',
   "A <family-reaped> says an activity was stopped for fan-out: too many posts at once from one starting input. Its posts not yet read are withdrawn, and posts and thread starts from that activity are refused.",
 ].join("\n\n");
@@ -224,6 +224,7 @@ describe("thread_start (PHASE-07c EX-2, VT-5, VT-6)", () => {
     "Start a new conversation in a topic (default: this one's) and send it a first post. " +
     "intent: why it exists, about a sentence; context: optional material. " +
     "Refused for an unknown topic, outside this conversation's talk set, or over the post caps. " +
+    "It answers only by thread_post to you; ask for that if you want a reply. " +
     "Returns its id and topic.";
 
   it("thread_start creates a conversation in the named topic whose first turn is the post", async () => {

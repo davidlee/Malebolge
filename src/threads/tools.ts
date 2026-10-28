@@ -496,6 +496,7 @@ export const threadStart = (
       "Start a new conversation in a topic (default: this one's) and send it a first post. " +
       "intent: why it exists, about a sentence; context: optional material. " +
       "Refused for an unknown topic, outside this conversation's talk set, or over the post caps. " +
+      "It answers only by thread_post to you; ask for that if you want a reply. " +
       "Returns its id and topic.",
     parameters: startParameters,
     executionMode: "sequential",
@@ -521,6 +522,7 @@ export const threadFork = (
       "Fork this conversation as it stands, history included, and send the fork a first post. " +
       "intent: why it exists, about a sentence; context: optional material. " +
       "Must be the only tool call in its message. Refused over the post caps. " +
+      "It answers only by thread_post to you; ask for that if you want a reply. " +
       "Returns the fork's id and topic.",
     parameters: forkParameters,
     callers: ["model"],

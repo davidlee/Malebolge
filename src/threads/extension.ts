@@ -47,7 +47,9 @@ export const threadBinding = (): ThreadBinding => lateBinding("threads");
 export const THREADS_SECTION =
   "A <post> comes from another of your own conversations, a peer thread, not from the operator. " +
   "Its from is the conversation that sent it; reply with thread_post to that id. " +
-  "A fork's thread_fork result names the conversation it was forked from; its purpose arrives as its first post.\n\n" +
+  "A fork's thread_fork result names the conversation it was forked from; its purpose arrives as its first post. " +
+  "A thread answers you only by posting to you: what it says in its own turn stays in its own transcript. " +
+  "When you want an answer, ask for a reply with thread_post, and do not forbid it tools.\n\n" +
   'A <post-failed> says a post of yours failed, and why. outcome="withdrawn": the recipient never read it. ' +
   'outcome="delivered-incomplete": the recipient read it but its turn did not complete; it may have acted on it.\n\n' +
   "A <family-reaped> says an activity was stopped for fan-out: too many posts at once from one starting input. " +
