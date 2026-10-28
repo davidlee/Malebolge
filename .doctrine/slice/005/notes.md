@@ -353,3 +353,13 @@ Standing rulings from the operator (tier 1), binding on every charter:
 - PHASE-06: bounded-exec split into a pure sink `boundedOutput` and the exec wiring `boundedExec` (outcome exited | stopped | failed; caller abort throws), so grep keeps its collector API and stats; the ceiling counts raw stdout bytes and applies in either mode; ndjson.ts unchanged. Why: design names the parts, not the seams; one splitter. Tier: decide.
 - PHASE-06: `MailSourceError { failure }` added to src/mail/source.ts (the port's error, so PHASE-07 tools can tell an oversize failure at limit 1 from others without importing the adapter); spawn_error maps to `screwtape could not run`, other ExecutionErrors propagate; an unterminated last stdout line is a contract violation (`unterminated line`), added to the fixed set; one message for a line or ceiling breach. Why: design's outcome table omits spawn failure and an unterminated line; both fail closed. Tier: decide.
 - PHASE-06: exit 2's code is read as the `code` string field of the first non-blank stderr line parsed as a JSON object. The field name is assumed (screwtape DEC-011 not read: no other repo); PHASE-08's smoke should confirm it against the real binary. Tier: decide (flagged).
+- Seat, PHASE-06 autonomy item 3 (exit-2 field name), decided: screwtape
+  README § CLI at `e61d01b` writes usage diagnostics as
+  `{"level":"error","error":"usage","reason":"<fixed code>"}`, one JSON line
+  each, and a `{"level":"warning",...}` line can precede it. The adapter
+  reads `code` from the first stderr line (`src/mail/screwtape.ts:150`): wrong
+  field, fragile line choice. Fix: take `reason` from the first stderr line
+  whose `level` is `"error"`; tests updated to the real shape, with a
+  warning-first case. Done as a `fix(SL-005)` commit at the start of the
+  PHASE-07 charter. Design sec-5's "<code>" means this `reason`: flagged for
+  audit.
