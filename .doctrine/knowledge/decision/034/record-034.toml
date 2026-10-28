@@ -1,0 +1,33 @@
+schema = "doctrine.knowledge"
+version = 1
+
+id = 34
+slug = "thread-start-tools"
+title = "Threads start through two tools, thread_start and thread_fork, each taking an intent and optional context"
+record_kind = "decision"
+status = "accepted"
+created = "2026-10-28"
+updated = "2026-10-28"
+tags = []
+
+[facet]                         # every field typed; seeded empty (captured later)
+context = "SL-006 start and fork. toolsetInit (src/conversations.ts:122) runs in a transaction and writes the entry and selection; tx.createConversation takes no agent settings, so model and cwd are set by configure in the same commit. Unknown topics are refused (indexOfTopic). DEC-031 gives fork rules of its own (sole call, model callers, written child result). Wake already names its purpose 'intent' (src/wake/tools.ts:63)."
+choice = "Two tools sharing one internal create-and-post helper, both returning {conversation, topic}. thread_start {intent, context?, topic?}: a new conversation in topic (default: the caller's); an unknown topic is refused (threads do not create topics); toolset is the topic's, else the profile default, refused outside the caller's talk set (DEC-032); cwd is the topic's, else the daemon default. thread_fork {intent, context?}: keeps the caller's topic and toolset (DEC-033), under DEC-031. One api.commit each: create or fork, configure, toolsetInit (start only), and the first post's satan.post task. intent: why the thread exists, about one sentence, guidance only (no hard cap); an identifier usually goes here. context: optional, whatever helps the recipient understand or act, possibly longer. Both are free strings: prose, JSON, SQL or anything else."
+alternatives = ["One tool thread_start {brief, topic?, fork?}: admits a forbidden topic+fork combination and hides fork-only rules behind a flag.", "A single 'brief' field: conflates why with supporting material.", "A hard length cap on intent: invites retries."]
+rationale = "Each schema admits only valid calls and each description stays short; DEC-031 attaches to thread_fork alone. intent/context separates purpose from material and matches wake's intent vocabulary."
+consequences = ["The first post carries intent and context; inq-5 is expected to give thread_post the same pair.", "Drift: wake's extra is payload (JSON object), threads' is context (string). Aligning wake is out of scope."]
+decided_by = "operator"
+decided_on = "2026-10-29"
+
+[evidence]                      # free-text citations (supports / contradicts / notes)
+supports    = []
+contradicts = []
+notes       = []
+
+[relationships]                 # verb-written edges (set by doctrine supersede)
+supersedes    = []   # record ids this one replaces (set by doctrine supersede)
+superseded_by = []   # set on superseded predecessor (verb-written)
+
+[[relation]]
+label = "shapes"
+target = "SL-006"

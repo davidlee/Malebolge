@@ -1,0 +1,33 @@
+schema = "doctrine.knowledge"
+version = 1
+
+id = 31
+slug = "thread-fork-point"
+title = "A thread fork starts at the caller's latest entry and carries a written result for its call"
+record_kind = "decision"
+status = "accepted"
+created = "2026-10-28"
+updated = "2026-10-28"
+tags = []
+
+[facet]                         # every field typed; seeded empty (captured later)
+context = "thread_start {fork} runs inside a tool call, so the caller's newest entry is the assistant message holding that unresolved call (SL-006 research X-3). Forking before the turn avoids a dangling call but loses the turn that explains the fork."
+choice = """Fork at the caller's latest entry (EVD-002). thread_start with fork refuses unless its call is the only tool call in its assistant message, and declares callers: ["model"] so nested code-mode calls (absent from the transcript) cannot fork. In the same commit, the tool appends a ToolResultEntry to the child for its own callId, naming the parent and pointing at the brief, replacing pi-durable's synthetic 'Tool result unavailable' error. The brief arrives as the child's first post."""
+alternatives = ["Fork at the entry before the current turn: no dangling call, but the child loses the request that prompted the fork.", "Caller-chosen fork entry: more surface than needed.", "Leave pi-durable's synthetic isError 'unavailable' result: reads as a failure to the child and invites thrashing.", "Allow parallel sibling calls: their results would be synthetic errors in the child; untested."]
+rationale = "EVD-002 shows pi-durable closes a dangling call with a synthetic result and the child accepts input, so the latest entry keeps full context safely. pi-durable pairs a call with the first toolResult before the next assistant message and synthesises one only when none exists (dist/harness/context.js:217-243), so a written result replaces the misleading error text."
+consequences = ["Unverified: pi-durable documents ToolResultEntry as written by tool tasks and generation; appending one to the child is off that path. Verify by test in the first fork phase; fallback is a fork marker and explanation in the brief envelope, keeping the synthetic line.", "VT in the fork phase: fork after compaction.", "VT: a fork call with sibling tool calls is refused.", "The fork reads the caller's latest entry once, for both the fork point and the sibling-call check."]
+decided_by = "operator"
+decided_on = "2026-10-29"
+
+[evidence]                      # free-text citations (supports / contradicts / notes)
+supports    = []
+contradicts = []
+notes       = []
+
+[relationships]                 # verb-written edges (set by doctrine supersede)
+supersedes    = []   # record ids this one replaces (set by doctrine supersede)
+superseded_by = []   # set on superseded predecessor (verb-written)
+
+[[relation]]
+label = "shapes"
+target = "SL-006"

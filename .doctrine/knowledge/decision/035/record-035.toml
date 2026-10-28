@@ -1,0 +1,37 @@
+schema = "doctrine.knowledge"
+version = 1
+
+id = 35
+slug = "thread-post-delivery"
+title = "thread_post delivers a satan.post task without a bound; a post is never withdrawn"
+record_kind = "decision"
+status = "accepted"
+created = "2026-10-28"
+updated = "2026-10-28"
+tags = []
+
+[facet]                         # every field typed; seeded empty (captured later)
+context = "Wake delivers a durable, deduped turn into another conversation (src/wake/task.ts:388-465): submit with a task-derived requestId, whenBusy followUp, a typed entry; boundedWait withdraws a still-queued input after the ceiling (default 2 h). A stale wake is harmless; a dropped message is not."
+choice = """thread_post {to, intent, context?}, refused unless the target exists, is indexed, is in the caller's talk set (DEC-032) and is not the caller; caps and reaping per DEC-036. A satan.post task created in the sender's commit, owned by the recipient, with no presence gate. Delivery reuses wake's submission idiom (requestId from the task, followUp, typed entry) but has no bound: the task waits until the input is placed and settles. Entry kind satan.post, data {taskId, from, topic, origin, intent, context?}. Rendered <post from="12" topic="x"><intent>…</intent><context>…</context></post>, context only when given and as the raw string. Returns {post, to}; a reply is a post back to from. The first post of thread_start/thread_fork (DEC-034) is the same task. A post that ends in failure (target unreachable, submit throws, the turn ends other than done, the task is aborted) delivers one active, cap-exempt, terminal notice to the sender, <post-failed post="44" to="13" reason="…"><intent>…</intent></post-failed>; if that is undeliverable, a journal line and a best-effort notify_send to the operator. Success sends nothing."""
+alternatives = ["Wake's bound (withdraw after the ceiling and journal it): silently drops a message to a busy recipient.", "Move placed/boundedWait/withdraw to a shared module: unneeded once posts are unbounded."]
+rationale = "A queued followUp input is placed when the recipient's turn ends, and turns end; the pending-post cap (inq-6) bounds accumulation."
+consequences = ["A stuck recipient holds a pending-post slot until its turn ends or the operator aborts the task.", "Wake and post now differ in delivery bound and in extra-field naming (payload vs context); reconciling them is backlog work, not SL-006."]
+decided_by = "operator"
+decided_on = "2026-10-29"
+
+[evidence]                      # free-text citations (supports / contradicts / notes)
+supports    = []
+contradicts = []
+notes       = []
+
+[relationships]                 # verb-written edges (set by doctrine supersede)
+supersedes    = []   # record ids this one replaces (set by doctrine supersede)
+superseded_by = []   # set on superseded predecessor (verb-written)
+
+[[relation]]
+label = "shapes"
+target = "SL-006"
+
+[[relation]]
+label = "spawns"
+target = "IMP-019"

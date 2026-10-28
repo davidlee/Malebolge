@@ -1,0 +1,33 @@
+schema = "doctrine.knowledge"
+version = 1
+
+id = 37
+slug = "latest-skips-threads"
+title = "A topic's latest conversation skips threads: latest is the highest id a tool did not create"
+record_kind = "decision"
+status = "accepted"
+created = "2026-10-28"
+updated = "2026-10-28"
+tags = []
+
+[facet]                         # every field typed; seeded empty (captured later)
+context = "DEC-015: a topic's latest is its highest id. latestIn (src/topics.ts:333) serves attach by topic (src/conversations.ts:173), the heartbeat's re-creation through the same open, and wake_schedule {topic} (src/wake/tools.ts:57). DEC-033 has a fork keep its caller's topic, so every fork, and every thread started into a topic, would capture that topic."
+choice = "Refines DEC-015: latestIn returns the highest id among a topic's entries that no tool created. A fork's entry already records parent; a thread_start entry records startedBy (the calling conversation); latestIn skips both. One filter in latestIn serves all three callers. A topic holding only threads has no latest, so today's behaviour applies: attach creates a new conversation and wake_schedule reports the topic has no conversation. Threads are reached by id (--list, posts)."
+alternatives = ["Accept capture (DEC-015 unchanged): attach and wake targets follow SATAN's newest thread.", "Capture for started threads only, not forks: half the problem, two rules."]
+rationale = "Attach, topic-addressed wakes and the heartbeat keep landing in the human-created conversation; threads are already addressed by id."
+consequences = ["One new index entry field (startedBy) and a filter in latestIn.", "DEC-015 is refined, not superseded: its default-topic and root rules stand."]
+decided_by = "operator"
+decided_on = "2026-10-29"
+
+[evidence]                      # free-text citations (supports / contradicts / notes)
+supports    = []
+contradicts = []
+notes       = []
+
+[relationships]                 # verb-written edges (set by doctrine supersede)
+supersedes    = []   # record ids this one replaces (set by doctrine supersede)
+superseded_by = []   # set on superseded predecessor (verb-written)
+
+[[relation]]
+label = "shapes"
+target = "SL-006"

@@ -7,7 +7,7 @@ title = "A topic's latest conversation is its highest id; `default` is reserved 
 record_kind = "decision"
 status = "accepted"
 created = "2026-10-24"
-updated = "2026-10-24"
+updated = "2026-10-28"
 tags = []
 
 [facet]                         # every field typed; seeded empty (captured later)

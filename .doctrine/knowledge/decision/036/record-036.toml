@@ -1,0 +1,33 @@
+schema = "doctrine.knowledge"
+version = 1
+
+id = 36
+slug = "post-families"
+title = "Posts carry their origin; a family over its cap, or the largest family over the global cap, is reaped and its originator told"
+record_kind = "decision"
+status = "accepted"
+created = "2026-10-28"
+updated = "2026-10-28"
+tags = []
+
+[facet]                         # every field typed; seeded empty (captured later)
+context = "Loops (one outstanding message at a time) are a legitimate continuation pattern; fan-out is the harm. A refusal-only cap lets a fan-out sit at the cap forever as its overage is pruned, and an abort of the wrong scope can kill an unrelated loop. pi-durable: follow-ups place one-at-a-time by default and malebolge does not override it (dist/harness/agent.js:55), so one generation has one origin; Submission.abort withdraws one queued input; Conversation.abort withdraws every queued input of a conversation (dist/harness/types.d.ts:44-90). Cost ceilings stay with satan IMP-053."
+choice = """Every post, start and fork carries an origin: the root input of its cascade. A turn started by a human input (pi.user) or a wake (satan.wake) opens a new origin named by that entry; a turn started by a satan.post inherits the post's origin; the caller's origin is read from its newest input entry. The origin is a structured, inspectable value (at least conversation, entry and kind: human or wake), never opaque, so later work can prioritise by it. No chain-depth cap. Family cap K = 4 active posts per origin; the post that crosses it is refused in the caller's turn and the whole family is reaped. Global cap N = 12 active posts; when exceeded the largest family is reaped, ties going to the youngest origin. Counting is by harness.inspect over live satan.post tasks, as liveWakes does; an off-by-one under concurrency is accepted. Reaping withdraws the family's queued posts one by one (Submission.abort), tombstones the origin in a small persistent record pruned by age, so later posts with that origin are refused, and lets the family's running turns finish; it never uses Conversation.abort. The originator gets one active, cap-exempt, terminal notice (<family-reaped origin="12/340" reason="5 active (cap 4)" withdrawn="3">) whose turn inherits the reaped origin, so SATAN can explain but not restart the cascade; if undeliverable, a journal line and a best-effort notify_send to the operator. Constants live in code; every refusal names its cap."""
+alternatives = ["Chain-depth cap: forbids legitimate loops.", "Per-sender pending cap only: a fan-out can sit at the cap forever.", "Refuse the excess post without reaping: same perpetual saturation.", "Abort running turns with Conversation.abort: withdraws a co-resident loop's queued input.", "tx.scanTasks in the creating commit for an exact count: a second counting mechanism beside liveWakes; the operator prefers consistency over exactness."]
+rationale = "A loop holds one active post per origin and is never touched; a fan-out crosses K quickly and ends rather than saturating. The tombstone is the one new state, needed because running turns would otherwise post again after a reap. Inheriting the reaped origin in the notice turn prevents an immediate re-run."
+consequences = ["Supersedes the earlier per-post depth: DEC-035's entry data and envelope carry origin and no depth.", "VT in the post phase: placement stays one-at-a-time per turn; withdrawing one queued post leaves a sibling input queued; a reap leaves a co-resident loop untouched.", "A legitimate fan-out wider than K is reaped; K is tunable and the refusal says why."]
+decided_by = "operator"
+decided_on = "2026-10-29"
+
+[evidence]                      # free-text citations (supports / contradicts / notes)
+supports    = []
+contradicts = []
+notes       = []
+
+[relationships]                 # verb-written edges (set by doctrine supersede)
+supersedes    = []   # record ids this one replaces (set by doctrine supersede)
+superseded_by = []   # set on superseded predecessor (verb-written)
+
+[[relation]]
+label = "shapes"
+target = "SL-006"

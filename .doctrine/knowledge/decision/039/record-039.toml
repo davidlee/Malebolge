@@ -1,0 +1,37 @@
+schema = "doctrine.knowledge"
+version = 1
+
+id = 39
+slug = "thread-visibility"
+title = "Operator visibility of threads: origin-tagged journal, marked --list, notify on reap, and distinct transcript lines"
+record_kind = "decision"
+status = "accepted"
+created = "2026-10-28"
+updated = "2026-10-28"
+tags = []
+
+[facet]                         # every field typed; seeded empty (captured later)
+context = "DEC-037 keeps threads out of a topic's latest, so --list is how the operator finds them; DEC-036's reap is an anomaly. The comint client colours lines by prefix (emacs/malebolge.el:109-112); the renderer prints any user-role entry as 'You:' (src/render.ts:192-200), and posts and wakes are submitted as input with a user message, so both would read as the operator's turn (inference, no render test)."
+choice = "Journal: one line per start, fork, post, failure and reap, each carrying the origin. --list marks threads ('fork of 12', 'started by 12'). Best-effort notify_send on a reap only. Transcript: satan.post entries render as a '[thread] post from 12 (x)' header and then their content, not as 'You:'; the post-failed and family-reaped notices render as [thread] lines; satan.wake entries likewise render as [wake]. The Emacs client gains malebolge-thread-face for [thread] lines and a warning face for reaps (one font-lock rule each). Thread tool calls stay [tool] lines. No live feed."
+alternatives = ["Journal only: threads unmarked in --list and reaps found only by looking.", "Notify on every start: too noisy for routine use.", "Leave transcript rendering alone: posts and wakes read as the operator's own turns."]
+rationale = "Origins make one activity greppable end to end; the operator is interrupted only for the anomaly; rendering is cheap, adjacent, and corrects a mislabelling."
+consequences = ["Wake rendering is fixed in SL-006 as the same render case, on the operator's 'if cheap and near'.", "A list or live view of threads and families is backlog."]
+decided_by = "operator"
+decided_on = "2026-10-29"
+
+[evidence]                      # free-text citations (supports / contradicts / notes)
+supports    = []
+contradicts = []
+notes       = []
+
+[relationships]                 # verb-written edges (set by doctrine supersede)
+supersedes    = []   # record ids this one replaces (set by doctrine supersede)
+superseded_by = []   # set on superseded predecessor (verb-written)
+
+[[relation]]
+label = "shapes"
+target = "SL-006"
+
+[[relation]]
+label = "spawns"
+target = "IDE-004"

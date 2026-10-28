@@ -30,100 +30,125 @@ profile, not per conversation (RFC-002 D2 is unimplemented; research X-4). Talk 
 
 ## Scope & Objectives
 
-1. **Start a thread.** A tool an interactive conversation calls to create a
-   new conversation in a named topic of its talk set, seeded with a brief. It
-   returns the new id.
-2. **Fork a thread.** The same verb, or an argument of it, forks the calling
-   conversation's history into a new conversation (pi-durable
-   `forkConversation`). It brings IMP-017's fork branch: the index hook copies
-   the parent entry's toolset; stored forks are backfilled from their parent,
-   and a fork whose parent has no entry refuses startup. The startup refusal
-   of forks in `src/session.ts` is lifted for this case only. Whether a fork
-   may change mode within its set is a design question (RFC-003 OQ-3);
-   keeping the parent's mode is the default.
-3. **Post into a thread.** A tool that delivers a message to another
-   conversation in the caller's talk set. It starts a turn in the recipient
-   (queued if the recipient is busy, EVD-001), rendered as a turn envelope
-   that carries the sender's id and mode, like `<wake>`. The sender's id is
-   the reply address.
-4. **Talk sets in code.** A closed declaration beside `PROFILE_TOOLSETS`
-   that start, fork and post all consult. Mail belongs to no set, and a guard
-   test asserts it.
-5. **Bounds.** A cap on live threads and a cap on turns triggered by posts
-   (by chain depth or rate), so threads cannot multiply or trigger each other
-   without end. Refusals are stated in the tool result.
-6. **Domain model, incrementally** (RFC-003). Whatever the slice touches
-   moves towards the RFC-003 taxonomy rather than away from it. Candidates:
-   naming (toolset → mode, OQ-1), the post envelope as the first member of a
-   turn-origin family, and capability prose for any new extension carried by
-   the extension itself.
+Settled in the design run's inquiry (2026-10-29); each objective cites the
+decision that shapes it.
+
+1. **Start a thread** (DEC-034). `thread_start {intent, context?, topic?}`
+   creates a conversation in an existing topic (default: the caller's), with
+   the topic's toolset or the profile default, refused outside the caller's
+   talk set, and the topic's cwd or the daemon default. One `api.commit`
+   creates, configures, indexes (`toolsetInit`) and creates the first post.
+   Returns `{conversation, topic}`. The entry records `startedBy`.
+2. **Fork a thread** (DEC-031, DEC-033). `thread_fork {intent, context?}`
+   forks the caller at its latest entry, keeping its topic and toolset. It is
+   refused unless it is the only tool call in its message, and only the model
+   may call it. In the same commit it writes the child's result for the fork
+   call (naming the parent) and creates the first post. IMP-017's fork
+   branch: the index hook copies the parent entry's toolset; the startup
+   refusal narrows to a fork whose entry has no toolset.
+3. **Post into a thread** (DEC-035). `thread_post {to, intent, context?}`
+   creates a `satan.post` task owned by the recipient. Delivery is wake's
+   submission idiom without a bound: a post is never withdrawn for waiting.
+   Rendered `<post from topic>` with `<intent>` and `<context>`; the reply
+   address is `from`. A post that fails sends one terminal `<post-failed>`
+   notice to its sender.
+4. **Talk sets in code** (DEC-032, DEC-038). `TALK_SETS` beside
+   `PROFILE_TOOLSETS`: the room's interactive set; mail and host have none.
+   One `requireSameTalkSet` serves start, fork and post.
+5. **Origins and bounds** (DEC-036). Every post carries an inspectable
+   origin (the root human or wake input; a wake origin records its episode
+   class). At most 4 active posts per origin and 12 daemon-wide, counted by
+   `harness.inspect`. Crossing either reaps a family (the over-cap one, or the
+   largest, youngest on a tie): queued posts withdrawn, the origin
+   tombstoned, running turns left to finish, the originator told by a
+   terminal `<family-reaped>` notice. No chain-depth cap: loops are allowed.
+6. **Topic latest skips threads** (DEC-037, refining DEC-015). `latestIn`
+   ignores entries with `parent` or `startedBy`, so attach by topic,
+   `wake_schedule {topic}` and the heartbeat stay on human-created
+   conversations.
+7. **Operator visibility** (DEC-039). Origin-tagged journal lines; `--list`
+   marks threads; `notify_send` on a reap; transcript renders posts, notices
+   (`[thread]`) and wakes (`[wake]`) as their own lines, not as `You:`, with
+   their own Emacs faces.
+8. **Prompt surface** (DEC-040). Tool descriptions and one test-pinned
+   `threads` section in code state the framing's facts (a post is from a
+   peer thread, not the operator). Conduct between threads is SATAN's corpus
+   prose; SL-006 does not change `interactive.txt`.
 
 ## Non-Goals
 
 - Task-owned conversations and IMP-017's task-owned branch (IDE-002).
 - Mail in any talk set; quarantine plumbing (RSK-002, RFC-003 OQ-7).
-- Talk across harnesses: patch runner, gptel batch runs (RFC-003 OQ-8).
-- A second mode in the interactive talk set.
+- Threads on the host profile (DEC-038).
+- Talk across harnesses: patch runner, gptel-hosted runs spawning
+  conversations (RFC-003 OQ-8, IDE-003).
+- A second mode in the interactive talk set; a fork that changes mode.
+- Renaming toolset to mode (CHR-004).
+- Delayed or presence-gated threads; acting on an origin's episode class
+  (DEC-036 addendum).
+- Reconciling wake's delivery bound, `payload` and failure reporting with
+  posts (IMP-019); only wake's transcript rendering changes here.
+- Project context per conversation (RFC-002 D2).
 - Splitting `system/scaffold.txt` beyond what the slice touches; any change
   to satan's batch harness.
-- Emacs client changes: per-conversation buffers (IMP-014) and topic choice on
-  `new` (IMP-018). Threads are attachable through the existing `--list`.
-- A per-conversation byte budget (IMP-015).
+- Emacs per-conversation buffers (IMP-014) and topic choice on `new`
+  (IMP-018); a list or live view of threads (IDE-004). Faces for the new
+  transcript lines are in scope.
+- A per-conversation byte budget (IMP-015); cost ceilings (satan IMP-053).
 - Orientation re-injection (IMP-016), beyond keeping the envelope shape open
   for it.
 
 ## Affected surface (coarse)
 
-- `src/topics.ts`: index entries for forks; backfill from the parent.
-- `src/session.ts`: the startup refusal of forks.
-- `src/conversations.ts`: creation, and a fork path.
-- `src/toolsets.ts`: talk sets; the new extension in the interactive list.
-- A new extension for the thread tools (location set in design), and
-  `src/daemon-extensions.ts` to install it.
-- `src/daemon.ts`, `src/protocol.ts`: delivering a post as a turn, if the
-  daemon's input path is the route.
-- satan-corpus `prompts/interactive.txt`: only if the slice touches it.
+- `src/toolsets.ts`: `TALK_SETS`, `requireSameTalkSet`; the new extension in
+  the interactive list.
+- `src/topics.ts`: the hook copies a fork's toolset; `startedBy`; `latestIn`
+  skips threads.
+- `src/session.ts`: the narrowed fork refusal.
+- `src/conversations.ts`: `toolsetInit` reused inside a tool's commit.
+- A new threads extension (tools, `satan.post` task, notices, reap,
+  tombstone, `threads` prompt section) and `src/daemon-extensions.ts`.
+- `src/render.ts`: post, notice and wake lines; `--list` marks.
+- `emacs/malebolge.el`: thread and reap faces.
 
 ## Risks, assumptions, open questions
 
-- **Runaway cost.** Threads that post to each other spend model turns
-  unattended. Bounds (objective 5) are mandatory, not polish.
-- **History coherence on fork** (RFC-003 problem 6). A fork into another mode
-  inherits calls to tools it lacks. Moot while the set holds one mode.
-- **Assumption:** pi-durable 1.4.0's `forkConversation` and the
-  `conversationCreated` hook behave as IMP-017 and memory
-  `pi-durable-conversation-created-covers-root` describe. Research confirms.
-- **Assumption:** a post can enter a recipient through the harness without a
-  client attached, as wakes do (`src/wake/task.ts`). Research confirms.
-- **OQ:** Post rendering and how the reply address is presented.
-- **OQ:** Whether start and fork are one tool or two.
-- **OQ:** Caps: values, scope (per daemon, per thread lineage), and where the
-  counters live given replay safety.
-- **OQ:** Do posts and starts need operator visibility (a notification, a
-  listing line) beyond attaching to the thread?
-- RFC-003 OQ-1 (naming) and OQ-2 (whether a topic proposes a default mode).
+- **Runaway cost.** Bounded by DEC-036 against fan-out; a looping
+  population at the caps costs tokens, which satan IMP-053 bounds.
+- **Unverified (DEC-031):** a tool may append a `ToolResultEntry` to the
+  fork child. Fallback: explain the fork in the first post's envelope.
+- **Unverified (DEC-036):** follow-ups stay one-at-a-time per turn under
+  load; withdrawing one queued post leaves a sibling input queued.
+- **Assumption:** EVD-001 (busy conversations queue input) holds for
+  task-submitted posts as for wakes.
 
 ## Verification intent
 
-- Tests: start creates a conversation in the named topic with the brief as
-  its first turn; a fork carries its parent's topic and toolset with no init,
-  and after a restart; a stored fork is backfilled from its parent; a fork
-  without a parent entry refuses startup; a post starts a turn in the
-  recipient with sender provenance, and is queued when the recipient is busy;
-  start and post refuse outside the talk set and refuse mail; both caps
-  refuse with a stated reason.
-- VH (verified by the operator): in the room, SATAN starts a thread in another
-  topic, posts to it, and receives a reply; the operator attaches to both.
+- Tests: start creates a conversation in the named topic whose first turn is
+  the post, and is refused for an unknown topic or outside the talk set; a
+  fork carries its parent's topic and toolset, its child sees the written
+  fork result, it survives a restart, and it is refused alongside sibling
+  calls; a fork after compaction works; a post starts a turn in the recipient
+  with `from`, is queued when the recipient is busy, and its failure reaches
+  the sender; mail and host refuse; a family over 4 is reaped and its
+  originator told, while a co-resident loop is untouched; the global cap
+  reaps the largest family; `latestIn` skips threads; posts and wakes render
+  as their own lines.
+- VH (verified by the operator): in the room, SATAN starts a thread in
+  another topic, posts to it, and receives a reply; the operator attaches to
+  both and sees the post lines coloured.
 
 ## Summary
 
 The first slice towards SATAN talking across threads: start, fork and post
-within the interactive talk set, bounded, with IMP-017's fork branch and
-RFC-003's model applied where touched.
+within the room's interactive talk set, bounded against fan-out by origin
+families, with IMP-017's fork branch, and RFC-003's model applied where
+touched.
 
 ## Follow-Ups
 
 - A second mode in the interactive talk set, so threads differ in prompt and
   tools.
-- RFC-003 OQ-8: talk with the patch runner and gptel batch runs.
+- IDE-003 (gptel-hosted runs spawning conversations), IDE-004 (live view),
+  IMP-019 (wake reconciliation), CHR-004 (rename).
 - IMP-014 and IMP-018 (Emacs client for many live threads).

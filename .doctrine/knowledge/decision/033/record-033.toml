@@ -1,0 +1,37 @@
+schema = "doctrine.knowledge"
+version = 1
+
+id = 33
+slug = "fork-toolset"
+title = "A fork's index entry copies its parent's toolset in the creating commit; startup refuses a fork without one"
+record_kind = "decision"
+status = "accepted"
+created = "2026-10-28"
+updated = "2026-10-28"
+tags = []
+
+[facet]                         # every field typed; seeded empty (captured later)
+context = "IMP-017 fork branch, SL-006 research F-7..F-9: the index hook writes {topic, parent} and no toolset; the startup reconcile fills a missing toolset with the profile default (entryToolsets, src/topics.ts:283-305); refuseUnsupported refuses any fork (src/session.ts:92-104). pi-durable copies the agent document as of the fork point, so the fork's extension list already matches its parent's. DEC-025 (1): forks inherit their toolset."
+choice = "The conversationCreated hook copies the parent entry's toolset into the fork's entry, and throws (failing the forking commit) when the parent entry has none. The startup backfill is unchanged. refuseUnsupported narrows its fork clause to a fork whose entry has no toolset, so a fork never receives the default. Task-owned conversations stay refused. The heartbeat conversation needs no special case."
+alternatives = ["Backfill a fork's missing toolset from its parent's (ids ascending): unreachable, since the startup backfill runs before any tool can fork, so every parent entry has a toolset.", "Refuse forking the heartbeat conversation: unnecessary; see rationale."]
+rationale = "Every entry has a toolset after the startup commit, so the hook always finds one; the parent-backfill branch would be dead code. The narrowed refusal guards the real hazard, a fork silently given the default. pi-durable forkConversation copies documents and entries, not tasks (dist/session/transaction.js:108-150); the heartbeat is a recurring satan.wake task whose input fixes its conversationId and whose re-arm keeps it (src/wake/task.ts:293,528); malebolge defines no conversation document besides the index. A fork of the heartbeat conversation gets its history but not the heartbeat."
+consequences = ["Fork and IMP-017's fork branch land in the same phase (research X-5).", "Heartbeat relocation on restart (ensureHeartbeat targets the topic's latest conversation when no heartbeat is viable) is a topic-capture concern, carried to inq-7."]
+decided_by = "operator"
+decided_on = "2026-10-29"
+
+[evidence]                      # free-text citations (supports / contradicts / notes)
+supports    = []
+contradicts = []
+notes       = []
+
+[relationships]                 # verb-written edges (set by doctrine supersede)
+supersedes    = []   # record ids this one replaces (set by doctrine supersede)
+superseded_by = []   # set on superseded predecessor (verb-written)
+
+[[relation]]
+label = "shapes"
+target = "SL-006"
+
+[[relation]]
+label = "shapes"
+target = "IMP-017"

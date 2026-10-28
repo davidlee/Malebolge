@@ -1,0 +1,37 @@
+schema = "doctrine.knowledge"
+version = 1
+
+id = 38
+slug = "threads-room-only"
+title = "Threads run in the room profile only"
+record_kind = "decision"
+status = "accepted"
+created = "2026-10-28"
+updated = "2026-10-28"
+tags = []
+
+[facet]                         # every field typed; seeded empty (captured later)
+context = "DEC-032 gives host no talk set, so thread tools refuse there. Wakes are room-only (SL-034 W10). Host conversations are the operator's working sessions; threads and posts are SATAN's process machinery."
+choice = "Threads (start, fork, post, caps, reaping) run in the room only. Enabling host later is one TALK_SETS line plus the extension in host's list."
+alternatives = ["Host as well: no current need; extends caps and reaping to a second population."]
+rationale = "Matches wakes; host has no use for SATAN's process machinery today."
+consequences = ["Cross-harness spawning (gptel-hosted runs starting conversations, RFC-003 OQ-8) is out of SL-006 and captured as backlog."]
+decided_by = "operator"
+decided_on = "2026-10-29"
+
+[evidence]                      # free-text citations (supports / contradicts / notes)
+supports    = []
+contradicts = []
+notes       = []
+
+[relationships]                 # verb-written edges (set by doctrine supersede)
+supersedes    = []   # record ids this one replaces (set by doctrine supersede)
+superseded_by = []   # set on superseded predecessor (verb-written)
+
+[[relation]]
+label = "shapes"
+target = "SL-006"
+
+[[relation]]
+label = "spawns"
+target = "IDE-003"

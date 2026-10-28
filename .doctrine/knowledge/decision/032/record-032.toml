@@ -1,0 +1,37 @@
+schema = "doctrine.knowledge"
+version = 1
+
+id = 32
+slug = "talk-set-declaration"
+title = "Talk sets are a per-profile map beside PROFILE_TOOLSETS; no toolset-to-mode rename in SL-006"
+record_kind = "decision"
+status = "accepted"
+created = "2026-10-28"
+updated = "2026-10-28"
+tags = []
+
+[facet]                         # every field typed; seeded empty (captured later)
+context = "RFC-003 OQ-3: a talk set is a closed set of modes whose conversations may start, fork and post into each other; mail is in no set (RSK-002). The profile toolset policy lives in PROFILE_TOOLSETS (src/toolsets.ts:61). 'Toolset' appears in 16 src files, in stored index entries and topic records, and on the wire (attach --toolset)."
+choice = "A sibling map TALK_SETS in src/toolsets.ts, keyed by profile, mapping toolset to talk-set name. Room: {interactive: 'interactive'}; mail and host have no entry. One requireSameTalkSet(caller, target) check serves start, fork and post. A test checks TALK_SETS names only toolsets PROFILE_TOOLSETS allows. No toolset-to-mode rename in this slice; new code says 'talk set', 'toolset' stays; the rename is a backlog chore."
+alternatives = ["A talkSet field on each PROFILE_TOOLSETS.allowed entry: one source of truth, but reshapes allowed for every reader.", "No map, 'same toolset and not mail': least code, but hard-codes mail and needs the map once a set has two modes.", "Rename toolset to mode in this slice (RFC-003 OQ-6): reaches stored data and the wire flag, so needs migration and protocol compatibility unrelated to threads."]
+rationale = "Mirrors RFC-003's model; a future set is one line; no churn outside the new map; the agreement cost between the two maps is carried by a test."
+consequences = ["Host has no talk set, so thread tools refuse there.", "Backlog chore: rename toolset to mode across code, stored records and the wire flag."]
+decided_by = "operator"
+decided_on = "2026-10-29"
+
+[evidence]                      # free-text citations (supports / contradicts / notes)
+supports    = []
+contradicts = []
+notes       = []
+
+[relationships]                 # verb-written edges (set by doctrine supersede)
+supersedes    = []   # record ids this one replaces (set by doctrine supersede)
+superseded_by = []   # set on superseded predecessor (verb-written)
+
+[[relation]]
+label = "shapes"
+target = "SL-006"
+
+[[relation]]
+label = "spawns"
+target = "CHR-004"
