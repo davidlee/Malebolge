@@ -356,6 +356,31 @@ Standing rulings from the operator (tier 1), binding on every charter:
 - Seat, PHASE-05 autonomy item 1 (typebox declared directly): accepted as
   in-envelope: design sec-4 and the PHASE-05 objective name TypeBox, and
   1.3.27 was already locked transitively. Flagged for the operator.
+  Operator, 2026-10-28: "typebox can stay".
+- Deployment, 2026-10-28. Persona: the operator reviewed the draft ("reviewed,
+  you can install it"); installed byte-identical as
+  `~/satan-corpus/prompts/mail.txt`, uncommitted in that repo. Launcher env:
+  the room daemon runs in satan's `jailed-malebolge` bwrap jail
+  (`~/dev/satan/flake.nix`, `malebolgeRoomJailOptions`), which clears the env,
+  binds only listed paths and the store closure, and shadows `$HOME`. Setting
+  the two variables is not enough: the jail must also carry the screwtape
+  binary and config in its closure and bind `~/.local/state/screwtape`
+  read-write (screwtape DEC-031: a WAL reader writes `-wal`/`-shm`). Where a
+  jailed reader gets these is satan RFC-020 OQ-6, still open. Taken to the
+  operator, who chose "Builder from ~/flakes": satan exports
+  `legacyPackages.mkJailedMalebolge {screwtape = {package; configFile;
+  storeDir;}}` (`bind-pkg` for binary and config, `readwrite` for the dir);
+  its checks and scans run on `jailed-malebolge-probe` (a stand-in
+  screwtape), with a closure probe whose negative control (plain `readonly`)
+  fails. Screwtape's HM module exposes `services.screwtape.storeDir`
+  (internal, read-only). `~/flakes` `features/satan/malebolge.nix` passes the
+  module's three values and asserts screwtape is enabled. The built Sleipnir
+  launcher sets the same binary and config the host wrapper uses. Not yet
+  proven: screwtape running inside the jail (VH-1 shows it).
+- Forms-only failures fixed, 2026-10-28, at the operator's suggestion:
+  `localConnection` (the room's stand-in daemon) starts with `GIT_GUARD=off`,
+  since the room has no git-guard. collect/recovery now pass in the write form
+  (51/51).
 
 ## Autonomy log
 - PHASE-01: baseline capture committed alone (976262d); conversation-id normalisation narrowed to the `conversation` section (pi's version rewrote the id in every string). Why: EN-2 order checkable from git; avoid a false match on id "1". Tier: decide.

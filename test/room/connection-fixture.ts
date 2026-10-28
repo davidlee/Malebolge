@@ -40,13 +40,20 @@ export function recordingObserver(): ConnectionObserver & { seen: string[] } {
 }
 
 /**
- * A real local pi-env daemon (the binary pi-env ships for this machine). With
- * `path`, the daemon starts with that PATH, so its execs resolve binaries
- * from it (a fake first on `path` is the one run).
+ * A real local pi-env daemon (the binary pi-env ships for this machine), as
+ * the room. With `path`, the daemon starts with that PATH, so its execs
+ * resolve binaries from it (a fake first on `path` is the one run). The room
+ * has no git-guard, so a guard the test process runs under (an agent's jail)
+ * is off for the daemon: the room's clean runs `git reset --hard`.
  */
 export const localConnection = (path?: string): Connection =>
   new Connection({
-    command: path === undefined ? [localDaemon()] : ["env", `PATH=${path}`, localDaemon()],
+    command: [
+      "env",
+      "GIT_GUARD=off",
+      ...(path === undefined ? [] : [`PATH=${path}`]),
+      localDaemon(),
+    ],
   });
 
 /** `dir` first, then the test process's PATH. */

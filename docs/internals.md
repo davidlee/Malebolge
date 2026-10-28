@@ -192,10 +192,16 @@ set`, and a relative path is `<NAME> must be an absolute path, not "…"`.
 - **Deployment order:** 1. add `prompts/mail.txt` to the corpus, so the
   persona files exist; 2. set both variables in the launcher's environment;
   3. restart the daemon. A room start without either refuses.
+- **In the jail:** satan's `mkJailedMalebolge` sets both variables and binds
+  the binary and config with their closures, and the store's directory
+  read-write (a WAL reader writes `-wal`/`-shm` beside it; screwtape
+  DEC-031). `~/flakes` `features/satan/malebolge.nix` passes it the
+  `services.screwtape` module's `package`, `configFile` and `storeDir`.
 
 ## Jail
 
-The daemon runs in `jailed-malebolge` (`~/dev/satan/flake.nix`), started by
+The daemon runs in `jailed-malebolge` (`~/dev/satan/flake.nix`
+`mkJailedMalebolge`), started by
 the `malebolge-room` systemd user unit (`M-x malebolge-start`; unit facts in
 `~/flakes/SATAN.md`). Its stop sends SIGTERM; the daemon's stop handler runs.
 The jail sees this repo read-only, `~/satan-corpus` read-only (its `goad/`
