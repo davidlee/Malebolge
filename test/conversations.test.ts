@@ -26,7 +26,7 @@ import {
   toolsetInit,
 } from "../src/conversations.ts";
 import { registryOf } from "../src/registry.ts";
-import { openSession, type Session } from "../src/session.ts";
+import { openSession, type Session, type SessionOptions } from "../src/session.ts";
 import {
   indexConversation,
   IndexDocument,
@@ -84,12 +84,19 @@ const ALLOWS_MAIL = { ...PROFILE_TOOLSETS.room, allowed: ["interactive", "mail"]
 const INTERACTIVE = toolsetList("interactive", "room").filter((name) => name !== SATAN);
 
 /** A room session over the sqlite file at `path`: the store a reopen reads again. */
-const openRoomStore = async (path: string, registry: Registry): Promise<Session> =>
+const openRoomStore = async (
+  path: string,
+  registry: Registry,
+  policy?: SessionOptions["policy"],
+): Promise<Session> =>
   openSession(await openNodeSqliteStorage(path), {
     models: fauxModels().models,
     registry,
     agent: { model: FAUX_MODEL },
+    profile: "room",
+    log: () => undefined,
     env: nodeEnv,
+    ...(policy === undefined ? {} : { policy }),
   });
 
 /** The conversation `id` names in `session`; fails when the store lost it. */
@@ -239,6 +246,8 @@ describe("conversations", () => {
         models: fauxModels().models,
         registry: registryOf([]),
         agent: { model: FAUX_MODEL, cwd: tmp.dir },
+        profile: "room",
+        log: () => undefined,
         env: nodeEnv,
       });
       session = first;
@@ -252,6 +261,8 @@ describe("conversations", () => {
         models: fauxModels().models,
         registry: registryOf([]),
         agent: { model: changedModel, cwd: changedCwd },
+        profile: "room",
+        log: () => undefined,
         env: nodeEnv,
       });
       session = second;
@@ -552,7 +563,8 @@ describe("conversations", () => {
       expect(storedEntry(index, fresh.id)?.toolset).toBe("interactive");
       await close();
 
-      const second = await openRoomStore(path, registry);
+      // The store holds mail: only the policy that admits it may reopen it (STAGING).
+      const second = await openRoomStore(path, registry, ALLOWS_MAIL);
       session = second;
       expect(await toolsetProbe(() => reopened(second, mailTopic.id))).toEqual(probes.mail);
       expect(await toolsetProbe(() => reopened(second, plain.id))).toEqual(probes.plain);

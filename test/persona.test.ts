@@ -11,6 +11,8 @@ import {
   readPersona,
   requirePersonaFiles,
 } from "../src/persona.ts";
+import { context } from "../src/context.ts";
+import { selectionOf } from "../src/toolsets.ts";
 import { tempDir } from "./fixtures.ts";
 import { openTestHarness, systemPromptSections } from "./harness-fixture.ts";
 
@@ -67,6 +69,8 @@ describe("persona", () => {
     ]);
 
     const test = await openTestHarness([extension]);
+    // Root's list is the interactive toolset (the reconcile): select the mail one explicitly.
+    await test.root.configure({ extensions: selectionOf(["mail-persona"]) }, context);
     expect(await systemPromptSections(test)).toEqual([{ persona: "scaffold\n\nmail\n" }]);
   });
 

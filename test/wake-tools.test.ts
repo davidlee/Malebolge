@@ -25,10 +25,11 @@ import {
 } from "@earendil-works/pi-durable";
 import type { CallToolResult } from "@earendil-works/pi-mcp";
 import { describe, expect, it, vi } from "vitest";
+import { toolsetInit } from "../src/conversations.ts";
 import { context } from "../src/context.ts";
 import { isRecord, type JsonRecord } from "../src/json.ts";
 import { DEFAULT_TOPIC } from "../src/protocol.ts";
-import { assignTopic, writeTopicRecord } from "../src/topics.ts";
+import { writeTopicRecord } from "../src/topics.ts";
 import type { WakeDeps } from "../src/wake/extension.ts";
 import { wakeRequestId } from "../src/wake/task.ts";
 import { wakeCancel, wakeList, wakeSchedule } from "../src/wake/tools.ts";
@@ -355,8 +356,8 @@ describe("wake tools (SL-034 sec-13)", () => {
     const world = wakeWorld();
     const session = await world.open();
     await writeTopicRecord(session.harness, "work", {});
-    const earlier = await talking(session, assignTopic("work"));
-    const later = await talking(session, assignTopic("work"));
+    const earlier = await talking(session, toolsetInit("room", "work"));
+    const later = await talking(session, toolsetInit("room", "work"));
     expect(later.id).toBeGreaterThan(earlier.id);
     const result = await callTool(world, session, session.root, "wake_schedule", {
       intent: "the work topic",
@@ -368,7 +369,7 @@ describe("wake tools (SL-034 sec-13)", () => {
     expect(numberOf(result.json, "conversation")).toBe(later.id);
     const id = numberOf(result.json, "id");
     await asleepById(session.harness, id);
-    const newer = await talking(session, assignTopic("work"));
+    const newer = await talking(session, toolsetInit("room", "work"));
     expect(newer.id).toBeGreaterThan(later.id);
     const input = objectOf((await taskById(session.harness, id)).record.input, "the wake's input");
     expect(numberOf(input, "conversationId")).toBe(later.id);
@@ -404,7 +405,7 @@ describe("wake tools (SL-034 sec-13)", () => {
   it("VT-1b default is always a topic: its latest conversation is the target", async () => {
     const world = wakeWorld();
     const session = await world.open();
-    const asker = await talking(session, assignTopic("work"));
+    const asker = await talking(session, toolsetInit("room", "work"));
     const result = await callTool(world, session, asker, "wake_schedule", {
       intent: "the default topic",
       episode_class: "seclude",
@@ -649,7 +650,7 @@ describe("wake tools (SL-034 sec-13)", () => {
   it("VT-3 wake_list names each sleeping wake's topic, target and class", async () => {
     const world = wakeWorld();
     const session = await world.open();
-    const work = await talking(session, assignTopic("work"));
+    const work = await talking(session, toolsetInit("room", "work"));
     const asker = await talking(session);
     const heart = await createWake(
       session,

@@ -74,6 +74,24 @@ export function allowedNames(profile: Profile): string[] {
   return [...new Set(names)].filter((name) => name !== SATAN);
 }
 
+/**
+ * Refuse `toolset` when `policy` does not allow it, naming `subject` when given
+ * (`topic inbox: toolset mail is not allowed on profile host`). The policy is
+ * code, so only a code change causes this and only a code change remedies it
+ * (design sec-3): a caller refuses rather than widens the toolset silently.
+ */
+export function requireAllowed(
+  toolset: DaemonToolset,
+  profile: Profile,
+  policy: ProfileToolsets = PROFILE_TOOLSETS[profile],
+  subject?: string,
+): void {
+  if (!policy.allowed.includes(toolset)) {
+    const refusal = `toolset ${toolset} is not allowed on profile ${profile}`;
+    throw new Error(subject === undefined ? refusal : `${subject}: ${refusal}`);
+  }
+}
+
 /** Refuses the first static name of `names` that `installed` lacks: a catalogue error. */
 export function requireInstalled(names: readonly string[], installed: ReadonlySet<string>): void {
   for (const name of names) {

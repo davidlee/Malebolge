@@ -87,10 +87,18 @@ const startWakes = async (
   await ensureHeartbeat(deps(), task, context);
 };
 
-/** The session over the configured store, opened and resumed. */
-const openBoundSession = async (config: Config, options: SessionOptions): Promise<Session> => {
+/** The session over the configured store, opened and resumed, on this daemon's profile. */
+const openBoundSession = async (
+  config: Config,
+  log: Log,
+  options: Omit<SessionOptions, "profile" | "log">,
+): Promise<Session> => {
   mkdirSync(dirname(config.storagePath), { recursive: true });
-  return openSession(await openNodeSqliteStorage(config.storagePath), options);
+  return openSession(await openNodeSqliteStorage(config.storagePath), {
+    ...options,
+    profile: config.execution.profile,
+    log,
+  });
 };
 
 /** The injected catalog, or the gateway's; either must know the configured model. */
@@ -176,7 +184,7 @@ export async function startDaemon(config: Config, deps: StartDeps): Promise<Daem
     });
     // Before the session resumes, so a turn's SATAN call runs, not `tool_unavailable`.
     await satan.refresh();
-    session = await openBoundSession(config, {
+    session = await openBoundSession(config, log, {
       models,
       registry,
       agent: defaults,

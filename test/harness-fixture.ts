@@ -131,6 +131,8 @@ export async function openTestHarness(
     registry: registryOf(extensions),
     agent: { model: FAUX_MODEL },
     env: env ?? nodeEnv,
+    profile: "room",
+    log: () => undefined,
     ...(now === undefined ? {} : { now }),
   });
   return { ...session, faux };

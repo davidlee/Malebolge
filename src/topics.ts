@@ -18,7 +18,6 @@
    index signature satisfies. */
 import {
   type ConversationId,
-  type ConversationInit,
   type ConversationRecord,
   type Cursor,
   defineDoc,
@@ -29,8 +28,18 @@ import { context } from "./context.ts";
 import { DEFAULT_TOPIC } from "./protocol.ts";
 import type { DaemonToolset } from "./toolsets.ts";
 
-/** One conversation's place in the index; `parent` is the conversation it was forked from. */
-export type IndexEntry = { topic: string; parent?: number; toolset?: DaemonToolset };
+/**
+ * One conversation's place in the index; `parent` is the conversation it was forked
+ * from, and `toolset` the set its extensions are derived from (design sec-3).
+ */
+export type IndexEntry = { topic: string; parent?: number; toolset: DaemonToolset };
+
+/**
+ * What storage holds before the reconcile backfills it: an entry the hook wrote,
+ * which carries no toolset, or one written before this slice. The reconcile's
+ * step 1 writes the toolset; every reader after it sees an `IndexEntry`.
+ */
+type StoredEntry = Omit<IndexEntry, "toolset"> & { toolset?: DaemonToolset };
 
 /** What a topic carries: its directory (D3), and the toolset its conversations take (design sec-3). */
 export type TopicRecord = { cwd?: string; toolset?: DaemonToolset };
@@ -44,7 +53,7 @@ export type TopicChange = {
 /** The whole index, one session-scoped document. */
 export type IndexDoc = {
   topics: Record<string, TopicRecord>;
-  conversations: Record<string, IndexEntry>;
+  conversations: Record<string, StoredEntry>;
 };
 
 /** A topic as a listing shows it: the name it is filed under, and its directory. */
@@ -113,13 +122,6 @@ export async function writeCreated(
   return toolset;
 }
 
-/** The `init` a caller naming a topic passes: it runs after the hook and overwrites the topic. */
-export function assignTopic(name: string): ConversationInit {
-  return async (tx, conversationId) => {
-    writeEntry(await tx.doc(IndexDocument), conversationId, { topic: name });
-  };
-}
-
 /**
  * What every read of the index needs: a session's snapshots, unchanged, so an
  * `EnvTarget`'s reader (or a stub) passes as it is.
@@ -146,11 +148,17 @@ export function storedTopic(index: IndexDoc, name: string): TopicRecord | undefi
 }
 
 /**
- * `id`'s index entry, or undefined when nobody wrote one: a task-owned
- * conversation, which is no topic's (DEC-012).
+ * `id`'s reconciled index entry, or undefined when nobody wrote one (a task-owned
+ * conversation, which is no topic's, DEC-012) or when its toolset is missing —
+ * which the reconcile's backfill makes unreachable after startup, so a reader
+ * that runs later never sees the second case.
  */
 export function storedEntry(index: IndexDoc, id: ConversationId): IndexEntry | undefined {
-  return ownKey(index.conversations, String(id));
+  const entry = ownKey(index.conversations, String(id));
+  if (entry?.toolset === undefined) {
+    return undefined;
+  }
+  return { ...entry, toolset: entry.toolset };
 }
 
 /**
@@ -243,19 +251,58 @@ function needsBackfill(index: IndexDoc, record: ConversationRecord): boolean {
   return entry === undefined || (record.parent !== undefined && entry.parent === undefined);
 }
 
-/** Every ownerless conversation whose entry the backfill must write, oldest first. */
-async function unbackfilled(tx: Tx, index: IndexDoc): Promise<readonly ConversationRecord[]> {
-  const waiting: ConversationRecord[] = [];
+/**
+ * Every conversation in the store, oldest first: the one paged read the backfill
+ * and the reconcile share (design sec-3).
+ */
+export async function scanAll(tx: Tx): Promise<ConversationRecord[]> {
+  const records: ConversationRecord[] = [];
   let cursor: Cursor | undefined;
   // The cursor loop of `runner/durable-ids.ts`: page until `next` is undefined.
   do {
     const page = await tx.scanConversations({ order: "ascending" }, BACKFILL_PAGE, cursor);
-    waiting.push(
-      ...page.items.filter((record) => record.owner === undefined && needsBackfill(index, record)),
-    );
+    records.push(...page.items);
     cursor = page.next;
   } while (cursor !== undefined);
-  return waiting;
+  return records;
+}
+
+/** Every ownerless conversation whose entry the backfill must write, oldest first. */
+async function unbackfilled(tx: Tx, index: IndexDoc): Promise<readonly ConversationRecord[]> {
+  return (await scanAll(tx)).filter(
+    (record) => record.owner === undefined && needsBackfill(index, record),
+  );
+}
+
+/**
+ * The reconcile's read of the entries `ids` name (design sec-3, steps 1-2): an
+ * entry that carries no toolset takes `fallback`, written here — the backfill of
+ * a store written before this slice — and every id's toolset comes back with
+ * every stored topic. A missing entry is an invariant breach (an ownerless
+ * conversation is indexed by its creating commit), and the allowed checks are
+ * the caller's.
+ */
+export async function entryToolsets(
+  tx: Tx,
+  ids: readonly ConversationId[],
+  fallback: DaemonToolset,
+): Promise<{
+  entries: readonly { id: ConversationId; toolset: DaemonToolset }[];
+  topics: readonly NamedTopic[];
+}> {
+  const index = await tx.doc(IndexDocument);
+  const entries = ids.map((id) => {
+    const entry = ownKey(index.conversations, String(id));
+    if (entry === undefined) {
+      throw new Error(`conversation ${String(id)} has no index entry`);
+    }
+    const toolset = entry.toolset ?? fallback;
+    if (entry.toolset === undefined) {
+      writeEntry(index, id, { topic: entry.topic, toolset });
+    }
+    return { id, toolset };
+  });
+  return { entries, topics: topicsOf(index).slice(1) };
 }
 
 /** Topic names in code-unit order, so a listing never depends on a locale. */

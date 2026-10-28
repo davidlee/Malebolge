@@ -416,6 +416,8 @@ describe("startDaemon wakes", () => {
         }),
       ),
       agent: { model: FAUX_MODEL, cwd: w.cwd },
+      profile: "room",
+      log: () => undefined,
       env: nodeEnv,
     });
     await seeded.root.submit({ type: "input", content: "hello" }, context);

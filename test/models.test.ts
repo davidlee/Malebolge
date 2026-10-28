@@ -356,6 +356,8 @@ describe("model stream deadline (withStreamDeadline; RV-062 F-13 as amended by F
       models,
       registry: registryOf([]),
       agent: { model: { provider: GATEWAY_PROVIDER, modelId: "deepseek-flash" } },
+      profile: "room",
+      log: () => undefined,
       env: nodeEnv,
     });
     closing(session.harness);

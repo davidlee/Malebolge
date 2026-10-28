@@ -204,6 +204,8 @@ export async function openWake(options: OpenWakeOptions): Promise<WakeSession> {
       options.extension ?? defineExtension({ name: "tasks", tasks: [options.task] }),
     ]),
     agent: { model: FAUX_MODEL },
+    profile: "room",
+    log: () => undefined,
     env: nodeEnv,
     now: options.clock.now,
     setTimer: options.setTimer,

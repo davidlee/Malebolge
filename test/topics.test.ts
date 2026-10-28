@@ -6,14 +6,11 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { type Harness, MemoryStorage } from "@earendil-works/pi-durable";
-import { NodeExecutionEnv } from "@earendil-works/pi-durable/env/node";
 import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite/node";
 import { expect, it } from "vitest";
+import { toolsetInit } from "../src/conversations.ts";
 import { context } from "../src/context.ts";
-import { registryOf } from "../src/registry.ts";
-import { openSession, type Session, type SessionOptions } from "../src/session.ts";
 import {
-  assignTopic,
   BACKFILL_PAGE,
   backfillIndex,
   idsIn,
@@ -32,9 +29,7 @@ import {
   closing,
   createConversation,
   createTaskOwned,
-  FAUX_MODEL,
   countingCommits as countingCommitsOf,
-  fauxModels,
   type FauxHarnessOptions,
   forkConversation,
   indexOf,
@@ -42,16 +37,6 @@ import {
   openIndexedHarness,
   type TestHarness,
 } from "./harness-fixture.ts";
-
-const nodeEnv = ({ cwd }: { cwd?: string }): NodeExecutionEnv =>
-  new NodeExecutionEnv({ cwd: cwd ?? process.cwd() });
-
-const SESSION_OPTIONS: SessionOptions = {
-  models: fauxModels().models,
-  registry: registryOf([]),
-  agent: { model: FAUX_MODEL },
-  env: nodeEnv,
-};
 
 /** A harness with no hook at all: a store from before this slice, unless `options` says otherwise. */
 const preIndex = async (options: FauxHarnessOptions = {}): Promise<TestHarness> => {
@@ -77,20 +62,25 @@ it("indexes a created conversation, and root, in the default topic", async () =>
   const created = await createConversation(test.harness);
   const index = await indexOf(test.harness);
   expect(index.conversations[String(created.id)]).toEqual(DEFAULT);
-  expect(index.conversations[String(test.root.id)]).toEqual(DEFAULT);
+  // Root alone carries a toolset: the hook wrote the other entry, and the reconcile ran at open.
+  expect(index.conversations[String(test.root.id)]).toEqual({
+    ...DEFAULT,
+    toolset: "interactive",
+  });
 });
 
 it("files a conversation created with a topic under that topic", async () => {
   const test = await openIndexedHarness();
-  const created = await createConversation(test.harness, assignTopic("work"));
+  const created = await createConversation(test.harness, toolsetInit("room", "work"));
   expect((await indexOf(test.harness)).conversations[String(created.id)]).toEqual({
     topic: "work",
+    toolset: "interactive",
   });
 });
 
 it("records a fork's parent's topic and its parent's id", async () => {
   const test = await openIndexedHarness();
-  const parent = await createConversation(test.harness, assignTopic("work"));
+  const parent = await createConversation(test.harness, toolsetInit("room", "work"));
   const forked = await forkConversation(test.harness, parent);
   expect((await indexOf(test.harness)).conversations[String(forked.id)]).toEqual({
     topic: "work",
@@ -152,9 +142,9 @@ it("reads a store whose index was never written as the initial document", async 
 
 it("finds a topic's latest conversation and its ids newest first", async () => {
   const test = await openIndexedHarness();
-  const first = await createConversation(test.harness, assignTopic("work"));
-  await createConversation(test.harness, assignTopic("other"));
-  const last = await createConversation(test.harness, assignTopic("work"));
+  const first = await createConversation(test.harness, toolsetInit("room", "work"));
+  await createConversation(test.harness, toolsetInit("room", "other"));
+  const last = await createConversation(test.harness, toolsetInit("room", "work"));
   const index = await indexOf(test.harness);
   expect(latestIn(index, "work")).toBe(last.id);
   expect(idsIn(index, "work")).toEqual([last.id, first.id]);
@@ -188,13 +178,18 @@ it("merges the topic into an entry, keeping a key a later slice wrote", async ()
   const created = await createConversation(test.harness);
   await test.harness.commit(async (tx) => {
     const index = await tx.doc(IndexDocument);
-    const titled: IndexEntry & { title: string } = { topic: "default", title: "kept" };
+    const titled: IndexEntry & { title: string } = {
+      topic: "default",
+      title: "kept",
+      toolset: "interactive",
+    };
     index.conversations[String(created.id)] = titled;
   }, context);
-  await test.harness.commit((tx) => assignTopic("work")(tx, created.id), context);
+  await test.harness.commit((tx) => toolsetInit("room", "work")(tx, created.id), context);
   expect((await indexOf(test.harness)).conversations[String(created.id)]).toEqual({
     topic: "work",
     title: "kept",
+    toolset: "interactive",
   });
 });
 
@@ -227,15 +222,13 @@ const populate = async (harness: Harness, count: number): Promise<Populated> => 
 it("backfills a pre-index store across pages, forks with their parent, and writes nothing on the next start", async () => {
   const tmp = await tempDir();
   const path = join(tmp.dir, "index.sqlite");
-  let session: Session | undefined;
+  let opened: TestHarness | undefined;
   const close = async (): Promise<void> => {
-    if (session !== undefined) {
-      await session.harness.close(context);
-    }
-    session = undefined;
+    await opened?.harness.close(context);
+    opened = undefined;
   };
   try {
-    // One storage owner at a time: the pre-index harness closes before the session opens.
+    // One storage owner at a time: each harness closes before the next opens.
     const before = await openFauxHarness(await openNodeSqliteStorage(path), { resume: false });
     const root = before.root.id;
     const { created, parent, fork } = await populate(before.harness, BACKFILL_PAGE + 1);
@@ -243,21 +236,32 @@ it("backfills a pre-index store across pages, forks with their parent, and write
     expect(await indexOf(before.harness)).toEqual({ topics: {}, conversations: {} });
     await before.harness.close(context);
 
+    // The backfill alone: a session's reconcile refuses a store that holds a fork (design sec-3).
     const first = countingCommitsOf(await openNodeSqliteStorage(path));
-    session = await openSession(first.storage, SESSION_OPTIONS);
-    const index = await indexOf(session.harness);
-    const entries: Record<string, IndexEntry> = Object.fromEntries(
+    opened = await openFauxHarness(first.storage, {
+      resume: false,
+      conversationCreated: indexConversation,
+    });
+    const beforeBackfill = first.commits();
+    await backfillIndex(opened.harness);
+    expect(first.commits()).toBeGreaterThan(beforeBackfill);
+    const index = await indexOf(opened.harness);
+    // The backfill writes no toolset: the reconcile's step 1 adds it at the next startup.
+    const entries: Record<string, Omit<IndexEntry, "toolset">> = Object.fromEntries(
       [root, ...created].map((id) => [String(id), DEFAULT]),
     );
     entries[String(fork)] = { ...DEFAULT, parent };
     expect(index).toEqual({ topics: {}, conversations: entries });
     expect(index.conversations[String(owned)]).toBeUndefined();
-    expect(first.commits()).toBeGreaterThan(0);
     await close();
 
     const second = countingCommitsOf(await openNodeSqliteStorage(path));
-    session = await openSession(second.storage, SESSION_OPTIONS);
-    expect(await indexOf(session.harness)).toEqual(index);
+    opened = await openFauxHarness(second.storage, {
+      resume: false,
+      conversationCreated: indexConversation,
+    });
+    await backfillIndex(opened.harness);
+    expect(await indexOf(opened.harness)).toEqual(index);
     expect(second.commits()).toBe(0);
   } finally {
     await close();
@@ -272,7 +276,11 @@ it("restores a backfilled fork's missing parent, keeping its topic and every oth
   await test.harness.commit(async (tx) => {
     const index = await tx.doc(IndexDocument);
     index.conversations[String(parent)] = DEFAULT;
-    const titled: IndexEntry & { title: string } = { topic: "work", title: "kept" };
+    const titled: IndexEntry & { title: string } = {
+      topic: "work",
+      title: "kept",
+      toolset: "interactive",
+    };
     index.conversations[String(fork)] = titled;
   }, context);
   await backfillIndex(test.harness);
@@ -280,5 +288,6 @@ it("restores a backfilled fork's missing parent, keeping its topic and every oth
     topic: "work",
     title: "kept",
     parent,
+    toolset: "interactive",
   });
 });

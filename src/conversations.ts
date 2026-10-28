@@ -37,7 +37,13 @@ import {
   writeCreated,
   writeTopicRecord,
 } from "./topics.ts";
-import { PROFILE_TOOLSETS, type ProfileToolsets, selectionOf, toolsetList } from "./toolsets.ts";
+import {
+  PROFILE_TOOLSETS,
+  type ProfileToolsets,
+  requireAllowed,
+  selectionOf,
+  toolsetList,
+} from "./toolsets.ts";
 
 /** The daemon's creation defaults; `cwd` is required so the fallback is always a string. */
 export type ConversationDefaults = AgentChange & { cwd: string };
@@ -121,9 +127,7 @@ export function toolsetInit(
   return async (tx, conversationId) => {
     const toolset = await writeCreated(tx, conversationId, topic, (record) => {
       const chosen = record?.toolset ?? policy.default;
-      if (!policy.allowed.includes(chosen)) {
-        throw new Error(`toolset ${chosen} is not allowed on profile ${profile}`);
-      }
+      requireAllowed(chosen, profile, policy);
       return chosen;
     });
     await configure(tx, conversationId, { extensions: selectionOf(toolsetList(toolset, profile)) });

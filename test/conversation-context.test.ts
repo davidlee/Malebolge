@@ -7,7 +7,7 @@
 import type { ConversationId } from "@earendil-works/pi-durable";
 import { expect, it } from "vitest";
 import type { Profile } from "../src/config.ts";
-import { isConversationKey } from "../src/conversations.ts";
+import { isConversationKey, toolsetInit } from "../src/conversations.ts";
 import {
   type ConversationContext,
   contextOf,
@@ -16,13 +16,14 @@ import {
   type SatanKind,
   satanIdentity,
 } from "../src/conversation-context.ts";
+import { context } from "../src/context.ts";
 import { DEFAULT_TOPIC } from "../src/protocol.ts";
 import {
-  assignTopic,
   type IndexDoc,
   type IndexEntry,
   IndexDocument,
   type IndexReader,
+  writeEntry,
 } from "../src/topics.ts";
 import {
   createConversation,
@@ -75,7 +76,7 @@ const ROWS: Record<string, Row> = {
   "a fork": {
     profile: "host",
     cwd: "/home/david/malebolge",
-    context: conversationOf(12, { topic: "work", parent: 7 }),
+    context: conversationOf(12, { topic: "work", parent: 7, toolset: "interactive" }),
     expected: {
       SATAN_HARNESS: "malebolge",
       SATAN_PROFILE: "host",
@@ -88,7 +89,7 @@ const ROWS: Record<string, Row> = {
   "a non-fork": {
     profile: "room",
     cwd: "/home/room",
-    context: conversationOf(9, { topic: "work" }),
+    context: conversationOf(9, { topic: "work", toolset: "interactive" }),
     expected: {
       SATAN_HARNESS: "malebolge",
       SATAN_PROFILE: "room",
@@ -123,17 +124,21 @@ it("reads root's entry in the default topic", async () => {
   const test = await openIndexedHarness();
   expect(await contextOf(test.harness, test.root.id)).toEqual({
     id: test.root.id,
-    entry: { topic: DEFAULT_TOPIC },
+    entry: { topic: DEFAULT_TOPIC, toolset: "interactive" },
   });
 });
 
 it("reads a fork's own id, its topic and its parent", async () => {
   const test = await openIndexedHarness();
-  const parent = await createConversation(test.harness, assignTopic("work"));
+  const parent = await createConversation(test.harness, toolsetInit("room", "work"));
   const forked = await forkConversation(test.harness, parent);
+  // Forks are unsupported (refused at startup, IMP-017): write the toolset a reconcile would.
+  await test.harness.commit(async (tx) => {
+    writeEntry(await tx.doc(IndexDocument), forked.id, { topic: "work", toolset: "interactive" });
+  }, context);
   expect(await contextOf(test.harness, forked.id)).toEqual({
     id: forked.id,
-    entry: { topic: "work", parent: parent.id },
+    entry: { topic: "work", parent: parent.id, toolset: "interactive" },
   });
 });
 
@@ -156,7 +161,7 @@ it("takes an inherited name as no entry: the lookup is own-key", async () => {
 });
 
 it("draws the line with the entry's topic", () => {
-  expect(conversationLine(conversationOf(12, { topic: "satan-db" }))).toBe(
+  expect(conversationLine(conversationOf(12, { topic: "satan-db", toolset: "interactive" }))).toBe(
     "Conversation: 12 (topic: satan-db)",
   );
 });

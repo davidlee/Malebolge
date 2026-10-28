@@ -8,6 +8,8 @@ import {
   fauxText,
 } from "@earendil-works/pi-ai/providers/faux";
 import {
+  AgentDoc,
+  type ConversationId,
   defineExtension,
   defineTask,
   defineTool,
@@ -20,17 +22,32 @@ import { NodeExecutionEnv } from "@earendil-works/pi-durable/env/node";
 import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite/node";
 import { CodingTools } from "@earendil-works/pi-durable/tools";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { Profile } from "../src/config.ts";
 import { context } from "../src/context.ts";
 import { registryOf } from "../src/registry.ts";
-import { openSession, type Session } from "../src/session.ts";
+import type { Log } from "../src/satan-tools.ts";
+import { openSession, type Session, type SessionOptions } from "../src/session.ts";
+import {
+  IndexDocument,
+  indexConversation,
+  readIndex,
+  storedEntry,
+  writeEntry,
+  writeTopicRecord,
+} from "../src/topics.ts";
+import { PROFILE_TOOLSETS, selectionOf, toolsetList } from "../src/toolsets.ts";
 import { tempDir } from "./fixtures.ts";
 import {
   callThenAnswer,
+  createConversation,
+  createTaskOwned,
   FAUX_MODEL,
   fakeClock,
   fauxModels as scriptedModels,
+  forkConversation,
   indexOf,
   openFauxHarness,
+  type TestHarness,
   textOf,
   toolResults,
 } from "./harness-fixture.ts";
@@ -90,6 +107,8 @@ describe("openSession", () => {
         models: fauxModels(answers),
         registry: registryOf([]),
         agent: { model: FAUX_MODEL, cwd: tmp.dir },
+        profile: "room",
+        log: () => undefined,
         env: nodeEnv,
       });
 
@@ -117,6 +136,8 @@ describe("openSession", () => {
         models: fauxModels([]),
         registry: registryOf([]),
         agent: { model: FAUX_MODEL, cwd },
+        profile: "room",
+        log: () => undefined,
         env: nodeEnv,
       });
     await (await open("/first")).harness.close(context);
@@ -139,6 +160,8 @@ describe("openSession", () => {
         asked.push(state.cwd);
         return nodeEnv(state);
       },
+      profile: "room",
+      log: () => undefined,
     });
 
     await (await session.root.submit({ type: "input", content: "go" }, context)).wait(context);
@@ -164,6 +187,8 @@ describe("openSession", () => {
         models: scripted.models,
         registry: satanWith("first"),
         agent: { model: FAUX_MODEL, cwd: tmp.dir },
+        profile: "room",
+        log: () => undefined,
         env: nodeEnv,
       });
       // The first provider step blocks, so the close leaves the turn in `request`.
@@ -180,6 +205,8 @@ describe("openSession", () => {
         models: again.models,
         registry: reopen,
         agent: { model: FAUX_MODEL, cwd: tmp.dir },
+        profile: "room",
+        log: () => undefined,
         env: nodeEnv,
       });
       try {
@@ -260,6 +287,8 @@ describe("openSession", () => {
           models: fauxModels([]),
           registry,
           agent: { model: FAUX_MODEL, cwd: tmp.dir },
+          profile: "room",
+          log: () => undefined,
           env: nodeEnv,
           now: clock.now,
           beforeResume: (session) => {
@@ -288,5 +317,200 @@ describe("openSession", () => {
       await second.harness.close(context);
       expect(seen.map((s) => s.ran)).toEqual([0, 0]);
     });
+  });
+});
+
+/**
+ * Startup reconcile (design sec-3 "Startup reconcile"; plan VT-1 = design VT-5,
+ * VT-2 = design VT-3's root part): it runs in `openSession` after the backfill and
+ * before `resume()`, refuses forks and task-owned conversations, backfills an
+ * entry's toolset, and re-derives every stored list from its toolset.
+ */
+describe("startup reconcile", () => {
+  let cleanup: (() => Promise<void>) | undefined;
+  afterEach(() => cleanup?.());
+
+  /** A fresh tempDir store path, and its directory (the agent cwd). */
+  const store = async (): Promise<{ path: string; dir: string }> => {
+    const tmp = await tempDir();
+    cleanup = tmp.cleanup;
+    return { path: join(tmp.dir, "session.sqlite"), dir: tmp.dir };
+  };
+
+  /** `openSession` on `path`, with the reconcile's profile and log. */
+  const open = async (
+    path: string,
+    dir: string,
+    profile: Profile,
+    log: Log = () => undefined,
+  ): Promise<Session> =>
+    openSession(await openNodeSqliteStorage(path), {
+      models: fauxModels([]),
+      registry: registryOf([]),
+      agent: { model: FAUX_MODEL, cwd: dir },
+      env: nodeEnv,
+      profile,
+      log,
+    });
+
+  /** A harness opened the way `openSession` opens one, but without the reconcile. */
+  const rawStore = async (path: string): Promise<TestHarness> =>
+    openFauxHarness(await openNodeSqliteStorage(path), {
+      conversationCreated: indexConversation,
+      resume: false,
+    });
+
+  /** `id`'s stored agent selection: what a reconcile writes in step 3. */
+  const storedExtensions = (harness: Session["harness"], id: ConversationId): Promise<unknown> =>
+    harness.commit(async (tx) => {
+      const extensions = (await tx.doc(AgentDoc, id)).extensions;
+      // Materialized inside the commit: a draft's value is a settled overlay afterwards.
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-return -- a JSON round-trip, typed as the caller's unknown
+      return extensions === undefined ? undefined : JSON.parse(JSON.stringify(extensions));
+    }, context);
+
+  /** `id`'s index entry's toolset, as any index reader sees it. */
+  const entryToolset = async (
+    harness: Session["harness"],
+    id: ConversationId,
+  ): Promise<string | undefined> => storedEntry(await readIndex(harness), id)?.toolset;
+
+  it("backfills an entry written without a toolset with the profile default", async () => {
+    const { path, dir } = await store();
+    const raw = await rawStore(path);
+    const rootId = raw.root.id;
+    expect(await entryToolset(raw.harness, rootId)).toBeUndefined();
+    await raw.harness.close(context);
+
+    const session = await open(path, dir, "host");
+    expect(await entryToolset(session.harness, rootId)).toBe(PROFILE_TOOLSETS.host.default);
+    await session.harness.close(context);
+  });
+
+  it("re-derives a conversation's list from its toolset, logs the change once, then stays quiet", async () => {
+    const { path, dir } = await store();
+    const first = await open(path, dir, "room");
+    const conversation = await createConversation(first.harness);
+    const id = conversation.id;
+    await conversation.configure({ extensions: selectionOf(["persona"]) }, context);
+    await first.harness.close(context);
+
+    const changed = vi.fn<Log>();
+    const second = await open(path, dir, "room", changed);
+    expect(await storedExtensions(second.harness, id)).toEqual([
+      ...toolsetList("interactive", "room"),
+    ]);
+    expect(changed).toHaveBeenCalledWith(
+      `conversation ${String(id)}: toolset interactive list changed`,
+    );
+    await second.harness.close(context);
+
+    const quiet = vi.fn<Log>();
+    const third = await open(path, dir, "room", quiet);
+    expect(quiet).not.toHaveBeenCalled();
+    await third.harness.close(context);
+  });
+
+  it("refuses a topic whose toolset the profile does not allow", async () => {
+    const { path, dir } = await store();
+    const raw = await rawStore(path);
+    await writeTopicRecord(raw.harness, "inbox", { toolset: "mail" });
+    await raw.harness.close(context);
+
+    await expect(open(path, dir, "host")).rejects.toThrow(
+      "topic inbox: toolset mail is not allowed on profile host",
+    );
+  });
+
+  it("refuses an entry whose toolset the profile does not allow", async () => {
+    const { path, dir } = await store();
+    const raw = await rawStore(path);
+    const rootId = raw.root.id;
+    await raw.harness.commit(async (tx) => {
+      writeEntry(await tx.doc(IndexDocument), rootId, { topic: "default", toolset: "mail" });
+    }, context);
+    await raw.harness.close(context);
+
+    await expect(open(path, dir, "host")).rejects.toThrow(
+      `conversation ${String(rootId)}: toolset mail is not allowed on profile host`,
+    );
+  });
+
+  it("refuses a fork, names it, and leaves the backfill uncommitted", async () => {
+    const { path, dir } = await store();
+    const raw = await rawStore(path);
+    const rootId = raw.root.id;
+    const parent = await createConversation(raw.harness);
+    const forked = await forkConversation(raw.harness, parent);
+    await raw.harness.close(context);
+
+    await expect(open(path, dir, "room")).rejects.toThrow(
+      `conversation ${String(forked.id)}: forks are not supported`,
+    );
+
+    // The refusal threw, so the reconcile's backfill and list writes rolled back.
+    const reopened = await rawStore(path);
+    expect(await storedExtensions(reopened.harness, forked.id)).toBeUndefined();
+    expect(await entryToolset(reopened.harness, rootId)).toBeUndefined();
+    expect(await entryToolset(reopened.harness, parent.id)).toBeUndefined();
+    await reopened.harness.close(context);
+  });
+
+  it("refuses a task-owned conversation, names it, and leaves root's entry unbackfilled", async () => {
+    const { path, dir } = await store();
+    const raw = await rawStore(path);
+    const rootId = raw.root.id;
+    const owned = await createTaskOwned(raw);
+    await raw.harness.close(context);
+
+    await expect(open(path, dir, "room")).rejects.toThrow(
+      `conversation ${String(owned)}: task-owned conversations are not supported`,
+    );
+
+    const reopened = await rawStore(path);
+    expect(await storedExtensions(reopened.harness, owned)).toBeUndefined();
+    expect(await entryToolset(reopened.harness, rootId)).toBeUndefined();
+    await reopened.harness.close(context);
+  });
+
+  it.each(["room", "host"] as const)(
+    "gives root the %s profile's default toolset list after a restart",
+    async (profile) => {
+      const { path, dir } = await store();
+      const first = await open(path, dir, profile);
+      await first.harness.close(context);
+
+      const second = await open(path, dir, profile);
+      expect(await storedExtensions(second.harness, second.root.id)).toEqual([
+        ...toolsetList(PROFILE_TOOLSETS[profile].default, profile),
+      ]);
+      await second.harness.close(context);
+    },
+  );
+
+  it("overrides root's configured list on restart (negative control)", async () => {
+    const { path, dir } = await store();
+    const first = await open(path, dir, "room");
+    await first.root.configure({ extensions: selectionOf(["persona"]) }, context);
+    await first.harness.close(context);
+
+    const second = await open(path, dir, "room");
+    expect(await storedExtensions(second.harness, second.root.id)).toEqual([
+      ...toolsetList("interactive", "room"),
+    ]);
+    await second.harness.close(context);
+  });
+
+  it("types SessionOptions.agent without extensions, so no caller writes root's list", () => {
+    const options: SessionOptions = {
+      models: fauxModels([]),
+      registry: registryOf([]),
+      // @ts-expect-error openSession must not write root's list: the reconcile alone does.
+      agent: { model: FAUX_MODEL, extensions: selectionOf(["persona"]) },
+      env: nodeEnv,
+      profile: "room",
+      log: () => undefined,
+    };
+    expect(options).toBeDefined();
   });
 });

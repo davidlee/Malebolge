@@ -23,12 +23,12 @@ import {
   conversations,
   isConversationKey,
   LIST_PAGE,
+  toolsetInit,
 } from "../src/conversations.ts";
 import { type Daemon, serve } from "../src/daemon.ts";
 import { isRecord } from "../src/json.ts";
 import { encodeLine } from "../src/ndjson.ts";
 import type { ConversationsMessage, TopicSummary, TopicsMessage } from "../src/protocol.ts";
-import { assignTopic } from "../src/topics.ts";
 import { type Printable, toPrintable } from "../src/render.ts";
 import { registryOf } from "../src/registry.ts";
 import { satanTools } from "../src/satan-tools.ts";
@@ -868,7 +868,7 @@ describe("daemon", () => {
     await replyTo({ type: "topic", name: "many" }, isTopics);
     for (let made = 0; made < LIST_PAGE + 1; made += 1) {
       await test.harness.createConversation(
-        { ownership: { kind: "ownerless" }, init: assignTopic("many") },
+        { ownership: { kind: "ownerless" }, init: toolsetInit("room", "many") },
         context,
       );
     }
