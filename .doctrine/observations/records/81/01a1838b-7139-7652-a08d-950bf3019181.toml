@@ -1,0 +1,18 @@
+schema = "doctrine.observation"
+schema_version = 1
+uid = "01a1838b-7139-7652-a08d-950bf3019181"
+recorded_at = "2026-10-28T17:25:16.217232242Z"
+kind = "friction"
+summary = "repo-local biome binary missing in pi sandbox"
+detail = "node_modules/@biomejs/cli-linux-x64/biome absent; npx biome fails ENOENT in the pi form. Workers fell back to nix biome 2.5.15 on PATH (same version). Host gate unaffected."
+
+[facets.execution]
+schema_version = 1
+interface = "cli"
+interface_origin = "automatic"
+product_surface = "doctrine"
+product_surface_origin = "automatic"
+command = "observation record"
+command_origin = "automatic"
+repository_context = "primary"
+repository_context_origin = "automatic"
