@@ -315,6 +315,13 @@ Standing rulings from the operator (tier 1), binding on every charter:
   root: hand them spec files under `.doctrine/state/slice/005/`, not the
   session scratchpad. biome is on PATH in the forms: tell workers to run
   `biome format --write <their files>`.
+- A targeted test run (`npx vitest run test/mail`) fails the global 85%
+  coverage threshold: workers add `--coverage.enabled=false`. A phase that
+  touches `package.json` or the lockfile also runs `nix build .#runner`
+  (`just check` does not see a stale `npmDepsHash`).
+- Seat, PHASE-05 autonomy item 1 (typebox declared directly): accepted as
+  in-envelope: design sec-4 and the PHASE-05 objective name TypeBox, and
+  1.3.27 was already locked transitively. Flagged for the operator.
 
 ## Autonomy log
 - PHASE-01: baseline capture committed alone (976262d); conversation-id normalisation narrowed to the `conversation` section (pi's version rewrote the id in every string). Why: EN-2 order checkable from git; avoid a false match on id "1". Tier: decide.
