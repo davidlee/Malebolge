@@ -336,7 +336,7 @@ describe("argv", () => {
       after: "",
       limit: 3,
       maxBytes: 100,
-      since: "2026-10-01T00:00:00Z",
+      since: "2026-10-01",
       filters: { mailbox: "mbx1", unread: true, from: "ada@example.com" },
     });
     await source.readAfter({ after: "5:x", limit: 3, maxBytes: 100, filters: {} });
@@ -351,7 +351,7 @@ describe("argv", () => {
         "--max-bytes",
         "100",
         "--since",
-        "2026-10-01T00:00:00Z",
+        "2026-10-01",
         "--mailbox",
         "mbx1",
         "--unread",

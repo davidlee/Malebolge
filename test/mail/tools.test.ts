@@ -262,21 +262,28 @@ describe("VT-1 mail tools refuse bad input before any port call", () => {
       const source = fakeMailSource({ readAfter: [] });
       const outcome = await run(source, "mail_new", {
         after: "1793120280000:Msg1",
-        since: "2026-10-27T00:00:00Z",
+        since: "2026-10-27",
       });
       expectRefused(outcome, 'mail_new: since is only allowed with after ""', source);
     });
 
-    it.each(["yesterday", "2026-10-27", "2026-10-27T00:00:00", "2026-13-40T00:00:00Z", ""])(
-      "refuses since %j that is not an RFC 3339 time",
-      async (since) => {
-        const source = fakeMailSource({ readAfter: [] });
-        const outcome = await run(source, "mail_new", { after: "", since });
-        expectRefused(outcome, "mail_new: since must be an RFC 3339 time", source);
-      },
-    );
+    // Screwtape's --since is a calendar date, read as midnight UTC (its README).
+    it.each([
+      "yesterday",
+      "2026-10-27T00:00:00Z",
+      "2026-13-01",
+      "2026-02-30",
+      "26-10-27",
+      "2026-1-27",
+      "",
+      20261027,
+    ])("refuses since %j that is not a YYYY-MM-DD date", async (since) => {
+      const source = fakeMailSource({ readAfter: [] });
+      const outcome = await run(source, "mail_new", { after: "", since });
+      expectRefused(outcome, "mail_new: since must be a date, YYYY-MM-DD", source);
+    });
 
-    it.each(["2026-10-27T00:00:00Z", "2026-10-27T10:00:00.5+10:00"])(
+    it.each(["2026-10-27", "2024-02-29"])(
       'passes since %j with after "" to the port',
       async (since) => {
         const { source } = await runWith({ readAfter: [] }, "mail_new", { after: "", since });
@@ -296,7 +303,7 @@ describe("VT-1 mail tools refuse bad input before any port call", () => {
       });
       const full = await runWith({ readAfter: [] }, "mail_new", {
         after: "",
-        since: "2026-10-27T00:00:00Z",
+        since: "2026-10-27",
         limit: 5,
         max_bytes: 2048,
         mailbox: "mbx1",
@@ -305,7 +312,7 @@ describe("VT-1 mail tools refuse bad input before any port call", () => {
       });
       expect(onlyQuery(full.source)).toStrictEqual({
         after: "",
-        since: "2026-10-27T00:00:00Z",
+        since: "2026-10-27",
         limit: 5,
         maxBytes: 2048,
         filters: { mailbox: "mbx1", unread: true, from: "bob@example.com" },

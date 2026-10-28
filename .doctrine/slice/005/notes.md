@@ -442,3 +442,13 @@ store. Adjudicated:
 - **Untested live:** `held_back` (no message dated in the future).
 - **Not shown in the paste:** that the conversation listed only the mail
   tools (VH-1 part 1).
+- **Fixed before audit** (operator: "yes do those before audit"): `since` is
+  now a `YYYY-MM-DD` date (`isUtcDate` in `source.ts`, with a round trip so
+  `2026-02-30` is refused), in the check, the schema and the description;
+  VT-9's cases follow it; the opt-in smoke passes a `since` to the real
+  binary. `mail_mailboxes`' description says its counts are the server's.
+  `prompts/mail.txt` (installed and draft, identical) gains two lines:
+  `mail_thread` has no bodies, and the mirror is a window. Design sec-4's
+  "the contract's date form" was right; the implementation was not. Gate
+  3234/3234; live smoke 5/5. VH-1 part 1 (only the mail tools listed): the
+  operator confirmed it.

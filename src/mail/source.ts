@@ -49,6 +49,15 @@ export function isRfc3339(value: string): boolean {
   return RFC3339.test(value) && !Number.isNaN(Date.parse(value));
 }
 
+const UTC_DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+/** Whether `value` is a calendar date, `YYYY-MM-DD`: Screwtape's `--since`. */
+export function isUtcDate(value: string): boolean {
+  // Date.parse rolls an overflowing day over (02-30 is 03-02); the round trip refuses it.
+  const ms = UTC_DATE.test(value) ? Date.parse(`${value}T00:00:00Z`) : Number.NaN;
+  return !Number.isNaN(ms) && new Date(ms).toISOString().slice(0, 10) === value;
+}
+
 // ---------------------------------------------------------------- schemas
 
 const Id = Type.String({ pattern: JMAP_ID.source, minLength: 1, maxLength: 255 });

@@ -17,7 +17,7 @@ import { type Clamp, renderMailboxes, renderPage } from "./render.ts";
 import {
   isCanonicalCursor,
   isJmapId,
-  isRfc3339,
+  isUtcDate,
   type MailFilters,
   type MailSource,
   MailSourceError,
@@ -146,8 +146,8 @@ function sinceOf(raw: unknown, after: string): string | undefined {
   if (after !== "") {
     throw new MailInputError('mail_new: since is only allowed with after ""');
   }
-  if (typeof raw !== "string" || !isRfc3339(raw)) {
-    throw new MailInputError("mail_new: since must be an RFC 3339 time");
+  if (typeof raw !== "string" || !isUtcDate(raw)) {
+    throw new MailInputError("mail_new: since must be a date, YYYY-MM-DD");
   }
   return raw;
 }
@@ -215,7 +215,11 @@ const Count = (description: string): TSchema => Type.Integer({ description });
 
 const NEW_PARAMETERS = Type.Object({
   after: Type.String({ description: '"" to start, or the header\'s next' }),
-  since: Type.Optional(Type.String({ description: 'An RFC 3339 time; only with after ""' })),
+  since: Type.Optional(
+    Type.String({
+      description: 'A date, YYYY-MM-DD: mail from midnight UTC that day; only with after ""',
+    }),
+  ),
   limit: Type.Optional(Count("Messages per page (1-20)")),
   max_bytes: Type.Optional(Count("Bytes per body (512-8192)")),
   mailbox: Type.Optional(Id("A mailbox id from mail_mailboxes")),
@@ -242,7 +246,7 @@ const LIST_PARAMETERS = Type.Object({
 });
 
 const NEW_DESCRIPTION =
-  'Read new mail in arrival order, from a cursor. Pass after "" to start (with since, an RFC 3339 time, to skip older mail), then pass the header\'s next back as after. caught_up: true means nothing more is waiting now. A message dated more than 10 minutes ahead is shown with held_back: true and not passed; it returns on later calls. limit 1-20 (default 10); max_bytes 512-8192 (default 4096, at most 40960 / limit) bounds each body. Filters: mailbox (an id from mail_mailboxes), unread, from. If a call fails as over 4 MiB, retry with limit 1.';
+  'Read new mail in arrival order, from a cursor. Pass after "" to start (with since, a date YYYY-MM-DD, to skip mail before midnight UTC that day), then pass the header\'s next back as after. caught_up: true means nothing more is waiting now. A message dated more than 10 minutes ahead is shown with held_back: true and not passed; it returns on later calls. limit 1-20 (default 10); max_bytes 512-8192 (default 4096, at most 40960 / limit) bounds each body. Filters: mailbox (an id from mail_mailboxes), unread, from. If a call fails as over 4 MiB, retry with limit 1.';
 
 const READ_DESCRIPTION =
   "Read one message by id: its headers, attachments list and body. max_bytes 1024-32768 (default 16384) bounds the body.";
@@ -254,7 +258,7 @@ const LIST_DESCRIPTION =
   "List messages newest first, a page at a time: limit 1-40 (default 20), offset 0-10000. Offset paging shifts when new mail syncs between calls, so a page can repeat or skip messages; use mail_new to follow new mail. Filters: mailbox (an id from mail_mailboxes), unread, from. If a call fails as over 4 MiB, retry with limit 1.";
 
 const MAILBOXES_DESCRIPTION =
-  "List the mailboxes: their ids (for the mailbox filter), names, roles and message counts.";
+  "List the mailboxes: their ids (for the mailbox filter), names, roles and message counts. The counts are the mail server's; the other tools read a local mirror of a configured window of mail, so a mailbox can count messages they cannot reach.";
 
 interface MailToolSpec {
   readonly name: string;

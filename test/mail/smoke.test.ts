@@ -27,7 +27,7 @@ import { NodeExecutionEnv } from "@earendil-works/pi-durable/env/node";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { isRecord } from "../../src/json.ts";
 import { screwtapeSource } from "../../src/mail/screwtape.ts";
-import { type MailSource, MailSourceError } from "../../src/mail/source.ts";
+import { isUtcDate, type MailSource, MailSourceError } from "../../src/mail/source.ts";
 
 const ENABLED = process.env["MALEBOLGE_MAIL_SMOKE"] === "1";
 
@@ -161,6 +161,19 @@ describe.skipIf(!ENABLED)("mail smoke: the real screwtape on a copy of the store
       });
       expect(next.length).toBeLessThanOrEqual(3);
     }
+  });
+
+  it("accepts a since in the form mail_new checks (VH-1 found the two disagreeing)", async () => {
+    const since = "2026-10-01";
+    expect(isUtcDate(since)).toBe(true);
+    const arrivals = await smoke.source.readAfter({
+      after: "",
+      since,
+      limit: 1,
+      maxBytes: 512,
+      filters: {},
+    });
+    expect(arrivals.length).toBeLessThanOrEqual(1);
   });
 
   it("a usage error carries screwtape's reason code (the PHASE-06 diagnostic)", async () => {
