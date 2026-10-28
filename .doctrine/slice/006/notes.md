@@ -113,6 +113,39 @@ Also noted by me: `verify-vt` shows some keywords already present (non-distincti
 
 Next: disposition under /feedback (verify F1, F2, F4 against the tree first), revise plan, commit, then Sol via codex:ask (operator's order: pi, then Sol), then `slice phases`, `slice status ready`, /super-orchestrator.
 
+### Plan review dispositions (round 1, pi)
+
+Plan restructured (still 8 phases): old PHASE-02 (DEC-042) dissolved into a new PHASE-03 that runs the
+queue premises first, then DEC-042 (arbiter ruling on F14); tombstones moved from the post-task phase
+to the caps phase; caps now precede start/fork. New order: 01 seams, 02 index, 03 premises + DEC-042,
+04 post task, 05 thread_post + wiring, 06 tombstones/caps/reap, 07 start + fork, 08 visibility.
+
+- F1 accept. `test/wake-heartbeat.test.ts:274-308` `behindFailure` asserts `queued` after `model_error`; the wake fixture opens through `openSession` (`test/wake-fixture.ts:201`), so DEC-042 reaches it. PHASE-03 EN-2 enumerates every keep-pinning case (grep, with both files as positive control); EX-3 rewrites both recipes; VT-4 pins the heartbeat rewrite.
+- F2 accept-modified. 8 call sites confirmed (`wake-heartbeat.test.ts` 7, `daemon-start.ts:90`); journal lines live in `src/wake/sweep.ts:61,63`. PHASE-01 EX-2 now says call sites change, assertions stay byte-identical, the wake row is a factory over WakeDeps + IndexReader. Design-drift item if SweptKind needs a journal noun.
+- F3 accept-modified. `Origin`/`originKey` land in PHASE-04, in `admission.ts` (the design's home), imported as a type; no new module.
+- F4 accept-modified. Baseline exact-equality confirmed (`test/toolsets.test.ts:138-146`), but the fixture says "never regenerate": PHASE-05 EX-4 compares the snapshot without `threads` and pins the delta instead. `daemonExtensions` sites are 6, not 11 (`daemon-sections` uses a shared `HOST` const at 34): listed in EX-3. `threads` stays required, mirroring `tasks` per design.
+- F5 accept. PHASE-03 EX-1: premises drive raw `Conversation.submit`/`abortSubmission` on the wake fixture; design titles kept for traceability.
+- F6 accept-modified. Not split in two as proposed; instead premises moved out (PHASE-03) and tombstones moved to the reap phase (PHASE-06), which owns everything about a reap.
+- F7 accept. No settings reader in pi-durable's harness `.d.ts`. Tautological VT dropped; DEC-042 is verified behaviourally (PHASE-03 VT-3..VT-5); `followUpMode` is pinned behaviourally by VT-1 running on `openSession`'s harness.
+- F8 accept-modified. No faulting recipe in `test/wake-fixture.ts` (only `failingOnce` 605, `heldUntilCutOff` 516). PHASE-04 EN-2: find one first (scheduler faults a throwing invocation, `scheduler.js:1761`); if none, consult, never waive silently.
+- F9 accept. Keywords now `"placed in the next run"`, `"no further input"`.
+- F10 accept. Split: `test/conversations.test.ts` and `test/wake-tools.test.ts` rows (PHASE-02 VT-2, VT-3).
+- F11 accept. Constants created in PHASE-05 (in thread_post's description), used by `verdict` in PHASE-06. The admit-everything stub is dropped: no tool reaches PHASE-06 needing a stub's signature.
+- F12 accept-modified. `test/structure.test.ts` has an allowlist mechanism (tiers, `ROOM_DOOR_READERS`); PHASE-01 EX-4 adds the design's coupling rules there, unconditionally, with checker cases.
+- F13 accept (observation confirmed: two forms, plus the start form). PHASE-01 EX-3 quotes all three verbatim. Design-drift item: `requireSameTalkSet(profile, caller, target)` has no target label, which the texts need.
+- F14 accept per arbiter ruling. DEC-042 lands in PHASE-03 after premises (b)/(c); no tree evidence that placement cannot work (premises do not depend on `afterFailedRun`). F1 applied there.
+- F15 accept. Journal VT keywords added: PHASE-04 VT-9, PHASE-05 VT-6, PHASE-06 VT-11, PHASE-07 VT-7.
+- Also: every VT keyword grepped absent from `src/ test/ emacs/` (positive control: the same grep finds the existing title "records each create's toolset" in `test/conversations.test.ts`). Old PHASE-05 EX-5's DEC-024 guard claim was wrong (thread_post creates no conversation); the guard now gains start/fork in PHASE-07. Old EX-5's restart-reconcile log check dropped: existing `test/session.test.ts:390-404` already pins the mechanism.
+
+Design-drift items for audit: (1) SweptKind may need a journal noun; (2) `requireSameTalkSet` needs a target label;
+(3) the design says "rewritten in the post phase" for DEC-042's test rewrites; the plan puts them in the
+premises phase immediately before the post-task phase.
+
+Arbiter rulings (seat, operator asleep; reversible, logged for audit):
+- F14: DEC-042 follows the premise (b)/(c) tests (design placement); premises get their own phase (PHASE-03) ahead of the post task. Design-drift item 3 for audit.
+- Uncapped window PHASE-05..PHASE-06 accepted: intermediate commits only; don't run the daemon from a PHASE-05 commit.
+- Spot-check: `daemonExtensions(` has ~10 test call sites (daemon-sections 6, daemon-start 3, toolsets 1), not 6; the plan must hold whichever way `DaemonParts.threads` is threaded.
+
 ## Harvest
 <!-- single-copy: updated in place each harvest; ids only, never restated content -->
 fresh-as-of: 2026-10-29 · plan authored (not yet ready), pi review findings recorded · head 3efcd6c + this notes edit

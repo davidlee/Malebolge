@@ -15,22 +15,24 @@ dependencies = []
 # ---------------------------------------------------------------------------
 [[phase]]
 id        = "PHASE-01"
-name      = "Seams: late binding, neutral sweep, talk sets"
-objective = "Land the behaviour-neutral seams the threads module needs, and the one pure policy table: lateBinding replaces wakeBinding, the blocked-task start sweep becomes a per-kind table, and TALK_SETS/requireSameTalkSet exist. No thread tool, no new extension, no change a wake or operator can observe."
+name      = "Seams: late binding, neutral sweep, talk sets, module boundaries"
+objective = "Land the behaviour-neutral seams the threads module needs, and the one pure policy table: lateBinding replaces wakeBinding, the blocked-task start sweep becomes a per-kind table with wake as its one row, TALK_SETS/requireSameTalkSet exist, and the structure test states the threads/wake/sweep boundaries. No thread tool, no new extension, no change a wake or operator can observe."
 entrance_criteria = [
   { id = "EN-1", text = "Design SL-006 locked (run rev 64); full suite, lint and typecheck green on main." },
 ]
 exit_criteria = [
-  { id = "EX-1", text = "src/late-binding.ts exports lateBinding<Early, Late>(name); wakeBinding is a use of it; no second copy of the two-step binding remains (DRY)." },
-  { id = "EX-2", text = "src/task-sweep.ts exports SweptKind and sweepBlockedTasks; src/wake/sweep.ts shrinks to wake's SweptKind row; daemon-start passes the wake row. Neither src/wake nor the sweep imports threads, and the sweep imports neither." },
-  { id = "EX-3", text = "src/toolsets.ts exports TalkSet, TALK_SETS (room: interactive; host: empty) and requireSameTalkSet with the design's two refusal texts naming both toolsets." },
-  { id = "EX-4", text = "Existing wake sweep and heartbeat tests pass unchanged in behaviour (moved, not rewritten)." },
+  { id = "EX-1", text = "src/late-binding.ts exports lateBinding<Early, Late>(name); wakeBinding is a use of it; no second copy of the two-step binding remains." },
+  { id = "EX-2", text = "src/task-sweep.ts exports SweptKind and sweepBlockedTasks (design § Components and boundaries). src/wake/sweep.ts shrinks to a factory for wake's row, closing over WakeDeps and the IndexReader its report needs; sweepBlockedWakes is gone. Its 8 call sites (test/wake-heartbeat.test.ts 108, 436, 609, 636, 687, 725, 784; src/daemon-start.ts 90) call sweepBlockedTasks with the wake row. Every journal assertion stays unchanged: 'wake N blocked (reason); aborting' and 'wake N withdrew N queued input(s)' are byte-identical. If the row needs a journal noun the design's SweptKind lacks, add one field and record it in notes.md as a design-drift item." },
+  { id = "EX-3", text = "src/toolsets.ts exports TalkSet, TALK_SETS (room: interactive; host: empty) and requireSameTalkSet. Refusal texts, verbatim from design § Talk sets and the catalog: caller in no set 'toolset mail has no talk set on profile room'; target outside 'conversation 13 (toolset mail) is outside this conversation's talk set (interactive)'; for a start 'topic inbox (toolset mail) is outside this conversation's talk set (interactive)'. requireSameTalkSet takes the target's label (conversation or topic) to produce them; the design's signature has none, so record that in notes.md as a design-drift item." },
+  { id = "EX-4", text = "test/structure.test.ts gains the design's coupling rules as allowlist rules with checker cases: src/wake/ and src/task-sweep.ts import nothing in src/threads/; src/task-sweep.ts imports nothing in src/wake/; src/threads/ imports from src/wake/ only wake/task.ts (WAKE_KIND, EpisodeClass); outside src/threads/ only daemon-extensions.ts, daemon-start.ts and render.ts import it." },
 ]
 verification = [
   { id = "VT-1", expects = "TALK_SETS names only toolsets each profile allows; mail is in no set; host is empty", test_file = "test/toolsets.test.ts", keywords = ["TALK_SETS names only toolsets each profile allows"], waived = false },
-  { id = "VT-2", expects = "requireSameTalkSet refuses mail, host and mixed sets, naming both toolsets", test_file = "test/toolsets.test.ts", keywords = ["requireSameTalkSet refuses mail, host and mixed sets"], waived = false },
-  { id = "VT-3", expects = "the generalised late binding throws when read before both steps and merges early and late once bound", test_file = "test/late-binding.test.ts", keywords = ["lateBinding", "read before"], waived = false },
-  { id = "VT-4", expects = "the wake start-sweep cases still pass through sweepBlockedTasks with the wake row", test_file = "test/task-sweep.test.ts", keywords = ["sweepBlockedTasks", "SweptKind"], waived = false },
+  { id = "VT-2", expects = "requireSameTalkSet refuses mail, host and mixed sets with the verbatim texts", test_file = "test/toolsets.test.ts", keywords = ["requireSameTalkSet refuses mail, host and mixed sets", "has no talk set on profile room"], waived = false },
+  { id = "VT-3", expects = "lateBinding throws when read before both steps and merges early and late once bound", test_file = "test/late-binding.test.ts", keywords = ["lateBinding", "read before both binding steps"], waived = false },
+  { id = "VT-4", expects = "sweepBlockedTasks withdraws, reports and aborts only the listed kinds' blocked tasks", test_file = "test/task-sweep.test.ts", keywords = ["sweepBlockedTasks touches only the listed kinds"], waived = false },
+  { id = "VT-5", expects = "the wake start-sweep cases pass through sweepBlockedTasks with the wake row, journal assertions unchanged", test_file = "test/wake-heartbeat.test.ts", keywords = ["sweepBlockedTasks", "wakeSweptKind"], waived = false },
+  { id = "VT-6", expects = "the structure checker rejects a wake module importing threads and a threads module importing wake beyond wake/task.ts", test_file = "test/structure.test.ts", keywords = ["rejects a wake module importing threads", "rejects threads importing wake beyond its constants"], waived = false },
 ]
 specs        = []
 requirements = []
@@ -38,23 +40,22 @@ requirements = []
 # ---------------------------------------------------------------------------
 [[phase]]
 id        = "PHASE-02"
-name      = "Daemon run policy: a failed run continues (DEC-042)"
-objective = "Open the daemon's harness with DAEMON_SETTINGS (afterFailedRun continue, followUpMode one-at-a-time) and rewrite the wake tests that pinned afterFailedRun keep. Isolated from the thread code because it changes wake and operator-input behaviour daemon-wide: a regression here must be attributable to this phase alone."
+name      = "Index: startedBy, thread predicate, latest skips threads"
+objective = "The conversation index learns which conversations are threads (DEC-037): IndexEntry.startedBy, isThread, markOf, latestIn skipping threads, and toolsetInit's optional StartedThread (with the cwd lookup extracted from creationCwd). Behaviour-neutral in production, since no store yet holds a thread. The fork half of IMP-017 is NOT here; it lands with thread_fork (DEC-033)."
 entrance_criteria = [
   { id = "EN-1", text = "PHASE-01 completed; suite green." },
-  { id = "EN-2", text = "Read test/wake-wait.test.ts behindFailure and VT-1..VT-3: list which cases need an input stuck in the queue, and decide per case between 'placed in the next run' and 'held run instead of a failed one' before editing." },
 ]
 exit_criteria = [
-  { id = "EX-1", text = "src/session.ts exports DAEMON_SETTINGS and passes it to Harness.open; the setting key and value types are confirmed against pi-durable's HarnessSettings." },
-  { id = "EX-2", text = "behindFailure and VT-1..VT-3 in test/wake-wait.test.ts are rewritten: a queued wake input behind a failed run is placed in the next run; cases needing a stuck input get it from a held run. No case is deleted without a stated reason in notes.md." },
-  { id = "EX-3", text = "An operator input queued behind a failed run is answered in the next run (new case: the daemon-wide effect is pinned)." },
-  { id = "EX-4", text = "notes.md records the observed blast radius on wake (heartbeat, one-shot, abort handler) and operator input." },
+  { id = "EX-1", text = "IndexEntry carries optional startedBy; isThread and markOf live beside each other in src/topics.ts; a conversation is a thread exactly when its entry has parent or startedBy." },
+  { id = "EX-2", text = "latestIn skips threads; attach by topic, wake_schedule {topic} and the heartbeat re-creation inherit it; idsIn is unchanged." },
+  { id = "EX-3", text = "toolsetInit(profile, topic, thread?) writes startedBy and runs thread.require on the toolset chosen inside the commit; the cwd lookup is one function used by creationCwd and, later, thread_start." },
+  { id = "EX-4", text = "No fork-toolset hook change and no refuseUnsupported change in this phase (DEC-033)." },
 ]
 verification = [
-  { id = "VT-1", expects = "the session opens with DAEMON_SETTINGS (continue, one-at-a-time)", test_file = "test/session.test.ts", keywords = ["DAEMON_SETTINGS", "afterFailedRun"], waived = false },
-  { id = "VT-2", expects = "a wake's queued input behind a failed run is placed in the next run, with no further input", test_file = "test/wake-wait.test.ts", keywords = ["behindFailure", "next run"], waived = false },
-  { id = "VT-3", expects = "an operator input queued behind a failed run is answered in the next run", test_file = "test/session.test.ts", keywords = ["queued behind a failed run", "operator"], waived = false },
-  { id = "VA-1", expects = "the agent reviews the rewritten wake-wait cases for lost coverage: every behaviour the old cases pinned is pinned by a rewritten case or listed as removed with the reason in notes.md" },
+  { id = "VT-1", expects = "latestIn skips forks and started threads; a topic of threads only has no latest", test_file = "test/topics.test.ts", keywords = ["latestIn skips forks and started threads"], waived = false },
+  { id = "VT-2", expects = "attach by topic lands on the operator-created conversation, not a thread", test_file = "test/conversations.test.ts", keywords = ["attach by topic lands on the operator-created conversation"], waived = false },
+  { id = "VT-3", expects = "wake_schedule {topic} lands on the operator-created conversation, not a thread", test_file = "test/wake-tools.test.ts", keywords = ["wake_schedule {topic} lands on the operator-created conversation"], waived = false },
+  { id = "VT-4", expects = "toolsetInit with a started thread records startedBy and refuses a toolset outside the talk set inside the commit", test_file = "test/conversations.test.ts", keywords = ["toolsetInit with a started thread records startedBy"], waived = false },
 ]
 specs        = []
 requirements = []
@@ -62,21 +63,26 @@ requirements = []
 # ---------------------------------------------------------------------------
 [[phase]]
 id        = "PHASE-03"
-name      = "Index: startedBy, thread predicate, latest skips threads"
-objective = "The conversation index learns which conversations are threads (DEC-037): IndexEntry.startedBy, isThread, markOf, latestIn skipping threads, and toolsetInit's optional StartedThread (with the cwd lookup extracted from creationCwd). The fork half of IMP-017 is NOT here; it lands with thread_fork (DEC-033)."
+name      = "Queue premises, then the daemon run policy (DEC-036, DEC-042)"
+objective = "First prove the two pi-durable queue premises the origin rule and the reap rest on (DEC-036 (b), (c)); only then open the daemon's harness with DAEMON_SETTINGS (afterFailedRun continue, followUpMode one-at-a-time) and rewrite every test that pinned afterFailedRun keep. The premises gate all post work; DEC-042 follows them, as the design places it, so a failed premise leaves nothing daemon-wide landed."
 entrance_criteria = [
   { id = "EN-1", text = "PHASE-01 completed; suite green." },
+  { id = "EN-2", text = "Enumerate every test that pins 'keep': grep test/ for failingOnce, model_error and stopReason \"error\". Positive control: test/wake-wait.test.ts (behindFailure at 113, VT-3a at 313) and test/wake-heartbeat.test.ts (behindFailure at 274, used at 395, 552, 582, 602, 629, 659, 681) must appear. For each case, decide between 'placed in the next run' and 'stuck behind a held run instead of a failed one' before editing; record the list in the phase sheet." },
 ]
 exit_criteria = [
-  { id = "EX-1", text = "IndexEntry carries optional startedBy; isThread and markOf live beside each other in src/topics.ts; a conversation is a thread exactly when its entry has parent or startedBy." },
-  { id = "EX-2", text = "latestIn skips threads; attach by topic, wake_schedule {topic} and the heartbeat re-creation inherit it; idsIn is unchanged." },
-  { id = "EX-3", text = "toolsetInit(profile, topic, thread?) writes startedBy and runs thread.require on the toolset chosen inside the commit; the cwd lookup is one function used by creationCwd and the later thread_start." },
-  { id = "EX-4", text = "No fork-toolset hook change and no refuseUnsupported change in this phase (DEC-033)." },
+  { id = "EX-1", text = "FIRST: VT-1 and VT-2 (premises (b) and (c), design § Verification) are written and pass before any other change of the phase. They drive raw Conversation.submit (whenBusy followUp, post-shaped request ids) and harness.abortSubmission on the wake fixture's openSession harness; no satan.post code exists yet. If either fails, STOP and return to the operator: the design names no fallback, and DAEMON_SETTINGS has not landed." },
+  { id = "EX-2", text = "src/session.ts exports DAEMON_SETTINGS (typed HarnessSettings from pi-durable) and openSession passes it to Harness.open." },
+  { id = "EX-3", text = "Every case EN-2 listed is rewritten: a queued wake input behind a failed run is placed in the next run; a case that needs an input stuck in the queue gets it from a held run. Both behindFailure recipes (test/wake-wait.test.ts, test/wake-heartbeat.test.ts) are replaced. No case is deleted without a stated reason in notes.md." },
+  { id = "EX-4", text = "An operator input queued behind a failed run is answered in the next run (new case: the daemon-wide effect is pinned)." },
+  { id = "EX-5", text = "notes.md records the observed blast radius on wake (heartbeat, one-shot, abort handler, start sweep) and operator input." },
 ]
 verification = [
-  { id = "VT-1", expects = "latestIn skips forks and started threads; a topic of threads only has no latest", test_file = "test/topics.test.ts", keywords = ["latestIn skips forks and started threads"], waived = false },
-  { id = "VT-2", expects = "attach by topic and wake_schedule {topic} land on the operator-created conversation", test_file = "test/conversations.test.ts", keywords = ["attach by topic and wake_schedule"], waived = false },
-  { id = "VT-3", expects = "toolsetInit with a StartedThread records startedBy and refuses a toolset outside the talk set inside the commit", test_file = "test/conversations.test.ts", keywords = ["StartedThread", "startedBy"], waived = false },
+  { id = "VT-1", expects = "premise (b): two follow-ups queued behind a busy recipient are placed in two runs", test_file = "test/queue-premises.test.ts", keywords = ["two posts queued behind a busy recipient are placed in two runs"], waived = false },
+  { id = "VT-2", expects = "premise (c): withdrawing one queued follow-up leaves the other queued", test_file = "test/queue-premises.test.ts", keywords = ["withdrawing one queued post leaves the other queued input in place"], waived = false },
+  { id = "VT-3", expects = "a wake's queued input behind a failed run is placed in the next run, with no further input", test_file = "test/wake-wait.test.ts", keywords = ["placed in the next run", "no further input"], waived = false },
+  { id = "VT-4", expects = "the heartbeat's parked and too-old cases get their stuck input from a held run", test_file = "test/wake-heartbeat.test.ts", keywords = ["behindHeldRun"], waived = false },
+  { id = "VT-5", expects = "an operator input queued behind a failed run is answered in the next run", test_file = "test/session.test.ts", keywords = ["an operator input queued behind a failed run is answered in the next run"], waived = false },
+  { id = "VA-1", expects = "the agent reviews the rewritten wake cases for lost coverage: every behaviour the old cases pinned is pinned by a rewritten case or listed as removed with the reason in notes.md" },
 ]
 specs        = []
 requirements = []
@@ -84,30 +90,31 @@ requirements = []
 # ---------------------------------------------------------------------------
 [[phase]]
 id        = "PHASE-04"
-name      = "The satan.post task: delivery, notices, tombstone check"
-objective = "The durable delivery path, driven by tests through createPostTask before any tool exists: satan.post v1, its unbounded delivery, outcomes, post-failed and family-reaped notices, the abort handler, the sweep row, ThreadsDocument and the tombstone check each post task enforces. First, prove the two queue premises the origin rule and the reap rest on."
+name      = "The satan.post task: delivery, outcomes, notices"
+objective = "The durable delivery path, driven by tests through createPostTask before any tool exists: the Origin data, satan.post v1 with its unbounded delivery and DEC-045 outcomes, the post-failed notice and notice terminality, the abort handler, the satan.post sweep row, and the threads extension skeleton with its test fixture. The tombstone check (design step 1 and the step-5 re-check) is NOT here; it lands with the reap in PHASE-06."
 entrance_criteria = [
-  { id = "EN-1", text = "PHASE-01 and PHASE-02 completed (SweptKind, lateBinding and DAEMON_SETTINGS exist)." },
+  { id = "EN-1", text = "PHASE-03 completed: premises (b) and (c) pass and DAEMON_SETTINGS is in force." },
+  { id = "EN-2", text = "Before VT-4: find a faux recipe that ends a recipient run unanswered (faulted), not model_error (pi-durable dist/harness/live.js:133-155; the scheduler faults a run whose invocation throws, scheduler.js:1761). If none exists without patching pi-durable, consult the orchestrator before writing VT-4; never waive it silently." },
 ]
 exit_criteria = [
-  { id = "EX-1", text = "FIRST: VT-1 and VT-2 (premises b and c, DEC-036) are written and pass before any other code of the phase. If either fails, STOP and return to the operator: the design names no fallback (a failure undermines the origin rule or makes a reap able to harm a co-resident loop)." },
-  { id = "EX-2", text = "src/threads/task.ts: POST_KIND, PostInput, PostState, PostResult, postRequestId, postTask(deps), createPostTask(tx, task, input) owned by input.to in the background; deliver phase per design (tombstone check for letter post, submit followUp, unbounded wait, DEC-045 outcomes); a close rethrows and re-runs." },
-  { id = "EX-3", text = "A post that ends withdrawn or delivered-incomplete creates a post-failed notice in the same commit that settles it; notices are terminal (journal and best-effort notify_send, no further notice) and the tombstone check applies to letter post only." },
-  { id = "EX-4", text = "The abort handler withdraws the task's queued input and maps abortSubmission's answer (aborted/not_found withdrawn; already_placed delivered-incomplete; settled reads the record)." },
-  { id = "EX-5", text = "src/threads/tombstones.ts: ThreadsDocument (session scope, checkpoint policy), isReaped, tombstone; the satan.post SweptKind row is exported for daemon-start." },
-  { id = "EX-6", text = "src/threads/extension.ts holds ThreadDeps/EarlyThreadDeps/LateThreadDeps and a threadsExtension registering the task (tools and section follow in later phases); test/thread-fixture.ts exists with a room session, scripted caller turns and readers for post tasks, entries and the tombstone document." },
-  { id = "EX-7", text = "src/threads imports neither src/wake nor anything outside the design's coupling rules (WAKE_KIND and EpisodeClass only); a structure test or lint enforces it if the repo already has that mechanism." },
+  { id = "EX-1", text = "src/threads/admission.ts holds Origin and originKey only (pure data, design § The origin); the caller's-origin read and every refusal follow in later phases. task.ts and later tombstones.ts import Origin as a type." },
+  { id = "EX-2", text = "src/threads/task.ts: POST_KIND, PostInput (all three letters), PostState, PostResult, postRequestId, the envelopes of design § Envelopes the model reads, postTask(deps) and createPostTask(tx, task, input), owned by input.to in the background. The deliver phase runs steps 2-5 of design § One phase: deliver (open recipient, submit followUp, unbounded wait, DEC-045 outcomes); a close rethrows and re-runs." },
+  { id = "EX-3", text = "A post ending withdrawn or delivered-incomplete creates a post-failed notice task to its from in the same commit that settles it; notices are terminal: a failed notice writes a journal line and a best-effort notify_send, and creates no further notice." },
+  { id = "EX-4", text = "The abort handler withdraws the task's queued input and maps abortSubmission's answer: aborted or not_found is withdrawn; already_placed is delivered-incomplete; settled reads the record as step 5." },
+  { id = "EX-5", text = "The satan.post SweptKind row is exported from src/threads/task.ts: a blocked post's queued input is withdrawn, the task aborted, and the post reported by journal and best-effort notify_send. daemon-start passes it from PHASE-05." },
+  { id = "EX-6", text = "src/threads/extension.ts holds ThreadDeps, EarlyThreadDeps, LateThreadDeps (bound through lateBinding) and threadsExtension registering the task only. test/thread-fixture.ts exists: a room session with the extension installed, scripted caller turns, and readers for post tasks and entries." },
+  { id = "EX-7", text = "Journal lines in design § Journal form: 'post N failed <outcome>: <reason> origin K' and 'notice N to C failed: <reason> origin K'." },
 ]
 verification = [
-  { id = "VT-1", expects = "premise (b): two posts queued behind a busy recipient are placed in two runs", test_file = "test/threads-post.test.ts", keywords = ["two posts queued behind a busy recipient are placed in two runs"], waived = false },
-  { id = "VT-2", expects = "premise (c): withdrawing one queued post leaves the other queued input in place", test_file = "test/threads-post.test.ts", keywords = ["withdrawing one queued post leaves the other queued input in place"], waived = false },
-  { id = "VT-3", expects = "a post starts a turn in the recipient with from, topic and origin; a busy recipient queues it and places it when its turn ends", test_file = "test/threads-post.test.ts", keywords = ["a post starts a turn in the recipient", "a post to a busy recipient is queued"], waived = false },
-  { id = "VT-4", expects = "a post behind a failed recipient run is placed with no further input, and across a restart (DEC-042)", test_file = "test/threads-post.test.ts", keywords = ["a post queued behind a failed recipient run is placed"], waived = false },
-  { id = "VT-5", expects = "a post behind a faulted run stays queued until the recipient's next input (pins the residual)", test_file = "test/threads-post.test.ts", keywords = ["a post queued behind a faulted run stays queued"], waived = false },
-  { id = "VT-6", expects = "outcomes: failure before placement is withdrawn; abort after placement and a run failing after a tool succeeded are delivered-incomplete; each notifies the sender once", test_file = "test/threads-post.test.ts", keywords = ["failure before placement reports withdrawn", "delivered-incomplete"], waived = false },
-  { id = "VT-7", expects = "a notice that cannot be delivered journals and notifies, and sends no further notice", test_file = "test/threads-post.test.ts", keywords = ["a notice that cannot be delivered journals and notifies"], waived = false },
-  { id = "VT-8", expects = "tombstone enforcement: a post task created before the reap and not yet submitted withdraws itself; one that passed its check before the reap and restarted before submit settles reaped", test_file = "test/threads-tombstone.test.ts", keywords = ["not yet submitted withdraws itself", "re-checks on re-run and settles reaped"], waived = false },
-  { id = "VT-9", expects = "the start sweep withdraws a blocked post's queued input and aborts it; a blocked post is not counted", test_file = "test/threads-tombstone.test.ts", keywords = ["the start sweep withdraws a blocked post's queued input", "a blocked post task is not counted"], waived = false },
+  { id = "VT-1", expects = "a post starts a turn in the recipient whose envelope carries from, topic and origin", test_file = "test/threads-post.test.ts", keywords = ["a post starts a turn in the recipient with from, topic and origin"], waived = false },
+  { id = "VT-2", expects = "a post to a busy recipient is queued and placed when its turn ends", test_file = "test/threads-post.test.ts", keywords = ["a post to a busy recipient is queued and placed when its turn ends"], waived = false },
+  { id = "VT-3", expects = "a post behind a failed recipient run is placed with no further input, and across a restart (DEC-042)", test_file = "test/threads-post.test.ts", keywords = ["a post queued behind a failed recipient run is placed with no further input"], waived = false },
+  { id = "VT-4", expects = "a post behind a faulted run stays queued until the recipient's next input (pins the residual)", test_file = "test/threads-post.test.ts", keywords = ["a post queued behind a faulted run stays queued"], waived = false },
+  { id = "VT-5", expects = "DEC-045 outcomes: failure before placement is withdrawn; abort after placement and a run failing after a tool succeeded are delivered-incomplete; each tells the sender once", test_file = "test/threads-post.test.ts", keywords = ["failure before placement reports withdrawn", "report delivered-incomplete"], waived = false },
+  { id = "VT-6", expects = "a notice that cannot be delivered journals and notifies, and sends no further notice", test_file = "test/threads-post.test.ts", keywords = ["a notice that cannot be delivered journals and notifies"], waived = false },
+  { id = "VT-7", expects = "the abort handler maps aborted, not_found, already_placed and settled", test_file = "test/threads-post.test.ts", keywords = ["the abort handler maps each abortSubmission answer"], waived = false },
+  { id = "VT-8", expects = "the start sweep withdraws a blocked post's queued input and aborts it", test_file = "test/threads-post.test.ts", keywords = ["the start sweep withdraws a blocked post's queued input and aborts it"], waived = false },
+  { id = "VT-9", expects = "the failed-post and failed-notice journal lines carry the outcome, reason and origin key", test_file = "test/threads-post.test.ts", keywords = ["failed delivered-incomplete: unanswered (model_error) origin", "failed: target unreachable origin"], waived = false },
 ]
 specs        = []
 requirements = []
@@ -116,25 +123,26 @@ requirements = []
 [[phase]]
 id        = "PHASE-05"
 name      = "thread_post, origins, and the threads extension in the room"
-objective = "The first tool a model can call. thread_post with the shared admission steps (caller read, talk set, tombstone refusal) and the origin read, the threads extension and section installed in the interactive toolset only, the daemon wiring, and journal lines for posts. Caps are not enforced yet: verdict is a stub admitting everything, replaced in PHASE-07."
+objective = "The first tool a model can call, wired into the room: thread_post with the caller's-origin read and the talk-set check, the threads section, the catalog change and the daemon wiring (ThreadDeps bound, the post sweep row passed). No tombstone refusal and no caps yet: both land in PHASE-06, the very next phase."
 entrance_criteria = [
-  { id = "EN-1", text = "PHASE-03 and PHASE-04 completed." },
+  { id = "EN-1", text = "PHASE-02 and PHASE-04 completed." },
 ]
 exit_criteria = [
-  { id = "EX-1", text = "src/threads/admission.ts: Origin, originKey, the caller's-origin read over tx.scanEntries (human, wake, post inheritance, reset rows; no input found refuses), requireSameTalkSet use, tombstone refusal. Pure parts take plain data." },
-  { id = "EX-2", text = "thread_post refuses a missing, unindexed, own or out-of-talk-set target; one api.commit creates the post task; declared sequential and replay unsafe (DEC-041, DEC-043); returns {post, to}." },
-  { id = "EX-3", text = "'threads' joins the interactive list after 'tasks' and ROOM_ONLY; DaemonParts.threads and the builder exist; daemon-start builds and binds ThreadDeps early and late and passes the wake and post rows to sweepBlockedTasks. Host installs no thread tools." },
-  { id = "EX-4", text = "THREADS_SECTION text is a constant in src/threads/extension.ts, pinned by test; tool descriptions state the caps (4 and 12) as constants shared with the later cap code, not retyped." },
-  { id = "EX-5", text = "The DEC-024 guard (every create path, across a restart, has exactly its toolset's tools) and toolsets.test.ts catalog and host-filter expectations include 'threads'/thread_post; the first-restart reconcile log line for changed interactive lists is observed in a test." },
-  { id = "EX-6", text = "Journal lines 'post N a->b origin K' and 'post N failed ...' emitted through ThreadDeps.log." },
+  { id = "EX-1", text = "src/threads/admission.ts gains the caller's-origin read over tx.scanEntries per design § The origin (pi.user, satan.wake, satan.post inheritance, pi.reset); no input found refuses 'no input entry to take an origin from'. The caller's index entry is read and requireSameTalkSet applied." },
+  { id = "EX-2", text = "thread_post refuses a missing, unindexed, own ('a conversation cannot post to itself') or out-of-talk-set target; one api.commit creates the post task; declared executionMode sequential and replay unsafe (DEC-041, DEC-043); returns {post, to}." },
+  { id = "EX-3", text = "'threads' joins the interactive list after 'tasks' and ROOM_ONLY. DaemonParts.threads is required, mirroring tasks, with its builder; every daemonExtensions call site passes it (test/toolsets.test.ts:108; test/daemon-sections.test.ts HOST at 34 and the literal at 206; test/daemon-start.test.ts:305, 425, 552). daemon-start builds and binds ThreadDeps early and late beside the wakes' and passes the wake and post rows to sweepBlockedTasks. Host installs no thread tools." },
+  { id = "EX-4", text = "test/fixtures/interactive-baseline.json is not regenerated (its note forbids it). toolsets.test.ts VT-1 compares the room snapshot without the threads extension to the baseline, and a new case pins exactly what threads adds after the baseline: its section and its tools." },
+  { id = "EX-5", text = "THREADS_SECTION is a constant in src/threads/extension.ts, pinned by test. FAMILY_CAP and GLOBAL_CAP are created here in src/threads/admission.ts and interpolated into thread_post's description (design § Tool descriptions); PHASE-06 uses them in verdict, nothing retypes 4 or 12." },
+  { id = "EX-6", text = "Journal line 'post N A->B origin K' through ThreadDeps.log." },
 ]
 verification = [
-  { id = "VT-1", expects = "a human input and a wake open origins; a post inherits its post's origin", test_file = "test/threads-admission.test.ts", keywords = ["a human input and a wake open origins"], waived = false },
+  { id = "VT-1", expects = "a human input and a wake open origins; a post inherits its post's origin; no input entry refuses", test_file = "test/threads-admission.test.ts", keywords = ["a human input and a wake open origins", "no input entry to take an origin from"], waived = false },
   { id = "VT-2", expects = "thread_post refuses a missing, unindexed or own target, and mail", test_file = "test/threads-tools.test.ts", keywords = ["thread_post refuses a missing, unindexed or own target"], waived = false },
   { id = "VT-3", expects = "thread tools are not installed on host", test_file = "test/threads-tools.test.ts", keywords = ["thread tools are not installed on host"], waived = false },
   { id = "VT-4", expects = "the threads section text is pinned", test_file = "test/threads-tools.test.ts", keywords = ["the threads section text is pinned"], waived = false },
-  { id = "VT-5", expects = "a turn started by family-reaped cannot post (origin inheritance, via a hand-created notice)", test_file = "test/threads-admission.test.ts", keywords = ["a turn started by family-reaped cannot post"], waived = false },
-  { id = "VA-1", expects = "the agent confirms no table read follows a table write inside any thread commit (pi-durable read-after-write rule) by reading each tool's commit body" },
+  { id = "VT-5", expects = "the room snapshot is the frozen baseline plus exactly the threads section and tools", test_file = "test/toolsets.test.ts", keywords = ["the baseline plus exactly what threads adds"], waived = false },
+  { id = "VT-6", expects = "thread_post journals the post with its origin key", test_file = "test/threads-tools.test.ts", keywords = ["thread_post journals the post with its origin key"], waived = false },
+  { id = "VA-1", expects = "the agent confirms no table read follows a table write inside thread_post's commit (pi-durable ReadAfterWrite) by reading its commit body" },
 ]
 specs        = []
 requirements = []
@@ -142,25 +150,32 @@ requirements = []
 # ---------------------------------------------------------------------------
 [[phase]]
 id        = "PHASE-06"
-name      = "thread_start and thread_fork, with IMP-017's fork branch"
-objective = "Start and fork in one phase (DEC-033): thread_start through toolsetInit(startedBy); thread_fork forking at the latest entry with the sole-call check and the child's written ToolResultEntry; the index hook copies the fork's toolset and the startup refusal narrows to a fork without one. First, prove the fork-result premise."
+name      = "Tombstones, caps and reaping"
+objective = "Bound the fan-out: the ThreadsDocument and each post task's tombstone enforcement (DEC-044), admission's tombstone refusal, familiesOf and verdict (K=4 per origin, N=12 daemon-wide), the reap commit (tombstone plus family-reaped notice task, in the admitted call's own commit for reap-other), withdrawal one input at a time, and the reap journal and notify. Tests of concurrency and crash cases are the point of the phase. Order: tombstone and its enforcement first, then pure counting, then the reap."
 entrance_criteria = [
-  { id = "EN-1", text = "PHASE-05 completed." },
+  { id = "EN-1", text = "PHASE-05 completed (thread_post exists, sequential, and wired)." },
 ]
 exit_criteria = [
-  { id = "EX-1", text = "FIRST: VT-1 (premise a, DEC-031) passes before the rest of the phase. If it fails, apply the design's fallback (the first post carries fork_of and a note; pi-durable's synthetic result stays), record the choice on DEC-031 and in notes.md, and continue; the sole-call refusal stays." },
-  { id = "EX-2", text = "thread_start: unknown topic refused; topic's toolset and cwd else the defaults; creates, configures, indexes with startedBy, and creates the first post in one commit; returns {conversation, topic}." },
-  { id = "EX-3", text = "thread_fork: callers [model], sequential, replay unsafe; refuses unless the caller's newest entry is a pi.assistant with exactly one toolCall with api.callId; forks at that entry, writes the child's ToolResultEntry, creates the first post, all in one commit with reads before writes." },
-  { id = "EX-4", text = "indexConversation copies the parent entry's toolset to a fork and throws without one; refuseUnsupported refuses a fork whose index entry has no toolset (text per design) and every task-owned conversation, taking the index as an argument." },
-  { id = "EX-5", text = "The DEC-024 guard includes thread_start and thread_fork across a restart." },
-  { id = "EX-6", text = "Journal lines for start and fork, carrying the origin key." },
+  { id = "EX-1", text = "src/threads/tombstones.ts: ThreadsDocument (session scope, checkpoint policy), isReaped, tombstone() returning false when the mark already existed; nothing outside it names ThreadsDocument." },
+  { id = "EX-2", text = "The post task gains step 1 of design § One phase: deliver (letter post only: tombstoned origin withdraws its own input if queued and settles reaped) and the step-5 re-check; notices skip the check." },
+  { id = "EX-3", text = "Admission refuses a tombstoned origin: 'origin 12/340 was reaped for fan-out; posts and thread starts from it are refused'." },
+  { id = "EX-4", text = "familiesOf and verdict are pure and unit-tested without a harness, using FAMILY_CAP and GLOBAL_CAP; blocked tasks and reaped origins are not counted; notices are cap-exempt." },
+  { id = "EX-5", text = "reap-own commits the reap alone and refuses; reap-other puts tombstone and notice in the admitted call's commit; each commit re-reads the tombstone first (table read before any table write) and creates nothing if set; tombstone() true gates the notice." },
+  { id = "EX-6", text = "Withdrawal uses harness.abortSubmission per queued family input by request id post:<task>, never Conversation.abort; a crash before withdrawal loses nothing (each task withdraws its own)." },
+  { id = "EX-7", text = "Journal 'family K reaped: <reason>; withdrew N' and best-effort notify_send titled 'SATAN threads reaped'." },
 ]
 verification = [
-  { id = "VT-1", expects = "premise (a): a fork's child sees the written fork result, not 'Tool result unavailable'", test_file = "test/threads-fork.test.ts", keywords = ["a fork's child sees the written fork result"], waived = false },
-  { id = "VT-2", expects = "thread_fork keeps topic and toolset and survives a restart; forks at the latest entry after compaction; a sibling tool call is refused", test_file = "test/threads-fork.test.ts", keywords = ["thread_fork keeps the caller's topic and toolset", "after compaction forks at the latest entry", "thread_fork with a sibling tool call is refused"], waived = false },
-  { id = "VT-3", expects = "the hook copies a fork's toolset and fails the commit when the parent has none", test_file = "test/topics.test.ts", keywords = ["the hook copies a fork's toolset from its parent"], waived = false },
-  { id = "VT-4", expects = "session refuses a fork without a toolset with the new text; a store holding a fork with a toolset opens", test_file = "test/session.test.ts", keywords = ["a fork without a toolset is not supported"], waived = false },
-  { id = "VT-5", expects = "thread_start creates in the named topic with the post as first turn; takes the topic's toolset and cwd else the defaults and records startedBy; refuses an unknown topic and a topic outside the talk set", test_file = "test/threads-tools.test.ts", keywords = ["thread_start creates a conversation in the named topic", "thread_start takes the topic's toolset and cwd", "thread_start refuses an unknown topic"], waived = false },
+  { id = "VT-1", expects = "tombstone enforcement: a post task created before the reap and not yet submitted withdraws itself; one that passed its check and restarted before submit settles reaped", test_file = "test/threads-tombstone.test.ts", keywords = ["a post task created before the reap and not yet submitted withdraws itself", "re-checks on re-run and settles reaped"], waived = false },
+  { id = "VT-2", expects = "a turn started by family-reaped cannot post (via a hand-written tombstone and notice)", test_file = "test/threads-tombstone.test.ts", keywords = ["a turn started by family-reaped cannot post"], waived = false },
+  { id = "VT-3", expects = "familiesOf leaves out blocked tasks, reaped origins and notices", test_file = "test/threads-caps.test.ts", keywords = ["a blocked post task is not counted"], waived = false },
+  { id = "VT-4", expects = "one message issuing more thread calls than K admits K and the crossing call reaps the family (DEC-041)", test_file = "test/threads-caps.test.ts", keywords = ["one message issuing more thread calls than K admits K"], waived = false },
+  { id = "VT-5", expects = "a family over 4 is reaped and its originator told, while a co-resident loop is untouched", test_file = "test/threads-caps.test.ts", keywords = ["a family over 4 is reaped and its originator told"], waived = false },
+  { id = "VT-6", expects = "the global cap reaps the largest family, ties to the youngest origin; a second call does not reap it again", test_file = "test/threads-caps.test.ts", keywords = ["the global cap reaps the largest family", "does not reap the same family again"], waived = false },
+  { id = "VT-7", expects = "a creating commit that throws after a reap-other verdict leaves no tombstone and no notice; a call admitted before another conversation reaps its family is refused in its commit", test_file = "test/threads-caps.test.ts", keywords = ["leaves no tombstone and no notice", "refused in its commit and creates nothing"], waived = false },
+  { id = "VT-8", expects = "two conversations of one family reaping at once create one tombstone and one notice; two distinct reaps write two tombstones to the same document", test_file = "test/threads-caps.test.ts", keywords = ["create one tombstone and one notice", "two distinct reaps write two tombstones"], waived = false },
+  { id = "VT-9", expects = "crash cases: no queued family post is delivered after a restart following the reap commit; the family-reaped notice is delivered once with no startup scan", test_file = "test/threads-caps.test.ts", keywords = ["delivers no queued family post after restart", "delivers the family-reaped notice once after restart"], waived = false },
+  { id = "VT-10", expects = "a post that passed its tombstone check before the reap commit is delivered, and its turn cannot post", test_file = "test/threads-caps.test.ts", keywords = ["passed its tombstone check before the reap commit is delivered"], waived = false },
+  { id = "VT-11", expects = "the reap journals the withdrawn count and notifies the operator", test_file = "test/threads-caps.test.ts", keywords = ["SATAN threads reaped", "reaped: 5 active (cap 4); withdrew"], waived = false },
 ]
 specs        = []
 requirements = []
@@ -168,26 +183,28 @@ requirements = []
 # ---------------------------------------------------------------------------
 [[phase]]
 id        = "PHASE-07"
-name      = "Caps, families and reaping"
-objective = "Replace the admit-everything stub with the real bound: familiesOf and verdict (K=4 per origin, N=12 daemon-wide), the reap commit (tombstone plus family-reaped notice task, in the admitted call's own commit for reap-other), withdrawal one input at a time, and the reap journal and notify. Tests for concurrency and crash cases are the point of the phase."
+name      = "thread_start and thread_fork, with IMP-017's fork branch"
+objective = "Start and fork in one phase (DEC-033), both through the admission PHASE-05 and PHASE-06 built: thread_start through toolsetInit(startedBy); thread_fork forking at the latest entry with the sole-call check and the child's written ToolResultEntry; the index hook copies the fork's toolset and the startup refusal narrows to a fork without one. First, prove the fork-result premise."
 entrance_criteria = [
-  { id = "EN-1", text = "PHASE-05 and PHASE-06 completed (all three tools exist and sequential)." },
+  { id = "EN-1", text = "PHASE-06 completed." },
 ]
 exit_criteria = [
-  { id = "EX-1", text = "familiesOf and verdict are pure and unit-tested without a harness; FAMILY_CAP and GLOBAL_CAP are constants used by the tool descriptions." },
-  { id = "EX-2", text = "reap-own commits the reap alone and refuses; reap-other puts tombstone and notice in the admitted call's commit; the commit re-reads the tombstone first (table read before any table write) and creates nothing if set; tombstone() true gates the notice." },
-  { id = "EX-3", text = "Withdrawal uses harness.abortSubmission per queued family input by request id post:<task>, never Conversation.abort; a crash before withdrawal loses nothing (each task withdraws its own)." },
-  { id = "EX-4", text = "Reap journal line with the withdrawn count and best-effort notify_send 'SATAN threads reaped'." },
-  { id = "EX-5", text = "Thread tools' sequential mode is shown to make one message's calls count each other (DEC-041)." },
+  { id = "EX-1", text = "FIRST: VT-1 (premise (a), DEC-031) passes before the rest of the phase. If it fails, apply the design's fallback (the first post carries fork_of and a note, design § Envelopes the model reads; pi-durable's synthetic result stays), record the choice on DEC-031 and in notes.md, and continue; the sole-call refusal stays." },
+  { id = "EX-2", text = "thread_start: unknown topic refused ('unknown topic: x'); the topic's toolset and cwd, else the defaults; creates, configures, indexes with startedBy, and creates the first post in one commit; returns {conversation, topic}. Admission (talk set, tombstone, caps) is the shared one." },
+  { id = "EX-3", text = "thread_fork: callers [model], sequential, replay unsafe; refuses ('thread_fork must be the only tool call in its message') unless the caller's newest entry is a pi.assistant with exactly one toolCall with api.callId; forks at that entry, writes the child's ToolResultEntry, creates the first post, all in one commit with reads before writes." },
+  { id = "EX-4", text = "indexConversation copies the parent entry's toolset to a fork and throws without one; refuseUnsupported refuses a fork whose index entry has no toolset (text per design) and every task-owned conversation." },
+  { id = "EX-5", text = "The DEC-024 guard (test/conversations.test.ts 'VT-1 records each create's toolset and resolves it again after a reopen') gains thread_start and thread_fork; PHASE-05's baseline-delta case gains both tools." },
+  { id = "EX-6", text = "Journal lines 'thread start N (topic) by C origin K' and 'thread fork N of C (topic) origin K'." },
 ]
 verification = [
-  { id = "VT-1", expects = "one message issuing more thread calls than K admits K and the crossing call reaps the family", test_file = "test/threads-caps.test.ts", keywords = ["one message issuing more thread calls than K admits K"], waived = false },
-  { id = "VT-2", expects = "a family over 4 is reaped and its originator told, while a co-resident loop is untouched", test_file = "test/threads-caps.test.ts", keywords = ["a family over 4 is reaped and its originator told"], waived = false },
-  { id = "VT-3", expects = "the global cap reaps the largest family, ties to the youngest origin; a second call does not reap it again", test_file = "test/threads-caps.test.ts", keywords = ["the global cap reaps the largest family", "does not reap the same family again"], waived = false },
-  { id = "VT-4", expects = "a call whose creating commit throws after a reap-other verdict leaves no tombstone and no notice; a call admitted before another conversation reaps its family is refused in its commit", test_file = "test/threads-caps.test.ts", keywords = ["leaves no tombstone and no notice", "refused in its commit and creates nothing"], waived = false },
-  { id = "VT-5", expects = "two conversations of one family reaping at once create one tombstone and one notice; two distinct reaps write two tombstones to the same document", test_file = "test/threads-caps.test.ts", keywords = ["create one tombstone and one notice", "two distinct reaps write two tombstones"], waived = false },
-  { id = "VT-6", expects = "crash cases: after the reap commit before any withdrawal no queued family post is delivered after restart; the family-reaped notice is delivered once with no startup scan", test_file = "test/threads-caps.test.ts", keywords = ["delivers no queued family post after restart", "delivers the family-reaped notice once after restart"], waived = false },
-  { id = "VT-7", expects = "a post that passed its tombstone check before the reap commit is delivered, and its turn cannot post or start threads", test_file = "test/threads-caps.test.ts", keywords = ["passed its tombstone check before the reap commit is delivered"], waived = false },
+  { id = "VT-1", expects = "premise (a): a fork's child sees the written fork result, not 'Tool result unavailable'", test_file = "test/threads-fork.test.ts", keywords = ["a fork's child sees the written fork result"], waived = false },
+  { id = "VT-2", expects = "thread_fork keeps topic and toolset and survives a restart; forks at the latest entry after compaction; a sibling tool call is refused", test_file = "test/threads-fork.test.ts", keywords = ["thread_fork keeps the caller's topic and toolset", "thread_fork after compaction forks at the latest entry", "thread_fork with a sibling tool call is refused"], waived = false },
+  { id = "VT-3", expects = "the hook copies a fork's toolset and fails the commit when the parent has none", test_file = "test/topics.test.ts", keywords = ["the hook copies a fork's toolset from its parent"], waived = false },
+  { id = "VT-4", expects = "session refuses a fork without a toolset with the new text; a store holding a fork with a toolset opens", test_file = "test/session.test.ts", keywords = ["a fork without a toolset is not supported", "opens a store holding a fork with a toolset"], waived = false },
+  { id = "VT-5", expects = "thread_start creates in the named topic with the post as first turn; takes the topic's toolset and cwd else the defaults and records startedBy; refuses an unknown topic and a topic outside the talk set", test_file = "test/threads-tools.test.ts", keywords = ["thread_start creates a conversation in the named topic", "thread_start takes the topic's toolset and cwd", "thread_start refuses an unknown topic"], waived = false },
+  { id = "VT-6", expects = "a turn started by family-reaped cannot start threads either", test_file = "test/threads-tombstone.test.ts", keywords = ["a turn started by family-reaped cannot post or start threads"], waived = false },
+  { id = "VT-7", expects = "start and fork journal their child, topic and origin key", test_file = "test/threads-tools.test.ts", keywords = ["thread start and fork journal the child and origin key"], waived = false },
+  { id = "VA-1", expects = "the agent confirms reads precede writes in the start and fork commits (pi-durable ReadAfterWrite) by reading each commit body" },
 ]
 specs        = []
 requirements = []
@@ -203,12 +220,12 @@ entrance_criteria = [
 exit_criteria = [
   { id = "EX-1", text = "protocol.ts ThreadMark and optional marks; conversations.ts fills marks via markOf; daemon.ts passes them; the renderer prints marked ids with a tab and the mark; an unmarked list is unchanged on the wire." },
   { id = "EX-2", text = "render.ts renders input entries by kind through one function shared by snapshot and live message_end paths; PresentationTable gains input(kind, header, body); posts and wakes print live even where typing is echoed." },
-  { id = "EX-3", text = "emacs/malebolge.el: malebolge-thread-face, malebolge-reap-face, a post header as a speaker label, and the candidate parser accepting 'id<TAB>mark' and attaching to the id; malebolge-ert.el covers it." },
+  { id = "EX-3", text = "emacs/malebolge.el: malebolge-thread-face, malebolge-reap-face, a post header as a speaker label, and the candidate parser accepting 'id<TAB>mark' and attaching to the id; test/malebolge-ert.el covers it." },
 ]
 verification = [
   { id = "VT-1", expects = "posts, notices and wakes render as [thread] and [wake] lines in both presentations, live and in a snapshot", test_file = "test/render.test.ts", keywords = ["posts, notices and wakes render as [thread] and [wake] lines"], waived = false },
   { id = "VT-2", expects = "--list marks forks and started threads", test_file = "test/conversations.test.ts", keywords = ["--list marks forks and started threads"], waived = false },
-  { id = "VT-3", expects = "the Emacs picker attaches to a marked id", test_file = "test/malebolge-ert.el", keywords = ["marked id"], waived = false },
+  { id = "VT-3", expects = "the Emacs picker attaches to a marked id", test_file = "test/malebolge-ert.el", keywords = ["malebolge-thread-face", "picker attaches to a marked id"], waived = false },
   { id = "VH-1", expects = "In the room, SATAN starts a thread in another topic, posts to it and receives a reply; the operator attaches to both and sees the post lines coloured." },
 ]
 specs        = []
