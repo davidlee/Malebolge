@@ -1,7 +1,7 @@
 id = 5
 slug = "mail-read-tools"
 title = "Mail read tools and tool partitioning by profile"
-status = "started"
+status = "reconcile"
 created = "2026-10-27"
 updated = "2026-10-28"
 tags = []
@@ -33,6 +33,7 @@ intent = "scope-relevant"
 [[selector]]
 selector = "test/**"
 intent = "scope-relevant"
+note = "RV-016 F-6"
 
 [[selector]]
 selector = "README.md"
@@ -176,11 +177,97 @@ intent = "design-target"
 
 [[selector]]
 selector = "src/wake/heartbeat.ts"
-intent = "design-target"
+intent = "scope-relevant"
+note = "RV-016 F-6"
 
 [[selector]]
 selector = "test/request.test.ts"
 intent = "design-target"
+
+[[selector]]
+selector = "src/render.ts"
+intent = "design-target"
+note = "RV-016 F-6"
+
+[[selector]]
+selector = "src/daemon-main.ts"
+intent = "design-target"
+note = "RV-016 F-6"
+
+[[selector]]
+selector = "package.json"
+intent = "design-target"
+note = "RV-016 F-6"
+
+[[selector]]
+selector = "package-lock.json"
+intent = "design-target"
+note = "RV-016 F-6"
+
+[[selector]]
+selector = "flake.nix"
+intent = "design-target"
+note = "RV-016 F-6"
+
+[[selector]]
+selector = "biome.json"
+intent = "design-target"
+note = "RV-016 F-6"
+
+[[selector]]
+selector = "vitest.config.ts"
+intent = "design-target"
+note = "RV-016 F-6"
+
+[[selector]]
+selector = ".doctrine/slice/005/**"
+intent = "design-target"
+note = "RV-016 F-6"
+
+[[selector]]
+selector = "test/bounded-exec.test.ts"
+intent = "design-target"
+note = "RV-016 F-6"
+
+[[selector]]
+selector = "test/config.test.ts"
+intent = "design-target"
+note = "RV-016 F-6"
+
+[[selector]]
+selector = "test/conversation-context.test.ts"
+intent = "design-target"
+note = "RV-016 F-6"
+
+[[selector]]
+selector = "test/daemon.test.ts"
+intent = "design-target"
+note = "RV-016 F-6"
+
+[[selector]]
+selector = "test/fixtures/corpus/**"
+intent = "design-target"
+note = "RV-016 F-6"
+
+[[selector]]
+selector = "test/interactive-baseline.ts"
+intent = "design-target"
+note = "RV-016 F-6"
+
+[[selector]]
+selector = "test/render.test.ts"
+intent = "design-target"
+note = "RV-016 F-6"
+
+[[selector]]
+selector = "test/skills.test.ts"
+intent = "design-target"
+note = "RV-016 F-6"
+
+[[selector]]
+selector = "test/wake-tools.test.ts"
+intent = "design-target"
+note = "RV-016 F-6"
 
 # STRUCTURAL relations are uniform `[[relation]]` rows, never a typed
 # `[relationships]` axis. Slices carry no typed STRUCTURAL

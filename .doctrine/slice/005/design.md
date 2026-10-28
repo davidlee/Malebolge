@@ -201,9 +201,10 @@ none holds state, and the caller holds the cursor (DEC-027).
 
 **Inputs are validated in code before argv.**
 - Ids, including `mailbox`, must match the JMAP Id form,
-  `^[A-Za-z0-9_-]{1,255}$`, so no value can start with `-`. This matters
-  because screwtape reads a `read` argument starting with `--` as a
-  selection (`argv.gleam:102`).
+  `^[A-Za-z0-9_-]{1,255}$`, and must not start with `-`. The form itself
+  admits a leading `-`, and screwtape reads a `read` argument starting with
+  `--` as a selection (`argv.gleam:102`). A real id starting with `-` is
+  refused.
 - `from` is at most 256 bytes, has no control characters and no leading
   `-`.
 - `after` must be a canonical cursor (contract C3): `""`, or `<ms>:<id>`
@@ -358,14 +359,21 @@ The `MailSource` adapter (DEC-028).
   are absolute paths, checked at startup, and required only when the
   profile allows `mail` (that is, `room`). There is no `PATH` lookup.
   Deployment order: corpus `prompts/mail.txt`, then the launcher env, then
-  restart the daemon.
+  restart the daemon. The room runs in satan's `jailed-malebolge` jail:
+  `mkJailedMalebolge` sets both variables, binds the binary and config with
+  their closures, and binds the store's directory read-write (WAL sidecars;
+  screwtape DEC-031). `MALEBOLGE_SCREWTAPE` is the unwrapped binary, since
+  the Home Manager wrapper passes its own `--config` first. Detail:
+  `docs/internals.md`.
 - **Spawn.** A host `NodeExecutionEnv` owned by the mail extension, never
   the conversation's env (which may be the room).
   - argv is `["--config", <config>, <verb>, …]`: `--config` must come first
     (`argv.gleam:81`). No shell.
   - `inheritEnv: false` with `env: { HOME }`. Without it, pi-durable merges
     the daemon's environment (`env/node.js:205,745`).
-  - 10 s timeout. The env is closed with the daemon.
+  - 10 s timeout. The env holds no resources and has no close; an
+    in-flight child ends with its call's abort signal when the harness
+    closes.
 - **Bounded exec** (`src/bounded-exec.ts`, extracted from `src/grep.ts`).
   - stdout goes through `boundedLineSplitter` (not the unbounded
     `lineSplitter`), with `MAIL_STDOUT_MAX` = 4 MiB as both the per-line cap
@@ -388,10 +396,12 @@ The `MailSource` adapter (DEC-028).
   | outcome | model sees |
   |---|---|
   | exit 0 | the result |
-  | exit 2 | `screwtape usage error: <code>`. `<code>` comes from the stderr JSON diagnostics and is accepted only if it matches `^[a-z_]{1,64}$`; otherwise the message has no code |
+  | exit 2 | `screwtape usage error: <code>`. `<code>` is the `reason` field of the first stderr line whose `level` is `"error"` (a warning line may come first), accepted only if it matches `^[a-z_]{1,64}$`; otherwise the message has no code |
   | any other exit, including `128+n` | `screwtape failed (exit N)` |
   | `ExecutionError` `timeout` | `screwtape timed out after 10 s` |
   | `ExecutionError` `aborted` | the abort propagates (the call is aborted) |
+  | `ExecutionError` `spawn_error` | `screwtape could not run` |
+  | an unterminated last stdout line | `screwtape contract violation: unterminated line` |
 
 - **Validation, fail closed.**
   - Every stdout line parses as JSON, with a `version` in `{1}` and the
@@ -408,7 +418,9 @@ The `MailSource` adapter (DEC-028).
     with `<what>` drawn from a fixed set. No partial data.
 - **Port.**
   `MailSource { mailboxes, list, read, readAfter, thread }`
-  returns validated envelopes. A classifier stage can later replace
+  returns validated envelopes. Failures reach the tools as
+  `MailSourceError { failure }`, so a tool can tell the oversize failure at
+  limit 1 from the others. A classifier stage can later replace
   `readAfter` (screwtape IDE-001) without changing the tools.
 
 <!-- doctrine:section sec-6 -->
@@ -424,7 +436,10 @@ The `MailSource` adapter (DEC-028).
 | `src/conversations.ts` | `toolsetInit`, required by `create` on every path; `setTopic` validates `toolset` |
 | `src/protocol.ts`, `src/attach-invocation.ts`, `src/request.ts`, `src/attach-main.ts` | `toolset` on the `topic` frame and in `requestFrameOf`; `--toolset`/`--no-toolset` with `--set-topic`, and in the usage text; the listing shows it |
 | `src/daemon-start.ts`, `src/config.ts` | Screwtape paths read and checked when the profile allows `mail`; the mail extension built and closed |
-| `src/wake/*` | no change expected: wake opens conversations through `conversations.open` (verify in the phase) |
+| `src/wake/*` | no change: wake creates through `conversations.open` (verified PHASE-02) |
+| `src/render.ts`, `src/daemon-main.ts` | the topic listing's toolset field; the startup log's mail tool count |
+| `package.json`, `package-lock.json`, `flake.nix`, `biome.json`, `vitest.config.ts` | `typebox` declared; biome in the flake's dev shell and `npmDepsHash`; the smoke excluded from `just check`; mail fixtures excluded from biome |
+| `test/interactive-baseline.ts`, `test/fixtures/corpus/**`, `test/bounded-exec.test.ts`, `test/config.test.ts`, `test/conversation-context.test.ts`, `test/daemon.test.ts`, `test/render.test.ts`, `test/skills.test.ts`, `test/wake-tools.test.ts` | the baseline helper and its fixed corpus; bounded exec's own tests; callers updated for toolsets and the listing |
 | `src/bounded-exec.ts` (new), `src/grep.ts` | bounded exec extracted with the oversize option; grep moved onto it |
 | `src/mail/source.ts` (new) | `MailSource` port, v1 projection types and schemas |
 | `src/mail/screwtape.ts` (new) | the adapter: argv, exec, outcome mapping, validation |

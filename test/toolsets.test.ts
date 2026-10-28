@@ -1,5 +1,6 @@
 // SL-005 PHASE-01: the toolset catalogue (design sec-2; DEC-029, DEC-030). The
-// interactive list is pinned against the baseline captured before the change, so
+// interactive list is pinned against the baseline captured before the change
+// (test/fixtures/interactive-baseline.json, read via ./interactive-baseline.ts), so
 // the catalogue cannot quietly alter what a new conversation sees.
 
 import { readFileSync } from "node:fs";

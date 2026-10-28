@@ -312,16 +312,23 @@ exist, but none includes mail.
 
 ## Harvest
 <!-- single-copy: updated in place each harvest; ids only, never restated content -->
-fresh-as-of: 2026-10-28 · ready (plan authored, 8 phases) · 6cfd57f (SL-005 doctrine files uncommitted)
+fresh-as-of: 2026-10-28 · close · a6a5a03
 
 ### Produced
-DEC-029 (supersedes DEC-023), DEC-030; DEC-026/DEC-027/DEC-030 refined (rounds 2-4); RV-015 (56 findings, all verified, concluded); design.md locked rev 51 (materialised 52); IMP-017; inq-8; screwtape IMP-002; plan.toml/plan.md (8 phases).
+- PHASE-01..08 done — toolset catalog, explicit selection and reconcile, topic toolset, five mail_* tools over screwtape v1 (commits 3523209..a6a5a03)
+- RV-016 — reconciliation audit; design.md sec-4/5/6 and the selector registry reconciled, no REV
+- DEC-029, DEC-030 (design); IMP-017, IMP-018 minted
 
 ### Learned
-quotient memory refreshed (quotient-sandbox-limits); design-review-yagni memory (stop attack rounds once minor); pi-durable selection facts in this file's "Prompt ownership"; pi-durable create order (hook, agent, init) confirmed at harness.js:269-272.
+- design-review-yagni — stop attack rounds once findings drop to minor
+- quotient-sandbox-limits — form facts for pi workers (refreshed during design)
 
 ### Open
-/phase-plan SL-005 PHASE-01 next (its first step is the baseline capture, RV-015 F-32). IMP-017 (fork/task-owned toolsets) and screwtape IMP-002 (list-field bounds) parked; IMP-015 (byte budget, deferred); ~/satan-corpus/prompts/mail.txt draft (operator repo).
+- IMP-017 — fork and task-owned toolsets
+- IMP-015 — per-conversation byte budget
+- IMP-018 — Emacs client: conversation in a named topic (VH-1 ran in the line client)
+- screwtape IMP-002 — list-field bounds (oversize envelope at limit 1)
+- ~/satan-corpus/prompts/mail.txt — installed, uncommitted in the operator's repo
 
 ## Implementation run (2026-10-28, /super-orchestrator)
 
@@ -452,3 +459,13 @@ store. Adjudicated:
   "the contract's date form" was right; the implementation was not. Gate
   3234/3234; live smoke 5/5. VH-1 part 1 (only the mail tools listed): the
   operator confirmed it.
+
+## Audit (2026-10-28, RV-016)
+
+- Phase sheets swept: their decisions are already in the Autonomy log above;
+  nothing further to lift.
+- Gate in this session: biome is not on the agent's bare bash PATH; `nix
+  develop -c just check` is the host gate (3234/3234).
+- F-8 fixed here: test/toolsets.test.ts names the baseline fixture so
+  `verify-vt` attributes PHASE-01 VT-1 (23/23 pass).
+- Untested live: `held_back` (no future-dated mail in the store).
