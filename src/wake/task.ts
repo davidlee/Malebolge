@@ -19,7 +19,7 @@ import {
   type TaskRuntime,
   type Tx,
 } from "@earendil-works/pi-durable";
-import type { CallToolResult } from "@earendil-works/pi-mcp";
+import { bootContextOf } from "../boot-context.ts";
 import { contextOf } from "../conversation-context.ts";
 import { durationOf } from "../duration.ts";
 import { isRecord } from "../json.ts";
@@ -147,10 +147,6 @@ const scheduledKey = (input: WakeInput): PoolKey => ({
   kind: "scheduled",
 });
 
-/** The text items of a satan-mcp result, joined. */
-const textOf = (result: CallToolResult): string =>
-  result.content.map((item) => (item.type === "text" ? item.text : "")).join("\n");
-
 /** The policy's env for this wake: the harness clock, the dice, presence over the scheduled connection. */
 const envOf = (deps: WakeDeps, input: WakeInput): WakeEnv => ({
   now: () => deps.now(),
@@ -174,19 +170,8 @@ const hostGate = (deps: WakeDeps, input: WakeInput): Promise<Gate> =>
   deps.policy.gate(input, { ...envOf(deps, input), presence: () => Promise.resolve("unknown") });
 
 /** The percept (satan_boot_context), or why there is none: a wake fires without a percept rather than not at all. */
-const perceptOf = async (deps: WakeDeps, input: WakeInput): Promise<string> => {
-  try {
-    const result = await deps.satan.call(
-      scheduledKey(input),
-      "satan_boot_context",
-      { refresh: true },
-      SATAN_CALL_DEADLINE_MS,
-    );
-    return result.isError === true ? `percept unavailable: ${textOf(result)}` : textOf(result);
-  } catch (error) {
-    return `percept unavailable: ${messageOf(error)}`;
-  }
-};
+const perceptOf = (deps: WakeDeps, input: WakeInput): Promise<string> =>
+  bootContextOf(deps.satan.call, scheduledKey(input), SATAN_CALL_DEADLINE_MS);
 
 const MINUTE = 60_000;
 

@@ -5,7 +5,7 @@
 // daemon-wide gate shared by every conversation (DEC-086).
 
 import type { Socket } from "node:net";
-import type { AgentEventStream, Conversation } from "@earendil-works/pi-durable";
+import type { AgentEventStream, Conversation, ConversationId } from "@earendil-works/pi-durable";
 import { context } from "./context.ts";
 import { type ConversationPage, type Conversations } from "./conversations.ts";
 import { encodeLine, lineSplitter } from "./ndjson.ts";
@@ -30,6 +30,8 @@ export interface ServeOptions {
   conversations: Promise<Conversations>;
   /** One daemon-wide gate, shared by every conversation, before each input. */
   beforeInput: () => Promise<void>;
+  /** The input an `orient` line submits to `conversation`: its fresh SATAN context (IMP-016). */
+  orientation: (conversation: ConversationId) => Promise<string>;
 }
 
 /** One connection: its socket, the chain that orders its lines, and its one binding. */
@@ -37,6 +39,7 @@ interface Connection {
   socket: Socket;
   conversations: Promise<Conversations>;
   beforeInput: () => Promise<void>;
+  orientation: (conversation: ConversationId) => Promise<string>;
   /** The conversation the first line bound; `undefined` until then. */
   bound?: Conversation;
   /** The bound conversation's event stream, once acquired. */
@@ -103,7 +106,7 @@ async function submitInput(
   await conversation.submit(draft, context);
 }
 
-/** What a line asks the bound conversation to do; only an input runs `beforeInput`. */
+/** What a line asks the bound conversation to do; only an input or an orient runs `beforeInput`. */
 async function act(
   state: Connection,
   conversation: Conversation,
@@ -118,6 +121,12 @@ async function act(
       return;
     case "compact":
       await conversation.compact(message.instructions, context);
+      return;
+    case "orient":
+      await submitInput(state, conversation, {
+        type: "input",
+        content: await state.orientation(conversation.id),
+      });
       return;
   }
 }
@@ -349,6 +358,7 @@ function startConnection(options: ServeOptions, socket: Socket): void {
     socket,
     conversations: options.conversations,
     beforeInput: options.beforeInput,
+    orientation: options.orientation,
     ended: false,
     queue: Promise.resolve(),
   };

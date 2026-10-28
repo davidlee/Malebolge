@@ -27,7 +27,8 @@ import { messageOf } from "./message-of.ts";
 export type ClientMessage =
   | { type: "input"; content: string; requestId?: string }
   | { type: "abort" }
-  | { type: "compact"; instructions?: string };
+  | { type: "compact"; instructions?: string }
+  | { type: "orient" };
 
 export interface ErrorMessage {
   type: "error";
@@ -370,6 +371,8 @@ function clientMessage(message: JsonRecord): ClientMessage {
         "instructions",
         optionalString(message, "instructions"),
       );
+    case "orient":
+      return { type: "orient" };
     default:
       throw new Error(`unknown message type ${JSON.stringify(type)}`);
   }

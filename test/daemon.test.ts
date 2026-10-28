@@ -11,6 +11,7 @@ import { getCurrentTools } from "@earendil-works/pi-ai/utils/transcript";
 import {
   type AgentEventStream,
   type Conversation,
+  type ConversationId,
   type EntryRecord,
   MemoryStorage,
 } from "@earendil-works/pi-durable";
@@ -176,6 +177,7 @@ const noteTool: FakeTool = {
 };
 
 const noGate = (): Promise<void> => Promise.resolve();
+const noOrientation = (): Promise<string> => Promise.resolve("");
 const noLog = (): void => undefined;
 
 describe("daemon", () => {
@@ -191,19 +193,22 @@ describe("daemon", () => {
   const serveSession = (
     session: Promise<TestHarness>,
     beforeInput: () => Promise<void>,
+    orientation: (conversation: ConversationId) => Promise<string> = noOrientation,
   ): Promise<Daemon> =>
     serve({
       socketPath,
       conversations: session.then((harness) => conversations(harness, DEFAULTS, "host")),
       beforeInput,
+      orientation,
     });
 
   const start = async (
     session: Promise<TestHarness> = openTestHarness([]),
     beforeInput: () => Promise<void> = noGate,
+    orientation: (conversation: ConversationId) => Promise<string> = noOrientation,
   ): Promise<TestHarness> => {
     test = await session;
-    daemon = await serveSession(session, beforeInput);
+    daemon = await serveSession(session, beforeInput, orientation);
     return test;
   };
 
@@ -889,6 +894,7 @@ describe("daemon", () => {
       socketPath,
       conversations: Promise.resolve(conversations(test, DEFAULTS, "room")),
       beforeInput: noGate,
+      orientation: noOrientation,
     });
     expect((await replyTo({ type: "list", topics: true }, isTopics)).profile).toBe("room");
   });
@@ -922,6 +928,7 @@ describe("daemon", () => {
       socketPath,
       conversations: Promise.resolve(failing),
       beforeInput: noGate,
+      orientation: noOrientation,
     });
     const client = await lineClient(socketPath, toPrintable);
     clients.push(client);
@@ -1023,6 +1030,31 @@ describe("daemon", () => {
     expect(calls).toBe(1);
   });
 
+  it("submits the bound conversation's orientation as an input, after beforeInput", async () => {
+    let gated = 0;
+    const oriented: ConversationId[] = [];
+    await start(
+      openTestHarness([]),
+      () => {
+        gated++;
+        return Promise.resolve();
+      },
+      (conversation) => {
+        oriented.push(conversation);
+        return Promise.resolve("<orient>fresh</orient>");
+      },
+    );
+    test.faux.setResponses([fauxAssistantMessage([fauxText("oriented")])]);
+    const client = await attach();
+    client.send({ type: "orient" });
+    await client.next(isType("run_end"));
+    expect(oriented).toEqual([test.root.id]);
+    expect(gated).toBe(1);
+    const page = await test.root.entries({}, 50, undefined, context);
+    const users = page.items.filter((entry) => entry.kind === "pi.user");
+    expect(JSON.stringify(users)).toContain("<orient>fresh</orient>");
+  });
+
   it("submits concurrent inputs after one held SATAN refresh (VT-8)", async () => {
     const mcp = await fakeMcpServer(join(dir, "mcp.sock"), [noteTool], {
       silent: ["tools/list"],
@@ -1122,6 +1154,7 @@ describe("daemon", () => {
       socketPath,
       conversations: Promise.resolve(seam),
       beforeInput: noGate,
+      orientation: noOrientation,
     });
     const entered = Promise.withResolvers<undefined>();
     const release = Promise.withResolvers<undefined>();

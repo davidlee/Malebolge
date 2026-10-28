@@ -6,6 +6,7 @@ import { dirname, join } from "node:path";
 import type { Models } from "@earendil-works/pi-ai/models";
 import type { Registry } from "@earendil-works/pi-durable";
 import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite/node";
+import { orientationOf } from "./boot-context.ts";
 import type { Config, Profile } from "./config.ts";
 import { context } from "./context.ts";
 import { type Conversations, type ConversationDefaults, conversations } from "./conversations.ts";
@@ -171,6 +172,7 @@ export async function startDaemon(config: Config, deps: StartDeps): Promise<Daem
       socketPath: config.daemonSocket,
       conversations: conversationsReady.promise,
       beforeInput: satan.refresh,
+      orientation: (conversation) => orientationOf(satan.call, conversation),
     });
     // Before the session resumes, so a turn's SATAN call runs, not `tool_unavailable`.
     await satan.refresh();

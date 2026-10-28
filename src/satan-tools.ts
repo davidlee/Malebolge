@@ -36,7 +36,10 @@ const objectSchema = (schema: Tool["inputSchema"]): ObjectSchema =>
 export type Log = (text: string) => void;
 
 /** The pool key a conversation's interactive calls are made under. */
-const callsOf = (conversation: ConversationId): PoolKey => ({ conversation, kind: "interactive" });
+export const callsOf = (conversation: ConversationId): PoolKey => ({
+  conversation,
+  kind: "interactive",
+});
 
 /**
  * Runs `use` over `key`'s pooled connection, holding it for the whole call: the

@@ -19,12 +19,12 @@
 ;;   `text-mode').
 ;; - Draft bindings: C-c C-c `malebolge-submit', C-c C-a `malebolge-abort',
 ;;   C-c C-m `malebolge-compact' (optional instructions via `read-string'),
-;;   C-c C-q `malebolge-quit', C-c C-h `malebolge-help'.
-;; - Transcript bindings: the same five controls plus C-c C-e
+;;   C-c C-o `malebolge-orient', C-c C-q `malebolge-quit', C-c C-h `malebolge-help'.
+;; - Transcript bindings: the same six controls plus C-c C-e
 ;;   `malebolge-draft' (show/focus the draft); `RET' focuses the draft.
 ;; - Frames are newline-terminated JSON written with `process-send-string':
 ;;   {"type":"input","content":...}, {"type":"abort"}, {"type":"compact",
-;;   "instructions":...}, {"type":"quit"}.
+;;   "instructions":...}, {"type":"orient"}, {"type":"quit"}.
 ;; - Faces `malebolge-tool-face' (transcript lines starting "[tool] ") and
 ;;   `malebolge-status-face' (lines starting "[status] ").
 ;; - `header-line-format' is non-nil in both buffers.
@@ -274,8 +274,8 @@ created by `malebolge-attach' against the fake process."
 
 ;;; EX-3: controls send frames and preserve the draft
 
-(ert-deftest malebolge-abort-compact-quit-send-frames ()
-  "Abort, compact and quit write their frames and never clear the draft."
+(ert-deftest malebolge-abort-compact-orient-quit-send-frames ()
+  "Abort, compact, orient and quit write their frames and never clear the draft."
   (malebolge-test--with-session
     (let ((text "draft survives"))
       (malebolge-test--insert-draft text)
@@ -308,6 +308,14 @@ created by `malebolge-attach' against the fake process."
 
       (malebolge-test--insert-draft text)
       (with-current-buffer draft
+        (call-interactively #'malebolge-orient))
+      (malebolge-test--wait)
+      (let ((frame (car (last (malebolge-test--frame-values)))))
+        (should (equal '((type . "orient")) frame)))
+      (should (equal text (malebolge-test--draft-text)))
+
+      (malebolge-test--insert-draft text)
+      (with-current-buffer draft
         (call-interactively #'malebolge-quit))
       (malebolge-test--wait)
       (let ((frame (car (last (malebolge-test--frame-values)))))
@@ -327,6 +335,8 @@ created by `malebolge-attach' against the fake process."
                     'malebolge-abort))
         (should (eq (lookup-key (current-local-map) (kbd "C-c C-m"))
                     'malebolge-compact))
+        (should (eq (lookup-key (current-local-map) (kbd "C-c C-o"))
+                    'malebolge-orient))
         (should (eq (lookup-key (current-local-map) (kbd "C-c C-q"))
                     'malebolge-quit))
         (should (eq (lookup-key (current-local-map) (kbd "C-c C-h"))

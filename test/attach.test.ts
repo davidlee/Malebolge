@@ -27,6 +27,7 @@ describe("commandOf", () => {
     ["  /abort ", { type: "abort" }],
     ["/compact", { type: "compact" }],
     ["/compact keep names", { type: "compact", instructions: "keep names" }],
+    ["/orient", { type: "orient" }],
     ["/quit", "quit"],
     ["   ", undefined],
   ])("%j → %j", (line, command) => {
@@ -504,16 +505,18 @@ describe("attach: frame input mode", () => {
     await s.done;
   });
 
-  it("forwards abort and compact unchanged", async () => {
+  it("forwards abort, compact and orient unchanged", async () => {
     const { fake, s } = await attachedSession({ inputMode: "frames", presentation: "emacs" });
     s.input.write('{"type":"abort"}\n');
     s.input.write('{"type":"compact"}\n');
     s.input.write('{"type":"compact","instructions":"keep names"}\n');
-    await fake.lines.next((line) => line.includes("keep names"));
+    s.input.write('{"type":"orient"}\n');
+    await fake.lines.next((line) => line.includes("orient"));
     expect(fake.lines.items.slice(1)).toEqual([
       JSON.stringify({ type: "abort" }),
       JSON.stringify({ type: "compact" }),
       JSON.stringify({ type: "compact", instructions: "keep names" }),
+      JSON.stringify({ type: "orient" }),
     ]);
     s.input.write('{"type":"quit"}\n');
     await s.done;

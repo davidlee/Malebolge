@@ -15,6 +15,7 @@ describe("parseClientMessage", () => {
     [{ type: "abort" }],
     [{ type: "compact" }],
     [{ type: "compact", instructions: "keep test names" }],
+    [{ type: "orient" }],
   ])("accepts %j", (message) => {
     expect(parseClientMessage(JSON.stringify(message))).toEqual(message);
   });
@@ -177,6 +178,7 @@ describe("parseConnectionMessage", () => {
     [{ type: "abort" }],
     [{ type: "compact" }],
     [{ type: "compact", instructions: "keep test names" }],
+    [{ type: "orient" }],
   ])("parses %j as parseClientMessage does", (message) => {
     const line = JSON.stringify(message);
     expect(parseConnectionMessage(line)).toEqual(parseClientMessage(line));

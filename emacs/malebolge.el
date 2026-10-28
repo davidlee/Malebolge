@@ -17,6 +17,7 @@
 ;;   C-c C-c  submit the draft as one input frame
 ;;   C-c C-a  abort the current run
 ;;   C-c C-m  compact the transcript (optional instructions)
+;;   C-c C-o  orient: re-send SATAN's fresh boot context as an input
 ;;   C-c C-q  quit, detaching from the daemon
 ;;   C-c C-h  show this summary
 ;; Transcript only: C-c C-e and RET focus the draft.  The transcript is
@@ -79,8 +80,8 @@
 (defconst malebolge-draft-buffer-name "*malebolge-draft*")
 
 (defconst malebolge--key-summary
-  "C-c C-c submit   C-c C-a abort   C-c C-m compact   C-c C-q quit   C-c C-e draft
-C-c C-h help")
+  "C-c C-c submit   C-c C-a abort   C-c C-m compact   C-c C-o orient
+C-c C-q quit   C-c C-e draft   C-c C-h help")
 
 (defvar malebolge-transcript-mode-map (make-sparse-keymap))
 (defvar malebolge-draft-mode-map (make-sparse-keymap))
@@ -91,6 +92,7 @@ C-c C-h help")
     (define-key map (kbd "C-c C-c") #'malebolge-submit)
     (define-key map (kbd "C-c C-a") #'malebolge-abort)
     (define-key map (kbd "C-c C-m") #'malebolge-compact)
+    (define-key map (kbd "C-c C-o") #'malebolge-orient)
     (define-key map (kbd "C-c C-q") #'malebolge-quit)
     (define-key map (kbd "C-c C-h") #'malebolge-help))
   (define-key malebolge-transcript-mode-map (kbd "C-c C-e") #'malebolge-draft)
@@ -431,6 +433,13 @@ Without one, attach to root as always."
                            (list :type "compact" :instructions instructions))))
 
 ;;;###autoload
+(defun malebolge-orient ()
+  "Ask the daemon to re-send SATAN's fresh boot context as an input.
+Use it once compaction has folded the conversation's first one away."
+  (interactive)
+  (malebolge--send-frame '(:type "orient")))
+
+;;;###autoload
 (defun malebolge-quit ()
   "Detach this client; the daemon and the draft are untouched."
   (interactive)
@@ -454,8 +463,9 @@ lines, trailing spaces and leading `/` are preserved.
 
 C-c C-c submits the exact draft text as one input frame and clears the
 draft.  C-c C-a aborts the current run, C-c C-m compacts the transcript
-(prompting for optional instructions) and C-c C-q quits, detaching this
-client.  None of them clear or alter the draft.  The transcript is
+(prompting for optional instructions), C-c C-o re-sends SATAN's fresh boot
+context (percept, attention, motive) as an input, and C-c C-q quits,
+detaching this client.  None of them clear or alter the draft.  The transcript is
 read-only; C-c C-e (or RET there) returns you to the draft.
 
 Following

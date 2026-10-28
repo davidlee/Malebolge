@@ -327,4 +327,5 @@ export const serveTest = (test: TestHarness, path: string): Promise<Daemon> =>
       conversations(test, { model: FAUX_MODEL, cwd: process.cwd() }, "host"),
     ),
     beforeInput: () => Promise.resolve(),
+    orientation: () => Promise.resolve(""),
   });

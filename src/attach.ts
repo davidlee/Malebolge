@@ -43,6 +43,7 @@ const FRAME_FIELDS: ReadonlyMap<unknown, readonly string[]> = new Map([
   ["input", ["type", "content"]],
   ["abort", ["type"]],
   ["compact", ["type", "instructions"]],
+  ["orient", ["type"]],
   ["quit", ["type"]],
 ]);
 
@@ -93,6 +94,9 @@ export function commandOf(typed: string): ClientMessage | "quit" | undefined {
   }
   if (text.startsWith("/compact ")) {
     return { type: "compact", instructions: text.slice("/compact ".length).trim() };
+  }
+  if (text === "/orient") {
+    return { type: "orient" };
   }
   return { type: "input", content: typed };
 }

@@ -93,6 +93,7 @@ login — and is defined in ~/flakes (unit facts: `~/flakes/SATAN.md`). Logs:
 | any text | talk to SATAN |
 | `/abort` | stop the answer in progress |
 | `/compact [instructions]` | summarise older history to free up the model's context |
+| `/orient` | re-send SATAN's fresh boot context (percept, attention, motive) as an input, for a conversation compaction has folded it out of |
 | `/quit` | detach; its conversation keeps going |
 
 ### Emacs session
@@ -106,6 +107,7 @@ type in the draft and only ever read the transcript.
 | `C-c C-c` | submit the draft as one message |
 | `C-c C-a` | abort the run in progress |
 | `C-c C-m` | compact, optionally with instructions |
+| `C-c C-o` | orient: as `/orient` |
 | `C-c C-q` | quit: detach this client; the daemon keeps running |
 | `C-c C-e` | focus the draft (also `RET` in the transcript) |
 | `C-c C-h` | show the key summary |
