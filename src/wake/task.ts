@@ -24,7 +24,12 @@ import { contextOf } from "../conversation-context.ts";
 import { durationOf } from "../duration.ts";
 import { isRecord } from "../json.ts";
 import { messageOf } from "../message-of.ts";
-import type { PoolKey } from "../satan-pool.ts";
+import {
+  notifyBestEffort,
+  reasonOf,
+  SATAN_CALL_DEADLINE_MS,
+  scheduledKey,
+} from "../task-support.ts";
 import type { IndexReader } from "../topics.ts";
 import type { WakeDeps } from "./extension.ts";
 import { localIso } from "./local-time.ts";
@@ -38,9 +43,6 @@ type JsonValue = JsonObject[string];
 
 /** The task kind, and the entry kind its input is placed as. */
 export const WAKE_KIND = "satan.wake";
-
-/** How long each scheduled satan-mcp call (presence, percept, notify) may take. */
-export const SATAN_CALL_DEADLINE_MS = 10_000;
 
 export interface WakeInput {
   /** The target, fixed at schedule (W8). */
@@ -141,12 +143,6 @@ export const createWakeTask = (
     background: true,
   });
 
-/** Where the occurrence's scheduled satan-mcp calls go: the target's own connection of that kind. */
-const scheduledKey = (input: WakeInput): PoolKey => ({
-  conversation: input.conversationId,
-  kind: "scheduled",
-});
-
 /** The policy's env for this wake: the harness clock, the dice, presence over the scheduled connection. */
 const envOf = (deps: WakeDeps, input: WakeInput): WakeEnv => ({
   now: () => deps.now(),
@@ -154,7 +150,7 @@ const envOf = (deps: WakeDeps, input: WakeInput): WakeEnv => ({
   presence: async () =>
     presenceOf(
       await deps.satan.call(
-        scheduledKey(input),
+        scheduledKey(input.conversationId),
         "activity_read",
         { scope: "current" },
         SATAN_CALL_DEADLINE_MS,
@@ -171,7 +167,7 @@ const hostGate = (deps: WakeDeps, input: WakeInput): Promise<Gate> =>
 
 /** The percept (satan_boot_context), or why there is none: a wake fires without a percept rather than not at all. */
 const perceptOf = (deps: WakeDeps, input: WakeInput): Promise<string> =>
-  bootContextOf(deps.satan.call, scheduledKey(input), SATAN_CALL_DEADLINE_MS);
+  bootContextOf(deps.satan.call, scheduledKey(input.conversationId), SATAN_CALL_DEADLINE_MS);
 
 const MINUTE = 60_000;
 
@@ -253,9 +249,7 @@ const notify = async (
   text: string,
 ): Promise<void> => {
   const body = `wake ${String(taskId)} (${topic}): ${text}`;
-  await deps.satan
-    .call(scheduledKey(input), "notify_send", { title, body }, SATAN_CALL_DEADLINE_MS)
-    .catch(() => undefined);
+  await notifyBestEffort(deps.satan, scheduledKey(input.conversationId), title, body);
 };
 
 /**
@@ -298,17 +292,6 @@ const failed = async (
     () => ({ status: "terminal", outcome: { status: "failed", error: { message: reason } } }),
     ctx,
   );
-};
-
-/**
- * `work`'s failure as a reason, or rethrown when the invocation ended: a close
- * is not a failure, and the phase re-runs on reopen (W1).
- */
-const reasonOf = (runtime: Runtime, error: unknown): string => {
-  if (runtime.signal.aborted) {
-    throw error;
-  }
-  return messageOf(error);
 };
 
 /**

@@ -10,7 +10,8 @@ import { describe, expect, it, vi } from "vitest";
 import { context } from "../src/context.ts";
 
 import { localIso } from "../src/wake/local-time.ts";
-import { SATAN_CALL_DEADLINE_MS, wakeRequestId } from "../src/wake/task.ts";
+import { SATAN_CALL_DEADLINE_MS } from "../src/task-support.ts";
+import { wakeRequestId } from "../src/wake/task.ts";
 import { createConversation, FAUX_MODEL } from "./harness-fixture.ts";
 import {
   HOUR,
