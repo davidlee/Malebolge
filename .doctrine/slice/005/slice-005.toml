@@ -1,7 +1,7 @@
 id = 5
 slug = "mail-read-tools"
 title = "Mail read tools and tool partitioning by profile"
-status = "reconcile"
+status = "done"
 created = "2026-10-27"
 updated = "2026-10-28"
 tags = []
