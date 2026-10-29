@@ -1,0 +1,43 @@
+schema = "doctrine.knowledge"
+version = 1
+
+id = 80
+slug = "outbox-entries-carry-their-kind-and-deliver-sends-it-so-pi-knows-which-starts-a-turn"
+title = "Outbox entries carry their kind and deliver sends it, so pi knows which starts a turn"
+record_kind = "decision"
+status = "accepted"
+created = "2026-10-29"
+updated = "2026-10-29"
+tags = []
+
+[facet]                         # every field typed; seeded empty (captured later)
+context = "DEC-066 names outbox entries {seq, text} and deliver {seq, text}. The outbox now holds two kinds: bridge_post's turns and the withdrawal notice of DEC-067, which must start no pi turn; DEC-069 maps turn and note to different sendMessage options; DEC-079's abort re-inject reconciles turn-kind entries only. pi cannot tell them apart without the kind (SL-009 design review, Q3)."
+choice = "Refines DEC-066: an outbox entry is {seq, kind, text} with kind turn or note, and the daemon sends deliver {seq, kind, text}. bridge_post appends turns; the withdrawal notice is a note. The extension applies DEC-069's options by the delivered kind."
+alternatives = ["Infer the kind on pi from the text or from position: opaque and fragile", "A separate frame for notices: a second delivery path for one bit"]
+rationale = "One inspectable attribute instead of inference; the same turn/note vocabulary both ways."
+consequences = ["PairingDoc outbox entries and the deliver frame in pi-bridge/wire.ts carry kind", "DEC-079 reconciles by the delivered kind"]
+decided_by = "operator"
+decided_on = "2026-10-29"
+
+[evidence]                      # free-text citations (supports / contradicts / notes)
+supports    = []
+contradicts = []
+notes       = []
+
+[relationships]                 # verb-written edges (set by doctrine supersede)
+supersedes    = []   # record ids this one replaces (set by doctrine supersede)
+superseded_by = []   # set on superseded predecessor (verb-written)
+
+[[relation]]
+label = "references"
+role = "concerns"
+target = "DEC-066"
+
+[[relation]]
+label = "references"
+role = "concerns"
+target = "DEC-067"
+
+[[relation]]
+label = "shapes"
+target = "SL-009"

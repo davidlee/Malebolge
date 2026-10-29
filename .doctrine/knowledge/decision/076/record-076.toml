@@ -1,0 +1,43 @@
+schema = "doctrine.knowledge"
+version = 1
+
+id = 76
+slug = "a-wake-to-another-conversation-needs-a-shared-talk-set-a-self-wake-needs-none"
+title = "A wake to another conversation needs a shared talk set; a self-wake needs none"
+record_kind = "decision"
+status = "accepted"
+created = "2026-10-29"
+updated = "2026-10-29"
+tags = []
+
+[facet]                         # every field typed; seeded empty (captured later)
+context = "wake_schedule (src/wake/tools.ts:35-50) resolves any known topic's latest conversation and carries the caller's intent and payload there with no talk-set check. DEC-032's one check serves start fork and post only. So a mode with no talk set (mail; bridge per DEC-071) is reachable by wake and a bridge conversation could wake out with jail-sourced text (SL-009 review r1 F-1)."
+choice = "Refines DEC-032: requireSameTalkSet also judges a wake_schedule whose target is not the caller; a refusal is the tool's refusal naming the target. A self-wake is not judged. wake_cancel and wake_list are unchanged. The heartbeat is daemon-scheduled and unaffected."
+alternatives = ["Bridge drops the tasks extension and inbound wakes into the bridged conversation are an accepted residual", "Leave wakes unchecked (DEC-046 precedent of no new wake refusals)"]
+rationale = "Reuses the existing check at one more call site; the talk set becomes the one statement of reach for every cross-conversation path."
+consequences = ["interactive can no longer wake a mail conversation", "a bridge conversation can wake only itself", "only a bridge conversation itself schedules wakes into it"]
+decided_by = "operator"
+decided_on = "2026-10-29"
+
+[evidence]                      # free-text citations (supports / contradicts / notes)
+supports    = []
+contradicts = []
+notes       = []
+
+[relationships]                 # verb-written edges (set by doctrine supersede)
+supersedes    = []   # record ids this one replaces (set by doctrine supersede)
+superseded_by = []   # set on superseded predecessor (verb-written)
+
+[[relation]]
+label = "references"
+role = "concerns"
+target = "DEC-032"
+
+[[relation]]
+label = "references"
+role = "concerns"
+target = "DEC-071"
+
+[[relation]]
+label = "shapes"
+target = "SL-009"

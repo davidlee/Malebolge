@@ -1,0 +1,33 @@
+schema = "doctrine.knowledge"
+version = 1
+
+id = 85
+slug = "one-pure-creationmodel-function-picks-a-new-conversations-model-every-creating-path-writes-it-in"
+title = "One pure creationModel function picks a new conversation's model; every creating path writes it in the creating commit"
+record_kind = "decision"
+status = "accepted"
+created = "2026-10-29"
+updated = "2026-10-29"
+tags = []
+
+[facet]                         # every field typed; seeded empty (captured later)
+context = "attach --topic, --topic --new and thread_start each create conversations; toolsetInit already reads the topic inside the creating commit via writeCreated (src/topics.ts:135-150)."
+choice = "creationModel(sources, requireModel) -> ModelRef, sources = { topic?, fallback } today: topic's model else the daemon default, judged by requireModel. writeCreated returns the topic's record; toolsetInit becomes topicInit and applies both the toolset and configure(tx, id, { model }). Root never takes a topic model."
+alternatives = ["Apply the model in each caller", "Overwrite defaults.model before create"]
+rationale = "One seam for precedence and refusal; one commit, as toolset."
+consequences = ["toolsetInit renamed topicInit", "sources widen additively (requested)"]
+decided_by = "operator, 2026-10-29 session"
+decided_on = "2026-10-29"
+
+[evidence]                      # free-text citations (supports / contradicts / notes)
+supports    = []
+contradicts = []
+notes       = []
+
+[relationships]                 # verb-written edges (set by doctrine supersede)
+supersedes    = []   # record ids this one replaces (set by doctrine supersede)
+superseded_by = []   # set on superseded predecessor (verb-written)
+
+[[relation]]
+label = "shapes"
+target = "SL-010"

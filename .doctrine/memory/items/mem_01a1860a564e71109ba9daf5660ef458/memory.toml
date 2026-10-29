@@ -1,0 +1,46 @@
+memory_uid = "mem_01a1860a564e71109ba9daf5660ef458"
+memory_key = "mem.fact.malebolge.pi-tool-output-bound"
+schema_version = 1
+memory_type = "fact"
+status = "active"
+title = "pi-durable bounds every tool result to 50 KiB by default, per-tool overridable"
+summary = "harness/tool.js: final tool output is bounded to tool.outputLimits?.maxBytes ?? DEFAULT_MAX_BYTES (50 KiB), keeping the head; set outputLimits on a tool to change it"
+created = "2026-10-29"
+updated = "2026-10-29"
+
+[scope]
+paths = ["src/mail/render.ts"]
+globs = []
+commands = []
+tags = ["pi-durable", "mail"]
+workspace = "default"
+repo = "github.com/davidlee/Malebolge"
+repo_id_kind = "remote"
+repo_id_confidence = "high"
+
+[git]
+anchor_kind = "checkout_state"
+commit = ""
+tree = "815cd25e616dc0f505276ff3742a4949f6ddbf26"
+ref_name = "refs/heads/main"
+checkout_state_id = "c2cfa8d62961be5ea0b15fdea0173349a94c6131dccc7228be28541cd3f6dd3e"
+base_commit = "dc9d818097db59cade3c5951351eaa405dc8744f"
+verified_sha = ""
+normalizer = "forget.checkout.v1"
+
+[review]
+verification_state = "unverified"
+reviewed = ""
+review_by = ""
+
+[trust]
+trust_level = "medium"
+
+[ranking]
+severity = "none"
+weight = 0
+
+[[source]]
+kind = "code"
+ref = "node_modules/@earendil-works/pi-durable/dist/harness/tool.js:190"
+

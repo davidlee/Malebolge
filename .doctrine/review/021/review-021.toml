@@ -1,0 +1,800 @@
+id    = 21
+slug  = "design-review-of-sl-009"
+title = "design review of SL-009"
+# no status — a review's status is DERIVED from its findings, so
+# it is never stored (the storage rule forbids derived data in authored files).
+
+[review]
+facet     = "design"     # scope|design|plan|phase-plan|implementation|code-review|reconciliation
+raiser    = "codex"
+responder = "responder"
+rounds_base = 0
+contests_base = 0
+concluded = true
+
+[[review.turn]]
+act = "conclude"
+role = "raiser"
+note = """
+Codex round 3 completed the raising pass over all nine sections of .doctrine/slice/009/design.md: Overview; Bridge listener and wire; Pairing and the pairing document; Messages; Loop budget; Bridge mode and reach; The pi side and deployment; Code impact; Verification. Reviewed file SHA-256: 32a1dbb67afac2af15f16fa5d7a5a57dcb27531579c015437520a788f8227612 (unchanged throughout this pass); the live managed run reported revision 26, reviewing.
+
+Authority/evidence: accepted DEC-064..DEC-076 and the updated slice scope; ASM-004..ASM-008 and CHR-007; the supplied rulings-r2.md; relevant src daemon, conversation, wake, thread, socket and notification paths; installed pi-durable 1.4.0 submission/watch/document contracts; the local pi coding-agent session, queue, fork and bash APIs; package, TypeScript, lint and coverage configuration. A read-only TypeScript module-resolution probe confirmed the coding-agent package is not resolved by this repo's current configuration. Runtime/jail scenarios are explicitly marked inferred; no daemon, real-pi, jail, build or integration tests were run.
+
+Raised F-1..F-8: one blocker, five major, two minor. Every finding states section titles, source evidence, its verification limits, the failure scenario and the smallest repair using existing mechanisms. Overall verdict: lockable after fixes. Findings remain open for the responder; this concludes raising, not reconciliation or lock approval.
+
+Excluded: Q3 (outbox kind), Q4 (spend-before-submit and stale one-commit wording/diagram), disposed round-2 findings, accepted residuals, ISS-003, network policy, Emacs and placeholder posture corpus prose. Only RV-021's authored ledger/brief were edited, plus review CLI-maintained state. The codex label was set in the existing ledger because no CLI verb edits this field (lib:reference/using-doctrine.md, Hand-edit vs verb); all finding and conclusion acts used doctrine review CLI.
+"""
+
+[[review.turn]]
+act = "conclude"
+role = "raiser"
+note = """
+Codex round 4 raising concluded. Narrow subject: only the step(state,event) transition table and Outside the table rules under SL-009 design's "The pi side and deployment", including their delegated injection semantics. Reviewed design SHA-256 2e850c3fb63fc97833b896095c84d6b4c7764cb0cd46c1361acb52dddcb65831; unchanged during this pass.
+
+Read rulings-r1.md, rulings-r2.md and rulings-r3.md before raising. Checked accepted DEC-065/066/068/069/073/075/079/080 and the real local pi session/runtime, extension loader, resource loader, model-loop, interactive, queue and history paths. The direct getEntries/raw-history retention and append-only compaction preserve pairing and details.seq; /tree changes the leaf without changing session ID. No compaction-metadata-loss finding or repeated owner-check finding was raised.
+
+New raises: F-9 and F-10 blockers; F-11, F-12 and F-13 major; F-14 minor. Each identifies the exact table/effect rule, verified source facts, an inferred trace explicitly not executed, and the smallest repair using the existing state/effect mechanisms. Overall verdict: lockable after fixes. Source inspection only; no real-pi, daemon, jail or build tests were run. The new probes proposed in findings address queue retention/event selection/transition coverage rather than repeating ASM-004..008 availability and persistence-observation probes.
+
+F-1..F-8, the prior dispositions, accepted residuals and decisions (including spend order, note/turn kind and passive abort recovery) were treated as settled constraints, not re-adjudicated. Their ledger statuses were not changed. No files besides the existing review ledger and CLI-maintained review state were edited. Dispositions/verification remain the responder's subsequent work; this concludes raising only.
+"""
+
+[[review.turn]]
+act = "conclude"
+role = "raiser"
+note = """
+Codex round 5 verification-only pass concluded. Adjudicated every responder disposition F-1 through F-14 against the current design, accepted DEC-078/079/080/090 and the original finding's evidence/scenario. The live run reported revision 39 rather than the brief's revision 37; reviewed design SHA-256 5ff194393d65fced3ac015642a5c6f257ecdea5b78fd323f146a586edfddec3f remained unchanged during this verification.
+
+Outcomes: F-1 contested with direct source evidence and a focused read-only probe; F-2 through F-14 individually verified as design fixes. No new findings raised, and no scope expansion into another attack. Overall verdict: not lockable while F-1 remains contested.
+
+F-1: the event-derived running flag starts at agent_start, but local pi sets isStreaming before awaiting prompt preparation/compaction/before_agent_start. A delivery in that window still enters pi's steering queue; normal queue clearing drops it outside the extension buffer. The probe executed the unmodified sendCustomMessage and clearQueue methods extracted from local pi on an in-memory fake host already busy: one message queued, zero after clearing, zero persisted. This is source-method evidence, not a real-pi/daemon/jail integration test. The inference and smallest repair (additional ctx.isIdle guard using the same buffer and existing completion events) are recorded on F-1.
+
+The accepted DEC-090 idle-only buffering direction and its explicit reload residual were respected. F-9's agent_end/reconnect-state mechanism and F-10's surviving-nextTurn-queue duplication are removed; the remaining pre-agent_start gap is confined to the F-1 contest. Other verifications cite the precise repaired design sections and their planned regression criteria; they do not assert implementation or test execution. No product/design/governance files were edited, and no build, full test suite, daemon or jail was run. Only review CLI ledger/state acts were written. Disposition of the contested blocker remains with the responder.
+"""
+
+[[review.turn]]
+act = "conclude"
+role = "raiser"
+note = """
+F-1-only re-verification complete as codex on revision 41 (design hash 2fe2588af943649afe56bf5063dd2025b083efb030751be1010dc3a681a29544). Verified the re-disposed F-1 after checking the actual ctx.isIdle plus reducer-running injection guard and the busy-before-agent_start regression criterion against local pi source. F-2..F-14 were left untouched. No new findings, product edits, runtime/integration tests or lifecycle transitions. Overall design-review verdict: lockable; this is not an act of locking the design.
+"""
+
+[[review.turn]]
+act = "conclude"
+role = "raiser"
+note = "Procedural round only: reopened exactly F-1, F-2, F-3, F-4, F-5, F-6, F-9, F-10, F-11, F-12 and F-13 solely to let the responder add a route. The fixes themselves were verified. No substantive review or other changes."
+
+[[review.turn]]
+act = "conclude"
+role = "raiser"
+note = "Procedural round only: checked the newly added routes and verified exactly F-1..F-6 and F-9..F-13 as codex. Probe is appropriate for real-pi lifecycle and jail PATH behavior; demonstrate is appropriate for deterministic protocol, failure, ownership and pending-call regressions. No route was plainly wrong. Prior substantive verification stands; no new review or claim of executed probes/demonstrations. No other findings changed."
+
+[target]                   # the outbound `reviews` edge: RV-NNN ──reviews──▶ <ref>
+ref   = "SL-009"
+
+[[finding]]
+id = "F-1"
+status = "verified"
+severity = "blocker"
+title = "Clearing pi's queue permanently suppresses an unacked bridge delivery"
+detail = """
+Reviewer: codex. Design facet. Sections: "Messages" and "Verification". Authority: DEC-066/068, durable outbox delivery and context deduplication.
+
+Expected: an unpersisted delivery remains recoverable from the daemon outbox, including after a normal pi operation clears its pending queue. Observed: design.md:188-194 skips a seq once it was "handed to pi by this process"; design.md:182-186 only pushes an entry once per connection. No path removes handed-but-never-persisted IDs or requests their redelivery after pi discards a queue.
+
+Verified source: ~/.local/src/pi/packages/coding-agent/src/core/agent-session.ts:2372-2376 queues a busy turn through agent.followUp; :2466-2473 clearQueue calls agent.clearAllQueues. packages/agent/src/agent.ts:322-330 clears the custom follow-up queue too. packages/coding-agent/src/modes/interactive/interactive-mode.ts:4700-4712 and :4734-4750 invoke that clearing in the normal restore/abort path; :1978-1979 wires it as the extension abort handler. Only user-text arrays are returned to the editor, so the bridge custom message is not restored there.
+
+Concrete inferred scenario (not executed): receive seq 7 while pi is busy; mark it handed, with no session entry or ack yet; clear/abort the queue; pi remains alive. Seq 7 never persists. The daemon retains it but does not send it again on this connection; even a reconnect in this process skips it because it was handed previously. It is stranded until a process restart. This is distinct from ASM-004's observation timing for messages that are actually consumed: here the queued message is discarded.
+
+Smallest fix: define the handed set as pending delivery state, not a lifetime receipt. Reconcile it when pi discards queued work and re-arm unpersisted deliveries through the existing resume/redelivery path. If the API cannot reliably distinguish queue loss, fail loudly and suspend delivery with the affected seqs left unacked and an explicit recovery instruction; do not silently keep suppressing them. Use the existing agent_settled/abort lifecycle rather than a new receive tool or store. Add a real-pi PHASE-01 probe and a regression: busy delivery, clear queue, reconnect without restarting, verify persistence exactly once or explicit refusal.
+"""
+disposition = "fix-now"
+response = "Contest accepted. A running flag set on agent_start leaves a window where pi is already busy (an externally started run before agent_start) and a delivery could still enter a queue that abort clears. Fix (Messages; The pi side and deployment): the shell checks ctx.isIdle() (pi extensions/types.ts:348) at each deliver. It injects only when isIdle() is true and the reducer is not running; otherwise it buffers until agent_settled. The running flag stays for the extension's own turn injection, which isIdle may not yet reflect. Behaviour is still DEC-079's via DEC-090. Verification: a delivery arriving between input submit and agent_start is buffered, not queued in pi."
+route = "probe"
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+response = "Settled by the operator's Q5 answer: DEC-079 (a turn dropped by an abort returns as a note). Draft r33 carries it. Round 4 replaces its mechanism with the idle-only buffer (see F-9/F-10) while keeping DEC-079's behaviour."
+
+[[finding.turn]]
+act = "contest"
+role = "raiser"
+note = """
+Round 5 verification by codex: CONTEST F-1. The idle-only buffer is the right simplification, but the specified running flag still permits the original failure class before agent_start. This rejects the claimed resolution, not DEC-090's buffering choice.
+
+Current design evidence: "Messages" design.md:197-214 defines running from agent_start or the extension's own turn injection until agent_settled. "The pi side and deployment" :391-395 sets running only on agent_start; ordinary interactive input only emits refill. The before_agent_start hook (:411-412) only renders posture. Thus an externally initiated pi run can be busy while the reducer still regards it as idle.
+
+Verified pi source: ~/.local/src/pi/packages/coding-agent/src/core/agent-session.ts:1873-1878 sets _isAgentRunActive=true before awaiting _prepareRun. :1926-1935 can await pre-run compaction and before_agent_start handlers before calling agent.prompt at :1899 (which produces agent_start). sendCustomMessage at :2372-2376 sees this isStreaming state and queues a triggerTurn:true message through agent.steer when no deliverAs is provided. A normal Escape during isStreaming calls restoreQueuedMessagesToEditor (modes/interactive/interactive-mode.ts:3027-3029), which clears the queues (:4734-4740); core/agent-session.ts:2466-2473 clears custom steering too.
+
+Focused read-only source-method probe performed this round: extracted the unmodified sendCustomMessage and clearQueue methods from local pi into an in-memory fake host with isStreaming=true. triggerTurn:true queued one message; clearQueue reduced the queue to zero; no entry was persisted. This verifies the API branch and queue loss, not a full pi integration run.
+
+Concrete inferred trace: a human starts a run that waits in prompt preparation/compaction; a bridge turn arrives before agent_start. The new flag is false, so it is handed to pi and silently enters the steering queue rather than the extension buffer. Escape clears it. The later aborted settle flushes an empty extension buffer. The daemon retains the unacked entry but its push-once-per-connection rule does not resend it on this healthy connection. The original dropped-delivery/liveness complaint therefore remains, although a reconnect can now recover it without a process restart. This is not the accepted reload-between-idle-injection-and-persistence residual or ASM-004's entry-observation uncertainty.
+
+Smallest fix: keep DEC-090's single buffer and add the existing ctx.isIdle() check immediately before every injection/flush; never rely on the event-derived flag alone to establish idleness. If pi is already busy, retain the delivery in that buffer. The pre-start path then flushes on the ensuing agent_settled using its aborted flag. If the guard also buffers during standalone compaction, flush on the existing session_compact/session_compact_failed completion events once ctx.isIdle() is true; do not wait for an agent settlement that that standalone operation does not emit. No new store or restored handed set is needed. Add a delayed-before_agent_start/pre-run-compaction delivery plus Escape regression and assert one passive entry. F-9/F-10's specific premature-agent_end and surviving-nextTurn-queue defects are otherwise repaired, and can be verified independently.
+"""
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+response = "Contest accepted. A running flag set on agent_start leaves a window where pi is already busy (an externally started run before agent_start) and a delivery could still enter a queue that abort clears. Fix (Messages; The pi side and deployment): the shell checks ctx.isIdle() (pi extensions/types.ts:348) at each deliver. It injects only when isIdle() is true and the reducer is not running; otherwise it buffers until agent_settled. The running flag stays for the extension's own turn injection, which isIdle may not yet reflect. Behaviour is still DEC-079's via DEC-090. Verification: a delivery arriving between input submit and agent_start is buffered, not queued in pi."
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = """
+Verified on design run revision 41, design SHA-256 2fe2588af943649afe56bf5063dd2025b083efb030751be1010dc3a681a29544. This pass rechecked F-1 only, including the round-5 contest's busy-before-agent_start counterexample.
+
+The revised Messages section (design.md:197-210) and The pi side and deployment delivery rule (:411-413) require both ctx.isIdle() and a clear reducer running flag before injection; otherwise the delivery remains in the existing extension buffer. The running flag still covers the extension's own turn injection until pi reflects it. Verification :510 explicitly exercises isIdle=false before agent_start and an abort in that gap, with the buffered turn flushed passively on settlement.
+
+Checked against current local pi core/agent-session.ts:1873-1878 (sets _isAgentRunActive before awaited preparation), :1479-1485 (isIdle is false in that window), and :1078-1085 (clears active before agent_settled and reports aborted). The previously demonstrated queue-entry branch is now excluded by the actual busy-state guard, not merely by waiting for agent_start. DEC-090's single buffer and DEC-079's passive abort behavior are preserved. The F-1 complaint and its contested pre-start reproduction are resolved at design level.
+
+Source/design verification only; planned regression and real-pi PHASE-01 probes have not been executed. No other finding or settled decision was re-attacked and no new finding was raised.
+"""
+
+[[finding.turn]]
+act = "reopen"
+role = "raiser"
+note = "reopened only to let the responder add a route; the fix itself was verified"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+route = "probe"
+response = "Contest accepted. A running flag set on agent_start leaves a window where pi is already busy (an externally started run before agent_start) and a delivery could still enter a queue that abort clears. Fix (Messages; The pi side and deployment): the shell checks ctx.isIdle() (pi extensions/types.ts:348) at each deliver. It injects only when isIdle() is true and the reducer is not running; otherwise it buffers until agent_settled. The running flag stays for the extension's own turn injection, which isIdle may not yet reflect. Behaviour is still DEC-079's via DEC-090. Verification: a delivery arriving between input submit and agent_start is buffered, not queued in pi."
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "Procedural route verification: the fix-now response was already substantively verified; the added probe or demonstrate route is appropriate. This act does not claim the future probe or demonstration has been executed."
+
+[[finding]]
+id = "F-2"
+status = "verified"
+severity = "major"
+title = "A retried post installs duplicate withdrawal notices for the same submission"
+detail = """
+Reviewer: codex. Design facet. Sections: "Messages" and "Verification". Authority: DEC-067/068.
+
+Expected: retransmitting one logical post does not multiply its failure notification. Observed: design.md:199-203 accepts a duplicate requestId again; :205-213 then starts a detached wait after each accepted turn, with no deduplication of that wait or its outbox append. The verification rows (:415-416) test submission deduplication and withdrawal independently, not their composition.
+
+Verified library behavior: node_modules/@earendil-works/pi-durable/dist/harness/submissions.js:147-156 returns the existing submission for a duplicate requestId; :36-48 wraps that same ID in a handle. :68-82 permits each handle to wait on its settlement. src/threads/task.ts:145-153 classifies that same aborted queued input as withdrawn for every waiter.
+
+Concrete inferred scenario (not executed): post A commits, but accepted is lost. The original handler is already waiting detached. The extension resumes and resends A (the prescribed recovery), which returns the same submission and starts another wait. Aborting queued A resolves both waits as withdrawn, so two different outbox seqs carry the same failure notice; further retries multiply it. Pi's seq deduplication cannot collapse these distinct seqs.
+
+Smallest fix: keep one in-process failure observer/report per existing submission.id, shared by retransmissions; retain its completed/report-once state through the pairing lifetime. This is compatible with the accepted daemon-restart residual and requires no durable task or new receipt store. A duplicate still receives accepted immediately. Add the combined lost-ack/resend/abort test asserting one submitted input and one notice.
+"""
+disposition = "fix-now"
+response = "Verified: submissions.js:147-156 returns the existing submission for a duplicate requestId; a wait per accepted post then multiplies the notice. Fix (Messages): one in-process withdrawal watch per submission id, kept in a map for the pairing's life; a duplicate gets accepted and joins the existing watch. Under Q4's recommended order a duplicate detected in the spend commit does not submit or wait at all; the map still covers the race where a resend overtakes the original's submit. Verification gains the lost-ack/resend/abort row: one input, one notice."
+route = "demonstrate"
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+response = "Verified: submissions.js:147-156 returns the existing submission for a duplicate requestId; a wait per accepted post then multiplies the notice. Fix (Messages): one in-process withdrawal watch per submission id, kept in a map for the pairing's life; a duplicate gets accepted and joins the existing watch. Under Q4's recommended order a duplicate detected in the spend commit does not submit or wait at all; the map still covers the race where a resend overtakes the original's submit. Verification gains the lost-ack/resend/abort row: one input, one notice."
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = """
+Round 5: VERIFIED as a design fix. "Messages" design.md:226-243 now keeps one in-process watch per submission ID for the pairing lifetime, makes duplicate posts join it, and handles duplicates already detected before submit. The original lost-accepted/resend/abort trace can no longer allocate two notice watches. Verification row :503 explicitly asserts one input and one notice. Checked against installed pi-durable submissions.js:147-156 returning the same ID. This verifies the design contract, not execution of the future test.
+"""
+
+[[finding.turn]]
+act = "reopen"
+role = "raiser"
+note = "reopened only to let the responder add a route; the fix itself was verified"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+route = "demonstrate"
+response = "Verified: submissions.js:147-156 returns the existing submission for a duplicate requestId; a wait per accepted post then multiplies the notice. Fix (Messages): one in-process withdrawal watch per submission id, kept in a map for the pairing's life; a duplicate gets accepted and joins the existing watch. Under Q4's recommended order a duplicate detected in the spend commit does not submit or wait at all; the map still covers the race where a resend overtakes the original's submit. Verification gains the lost-ack/resend/abort row: one input, one notice."
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "Procedural route verification: the fix-now response was already substantively verified; the added probe or demonstrate route is appropriate. This act does not claim the future probe or demonstration has been executed."
+
+[[finding]]
+id = "F-3"
+status = "verified"
+severity = "major"
+title = "An open socket that never replies leaves bridge calls waiting without a deadline"
+detail = """
+Reviewer: codex. Design facet. Sections: "Bridge listener and wire", "The pi side and deployment", and "Verification". Authority: DEC-073/075 and explicit denial over silent stop.
+
+Expected: a connected but non-responsive daemon produces a bounded, explicit failure or unknown outcome. Observed: design.md:330-334 applies BRIDGE_POST_WAIT_MS to recovery when a connection drops. :345-349 describes failed connects and refused resumes. :353-359 defines one-shot exit 3 for a lost reply, but neither path defines a reply deadline while the socket stays open. Pair/resume also have no bind-reply deadline. Verification :421-423 covers disconnects, not this case.
+
+Concrete reproduction specification: use the planned fake daemon, accept a connection and read pair/resume/post/post-once, then send no reply and leave the connection open. The conditions that start the documented disconnect recovery or connect-failure notification never occur. Inference: implemented literally, bridge_post or the shell command can wait indefinitely even for finite stdin, and an extension can sit connected but unbound. This is a design liveness gap; no implemented bridge was run.
+
+Smallest fix: start an end-to-end reply timer when the request is sent, using the existing named wait constant/waiter machinery. A timed-out post must return outcome unknown and must not be blindly retried as a fresh request; post-once exits 3 without retry. A timed-out pair/resume reports the named outage and closes the socket so the existing connection policy can act. Add the fake-daemon test that withholds replies without disconnecting. No heartbeat protocol is needed. This is a different case from the disposed r2 F-9 (unbound calls and reconnect after a drop).
+"""
+disposition = "fix-now"
+response = "Verified: no reply deadline while the socket stays open. Fix (Bridge listener and wire; The pi side and deployment): one reply deadline per request frame (pair, resume, post, post-once) reusing BRIDGE_POST_WAIT_MS. On expiry a post answers outcome unknown and is not retried; post-once exits 3; pair/resume report the outage and close the socket so the existing reconnect policy acts. No heartbeat. Verification gains the fake daemon that withholds replies."
+route = "demonstrate"
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+response = "Verified: no reply deadline while the socket stays open. Fix (Bridge listener and wire; The pi side and deployment): one reply deadline per request frame (pair, resume, post, post-once) reusing BRIDGE_POST_WAIT_MS. On expiry a post answers outcome unknown and is not retried; post-once exits 3; pair/resume report the outage and close the socket so the existing reconnect policy acts. No heartbeat. Verification gains the fake daemon that withholds replies."
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = """
+Round 5: VERIFIED as a design fix. "Bridge listener and wire" design.md:109-111 and "The pi side and deployment" :399-408 pin BRIDGE_POST_WAIT_MS from send for pair/resume/post/post-once, outcome unknown without a fresh resend on expiry, and bounded one-shot exit 3 (:426-431). Fresh pair failure and resume outage now have distinct rows (:381-385), consistent with F-11. Verification :504 covers a peer that never replies while keeping the socket open. No heartbeat or new transport was added. Runtime test remains planned.
+"""
+
+[[finding.turn]]
+act = "reopen"
+role = "raiser"
+note = "reopened only to let the responder add a route; the fix itself was verified"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+route = "demonstrate"
+response = "Verified: no reply deadline while the socket stays open. Fix (Bridge listener and wire; The pi side and deployment): one reply deadline per request frame (pair, resume, post, post-once) reusing BRIDGE_POST_WAIT_MS. On expiry a post answers outcome unknown and is not retried; post-once exits 3; pair/resume report the outage and close the socket so the existing reconnect policy acts. No heartbeat. Verification gains the fake daemon that withholds replies."
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "Procedural route verification: the fix-now response was already substantively verified; the added probe or demonstrate route is appropriate. This act does not claim the future probe or demonstration has been executed."
+
+[[finding]]
+id = "F-4"
+status = "verified"
+severity = "major"
+title = "The withdrawal-notice path has no full-outbox failure policy"
+detail = """
+Reviewer: codex. Design facet. Sections: "Pairing and the pairing document", "Messages", and "Verification". Authority: DEC-066/067 and loud terminal failure reporting.
+
+Expected: failure reporting has a defined outcome when its own delivery channel is unavailable; it neither silently drops the notice nor defeats the bounded outbox. Observed: design.md:129 names one appendOutbox rule; :174-180 caps unacked outbox entries at 32; :205-213 unconditionally appends a withdrawal/delivered-incomplete note. It specifies handling of a rejected submission wait, but no policy for failure/refusal of the subsequent append, including outbox full or pairing ended. The verification row :416 only covers an outbox with room.
+
+Concrete inferred scenario (not executed): fill the outbox with 32 unacked messages while pi is busy/disconnected, then abort an accepted queued pi turn. Appending its notice must either hit the same cap or bypass it. The first loses the promised terminal report unless there is a fallback; the second makes the stated bound incomplete and can grow with repeated failures. Ending a pairing while a detached wait remains has the analogous unavailable-recipient problem. Neither fallback nor exemption is an accepted residual in these decisions.
+
+Smallest fix: keep the cap and existing messages; explicitly log an undeliverable notice and use the existing best-effort operator notification fallback, with the message ID and reason. src/threads/task.ts:214-240 already follows this terminal-notice pattern, and src/task-support.ts:19-28 supplies notifyBestEffort. Do not add a priority queue, reserved slots, or recursive failure notices. Pin this fallback in the design and test full-outbox and ended-pairing settlement.
+"""
+disposition = "fix-now"
+response = "Verified: the notice append can hit the cap or an ended pairing. Fix (Messages): keep the cap with no exemption; an undeliverable notice is logged and sent through notifyBestEffort (src/task-support.ts:19-28) with the message id and reason, as threads do for a failed notice (src/threads/task.ts:236-240). No reserved slots and no recursive notices. Verification: full outbox and ended pairing at settlement."
+route = "demonstrate"
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+response = "Verified: the notice append can hit the cap or an ended pairing. Fix (Messages): keep the cap with no exemption; an undeliverable notice is logged and sent through notifyBestEffort (src/task-support.ts:19-28) with the message id and reason, as threads do for a failed notice (src/threads/task.ts:236-240). No reserved slots and no recursive notices. Verification: full outbox and ended pairing at settlement."
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = """
+Round 5: VERIFIED as a design fix. "Messages" design.md:239-243 explicitly logs and calls the existing notifyBestEffort for notice append refusal caused by outbox full or pairing ended. The cap remains unexempted, existing entries stay, and failure does not recursively create notices. This matches src/task-support.ts:19-28 and the failed-notice pattern already inspected in src/threads/task.ts. Verification row :505 names both boundary cases. No runtime claim is made.
+"""
+
+[[finding.turn]]
+act = "reopen"
+role = "raiser"
+note = "reopened only to let the responder add a route; the fix itself was verified"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+route = "demonstrate"
+response = "Verified: the notice append can hit the cap or an ended pairing. Fix (Messages): keep the cap with no exemption; an undeliverable notice is logged and sent through notifyBestEffort (src/task-support.ts:19-28) with the message id and reason, as threads do for a failed notice (src/threads/task.ts:236-240). No reserved slots and no recursive notices. Verification: full outbox and ended pairing at settlement."
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "Procedural route verification: the fix-now response was already substantively verified; the added probe or demonstrate route is appropriate. This act does not claim the future probe or demonstration has been executed."
+
+[[finding]]
+id = "F-5"
+status = "verified"
+severity = "major"
+title = "Forked or cloned pi sessions automatically inherit the original session's pairing"
+detail = """
+Reviewer: codex. Design facet. Sections: "Pairing and the pairing document", "The pi side and deployment", and "Verification". Authority: DEC-065's one pi session per pairing; many pi sessions per conversation is a slice non-goal.
+
+Expected: a new pi session does not accidentally resume or end another session's pairing. Observed: design.md:325-329 restores from only {conversation, token, posture}; there is no originating session identity, and all session_start reasons follow the same restore rule. :132-133 ends whatever pairing is restored before a new pair.
+
+Verified pi source: ~/.local/src/pi/packages/coding-agent/src/core/session-manager.ts:1632-1678 copies the selected branch's custom entries into a newly identified session; :1712-1714 installs that copied history with its new session ID. core/agent-session-runtime.ts:315-327 then starts the new runtime with session_start reason fork. core/session-manager.ts:1815-1855 also supports copying history into a new session/cwd. The readonly API already exposes getSessionId (:245-250).
+
+Concrete inferred scenario (not executed): clone/fork after the pairing entry. The child copies the token and automatically resumes the original conversation, superseding its connection under "Bridge listener and wire". Resuming the original later takes it back; pairing afresh from the child first ends the original's pairing. This requires normal session operations, not a subverted jail stealing a token, and is not the accepted shared-home exposure residual.
+
+Smallest fix: include the existing pi session ID in the local pairing entry and restore only entries whose owner ID equals ctx.sessionManager.getSessionId(). An inherited entry leaves the child unpaired with an explicit explanation; importantly it must not send end for the parent. No server-side session authentication or many-pi support is needed. Add a fork/clone regression alongside restart restoration.
+"""
+disposition = "fix-now"
+response = "Verified: createBranchedSession copies the branch's entries into a new session id (session-manager.ts:1632-1678) and the runtime starts with session_start reason fork (agent-session-runtime.ts:315-327). Fix (The pi side and deployment): the local pairing entry carries the pi session id; restore only an entry whose id equals ctx.sessionManager.getSessionId(). An inherited entry leaves the child unpaired with a notice and never sends end for the parent. Verification: fork/clone regression."
+route = "demonstrate"
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+response = "Verified: createBranchedSession copies the branch's entries into a new session id (session-manager.ts:1632-1678) and the runtime starts with session_start reason fork (agent-session-runtime.ts:315-327). Fix (The pi side and deployment): the local pairing entry carries the pi session id; restore only an entry whose id equals ctx.sessionManager.getSessionId(). An inherited entry leaves the child unpaired with a notice and never sends end for the parent. Verification: fork/clone regression."
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = """
+Round 5: VERIFIED as a design fix. "The pi side and deployment" design.md:365-376 stores the owner pi session ID and restores only a matching entry; a fork/clone's inherited entry leaves it unpaired with an info notice and never ends the parent pairing. The ID is recorded on pair (:380). Local pi createBranchedSession mints a new session ID (session-manager.ts:1670-1678), so the source reproduction now takes the explicit refusal/leave-unpaired row. Verification :512 pins that case. No new many-client capability was introduced.
+"""
+
+[[finding.turn]]
+act = "reopen"
+role = "raiser"
+note = "reopened only to let the responder add a route; the fix itself was verified"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+route = "demonstrate"
+response = "Verified: createBranchedSession copies the branch's entries into a new session id (session-manager.ts:1632-1678) and the runtime starts with session_start reason fork (agent-session-runtime.ts:315-327). Fix (The pi side and deployment): the local pairing entry carries the pi session id; restore only an entry whose id equals ctx.sessionManager.getSessionId(). An inherited entry leaves the child unpaired with a notice and never sends end for the parent. Verification: fork/clone regression."
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "Procedural route verification: the fix-now response was already substantively verified; the added probe or demonstrate route is appropriate. This act does not claim the future probe or demonstration has been executed."
+
+[[finding]]
+id = "F-6"
+status = "verified"
+severity = "major"
+title = "The documented mount does not make malebolge-bridge available as a shell command"
+detail = """
+Reviewer: codex. Design facet. Sections: "The pi side and deployment", "Code impact", and "Verification". Authority: DEC-075 and CHR-007's executable command use.
+
+Expected: the documented send/tee invocation is executable from pi's project shell after satisfying the deployment contract. Observed: design.md:353-365 places the command only at ~/.pi/agent/extensions/malebolge-bridge/malebolge-bridge. The four deployment clauses only mount the directory and forward the socket variable; :340-343 adds pairing variables to bash, not PATH. "Code impact" (:370-397) adds no executable installation or package bin change. The extension discovery directory is not a shell bin directory.
+
+Verified source: package.json:10-14 has only the daemon, attach and runner bins. The staged jailed-agents.nix:348-356 explicitly uses add-path for the comparable mounted Doctrine command; no equivalent is stated for this command. Pi's bash spawn context starts with getShellEnv and adds selected PI_* metadata, then runs the optional spawn hook (local pi core/tools/bash.ts:186-211); it does not add extension directories to PATH.
+
+Inferred failure, not run in a jail: implementing precisely the four mount/env clauses leaves a bare malebolge-bridge send/tee invocation with command-not-found, despite a successfully loaded extension and connected bridge. A developer would have to invent an extra installation step.
+
+Smallest fix: the already-planned bash spawn hook should also prepend the fixed mounted extension directory to PATH; specify an executable script and its interpreter using the existing pi/Node runtime. This stays in malebolge's extension and requires no new launcher or package system. Add a smoke/probe that resolves and invokes the bare command from a different working directory after applying the stated contract.
+"""
+disposition = "fix-now"
+response = "Verified: package.json bins and the deployment contract put no malebolge-bridge on PATH; pi's bash adds no extension dirs. Fix (The pi side and deployment; Code impact): the spawn hook (ASM-008) also prepends the mounted extension directory to PATH; malebolge-bridge is an executable script run by the jail's node. Verification: a probe invokes the bare command from another cwd."
+route = "probe"
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+response = "Verified: package.json bins and the deployment contract put no malebolge-bridge on PATH; pi's bash adds no extension dirs. Fix (The pi side and deployment; Code impact): the spawn hook (ASM-008) also prepends the mounted extension directory to PATH; malebolge-bridge is an executable script run by the jail's node. Verification: a probe invokes the bare command from another cwd."
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = """
+Round 5: VERIFIED as a design fix. "The pi side and deployment" design.md:413-417 makes the existing bash spawn hook prepend the mounted extension directory to PATH; :426-433 specifies the executable Node script. "Code impact" :449 and Verification :515 include the command and the other-cwd bare-command probe. The original mount-without-executable-discovery gap is explicitly closed. Real-jail executable/interpreter availability remains a planned probe, not something run in this verification.
+"""
+
+[[finding.turn]]
+act = "reopen"
+role = "raiser"
+note = "reopened only to let the responder add a route; the fix itself was verified"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+route = "probe"
+response = "Verified: package.json bins and the deployment contract put no malebolge-bridge on PATH; pi's bash adds no extension dirs. Fix (The pi side and deployment; Code impact): the spawn hook (ASM-008) also prepends the mounted extension directory to PATH; malebolge-bridge is an executable script run by the jail's node. Verification: a probe invokes the bare command from another cwd."
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "Procedural route verification: the fix-now response was already substantively verified; the added probe or demonstrate route is appropriate. This act does not claim the future probe or demonstration has been executed."
+
+[[finding]]
+id = "F-7"
+status = "verified"
+severity = "minor"
+title = "The new pi-bridge product directory falls outside the existing development gates"
+detail = """
+Reviewer: codex. Design facet. Sections: "Code impact" and "Verification". Authority: the repository's existing TypeScript/lint/test gates and the design's extension tests.
+
+Expected: the new extension, shared wire code and moved truncator remain checked by the repo's development gate. Observed: design.md:372-381 puts product code in pi-bridge/ and moves capUtf8 out of src/; :394 plans actual extension tests against fake peers, but no gate/development-dependency changes appear in the code-impact table.
+
+Verified configuration: tsconfig.json:19 names src, test and vitest.config.ts as roots; eslint.config.js uses TypeScript projectService. vitest.config.ts:16-21 counts coverage only for src/**/*.ts. Thus moving capUtf8/wire outside src removes those implementations from the coverage denominator, and unimported pi-side TS is not a project root. Transitive imports may bring some files into the TS program, but that is not blanket gate coverage.
+
+Verified read-only resolution probe: ts.resolveModuleName('@earendil-works/pi-coding-agent', '<repo>/pi-bridge/index.ts', the parsed repo tsconfig, ts.sys) returned unresolved. package.json:22-43 and the installed @earendil-works directory contain no coding-agent package. The accepted ASM-007 concerns pi's jiti-provided dependencies inside a jail, not module resolution in this repo's compiler/test runner; a fake API argument alone does not supply an imported package. The staged bash-spawn-hook example imports createBashTool and ExtensionAPI from that package.
+
+Smallest fix: include pi-bridge/**/*.ts in the TypeScript project and product coverage; pin the pi coding-agent package as a development dependency where the extension's imports/tests require it (or explicitly describe the test module seam). Record those existing gate/config/lockfile impacts in the design. No bundled runtime dependency in the jail is required. Verify the extension through the normal typecheck/lint/test gate, not only its jiti load probe.
+"""
+disposition = "fix-now"
+response = "Verified: tsconfig.json include is src, test, vitest.config.ts; coverage counts src/**/*.ts only; @earendil-works/pi-coding-agent is not installed, so pi-bridge/index.ts imports do not resolve here. Fix (Code impact): pi-bridge/**/*.ts joins the TypeScript project, lint and coverage; the pi coding-agent package becomes a dev dependency for its types and tests (lockfile change). The jail still loads it from pi (ASM-007)."
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+response = "Verified: tsconfig.json include is src, test, vitest.config.ts; coverage counts src/**/*.ts only; @earendil-works/pi-coding-agent is not installed, so pi-bridge/index.ts imports do not resolve here. Fix (Code impact): pi-bridge/**/*.ts joins the TypeScript project, lint and coverage; the pi coding-agent package becomes a dev dependency for its types and tests (lockfile change). The jail still loads it from pi (ASM-007)."
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = """
+Round 5: VERIFIED as a design fix. "Code impact" design.md:450-453 explicitly adds pi-bridge to the TypeScript project, product coverage, lint/format project, and pins pi-coding-agent as a development dependency with its lockfile impact. This covers the previously source-only include patterns and local module-resolution gap; the jail still uses pi's supplied runtime. Verification :516 requires the normal gate. These are design commitments, not claims that package/config edits or gates have already been implemented or run.
+"""
+
+[[finding]]
+id = "F-8"
+status = "verified"
+severity = "minor"
+title = "Ending a pairing is never recorded in pi's persistent restore state"
+detail = """
+Reviewer: codex. Design facet. Sections: "Pairing and the pairing document" and "The pi side and deployment". Authority: DEC-065/073, end closes a pairing and ended resumes are terminal refusals.
+
+Expected: after /bridge end, reopening the pi session stays unpaired; stale credentials and posture do not remain the active local pairing. Observed: design.md:156-158 ends the daemon document, but :325-329 only appends pairing credentials on pair and specifies end as sending a frame. It never appends an unpaired/end marker or clears local state. The deterministic startup instruction is to restore the latest {conversation, token, posture} entry whenever one exists.
+
+Concrete inferred scenario (not executed): pair, end successfully, quit, resume the same persisted pi session. The latest stored pairing remains present, so the extension attempts resume against the ended pairing and raises the loud terminal failure in :345-349 on each reopen. If the connection close is treated as an outage before local state is cleared, it can also attempt recovery immediately after intentional end. This is an ordinary completed end, not the accepted death-before-end orphan residual.
+
+Smallest fix: after confirmed end, append an explicit unpaired marker through the existing appendEntry mechanism; restore the latest pairing-state entry including that marker. Clear in-memory credentials, bash pairing env, posture and reconnect timers for intentional end. A terminal ended refusal should likewise leave local state unpaired. Add pair/end/reopen and pair/end/pair regressions; no new daemon frame or store is needed.
+"""
+disposition = "fix-now"
+response = "Verified: end is a frame only; restore reads the latest pairing entry. Fix (The pi side and deployment): after a confirmed end, or a terminal ended refusal, append an unpaired marker with appendEntry and clear the in-memory credentials, bash env, posture and reconnect timers. Restore reads the latest pairing-state entry, marker included. Verification: pair/end/reopen and pair/end/pair."
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+response = "Verified: end is a frame only; restore reads the latest pairing entry. Fix (The pi side and deployment): after a confirmed end, or a terminal ended refusal, append an unpaired marker with appendEntry and clear the in-memory credentials, bash env, posture and reconnect timers. Restore reads the latest pairing-state entry, marker included. Verification: pair/end/reopen and pair/end/pair."
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = """
+Round 5: VERIFIED as a design fix. "Pairing and the pairing document" design.md:164-168 and the terminal row under "The pi side and deployment" :386 now append an unpaired marker only after confirmed end or terminal ended/bad-token refusal, clear local credentials/posture/bash env, and use settlePending for timer cleanup. Startup :375 recognizes the marker. Re-pair :378 awaits end before starting a fresh pair, including a bounded failure path. Verification :513 covers end/reopen and end/pair. Supersession intentionally has a distinct no-marker row (:389), consistent with F-12.
+"""
+
+[[finding]]
+id = "F-9"
+status = "verified"
+severity = "blocker"
+title = "The reconciliation row treats agent_end as final settlement while pi can still consume the original queued turn"
+detail = """
+Reviewer: codex, round 4; facet design. Subject only: "The pi side and deployment", step(state,event) table and its delegated receive effect. Evidence: .doctrine/slice/009/design.md:372; the receive options it calls are at :193-206. Authority: DEC-066/068/069/079.
+
+Expected: downgrade and re-inject a handed turn only after pi has actually settled without persisting that turn. Observed: the row treats agent_settled and agent_end as interchangeable, although the latter is the end of one low-level loop rather than the end of pi's automatic processing.
+
+Verified pi source (paths relative to ~/.local/src/pi/packages/): agent/src/agent-loop.ts:254-264 emits agent_end and returns on an assistant error before reaching its follow-up drain at :310-315. coding-agent/src/core/agent-session.ts:1303-1308 forwards this event to extensions; :1988-1991 then schedules a retry, and :1899-1904 continues the agent afterwards. The original bridge follow-up can therefore still be queued. The true agent_settled event is emitted only afterwards (:1910-1916 and :1078-1085); extensions/types.ts:1032-1036 explicitly distinguishes that final event.
+
+Concrete inferred trace, not executed: a bridge turn is handed to pi.followUp while a model request is running; the request gets a retryable error; agent_end fires with the turn absent from the session but still queued. The table re-injects it as a note. Automatic recovery later consumes the original turn as well, so one seq enters context twice. This is not ASM-004's uncertainty about observing a consumed message: the source proves the original queue has not been drained, and the extra injection itself is the defect.
+
+There is also a missing state on this same row: reconnecting with existing credentials is connecting, but reconciliation is only defined for bound/outage. Pi can settle an aborted run while the independent socket resume is awaiting paired; the single settle event is then missed and the handed turn remains suppressed after re-bind.
+
+Smallest fix: replace the row with true agent_settled only, covering every state retaining the existing pairing and handed set (including connecting(resume)). Do not infer final settlement from agent_end. Preserve DEC-079's no-turn re-injection. Test queued delivery plus retryable model error (one entry), and abort/settle while waiting for resume (one passive entry). No new subsystem or assumption about entry timing is needed.
+"""
+disposition = "fix-now"
+response = "Verified: agent_end fires before retry drains the follow-up queue (agent/src/agent-loop.ts:254-264; agent-session.ts:1899-1916); agent_settled is final and carries aborted (extensions/types.ts:1032-1037). Fixed by removing the mechanism rather than patching it: the extension never hands pi a bridge message while pi runs. It buffers in memory from agent_start (or its own turn injection) to agent_settled, then flushes notes up to the first turn and that turn with triggerTurn !aborted. No handed set, no settle reconciliation, no agent_end use; the buffer is not state-gated, so the connecting(resume) gap goes too. New DEC refining DEC-066/069/079 (mechanism only). Tests: retryable error before settle; abort while resuming."
+route = "probe"
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+response = "Verified: agent_end fires before retry drains the follow-up queue (agent/src/agent-loop.ts:254-264; agent-session.ts:1899-1916); agent_settled is final and carries aborted (extensions/types.ts:1032-1037). Fixed by removing the mechanism rather than patching it: the extension never hands pi a bridge message while pi runs. It buffers in memory from agent_start (or its own turn injection) to agent_settled, then flushes notes up to the first turn and that turn with triggerTurn !aborted. No handed set, no settle reconciliation, no agent_end use; the buffer is not state-gated, so the connecting(resume) gap goes too. New DEC refining DEC-066/069/079 (mechanism only). Tests: retryable error before settle; abort while resuming."
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = """
+Round 5: VERIFIED for this finding's two specific complaints, under accepted DEC-090. "Messages" design.md:197-214 now buffers busy deliveries instead of putting them in pi's follow-up/nextTurn queues; no reconciliation on agent_end remains. The global agent_settled rows (:392-393) flush across all connection states, including resuming, and preserve the aborted/no-new-turn policy. Verification :506-507 pins retryable agent_end before final settlement and abort handling. Pi's source distinguishes agent_end from final agent_settled as previously cited. The separate pre-agent_start busy gap is recorded by contesting F-1; it does not restore this finding's premature-agent_end re-injection or missing-resuming-row mechanism.
+"""
+
+[[finding.turn]]
+act = "reopen"
+role = "raiser"
+note = "reopened only to let the responder add a route; the fix itself was verified"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+route = "probe"
+response = "Verified: agent_end fires before retry drains the follow-up queue (agent/src/agent-loop.ts:254-264; agent-session.ts:1899-1916); agent_settled is final and carries aborted (extensions/types.ts:1032-1037). Fixed by removing the mechanism rather than patching it: the extension never hands pi a bridge message while pi runs. It buffers in memory from agent_start (or its own turn injection) to agent_settled, then flushes notes up to the first turn and that turn with triggerTurn !aborted. No handed set, no settle reconciliation, no agent_end use; the buffer is not state-gated, so the connecting(resume) gap goes too. New DEC refining DEC-066/069/079 (mechanism only). Tests: retryable error before settle; abort while resuming."
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "Procedural route verification: the fix-now response was already substantively verified; the added probe or demonstrate route is appropriate. This act does not claim the future probe or demonstration has been executed."
+
+[[finding]]
+id = "F-10"
+status = "verified"
+severity = "blocker"
+title = "Reload recreates the handed set while pi retains queued nextTurn notes, causing duplicate delivery"
+detail = """
+Reviewer: codex, round 4; facet design. Subject: "The pi side and deployment", session_shutdown/session_start rows (:361-373) and deliver rule (:386). Authority: DEC-066/068/069/073/080.
+
+Expected: an extension reload in the same pi process must not re-inject a message already queued in pi but not yet persisted. Observed: session_shutdown transitions to unpaired and session_start restores only the persistent pairing entry; the table provides no reload handoff of the in-memory handed set. The set is necessary to suppress unacked entries still held in pi's queues.
+
+Verified pi source under ~/.local/src/pi/packages/coding-agent/src/: core/agent-session.ts:2370-2371 puts busy notes into _pendingNextTurnMessages; :1959-1961 consumes that queue only when preparing a subsequent run. reload (:3720-3757) keeps the same AgentSession, emits shutdown, reloads resources and extensions, and emits start. It never clears that queue. core/resource-loader.ts:513-518 clears the extension cache; core/extensions/loader.ts:624-627 initializes a fresh factory. A normal /reload is permitted once idle (modes/interactive/interactive-mode.ts:6426-6434), so this does not depend on reloading during streaming.
+
+Concrete inferred trace, not executed: receive note seq 9 during a run, so it is queued for nextTurn and remains unacked; the run finishes and pi is idle, with the note still queued. Run /reload. The new extension resumes with an empty handed set; the daemon redelivers seq 9. Idle no-trigger injection appends it now and acks it. The next run also consumes the old _pendingNextTurnMessages item, producing a second entry with the same pairing/seq. DEC-079 explicitly does not reconcile notes, so its new abort rule does not repair this path.
+
+Smallest fix: distinguish shutdown(reason:reload)/start(reason:reload) from session replacement and process restart. Preserve and reuse the existing pending handed map for this same process and session ID across a reload, while still closing/reopening sockets and cancelling their timers. One process-lifetime slot/map is enough; do not turn it into a persisted receipt or assume it survives a crash. Discard it on actual session replacement/quit, whose pi queues do not survive. Add the busy-note -> idle -> reload -> resume -> next run test. ASM-004 probes consumed entries and a process kill, not retention of pi queues across a factory reload.
+"""
+disposition = "fix-now"
+response = "Verified: busy notes sit in _pendingNextTurnMessages (agent-session.ts:2370-2371) and reload keeps the session and its queues (:3720-3757). Fixed by the same simplification as F-9: pi's queues never hold a bridge message, so a reload loses only the unacked buffer, which resume redelivery restores; dedupe by details.seq in the session plus the buffer. The prescribed reload handoff of the set is not needed. Test: busy note, idle, /reload, resume, next run: one entry."
+route = "probe"
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+response = "Verified: busy notes sit in _pendingNextTurnMessages (agent-session.ts:2370-2371) and reload keeps the session and its queues (:3720-3757). Fixed by the same simplification as F-9: pi's queues never hold a bridge message, so a reload loses only the unacked buffer, which resume redelivery restores; dedupe by details.seq in the session plus the buffer. The prescribed reload handoff of the set is not needed. Test: busy note, idle, /reload, resume, next run: one entry."
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = """
+Round 5: VERIFIED for the original surviving-nextTurn-queue reproduction, under accepted DEC-090. Busy notes now remain in the extension buffer until actual settlement, then use idle no-trigger injection (design.md:197-214); they are no longer handed to pi's private nextTurn queue. A reload can discard only the unacked buffer, which daemon redelivery restores. Thus the original old-queue-item plus fresh-factory-redelivery duplication is removed without the previously suggested process-global handoff. Verification :506 includes busy note/idle/reload/resume/next run. DEC-090 explicitly accepts the narrower reload instant between an idle turn injection and its persistence; that accepted residual is not re-raised.
+"""
+
+[[finding.turn]]
+act = "reopen"
+role = "raiser"
+note = "reopened only to let the responder add a route; the fix itself was verified"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+route = "probe"
+response = "Verified: busy notes sit in _pendingNextTurnMessages (agent-session.ts:2370-2371) and reload keeps the session and its queues (:3720-3757). Fixed by the same simplification as F-9: pi's queues never hold a bridge message, so a reload loses only the unacked buffer, which resume redelivery restores; dedupe by details.seq in the session plus the buffer. The prescribed reload handoff of the set is not needed. Test: busy note, idle, /reload, resume, next run: one entry."
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "Procedural route verification: the fix-now response was already substantively verified; the added probe or demonstrate route is appropriate. This act does not claim the future probe or demonstration has been executed."
+
+[[finding]]
+id = "F-11"
+status = "verified"
+severity = "major"
+title = "A failed fresh pair enters a resume loop without having a conversation or token"
+detail = """
+Reviewer: codex, round 4; facet design. Subject: "The pi side and deployment", table :355-370. Authority: DEC-065/073.
+
+Expected: failure to establish a fresh pairing must have a defined, loud terminal outcome; only a known pairing can be resumed. Observed: unpaired /bridge pair enters connecting (:364); every connecting connect failure or reply deadline enters outage (:368); every outage retry sends resume (:370). A fresh pair has no conversation/token until paired arrives (:367). The terminal refusal row (:371) also covers only pairing ended/bad token, leaving ordinary pair refusals without a transition.
+
+Concrete inferred traces, not executed: (1) start unpaired, /bridge pair, socket connect fails; the retry timer asks for resume with no credentials. (2) pair is refused because the project/topic name is invalid or its existing topic has another toolset (DEC-065); there is no refused-pair row, so the machine can only linger or fall through the deadline into the same invalid recovery. (3) paired is lost after daemon creation; retrying a new pair would create another conversation, while resume is impossible without the token.
+
+Pi can issue this command in an unpaired session without a model run: ~/.local/src/pi/packages/coding-agent/src/core/agent-session.ts:2099-2106 dispatches extension commands immediately; :2180-2193 invokes the handler. These are normal command/socket outcomes, not an ASM about pi injection.
+
+Smallest fix: use the pair-versus-resume operation distinction already implied by the paired row. connecting(pair) + connect failure/refusal/deadline should return to unpaired with the reason (outcome unknown if pair may have committed), without automatic pair or resume. Only connecting(resume) with saved credentials enters retrying outage. Explicitly handle other bind refusals loudly rather than waiting on a deadline. No idempotent-pair protocol, orphan collector, or additional state machine is necessary.
+"""
+disposition = "fix-now"
+response = "Verified: pair failure enters outage, whose retry sends resume without credentials. Fix: connecting splits into pairing and resuming. pairing + connect failure, refusal or deadline goes to unpaired, loudly; after a deadline the notice says a conversation may exist in <project>-bridge. No retry. Only resuming enters outage."
+route = "demonstrate"
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+response = "Verified: pair failure enters outage, whose retry sends resume without credentials. Fix: connecting splits into pairing and resuming. pairing + connect failure, refusal or deadline goes to unpaired, loudly; after a deadline the notice says a conversation may exist in <project>-bridge. No retry. Only resuming enters outage."
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = """
+Round 5: VERIFIED as a design fix. "The pi side and deployment" design.md:363-385 separates pairing (no saved credentials) from resuming (an existing pairing). Fresh pair connect failure, connection drop, refusal or deadline now goes to unpaired with a loud reason and possible-orphan wording, with no retry/resume. Only an established resume enters retrying outage; other resume refusals have a terminal row (:387). Verification :508 explicitly asserts no resume after a fresh-pair failure. No pair-idempotency protocol was added.
+"""
+
+[[finding.turn]]
+act = "reopen"
+role = "raiser"
+note = "reopened only to let the responder add a route; the fix itself was verified"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+route = "demonstrate"
+response = "Verified: pair failure enters outage, whose retry sends resume without credentials. Fix: connecting splits into pairing and resuming. pairing + connect failure, refusal or deadline goes to unpaired, loudly; after a deadline the notice says a conversation may exist in <project>-bridge. No retry. Only resuming enters outage."
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "Procedural route verification: the fix-now response was already substantively verified; the added probe or demonstrate route is appropriate. This act does not claim the future probe or demonstration has been executed."
+
+[[finding]]
+id = "F-12"
+status = "verified"
+severity = "major"
+title = "A superseded client retries and takes the pairing back from the newer connection"
+detail = """
+Reviewer: codex, round 4; facet design. Subject: "The pi side and deployment", refusal/drop/retry rows :369-371. Authority: DEC-065 newest connection wins, DEC-073 loud failure.
+
+Expected: a client explicitly superseded by a valid newer resume stops reconnecting for that binding. Observed: the terminal refused row only recognizes pairing ended/bad token. The daemon's defined supersession event is refused {reason:"superseded by a newer connection"} followed by close (design.md:101-103). The table has no row for that reason, so close follows bound -> outage -> connecting/resume and reclaims the pairing using its still-valid token.
+
+Concrete inferred trace, not executed: client A is bound; client B validly resumes the same pairing and supersedes A. A's backoff resume supersedes B; B's identical recovery supersedes A again. Newest-wins becomes an automatic takeover loop, not a stable handoff. This is the explicitly supported resume-from-elsewhere case, not a request for many-pi-per-conversation support. Pi permits opening the same persisted session via SessionManager.open (local coding-agent src/core/session-manager.ts:1766-1785) and switchSession (:196-218 in agent-session-runtime.ts), with no session-ID change that would trip the already-settled owner check.
+
+Smallest fix: add a specific superseded row: stop this client's binding, close its socket, cancel retries, settle its pending sends appropriately, and notify with that reason. Do not send end or invalidate the daemon pairing now owned by the newer connection. A later deliberate user restart/resume can still take it back under DEC-065. Test a valid newer resume and prove the old client sends no automatic resume afterwards. No lease, epoch protocol, or server change is needed.
+"""
+disposition = "fix-now"
+response = "Verified: superseded refusal has no row, so the old client auto-resumes and ping-pongs. Fix: superseded goes to unpaired in memory only, with no marker (the pairing stays valid for the newer holder); cancel retries; notify. A later session_start may resume it (DEC-065)."
+route = "demonstrate"
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+response = "Verified: superseded refusal has no row, so the old client auto-resumes and ping-pongs. Fix: superseded goes to unpaired in memory only, with no marker (the pairing stays valid for the newer holder); cancel retries; notify. A later session_start may resume it (DEC-065)."
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = """
+Round 5: VERIFIED as a design fix. The specific superseded row, "The pi side and deployment" design.md:389, goes locally unpaired, invokes settlePending to cancel outgoing work/retry timers, notifies, and writes no marker. It sends no end and leaves the daemon pairing valid for the newer holder. A subsequent deliberate session_start may resume as DEC-065 permits. Verification :509 explicitly requires no automatic resume and no marker. This removes the observed takeover loop without a lease or server protocol change.
+"""
+
+[[finding.turn]]
+act = "reopen"
+role = "raiser"
+note = "reopened only to let the responder add a route; the fix itself was verified"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+route = "demonstrate"
+response = "Verified: superseded refusal has no row, so the old client auto-resumes and ping-pongs. Fix: superseded goes to unpaired in memory only, with no marker (the pairing stays valid for the newer holder); cancel retries; notify. A later session_start may resume it (DEC-065)."
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "Procedural route verification: the fix-now response was already substantively verified; the added probe or demonstrate route is appropriate. This act does not claim the future probe or demonstration has been executed."
+
+[[finding]]
+id = "F-13"
+status = "verified"
+severity = "major"
+title = "Terminal unpairing clears request timers without settling in-flight post calls"
+detail = """
+Reviewer: codex, round 4; facet design. Subject: "The pi side and deployment", terminal row :371 and outside-table post rule :377-385. Authority: DEC-073's explicit failure and the accepted bounded post wait.
+
+Expected: an in-flight bridge_post completes even when its pairing ends or a resume is terminally refused. Its unknown original outcome must not be reinterpreted as a new post to a later pairing. Observed: the terminal row clears credentials and timers and enters unpaired, but has no effect to complete pending post waiters or remove them from the resend set. Outside the table, an in-flight post completes on its reply or deadline, or is resent on the next bound. Terminal cleanup removes the deadline and prevents the expected re-bind.
+
+Concrete inferred trace, not executed: post P is sent; the connection drops before its reply; P is retained for resume. While disconnected, the pairing is ended from the newer valid client. The old client's resume receives pairing ended and takes :371: its timer is cleared, no re-bind will occur, and no post-specific reply will arrive. As written, P's tool promise has no completion event. If pending sends survive to a subsequent fresh pair, the unqualified "next bound" rule also allows P to be resent into a different conversation.
+
+Pi can keep a model tool in flight while processing operator extension commands: ~/.local/src/pi/packages/coding-agent/src/core/agent-session.ts:2085-2106 executes them immediately even during streaming, before the busy-input queue at :2136-2147. Thus intentional end/re-pair must also have this cleanup contract; serialization behind the model turn cannot be assumed.
+
+Smallest fix: add one terminal effect that completes every outstanding send for the outgoing pairing (outcome unknown where it may already have committed), removes it from the resend set, then cancels its timer. Capture the originating conversation on each existing pending-send record; resend only after that same pairing resumes. Apply the same local cleanup to intentional end, terminal refusal and supersession. Do not add receipts or change reply deadlines. Add terminal-refusal-with-pending-post and end/re-pair tests. This is completion on a new terminal transition, not a re-raise of the disposed deadline or unpaired-marker findings.
+"""
+disposition = "fix-now"
+response = "Verified: the terminal row clears timers without completing pending posts. Fix: one exit effect, settlePending, on end, terminal refusal, supersede and session_shutdown. Each pending post completes once: outcome unknown if sent, refused if not. Pending posts carry their conversation and are resent only to the same pairing."
+route = "demonstrate"
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+response = "Verified: the terminal row clears timers without completing pending posts. Fix: one exit effect, settlePending, on end, terminal refusal, supersede and session_shutdown. Each pending post completes once: outcome unknown if sent, refused if not. Pending posts carry their conversation and are resent only to the same pairing."
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = """
+Round 5: VERIFIED as a design fix. "The pi side and deployment" design.md:367-370 defines one settlePending exit effect that completes each pending post once with outcome unknown if already sent, otherwise an explicit refusal, then empties the set and cancels timers. End, terminal refusal, supersession and shutdown all use it (:378,386-390). Pending sends are tied to their originating conversation and may only resend when that same pairing is bound (:404-408). Verification :510 names each terminal event and re-pair leakage. This closes the original stranded-promise/timer-cancellation failure path; tests have not yet been run.
+"""
+
+[[finding.turn]]
+act = "reopen"
+role = "raiser"
+note = "reopened only to let the responder add a route; the fix itself was verified"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+route = "demonstrate"
+response = "Verified: the terminal row clears timers without completing pending posts. Fix: one exit effect, settlePending, on end, terminal refusal, supersede and session_shutdown. Each pending post completes once: outcome unknown if sent, refused if not. Pending posts carry their conversation and are resent only to the same pairing."
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "Procedural route verification: the fix-now response was already substantively verified; the added probe or demonstrate route is appropriate. This act does not claim the future probe or demonstration has been executed."
+
+[[finding]]
+id = "F-14"
+status = "verified"
+severity = "minor"
+title = "The all-states interactive-input rule tries to refill while no bridge binding exists"
+detail = """
+Reviewer: codex, round 4; facet design. Subject only: "The pi side and deployment", "Outside the table, all states" (:375-387).
+
+Expected: ordinary pi use in unpaired state has no bridge side effect; a refill frame is sent only on a usable authenticated binding. Observed: the outside-table rule maps every interactive input directly to refill, explicitly in all states. The unpaired start rows (:362-363) have no socket or credentials, and outage has no working socket. No no-op/refusal/defer rule is supplied for these state/event pairs.
+
+Verified production of the event: local pi packages/coding-agent/src/core/agent-session.ts:2116-2121 runs input handlers for normal input with source defaulting to interactive, before deciding how to start or queue the run. No pairing is required to reach that code. Therefore unpaired + interactive input is the default pi operation, not a hypothetical transport race.
+
+Inferred consequence, not executed: implementing the literal all-states effect tries to send on an absent/closed socket, or requires the shell to invent a silent-drop policy outside step. This finding does not question the accepted refill verb or source:interactive rule; it is the missing state guard introduced by calling that rule all-states.
+
+Smallest fix: state the guard/rows: unpaired interactive input is a no-op; bound interactive input emits refill. For connecting/outage, explicitly choose the existing outage/refusal behavior or remember one pending refill for the same pairing until bound; do not attempt a frame on a nonexistent socket. Likewise route the deliver effect only through a current binding, leaving stale/unpaired socket events inert without ack. These are guards on existing effects, not a new queue or protocol. Add the unpaired-input case to the pure step tests.
+"""
+disposition = "fix-now"
+response = "Verified: input handlers run unpaired (agent-session.ts:2116-2121). Fix: refill only when bound, else no effect. Residual: input during an outage does not refill, and the next budget refusal is loud. deliver is accepted only from the current binding."
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+response = "Verified: input handlers run unpaired (agent-session.ts:2116-2121). Fix: refill only when bound, else no effect. Residual: input during an outage does not refill, and the next budget refusal is loud. deliver is accepted only from the current binding."
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = """
+Round 5: VERIFIED as a design fix. "The pi side and deployment" design.md:394-395 explicitly sends refill only while bound and makes other interactive-input states no-ops, with the outage-input limitation stated. :409-410 accepts deliver only from the current binding and ignores stale-socket frames. Verification :511 asserts no unpaired/outage input frame. This resolves the complained-of all-states send on an absent socket without another queue or protocol.
+"""
+
+# Findings are append-only `[[finding]]` tables, added by `review raise`.
+# Empty here at creation — a fresh review is Active, awaiting the raiser.

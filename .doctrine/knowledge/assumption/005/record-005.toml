@@ -1,0 +1,39 @@
+schema = "doctrine.knowledge"
+version = 1
+
+id = 5
+slug = "notify-send-run-inside-a-pi-jail-reaches-the-operators-desktop"
+title = "notify-send run inside a pi jail reaches the operator's desktop"
+record_kind = "assumption"
+status = "held"
+created = "2026-10-29"
+updated = "2026-10-29"
+tags = []
+
+[facet]                         # every field typed; seeded empty (captured later)
+claim = "notify-send (libnotify, shipped in the jail) run by the pi extension or malebolge-bridge inside a pi jail shows a desktop notification."
+confidence = "low"
+basis = "design-inference"
+validation_plan = "PHASE-01 probe: run notify-send in a pi jail. If it fails, the loud floor is ctx.ui.notify and stderr (DEC-073, DEC-075); binding the bus is a ~/flakes contract item (DEC-074) only if the operator wants it."
+validated_by    = ""
+validated_on    = ""
+invalidated_by  = ""
+invalidated_on  = ""
+
+[evidence]                      # free-text citations (supports / contradicts / notes)
+supports    = []
+contradicts = []
+notes       = []
+
+[relationships]                 # verb-written edges (set by doctrine supersede)
+supersedes    = []   # record ids this one replaces (set by doctrine supersede)
+superseded_by = []   # set on superseded predecessor (verb-written)
+
+[[relation]]
+label = "references"
+role = "concerns"
+target = "DEC-073"
+
+[[relation]]
+label = "shapes"
+target = "SL-009"

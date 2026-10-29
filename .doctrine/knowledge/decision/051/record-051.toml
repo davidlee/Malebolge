@@ -1,0 +1,39 @@
+schema = "doctrine.knowledge"
+version = 1
+
+id = 51
+slug = "classify-runs-through-a-stdin-capable-spawner-behind-boundedexecs-existing-env-seam"
+title = "classify runs through a stdin-capable spawner behind boundedExec's existing env seam"
+record_kind = "decision"
+status = "accepted"
+created = "2026-10-29"
+updated = "2026-10-29"
+tags = []
+
+[facet]                         # every field typed; seeded empty (captured later)
+context = "screwtape classify reads only stdin. pi-durable's ExecutionEnv cannot feed stdin, and a shell is forbidden (DEC-028). boundedExec already takes env: Pick<ExecutionEnv, 'exec'>, and the mail adapter's run adds caps, exit mapping and envelope checks."
+choice = "A small stdinEnv(input) returns an exec over node:child_process.spawn: argv only, shell false, env replaced not inherited, stdin piped then closed, the child killed on timeout or abort, output through onOutput. run gains an optional stdin; caps, exit mapping and envelope checks are reused. Classify has its own constants: 30 s timeout, own stdout cap; input size checked before spawn. Output ids must be a prefix of input ids in order; any other mismatch is a contract violation: whole batch unclassified, nothing cached."
+alternatives = ["A separate classify runner with its own bounding: parallel implementation", "Upstream stdin in pi-durable: cleanest seam, but blocks on a dependency outside our control"]
+rationale = "Keeps boundedExec and run the one bounded exec; the change is one small module. Prefix, not equality, because classify legitimately stops at its first failing message (inq-6)."
+consequences = ["DEC-028 gains a classify-specific env, timeout and stdin at lock", "Operator: Jev latency is low, so 30 s per batch is ample"]
+decided_by = "operator"
+decided_on = "2026-10-29"
+
+[evidence]                      # free-text citations (supports / contradicts / notes)
+supports    = []
+contradicts = []
+notes       = []
+
+[relationships]                 # verb-written edges (set by doctrine supersede)
+supersedes    = []   # record ids this one replaces (set by doctrine supersede)
+superseded_by = []   # set on superseded predecessor (verb-written)
+
+[[relation]]
+label = "references"
+role = "concerns"
+descriptor = "narrows DEC-028 (SL-007 lock)"
+target = "DEC-028"
+
+[[relation]]
+label = "shapes"
+target = "SL-007"

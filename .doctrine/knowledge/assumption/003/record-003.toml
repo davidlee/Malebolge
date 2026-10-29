@@ -1,0 +1,36 @@
+schema = "doctrine.knowledge"
+version = 1
+
+id = 3
+slug = "jailed-agent-admits-wrapper"
+title = "satan's makeJailedAgent admits a wrapper agent command that starts the bridge before the daemon"
+record_kind = "assumption"
+status = "held"
+created = "2026-10-29"
+updated = "2026-10-29"
+tags = []
+
+[facet]                         # every field typed; seeded empty (captured later)
+claim = "The room jail's launcher can run socat inside the jail and then exec the malebolge daemon (DEC-059 option A)."
+confidence = "medium"
+basis = "design-inference"
+validation_plan = "satan IMP-060; fallback per DEC-059: the daemon spawns and supervises socat."
+validated_by    = ""
+validated_on    = ""
+invalidated_by  = ""
+invalidated_on  = ""
+
+[evidence]                      # free-text citations (supports / contradicts / notes)
+supports    = []
+contradicts = []
+notes       = []
+
+[relationships]                 # verb-written edges (set by doctrine supersede)
+supersedes    = []   # record ids this one replaces (set by doctrine supersede)
+superseded_by = []   # set on superseded predecessor (verb-written)
+
+[[relation]]
+label = "references"
+role = "concerns"
+descriptor = "unverified premise of DEC-059"
+target = "SL-007"

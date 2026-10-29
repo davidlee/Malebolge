@@ -5,17 +5,17 @@ id = 73
 slug = "the-pi-extension-lives-in-pi-bridge-in-this-repo-and-is-mounted-read-only-into-the-jail-homes"
 title = "The pi extension lives in pi-bridge/ in this repo and is mounted read-only into the jail home's extensions directory"
 record_kind = "decision"
-status = "proposed"
+status = "accepted"
 created = "2026-10-29"
 updated = "2026-10-29"
 tags = []
 
 [facet]                         # every field typed; seeded empty (captured later)
 context = "Operator: install into the persisted jail home, forever home in this repo. pi discovers ~/.pi/agent/extensions/<dir>/index.ts; jiti loads TypeScript without a build. Project extensions need project trust."
-choice = "pi-bridge/ holds the extension (index.ts), the malebolge-bridge command, and the wire types, which the daemon imports. The flakes combinator ro-binds it at ~/.pi/agent/extensions/malebolge-bridge. The extension opens its connection in session_start, closes it in session_shutdown, reconnects with backoff, shows state with setStatus, and registers bridge_post and /bridge (pair, end). It has no npm dependencies beyond what pi provides."
+choice = """pi-bridge/ holds the extension (index.ts), the malebolge-bridge command, and the wire types, which the daemon imports. The flakes combinator ro-binds it at ~/.pi/agent/extensions/malebolge-bridge. The extension opens its connection in session_start, closes it in session_shutdown, reconnects with backoff, shows state with setStatus, and registers bridge_post and /bridge (pair, end). It has no npm dependencies beyond what pi provides. A connect failure is loud, never silent. On the first failed connect of an outage (initial connect, or a reconnect after a drop) the extension raises ctx.ui.notify(…, "error") and runs notify-send best-effort, both naming both ends as far as known: pi's project and session id; the conversation id, topic and socket path. It then retries with backoff, showing the outage with setStatus, and notifies again once on recovery. A refused resume (pairing ended, bad token) is loud the same way and is not retried."""
 alternatives = ["$PROJECT/.pi: per-project install and a project-trust prompt"]
 rationale = "One install, one version, immutable inside the jail."
-consequences = ["the daemon trusts nothing the client says: budget, framing and caps are daemon-side", "ASM: TypeBox resolves from pi's provided modules; verify in plan"]
+consequences = ["the daemon trusts nothing the client says: budget and framing and caps are daemon-side", "ASM: TypeBox resolves from pi's provided modules; verify in plan", "ASM: notify-send reaches the desktop from a pi jail; verify in PHASE-01; the in-pi notification is the floor either way", "one notification per outage; retries are shown only in the status line"]
 decided_by = "operator, 2026-10-29 session"
 decided_on = "2026-10-29"
 

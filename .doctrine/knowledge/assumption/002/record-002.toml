@@ -1,0 +1,36 @@
+schema = "doctrine.knowledge"
+version = 1
+
+id = 2
+slug = "gateway-socket-serves-jev"
+title = "The gateway's client unix socket serves Jev's path as the relay on 127.0.0.1:4000 does"
+record_kind = "assumption"
+status = "held"
+created = "2026-10-29"
+updated = "2026-10-29"
+tags = []
+
+[facet]                         # every field typed; seeded empty (captured later)
+claim = "Bridging loopback :4000 inside the room jail to the gateway client socket reaches Jev (/v1/systemone) exactly as the host relay does."
+confidence = "medium"
+basis = "design-inference"
+validation_plan = "SL-007 first phase (VA): bridge a host loopback port to the client socket and compare unauthenticated responses with :4000."
+validated_by    = ""
+validated_on    = ""
+invalidated_by  = ""
+invalidated_on  = ""
+
+[evidence]                      # free-text citations (supports / contradicts / notes)
+supports    = []
+contradicts = []
+notes       = []
+
+[relationships]                 # verb-written edges (set by doctrine supersede)
+supersedes    = []   # record ids this one replaces (set by doctrine supersede)
+superseded_by = []   # set on superseded predecessor (verb-written)
+
+[[relation]]
+label = "references"
+role = "concerns"
+descriptor = "unverified premise of DEC-059"
+target = "SL-007"

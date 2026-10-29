@@ -1,0 +1,94 @@
+id = 10
+slug = "topic-model"
+title = "Per-topic model, and topics in the Emacs attach chooser"
+status = "design"
+created = "2026-10-29"
+updated = "2026-10-29"
+tags = []
+
+[relationships]
+needs = []                      # slice→work hard prerequisite
+after = []                      # slice→work soft sequence: { to, rank }
+
+[[selector]]
+selector = "src/protocol.ts"
+intent = "design-target"
+
+[[selector]]
+selector = "src/topics.ts"
+intent = "design-target"
+
+[[selector]]
+selector = "src/conversations.ts"
+intent = "design-target"
+
+[[selector]]
+selector = "src/daemon.ts"
+intent = "design-target"
+
+[[selector]]
+selector = "src/daemon-start.ts"
+intent = "design-target"
+
+[[selector]]
+selector = "src/models.ts"
+intent = "design-target"
+
+[[selector]]
+selector = "src/attach*.ts"
+intent = "scope-relevant"
+
+[[selector]]
+selector = "emacs/**"
+intent = "scope-relevant"
+
+[[selector]]
+selector = "test/**"
+intent = "design-target"
+
+[[selector]]
+selector = "src/threads/tools.ts"
+intent = "design-target"
+
+[[selector]]
+selector = "src/threads/extension.ts"
+intent = "design-target"
+
+[[selector]]
+selector = "src/attach-invocation.ts"
+intent = "design-target"
+
+[[selector]]
+selector = "src/request.ts"
+intent = "design-target"
+
+[[selector]]
+selector = "src/attach-main.ts"
+intent = "design-target"
+
+[[selector]]
+selector = "src/render.ts"
+intent = "design-target"
+
+[[selector]]
+selector = "emacs/malebolge.el"
+intent = "design-target"
+
+[[relation]]
+label = "references"
+role = "concerns"
+descriptor = "fixed-at-creation rule the topic model follows"
+target = "DEC-025"
+
+[[relation]]
+label = "related"
+target = "IMP-018"
+
+# STRUCTURAL relations are uniform `[[relation]]` rows, never a typed
+# `[relationships]` axis. Slices carry no typed STRUCTURAL
+# relation axes — the `[relationships]` table above holds only the dep/seq payload
+# (`needs`/`after`). Author a structural edge with the `doctrine link` verb
+# — it validates the (source, label) pair and resolves the target:
+#   doctrine link SL-NNN specs SPEC-NNN
+#   doctrine link SL-NNN governed_by ADR-NNN
+# `doctrine inspect SL-NNN` renders the inbound + outbound edges.

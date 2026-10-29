@@ -1,0 +1,39 @@
+schema = "doctrine.knowledge"
+version = 1
+
+id = 63
+slug = "pre-filter-withholds-sender-written-text-of-hostile-unclassified-or-reported-mail-from-the-agent"
+title = "Pre-filter withholds sender-written text of hostile, unclassified or reported mail from the agent"
+record_kind = "decision"
+status = "accepted"
+created = "2026-10-29"
+updated = "2026-10-29"
+tags = []
+
+[facet]                         # every field typed; seeded empty (captured later)
+context = "Scope objective 6: a message Jev flags as clearly hostile has its content withheld up front; the agent sees that it was withheld, and why. CON-001 confines question names to the pre-filter policy. Withheld mail is highlighted to the operator (DEC-061, DEC-062)."
+choice = "Withhold when agent_directive >= 0.5, or deception_cues >= 0.5, or the message is unclassified (any DEC-056 reason), or reported (DEC-062), or a policy-named question is absent from its answers. Thresholds are named constants in one policy table, tuned with IMP-003. A withheld item, in every tool, keeps id, thread id, received_at, mailbox ids, size, sender domain(s), jev and withheld {reason, score|detail}; it drops subject, preview, body, display names, address local parts, attachment names and types. The agent has no way to lift a withholding; the operator reads withheld mail in Gnus."
+alternatives = ["Withhold the body only, keep subject and preview: the fields attackers fill first", "Mark unclassified mail instead of withholding it: an outage quietly shows unscreened mail", "Thresholds 0.5 / 0.7: less withholding with no calibration data, while a false positive costs little"]
+rationale = "Fail-safe: a withheld message is highlighted and readable in Gnus, so withholding more is cheap. Sender domain identifies the message for the operator and is no exfiltration destination without egress (DEC-049)."
+consequences = ["A Jev outage withholds all mail, loudly, until Jev returns", "MAIL_SECTION gains the withheld sentence (DEC-061)"]
+decided_by = "operator"
+decided_on = "2026-10-29"
+
+[evidence]                      # free-text citations (supports / contradicts / notes)
+supports    = []
+contradicts = []
+notes       = []
+
+[relationships]                 # verb-written edges (set by doctrine supersede)
+supersedes    = []   # record ids this one replaces (set by doctrine supersede)
+superseded_by = []   # set on superseded predecessor (verb-written)
+
+[[relation]]
+label = "references"
+role = "concerns"
+descriptor = "control for RSK-002"
+target = "RSK-002"
+
+[[relation]]
+label = "shapes"
+target = "SL-007"

@@ -1,0 +1,39 @@
+schema = "doctrine.knowledge"
+version = 1
+
+id = 7
+slug = "typebox-is-importable-by-an-extension-loaded-from-the-jail-homes-extensions-directory"
+title = "TypeBox is importable by an extension loaded from the jail home's extensions directory"
+record_kind = "assumption"
+status = "held"
+created = "2026-10-29"
+updated = "2026-10-29"
+tags = []
+
+[facet]                         # every field typed; seeded empty (captured later)
+claim = "An extension at ~/.pi/agent/extensions/malebolge-bridge/index.ts, with no node_modules of its own, can import typebox (and pi's own packages) from the modules pi provides."
+confidence = "high"
+basis = "external-source"
+validation_plan = "PHASE-01 probe: load a stub extension from the jail home that imports typebox and registers a tool with a TypeBox schema; assert it registers inside a pi jail."
+validated_by    = ""
+validated_on    = ""
+invalidated_by  = ""
+invalidated_on  = ""
+
+[evidence]                      # free-text citations (supports / contradicts / notes)
+supports    = []
+contradicts = []
+notes       = []
+
+[relationships]                 # verb-written edges (set by doctrine supersede)
+supersedes    = []   # record ids this one replaces (set by doctrine supersede)
+superseded_by = []   # set on superseded predecessor (verb-written)
+
+[[relation]]
+label = "references"
+role = "concerns"
+target = "DEC-073"
+
+[[relation]]
+label = "shapes"
+target = "SL-009"

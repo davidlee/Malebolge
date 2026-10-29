@@ -1,0 +1,45 @@
+schema = "doctrine.knowledge"
+version = 1
+
+id = 77
+slug = "screwtape-owns-jev-window"
+title = "Screwtape owns Jev's window: classify reports what Jev saw, and the agent's view is clamped to it"
+record_kind = "decision"
+status = "accepted"
+created = "2026-10-29"
+updated = "2026-10-29"
+tags = []
+
+[facet]
+context      = "DEC-048 requires agent-visible mail text to be a subset of what Jev was shown. Malebolge was mirroring Jev's window from outside, and review found it differs repeatedly: screwtape spends its 16,384-byte body budget on PII-stripped bytes (stripping grows text up to 1.5x, short URLs), drops a cut body's last partial word, and reads only the from addresses (RV-020 F-1, F-11, F-12). Each mirror is a copied screwtape rule that breaks when screwtape changes (IMP-005 relaxes PII soon). Jev's limits are 64,000 tokens per request and 32,000 per question, so a 1.5x-grown 16 KiB body fits."
+choice       = "Refines DEC-048 (and DEC-050's address rows): screwtape owns the window. Screwtape classify (1) bounds every text in raw bytes before PII stripping (cut, drop the partial word, then strip; no cut after stripping); (2) includes in Jev's state every address list the mail tools show (from, sender, reply_to, to, cc, bcc: domains now, display names once IMP-005 lands), under documented count bounds; (3) reports on each classify line what Jev saw: seen.bodies, the raw bytes kept per body. Malebolge clamps each agent-visible body to seen.bodies[i] (held in the cache beside the answers) and every other field to screwtape's documented raw bounds, one table pinned by a test. Fields Jev never reads stay dropped (DEC-050) or named residue (preview, URL paths, address local parts)."
+alternatives = ["Mirror the window in malebolge: one raw window of 10,922 bytes (16,384 / 1.5), the partial-word rule, caps and drops per field; every screwtape PII change re-breaks it", "Show the agent Jev's state itself: exact, but loses PII-stripped content (local parts, URL paths, long numbers)"]
+rationale    = "The invariant then holds by construction and survives screwtape's PII changes; malebolge loses the partial-word rule, the growth constant, the reduced read window and per-field arithmetic. The cost is an additive v1 field and a screwtape slice this slice waits on."
+consequences = ["SL-007's non-goal 'changing screwtape's contract' is lifted for these three changes", "A screwtape backlog item carries the work; SL-007's window-dependent phases wait on it", "mail_read keeps a 16 KiB body window"]
+decided_by   = "operator"
+decided_on   = "2026-10-29"
+
+[evidence]                      # free-text citations (supports / contradicts / notes)
+supports    = []
+contradicts = []
+notes       = []
+
+[relationships]                 # verb-written edges (set by doctrine supersede)
+supersedes    = []   # record ids this one replaces (set by doctrine supersede)
+superseded_by = []   # set on superseded predecessor (verb-written)
+
+[[relation]]
+label = "references"
+role = "concerns"
+descriptor = "refines: screwtape owns the window"
+target = "DEC-048"
+
+[[relation]]
+label = "references"
+role = "concerns"
+descriptor = "refines: address-list rows"
+target = "DEC-050"
+
+[[relation]]
+label = "shapes"
+target = "SL-007"

@@ -3,19 +3,19 @@ version = 1
 
 id = 67
 slug = "pis-messages-enter-the-bridged-conversation-as-one-direct-input-each-escaped-framed-as-data-capped"
-title = "pi's messages enter the bridged conversation as one direct input each, escaped, framed as data, capped, idempotent by sequence"
+title = "pi's messages enter the bridged conversation as one direct input each, escaped, framed as data, capped, idempotent by tool call id"
 record_kind = "decision"
-status = "proposed"
+status = "accepted"
 created = "2026-10-29"
 updated = "2026-10-29"
 tags = []
 
 [facet]                         # every field typed; seeded empty (captured later)
 context = "A thread post is a durable task because its sender is another conversation's tool call (DEC-035). Here the sender is an external client the daemon answers directly. Post envelopes today interpolate unescaped (ISS-003)."
-choice = 'post {seq, text} submits one input to the bridged conversation, whenBusy followUp, entry kind satan.bridge, requestId bridge:<pairing>:<seq>, so a resend after reconnect is not duplicated; accepted {seq} replies after the commit, refused {seq, reason} on any refusal. The model reads <bridge from="pi" project="…" seq="n">…</bridge> with every value escaped and the body framed as untrusted data with provenance. Bodies are capped in bytes; truncation keeps head and tail and says so.'
+choice = """post {id, kind, text} submits one message to the bridged conversation, where id is the pi tool call id of the bridge_post that sent it. A turn is an input (whenBusy followUp, entry kind satan.bridge); a note is a write (DEC-069). Both carry requestId bridge:<pairing>:<id>, so a resend after reconnect is not duplicated and needs no sequence allocator. accepted {id} replies after the submit commit and means queued, not yet read; refused {id, reason} answers any refusal. The model reads <bridge from="pi" project="…" kind="…">…</bridge> with every value escaped and the body framed as untrusted data with provenance. Bodies are capped in bytes; truncation keeps head and tail and says so. After accepting a turn, the bridge handler waits on its submission in-process; if it settles withdrawn or placed-but-unanswered (the threads' endingOf, src/threads/task.ts, moved to a shared module), the daemon appends a short note to the pairing's outbox: bridge message <id> not delivered: <ending> (<reason>). The notice starts no turn on pi and does not echo the text."""
 alternatives = ["A satan.post-style durable task per message: the task exists to carry a sender's commit, which an external client does not have"]
 rationale = "Simplest durable path: the submit commit is the durability point; the request id gives idempotence."
-consequences = ["uses SL-008's shared untrusted-block module (DEC-054) if built first, else escapeXml", "a new entry kind satan.bridge"]
+consequences = ["uses SL-008's shared untrusted-block module (DEC-054) if built first; else escapeXml", "a new entry kind satan.bridge", "the budget is spent in the same submit commit (DEC-070)", "endingOf is shared by threads and the bridge rather than duplicated", "Accepted residual (operator): a daemon restart while a pi turn is still queued loses its watch and that one turn is never reported"]
 decided_by = "operator, 2026-10-29 session"
 decided_on = "2026-10-29"
 

@@ -5,17 +5,17 @@ id = 66
 slug = "satans-messages-to-pi-wait-in-a-durable-outbox-in-the-bridged-conversations-own-document-pushed-and"
 title = "SATAN's messages to pi wait in a durable outbox in the bridged conversation's own document, pushed and acked by sequence"
 record_kind = "decision"
-status = "proposed"
+status = "accepted"
 created = "2026-10-29"
 updated = "2026-10-29"
 tags = []
 
 [facet]                         # every field typed; seeded empty (captured later)
 context = "pi is a client, not a conversation, so the durable post path does not fit SATAN to pi (research X4). Operator chose a daemon-side outbox over an attach-style stream so pi never consumes SATAN's transcript."
-choice = "The pairing document (pi-durable defineDoc, conversation scope) holds the outbox: entries {seq, text}. bridge_post appends in the same commit as its tool result. While a client is bound the daemon sends deliver {seq, text} for every entry above the acked cursor, on bind and on each change; ack {seq} advances the cursor and drops delivered entries. The extension ignores a seq at or below the last one it injected."
+choice = "The pairing document (pi-durable defineDoc, conversation scope) holds the outbox: entries {seq, text}, seq allocated in the appending commit. bridge_post appends one entry in its own commit and is replay unsafe, as the thread tools are (DEC-043). With BRIDGE_OUTBOX_CAP (a named constant) entries unacked, bridge_post is refused with reason outbox full, pi is not draining; existing entries stay. On bind the daemon sends deliver {seq, text} for every unacked entry, then each new entry once as it is appended. ack {seq} drops that entry; acks are per entry, not a cursor, because a note and a turn can reach pi's session out of order. The extension puts {pairing, seq} in the custom message's details. It skips a deliver whose seq is already in its pi session's entries, or was handed to pi by this process, and acks a seq once its entry is in pi's session."
 alternatives = ["Attach-style stream of the conversation: pi would read SATAN's whole transcript", "A separate store or table: a second persistence path for no gain"]
-rationale = "No new storage; atomic with the tool call; survives daemon restart and pi disconnects; at-least-once delivery made exactly-once in pi's context by the seq check."
-consequences = ["outbox growth while pi is away is bounded by the loop budget", "pi-durable watchDoc or the commit path drives pushes"]
+rationale = "No new storage; survives daemon restart and pi disconnects. Delivery is at least once; pi's own persisted session is the dedupe record, so a pi crash before persistence leaves the entry unacked and it is redelivered, and a lost ack is answered by re-acking."
+consequences = ["outbox growth is bounded by BRIDGE_OUTBOX_CAP", "Accepted residual (DEC-043 precedent): a daemon death between the append commit and the tool's settlement reports the call interrupted though the message is queued; a SATAN retry then reaches pi twice; IMP-020 is the fix", "pi-durable watchDoc or the commit path drives pushes", "ASM: a custom message's entry is in ctx.sessionManager once sendMessage returns or by the turn_end that consumes it; verify in plan"]
 decided_by = "operator, 2026-10-29 session"
 decided_on = "2026-10-29"
 

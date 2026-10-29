@@ -1,0 +1,33 @@
+schema = "doctrine.knowledge"
+version = 1
+
+id = 82
+slug = "conversations-judge-a-model-through-one-requiremodel-function-built-from-the-gateway-catalog"
+title = "Conversations judge a model through one requireModel function built from the gateway catalog"
+record_kind = "decision"
+status = "accepted"
+created = "2026-10-29"
+updated = "2026-10-29"
+tags = []
+
+[facet]                         # every field typed; seeded empty (captured later)
+context = "A topic write and conversation creation must check a model against the gateway catalog, which only startDaemon holds (src/daemon-start.ts:210); conversations() has no catalog (research.md fact 3)."
+choice = "requireKnownModel moves to src/models.ts and takes a ref string, returning a ModelRef or throwing 'unknown model <ref>'. startDaemon builds requireModel: (ref) => ModelRef from the loaded catalog and passes it to conversations(...) and the thread deps. Conversation code depends on that function, not on pi-ai Models."
+alternatives = ["Pass Models into conversations(): couples conversation code to pi-ai's catalog API and makes tests build catalogs", "Expose Models on Session"]
+rationale = "Narrowest dependency; tests stub one function."
+consequences = ["~30 conversations(session, DEFAULTS, profile) test call sites gain an argument", "requireKnownModel gets its first direct test, with a slashed-id catalog fixture"]
+decided_by = "operator, 2026-10-29 session"
+decided_on = "2026-10-29"
+
+[evidence]                      # free-text citations (supports / contradicts / notes)
+supports    = []
+contradicts = []
+notes       = []
+
+[relationships]                 # verb-written edges (set by doctrine supersede)
+supersedes    = []   # record ids this one replaces (set by doctrine supersede)
+superseded_by = []   # set on superseded predecessor (verb-written)
+
+[[relation]]
+label = "shapes"
+target = "SL-010"

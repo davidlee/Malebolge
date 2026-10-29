@@ -11,7 +11,7 @@ updated = "2026-10-27"
 tags = []
 
 [facet]                         # every field typed; seeded empty (captured later)
-claim           = "A mail conversation runs as the operator (david) on the host, and the screwtape binary runs with --config and a child environment of HOME alone, reading its store read-only."
+claim           = "A mail conversation runs as the operator (david) on the host, and screwtape's read verbs run with --config and a child environment of HOME alone, reading the store read-only. classify alone also gets CREDENTIALS_DIRECTORY (DEC-059, DEC-081)."
 confidence      = "medium"            # low | medium | high
 basis           = "design-inference"            # observation | prior-art | design-inference | external-source | operator-judgement
 validation_plan = "SL-005 smoke test: run each mail tool against the real screwtape binary on this host with the minimal environment."

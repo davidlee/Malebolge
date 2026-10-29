@@ -1,7 +1,7 @@
 id = 7
 slug = "classified-mail"
 title = "Classified mail: mail tools carry screwtape classify answers"
-status = "design"
+status = "plan"
 created = "2026-10-29"
 updated = "2026-10-29"
 tags = ["jev", "mail", "screwtape"]
@@ -17,6 +17,54 @@ intent = "scope-relevant"
 [[selector]]
 selector = "test/mail/**"
 intent = "scope-relevant"
+
+[[selector]]
+selector = "src/stdin-env.ts"
+intent = "design-target"
+
+[[selector]]
+selector = "src/mail/source.ts"
+intent = "design-target"
+
+[[selector]]
+selector = "src/mail/screwtape.ts"
+intent = "design-target"
+
+[[selector]]
+selector = "src/mail/classifications.ts"
+intent = "design-target"
+
+[[selector]]
+selector = "src/mail/policy.ts"
+intent = "design-target"
+
+[[selector]]
+selector = "src/mail/project.ts"
+intent = "design-target"
+
+[[selector]]
+selector = "src/mail/render.ts"
+intent = "design-target"
+
+[[selector]]
+selector = "src/mail/tools.ts"
+intent = "design-target"
+
+[[selector]]
+selector = "src/mail/extension.ts"
+intent = "design-target"
+
+[[selector]]
+selector = "src/config.ts"
+intent = "design-target"
+
+[[selector]]
+selector = "src/daemon-start.ts"
+intent = "design-target"
+
+[[selector]]
+selector = "src/untrusted-block.ts"
+intent = "design-target"
 
 [[relation]]
 label = "references"

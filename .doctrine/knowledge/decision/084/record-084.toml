@@ -1,0 +1,33 @@
+schema = "doctrine.knowledge"
+version = 1
+
+id = 84
+slug = "a-started-thread-takes-its-topics-model-a-fork-keeps-its-parents"
+title = "A started thread takes its topic's model; a fork keeps its parent's"
+record_kind = "decision"
+status = "accepted"
+created = "2026-10-29"
+updated = "2026-10-29"
+tags = []
+
+[facet]                         # every field typed; seeded empty (captured later)
+context = "DEC-034 gives a thread_start conversation its topic's toolset and cwd but the daemon default model (src/threads/tools.ts:169). Operator expects thread_start and fork to take an optional model later."
+choice = "createStarted's model comes from creationModel with its topic's model, else the daemon default (amends DEC-034). A fork keeps its parent's model through pi-durable's agent copy at the fork entry; no code, a test pins it. A future optional model on thread_start or fork is a 'requested' key on creationModel's sources with highest precedence; a fork would call it after forking."
+alternatives = ["Started threads keep the daemon default"]
+rationale = "Same rule as cwd and toolset for started threads; additive path to an optional model."
+consequences = ["Amends DEC-034", "Expected to change in a future slice: optional model argument"]
+decided_by = "operator, 2026-10-29 session"
+decided_on = "2026-10-29"
+
+[evidence]                      # free-text citations (supports / contradicts / notes)
+supports    = []
+contradicts = []
+notes       = []
+
+[relationships]                 # verb-written edges (set by doctrine supersede)
+supersedes    = []   # record ids this one replaces (set by doctrine supersede)
+superseded_by = []   # set on superseded predecessor (verb-written)
+
+[[relation]]
+label = "shapes"
+target = "SL-010"

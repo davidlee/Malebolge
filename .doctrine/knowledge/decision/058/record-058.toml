@@ -1,0 +1,33 @@
+schema = "doctrine.knowledge"
+version = 1
+
+id = 58
+slug = "the-classification-cache-fills-read-through-no-background-prefill"
+title = "The classification cache fills read-through; no background prefill"
+record_kind = "decision"
+status = "accepted"
+created = "2026-10-29"
+updated = "2026-10-29"
+tags = []
+
+[facet]                         # every field typed; seeded empty (captured later)
+context = "Every mail tool must hold a classification for each item it returns before returning (DEC-047, pre-filter). Open was whether anything classifies ahead of a tool call."
+choice = "Read-through only: a tool collects the ids it will return, takes cached ones, classifies the rest in one batch (DEC-051, DEC-056), stores, then renders."
+alternatives = ["Background prefill of new arrivals after a stored cursor: faster calls, but a loop, persisted cursor and unattended failure handling"]
+rationale = "No new loop, timer or state; Jev latency is low. Prefill is the machinery IDE-006/IDE-007 would want, so it belongs there."
+consequences = ["Background prefill noted on IDE-006 as an option"]
+decided_by = "operator"
+decided_on = "2026-10-29"
+
+[evidence]                      # free-text citations (supports / contradicts / notes)
+supports    = []
+contradicts = []
+notes       = []
+
+[relationships]                 # verb-written edges (set by doctrine supersede)
+supersedes    = []   # record ids this one replaces (set by doctrine supersede)
+superseded_by = []   # set on superseded predecessor (verb-written)
+
+[[relation]]
+label = "shapes"
+target = "SL-007"

@@ -6,31 +6,37 @@ disposable phase sheet (`.doctrine/state/.../phase-NN.md`) that must survive
 
 ## Harvest
 <!-- single-copy: updated in place each harvest; ids only, never restated content -->
-fresh-as-of: 2026-10-29 · design inquiring (rev 14) · 7187032 + handover commit
+fresh-as-of: 2026-10-29 · design locked (rev 45) · 0043565 + uncommitted SL-009 work
 
 ### Produced
-- Slice scoped; research round 1 (`research/research.md`); design run
-  dr-01a185c0… at inquiring, inq-1..inq-12 resolved.
-- minted (proposed, not yet settled): DEC-064..DEC-075 (one per inquiry);
-  ISS-003 (post envelopes unescaped); IDE-009 (bridge autonomy modes).
-- No design.md, no code.
+- Design run dr-01a185c0… locked (rev 45); `design.md` 9 sections;
+  slice-009.md scope reconciled to the decisions.
+- Accepted: DEC-064..DEC-076, DEC-078, DEC-079, DEC-080, DEC-090
+  (DEC-076 refines DEC-032; 078 refines 070; 079/090 refine 069; 080/090
+  refine 066).
+- ASM-004..ASM-008 (verify in plan PHASE-01); CHR-007 (~/flakes contract,
+  DEC-074); ISS-003; IDE-009.
+- RV-021 (design review) done: 14 findings, all fix-now, verified, routed
+  (probe: F-1, F-6, F-9, F-10; demonstrate: the rest).
 
 ### Learned
-- pi-durable `write` with model content waits for the next boundary (README
-  § Busy Conversations) — basis of DEC-069 notes; ASM pending.
+- pi-durable `submit` takes no transaction — budget spend is its own commit
+  (DEC-078).
+- pi `clearQueue` on abort drops queued extension messages; `agent_settled
+  {aborted}` and `ctx.isIdle()` are the safe injection points (DEC-090).
+- Room SATAN's bash runs as `satan` in the room VM; it cannot reach host
+  sockets under /run/user/1000 (rulings r1).
+- Lock needs a route on every severe RV finding — set `--route` at first
+  disposition.
 - Room daemon jail already binds `/run/user/1000/satan/durable/room` rw
-  (`~/dev/satan/flake.nix:486`) — no satan change for the bridge socket.
+  (`~/dev/satan/flake.nix:486`).
 
 ### Open
-- Operator acts outstanding: `sufficiency-accepted`; acceptance of
-  DEC-064..075 (then settle them).
-- Operator direction (2026-10-29): informal /arbiter-review with GPT over the
-  inquiry answers (DEC-064..075) first; integrate feedback; then drafting and
-  the official adversarial review are pre-approved.
-- ASMs to record and verify in plan PHASE-01: write-with-model starts no run;
-  TypeBox available to a jail-home extension; extension can set env for pi's
-  bash tool.
-- Flakes contract (DEC-074) needs a CHR backlog item (not yet created).
+- Plan not started. PHASE-01 must verify ASM-004..008 and run the
+  real-pi probes (abort/settle ordering; notify-send and PATH in jail).
+- Posture texts are placeholder corpus prose (DEC-040) pending the
+  satan-corpus session.
+- CHR-007 awaits a ~/flakes session.
 
 ## Design triage (2026-10-29, exploring)
 
@@ -62,3 +68,18 @@ Constraining governance: research.md Thread 1 (DEC-016, 024, 025, 029, 032,
 DEC-054 shared untrusted-block module (not yet built — sequencing to check).
 Memories: frame-decoder-before-renderer; list-has-no-reply-timeout.
 Side finding: ISS-003 (post envelopes unescaped).
+
+## Review passes (2026-10-29, reviewing)
+
+Passes run on the design draft: pi first pass (18 findings, disposed on
+scratch rulings r2), GPT gpt-6.1-sol on RV-021 (F-1..F-14 over rounds 3–4,
+all fix-now, all verified by the raiser at run revision 41), pi verify-only
+pass (6 table gaps, fixed). Trend 8 → 18 → 8 → 6 → verify; the last
+findings were state-table gaps in the pi extension lifecycle, and its main
+mechanism (DEC-090) was simplified rather than patched.
+
+No further design pass is needed. What remains is better caught by
+red/green tests and by the PHASE-01 probes (ASM-004..008; DEC-079/090 abort
+probe; notify-send in jail). A further pass, if one were run, would probe
+only `pi-bridge/state.ts`'s table against real pi event ordering — which
+the PHASE-01 probes cover directly.

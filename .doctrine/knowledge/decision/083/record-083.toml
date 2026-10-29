@@ -1,0 +1,33 @@
+schema = "doctrine.knowledge"
+version = 1
+
+id = 83
+slug = "a-topic-model-the-catalog-does-not-know-refuses-creation-in-that-topic-inside-the-creating-commit"
+title = "A topic model the catalog does not know refuses creation in that topic, inside the creating commit"
+record_kind = "decision"
+status = "accepted"
+created = "2026-10-29"
+updated = "2026-10-29"
+tags = []
+
+[facet]                         # every field typed; seeded empty (captured later)
+context = "The catalog is loaded at start and can drop a model a topic stored earlier. Operator expects this rule to change in a later slice (e.g. fallback), so it must live in one place."
+choice = "A topic write with an unknown model is refused, writing nothing. Creation in a topic whose stored model the catalog lacks is refused inside the creating commit with an error naming the model; the daemon still starts. The rule lives only in the pure creationModel function (DEC for inq-4), the one place to change it."
+alternatives = ["Refuse daemon startup naming the topic (SL-005 toolset precedent): one stale topic stops the daemon", "Silently use the daemon default: hides the drift"]
+rationale = "Explicit denial where the topic is used, without taking the daemon down; one seam for the expected future change."
+consequences = ["Expected to change in a future slice; change creationModel, not its callers"]
+decided_by = "operator, 2026-10-29 session"
+decided_on = "2026-10-29"
+
+[evidence]                      # free-text citations (supports / contradicts / notes)
+supports    = []
+contradicts = []
+notes       = []
+
+[relationships]                 # verb-written edges (set by doctrine supersede)
+supersedes    = []   # record ids this one replaces (set by doctrine supersede)
+superseded_by = []   # set on superseded predecessor (verb-written)
+
+[[relation]]
+label = "shapes"
+target = "SL-010"

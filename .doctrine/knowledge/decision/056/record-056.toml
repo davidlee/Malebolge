@@ -1,0 +1,39 @@
+schema = "doctrine.knowledge"
+version = 1
+
+id = 56
+slug = "classification-failures-degrade-per-item-a-read-never-fails-because-classify-did"
+title = "Classification failures degrade per item; a read never fails because classify did"
+record_kind = "decision"
+status = "accepted"
+created = "2026-10-29"
+updated = "2026-10-29"
+tags = []
+
+[facet]                         # every field typed; seeded empty (captured later)
+context = "classify keeps printed lines on stdout and writes one stderr error line carrying the failing line's cursor, for any failure on a decoded line (transport included); exit 1 runtime, 2 usage/config. Only limit_exceeded/jev_context is deterministic for a message."
+choice = "limit_exceeded/jev_context at input[k].cursor: input[k] unclassified 'too_large' and cached, so the next call skips it; no retry within the call. On any failure the checked prefix is kept and cached and the rest of the batch is unclassified with the reason, not cached; a contract violation keeps nothing. Fixed reasons: too_large, unavailable (config or credential), failed (any other runtime error, timeout, spawn, breach, contract). Items carry their reason; the result header counts them. Classification failure never fails the read. Start-time precondition failures (DEC-049) still refuse every call."
+alternatives = ["Whole page unclassified on any failure with nothing cached: one oversized message withholds its batch on every call", "Any cursor-bearing failure blames the message: a transient http error would cache it unclassified forever", "Skip-and-retry within the call: dropped by the simplicity pass; the cache self-heals on the next call"]
+rationale = "Per-message skip matches screwtape's Resume and skip; only deterministic outcomes are cached. With the pre-filter withholding unclassified mail, an outage is fail-safe and named in the header."
+consequences = ["DEC-026/DEC-028 'no partial data' gains a classify-specific rule at lock"]
+decided_by = "operator"
+decided_on = "2026-10-29"
+
+[evidence]                      # free-text citations (supports / contradicts / notes)
+supports    = []
+contradicts = []
+notes       = []
+
+[relationships]                 # verb-written edges (set by doctrine supersede)
+supersedes    = []   # record ids this one replaces (set by doctrine supersede)
+superseded_by = []   # set on superseded predecessor (verb-written)
+
+[[relation]]
+label = "references"
+role = "concerns"
+descriptor = "narrows DEC-026 (SL-007 lock)"
+target = "DEC-026"
+
+[[relation]]
+label = "shapes"
+target = "SL-007"

@@ -1,0 +1,57 @@
+schema = "doctrine.knowledge"
+version = 1
+
+id = 62
+slug = "mail-reportid-kind-logs-a-closed-vocabulary-report-to-the-journal-and-withholds-the-message"
+title = "mail_report(id, kind) logs a closed-vocabulary report to the journal and withholds the message thereafter"
+record_kind = "decision"
+status = "accepted"
+created = "2026-10-29"
+updated = "2026-10-29"
+tags = []
+
+[facet]                         # every field typed; seeded empty (captured later)
+context = "The mail toolset has no write or notify tool (DEC-029, five tools). The daemon logs to stderr (malebolge: prefix) into the user journal. A compromised agent will not self-report; a report's value is a second opinion beside Jev when the agent is not compromised, and data for IMP-003."
+choice = "A sixth tool, mail_report(id, kind), kind from a closed list: instructions_to_agent, phishing, impersonation, malware, other. No free text. It writes one stderr line 'malebolge: mail_report conversation=<n> id=<id> kind=<kind> jev=<cached answers>' (validated or typed fields only, no mail text) and returns 'reported'. It adds the id to a small bounded set held for the daemon's lifetime and shared across mail conversations; every later result renders that message withheld (inq-12's path) with reason 'reported: <kind>'. Flagged mail (withheld by the pre-filter or reported) is named to the operator explicitly, with its reason, in the agent's reply."
+alternatives = ["Reply-only protocol: no code, nothing durable, no IMP-003 data", "Tool appending a deduplicated JSONL file: path, persisted state and dedupe for little over the journal", "Report without withholding: the agent can be re-exposed after compaction or in another conversation"]
+rationale = "About 40 lines plus a set; no free-text channel; reuses the withheld path. Worst abuse is a compromised agent hiding mail from agents; the operator still has Gnus. The set empties on restart; the journal keeps the record."
+consequences = ["DEC-026/DEC-029 catalog goes from five tools to six at lock", "MAIL_SECTION (DEC-061) tells the agent to name every withheld or reported message, with its reason, to the operator", "Query: journalctl --user -u malebolge-room | grep mail_report"]
+decided_by = "operator"
+decided_on = "2026-10-29"
+
+[evidence]                      # free-text citations (supports / contradicts / notes)
+supports    = []
+contradicts = []
+notes       = []
+
+[relationships]                 # verb-written edges (set by doctrine supersede)
+supersedes    = []   # record ids this one replaces (set by doctrine supersede)
+superseded_by = []   # set on superseded predecessor (verb-written)
+
+[[relation]]
+label = "references"
+role = "concerns"
+descriptor = "narrows DEC-026 (SL-007 lock)"
+target = "DEC-026"
+
+[[relation]]
+label = "references"
+role = "concerns"
+descriptor = "narrows DEC-027 (SL-007 lock)"
+target = "DEC-027"
+
+[[relation]]
+label = "references"
+role = "concerns"
+descriptor = "narrows DEC-029 (SL-007 lock)"
+target = "DEC-029"
+
+[[relation]]
+label = "references"
+role = "concerns"
+descriptor = "control for RSK-002"
+target = "RSK-002"
+
+[[relation]]
+label = "shapes"
+target = "SL-007"

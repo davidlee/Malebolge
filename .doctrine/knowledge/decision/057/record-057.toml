@@ -1,0 +1,39 @@
+schema = "doctrine.knowledge"
+version = 1
+
+id = 57
+slug = "classifications-are-cached-in-memory-for-the-daemons-lifetime-keyed-by-message-id"
+title = "Classifications are cached in memory for the daemon's lifetime, keyed by message id"
+record_kind = "decision"
+status = "accepted"
+created = "2026-10-29"
+updated = "2026-10-29"
+tags = []
+
+[facet]                         # every field typed; seeded empty (captured later)
+context = "mailPart builds the mail source once per daemon. The screwtape config is a store path fixed for the daemon's lifetime; a JMAP Email's content is immutable (RFC 8621). Classified text depends only on the id (DEC-048)."
+choice = "One in-memory LRU cache in the mailPart closure, shared by all mail conversations on the daemon, keyed by message id, about 2000 entries. Entries hold a classification or a deterministic too_large (DEC-056). A config or schema change means a redeploy and so a restart, which empties it."
+alternatives = ["Per-conversation cache: same mailbox, nothing to isolate, repeated classify calls", "On-disk cache surviving restarts: stored state and a config-bearing key for no need (YAGNI)"]
+rationale = "Small (about 2 MB), cheap to refill after restart, and never load-bearing for correctness: every tool stays replay-safe (DEC-027)."
+consequences = ["DEC-027 notes at lock that a cache below the tools is not caller state", "inq-13 settles population (prefill vs write-through)"]
+decided_by = "operator"
+decided_on = "2026-10-29"
+
+[evidence]                      # free-text citations (supports / contradicts / notes)
+supports    = []
+contradicts = []
+notes       = []
+
+[relationships]                 # verb-written edges (set by doctrine supersede)
+supersedes    = []   # record ids this one replaces (set by doctrine supersede)
+superseded_by = []   # set on superseded predecessor (verb-written)
+
+[[relation]]
+label = "references"
+role = "concerns"
+descriptor = "narrows DEC-027 (SL-007 lock)"
+target = "DEC-027"
+
+[[relation]]
+label = "shapes"
+target = "SL-007"

@@ -1,0 +1,33 @@
+schema = "doctrine.knowledge"
+version = 1
+
+id = 88
+slug = "a-models-list-query-models-prints-the-catalogs-chat-model-refs-one-per-line"
+title = "A models list query: --models prints the catalog's chat-model refs one per line"
+record_kind = "decision"
+status = "accepted"
+created = "2026-10-29"
+updated = "2026-10-29"
+tags = []
+
+[facet]                         # every field typed; seeded empty (captured later)
+context = "Refs are long (gateway/openai-david/gpt-6.1-terra); Emacs needs completion."
+choice = "ListQuery gains kind models; the daemon answers with the catalog's chat-model refs; --models prints one per line and stands alone. Same dispatch table (DEC-016)."
+alternatives = ["Free text judged by the daemon's refusal", "Emacs reads the catalog file: couples the client to a daemon-owned path"]
+rationale = "Completion without client-side catalog knowledge."
+consequences = ["The catalog must expose its chat-model refs to the daemon (alongside requireModel)"]
+decided_by = "operator, 2026-10-29 session"
+decided_on = "2026-10-29"
+
+[evidence]                      # free-text citations (supports / contradicts / notes)
+supports    = []
+contradicts = []
+notes       = []
+
+[relationships]                 # verb-written edges (set by doctrine supersede)
+supersedes    = []   # record ids this one replaces (set by doctrine supersede)
+superseded_by = []   # set on superseded predecessor (verb-written)
+
+[[relation]]
+label = "shapes"
+target = "SL-010"

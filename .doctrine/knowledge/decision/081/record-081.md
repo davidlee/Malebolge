@@ -1,0 +1,1 @@
+Operator, 2026-10-29, SL-007 design review, after the arbiter explained the two crash channels: "yep, ok. lock with all my acceptanes".

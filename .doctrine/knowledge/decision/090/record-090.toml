@@ -1,0 +1,48 @@
+schema = "doctrine.knowledge"
+version = 1
+
+id = 90
+slug = "the-pi-extension-never-hands-pi-a-bridge-message-while-pi-is-running-it-buffers-until-agent-settled"
+title = "The pi extension never hands pi a bridge message while pi is running; it buffers until agent_settled"
+record_kind = "decision"
+status = "accepted"
+created = "2026-10-29"
+updated = "2026-10-29"
+tags = []
+
+[facet]                         # every field typed; seeded empty (captured later)
+context = "Handing deliveries to pi while it runs puts them in pi's in-memory queues: abort clears them (RV-021 F-1); agent_end fires before retries drain them (F-9; agent-loop.ts:254-264); an extension reload keeps them while the extension's handed set is lost (F-10; agent-session.ts:2370-2371 and :3720-3757). The handed set and DEC-079's settle-time re-inject exist only to patch those queues."
+choice = "Refines DEC-066 and DEC-069 and DEC-079 (mechanism only): idle deliveries are injected at once (turn triggerTurn true; note triggerTurn false). While pi runs (agent_start or the extension's own turn injection until agent_settled) deliveries wait in an in-memory buffer in seq order. On agent_settled {aborted} the extension flushes notes up to the first turn then that turn with triggerTurn !aborted and stops; after an abort remaining turns flush as notes. Dedupe is by details.seq in the session plus the buffer; ack follows persistence. There is no handed set and no settle-time reconciliation; DEC-069's when-busy deliverAs options are unused."
+alternatives = ["Keep the handed set and patch each queue race (agent_settled only; a reload handoff of the set): more state for the same behaviour"]
+rationale = "pi's queues never hold a bridge message; so nothing is cleared or drained twice or orphaned by a reload; a reload or crash loses only an unacked buffer that redelivery restores; the abort flag comes from pi."
+consequences = ["operator-visible behaviour of DEC-068 and DEC-069 and DEC-079 is unchanged", "a turn arriving mid-run starts a fresh run after settle instead of a follow-up inside pi's loop", "Accepted residual: a reload in the instant between an idle turn's injection and its persistence could inject it twice; reload is idle-only"]
+decided_by = 'operator, 2026-10-29 ("ok, makes sense to me")'
+decided_on = "2026-10-29"
+
+[evidence]                      # free-text citations (supports / contradicts / notes)
+supports    = []
+contradicts = []
+notes       = []
+
+[relationships]                 # verb-written edges (set by doctrine supersede)
+supersedes    = []   # record ids this one replaces (set by doctrine supersede)
+superseded_by = []   # set on superseded predecessor (verb-written)
+
+[[relation]]
+label = "references"
+role = "concerns"
+target = "DEC-066"
+
+[[relation]]
+label = "references"
+role = "concerns"
+target = "DEC-069"
+
+[[relation]]
+label = "references"
+role = "concerns"
+target = "DEC-079"
+
+[[relation]]
+label = "shapes"
+target = "SL-009"

@@ -1,0 +1,34 @@
+schema = "doctrine.knowledge"
+version = 1
+
+id = 1
+slug = "classifier-schema-agnostic"
+title = "Malebolge names classifier questions only in the pre-filter policy"
+record_kind = "constraint"
+status = "active"
+created = "2026-10-29"
+updated = "2026-10-29"
+tags = []
+
+[facet]                         # every field typed; seeded empty (captured later)
+statement = "The operator must be able to tweak screwtape's classifier schema (mail-1) without cross-repo brittleness. Malebolge validates classify answers by type shape (choice/noul/score), never by question name, and passes schema through without comparing it to a fixed id. Rendering is generic by answer type, bounded by a fixed per-item budget. Question names appear only in the pre-filter policy table; a named question absent from the answers makes the item unclassified (withheld) with the missing question named in the header."
+source = "operator"
+applies_to = ["SL-007", "inq-7", "inq-12", "inq-5", "classify envelope validation"]
+waiver_reason = ""
+waived_by     = ""
+waived_on     = ""
+
+[evidence]                      # free-text citations (supports / contradicts / notes)
+supports    = []
+contradicts = []
+notes       = []
+
+[relationships]                 # verb-written edges (set by doctrine supersede)
+supersedes    = []   # record ids this one replaces (set by doctrine supersede)
+superseded_by = []   # set on superseded predecessor (verb-written)
+
+[[relation]]
+label = "references"
+role = "concerns"
+descriptor = "binds classify validation, rendering, pre-filter and cache in this slice"
+target = "SL-007"

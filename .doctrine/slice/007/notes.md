@@ -2,6 +2,10 @@
 
 ## Design surface triage (2026-10-29)
 
+> Superseded by the inquiry's decisions (DEC-047 to DEC-063, CON-001). In
+> particular the "plain, read-only key file" below gave way to DEC-059 (the
+> unit decrypts screwtape's credential). Kept for history.
+
 Sources: `slice-007.md`, `research/research.md` (with its addendum), and
 operator answers given in the session.
 
@@ -73,3 +77,37 @@ operator answers given in the session.
 - RSK-002
 - ASM-001
 - Screwtape's README contract: "classify", "Resume and skip", "Bounds".
+
+## Further review (2026-10-29)
+
+RV-020 ran three informal passes over the design (pi first pass, GPT critical
+pass, pi verify-only). The last pass found only wording and recipe slips, so no
+further design pass is planned. What one would probe, if run: the `seen`
+contract once screwtape IMP-006 is specified (field shape, per-list address
+bounds, the raw bounds table); whether the mail-only framing should move into
+the shared untrusted block for bookmarks (SL-008, DEC-054). Recipe-level
+slips are left to red/green tests; the next review is of the plan.
+
+## Harvest
+<!-- single-copy: updated in place each harvest; ids only, never restated content -->
+fresh-as-of: 2026-10-29 · locked (design run rev 59; slice at plan) · 6396a65
+
+### Produced
+- design.md drafted, reviewed (RV-020: pi first pass, GPT critical pass, pi verify-only; F-1..F-18 answered) and locked
+- minted: DEC-077 — screwtape owns Jev's window (refines DEC-048, DEC-050); DEC-081 — classify crash dumps off (refines DEC-059)
+- minted: IMP-024 — drop `preview` from every mail view; screwtape IMP-006 — classify raw-byte bounds, every address list, `seen`
+- lock notes (inq-8) on DEC-026..030, DEC-050, DEC-060, DEC-061; ASM-001 claim and RSK-002 controls edited; relation edges added
+- slice-007.md scope reconciled; selectors match § Code impact (incl. src/untrusted-block.ts)
+- uncommitted: all SL-007 .doctrine/ work in malebolge, plus satan, flakes and screwtape items (operator has not asked to commit); no code changed, no gate run needed
+
+### Learned
+- mem.fact.malebolge.screwtape-classify-window — classify strips PII before its byte cut; growth up to 1.5x
+- mem.pattern.malebolge.own-the-window-upstream — have the upstream report what it saw rather than mirroring it
+- mem.fact.malebolge.pi-tool-output-bound — pi bounds tool results to 50 KiB
+- mem.fact.malebolge.screwtape-classify-failure-line — a classify error line carries a cursor
+
+### Open
+- ASM-002 — gateway client socket serves Jev's path like the relay (first-phase VA)
+- ASM-003 — the satan launcher can wrap the daemon (satan IMP-060; fallback in DEC-059)
+- screwtape IMP-006 — window-dependent phases wait on it; until then a classify line without `seen` withholds all mail
+- inq-9 (run, non-durable) — verification procedure to apply at /plan; the design's § Verification carries it

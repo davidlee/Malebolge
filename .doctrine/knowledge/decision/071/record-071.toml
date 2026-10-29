@@ -5,7 +5,7 @@ id = 71
 slug = "a-new-bridge-mode-interactives-extensions-minus-threads-plus-bridge-no-talk-set-room-only"
 title = "A new bridge mode: interactive's extensions minus threads, plus bridge; no talk set; room only"
 record_kind = "decision"
-status = "proposed"
+status = "accepted"
 created = "2026-10-29"
 updated = "2026-10-29"
 tags = []
@@ -15,7 +15,7 @@ context = "A mode is a closed catalog entry fixed at creation (DEC-029, DEC-025)
 choice = "CATALOG gains bridge = interactive's list without the threads extension, plus the bridge extension (bridge_post and the bridge prompt section). PROFILE_TOOLSETS.room.allowed gains bridge; TALK_SETS gives it no set; host does not allow it. SATAN keeps its room tools."
 alternatives = ["Interactive plus a bridge extension: an interactive conversation could then thread into others and carry jail-sourced content with it"]
 rationale = "Reach is the operator and the one pi peer, nothing else."
-consequences = ["amends DEC-029 (catalog) and DEC-032 (a mode in no set beside mail)", "bridge must be allowed before any conversation stores it (startup reconcile refuses otherwise)"]
+consequences = ["amends DEC-029 (catalog) and DEC-032 (a mode in no set beside mail)", "bridge must be allowed before any conversation stores it (startup reconcile refuses otherwise)", "wake_schedule to another conversation passes the talk-set check (DEC-076 refining DEC-032); bridge has no set so its wakes out and wakes into it are refused; self-wakes stay"]
 decided_by = "operator, 2026-10-29 session"
 decided_on = "2026-10-29"
 

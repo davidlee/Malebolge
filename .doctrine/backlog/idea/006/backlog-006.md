@@ -29,3 +29,9 @@ reading quarantined text in bulk.
   exception exposes them (RSK-002: "it is just a classifier").
 
 Builds on IMP-022.
+
+## Note from SL-007 (2026-10-29)
+
+SL-007 classifies read-through only (DEC-058): a tool classifies the items it
+returns. A digest wants background prefill instead: classify new arrivals
+after a stored cursor, ahead of any tool call, into the same cache (DEC-057).

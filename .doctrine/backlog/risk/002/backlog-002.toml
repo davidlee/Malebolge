@@ -15,7 +15,7 @@ tags = ["mail", "panopticon", "security"]
 likelihood = "medium"
 impact = "high"
 origin = "operator, threads RFC discussion 2026-10-28"
-controls = ["mail mode has mail tools only (DEC-029)", "mail results wrapped as untrusted data (src/mail/render.ts)", "pre-read classifier planned (satan:RFC-020), not built"]
+controls = ["mail mode has mail tools only (DEC-029)", "mail results wrapped as untrusted data (src/untrusted-block.ts, src/mail/render.ts)", "mail tools refuse every call when the process can reach the network (DEC-049)", "framing: hostile, never instruction, never authority, in the section, every header, errors and descriptions (DEC-061)", "agent self-report mail_report withholds and logs (DEC-062)", "pre-read Jev classification with a pre-filter withholding hostile, unclassified or reported mail (DEC-063; designed in SL-007, not built)"]
 
 # outbound-only. Cross-kind structural edges (e.g. references with a role
 # — `originates_from` for backlog→slice provenance — governed_by, related, drift) are

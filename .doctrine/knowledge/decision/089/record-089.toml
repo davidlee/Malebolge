@@ -1,0 +1,33 @@
+schema = "doctrine.knowledge"
+version = 1
+
+id = 89
+slug = "emacs-one-bounded-listing-call-new-asks-for-a-topic-malebolge-set-topic-model-sets-or-clears-a"
+title = "Emacs: one bounded listing call; new asks for a topic; malebolge-set-topic-model sets or clears a topic's model"
+record_kind = "decision"
+status = "accepted"
+created = "2026-10-29"
+updated = "2026-10-29"
+tags = []
+
+[facet]                         # every field typed; seeded empty (captured later)
+context = "DEC-009's chooser runs --list synchronously; Emacs has no --topics or --models reader."
+choice = "malebolge--list-conversations generalises into one bounded call taking the listing flag, used for --list, --topics and --models. Choosing new prompts 'Topic:' completed from --topics names, default 'default'; default keeps plain --new, else --topic NAME --new. malebolge-set-topic-model completes a topic (not default), then a model (or 'none' to clear), runs --set-topic, and reports a refusal as user-error with the daemon's text."
+alternatives = ["A topic/model editor buffer"]
+rationale = "Smallest commands over the CLI; no parallel subprocess code."
+consequences = ["Absorbs IMP-018"]
+decided_by = "operator, 2026-10-29 session"
+decided_on = "2026-10-29"
+
+[evidence]                      # free-text citations (supports / contradicts / notes)
+supports    = []
+contradicts = []
+notes       = []
+
+[relationships]                 # verb-written edges (set by doctrine supersede)
+supersedes    = []   # record ids this one replaces (set by doctrine supersede)
+superseded_by = []   # set on superseded predecessor (verb-written)
+
+[[relation]]
+label = "shapes"
+target = "SL-010"

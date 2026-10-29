@@ -1,0 +1,42 @@
+memory_uid = "mem_01a186638f387f02b92d95c58c2019fb"
+memory_key = "mem.fact.malebolge.model-ref-provider-is-gateway"
+schema_version = 1
+memory_type = "fact"
+status = "active"
+title = "Gateway model refs use provider 'gateway', not the catalog's provider key"
+summary = "parseGatewayCatalog stamps provider 'gateway' on every model and discards the JSON provider key (llm-gateway); valid refs are gateway/<id>, e.g. gateway/openai-david/gpt-6.1-terra"
+created = "2026-10-29"
+updated = "2026-10-29"
+
+[scope]
+paths = ["src/models.ts"]
+globs = []
+commands = []
+tags = ["models", "gateway"]
+workspace = "default"
+repo = "github.com/davidlee/Malebolge"
+repo_id_kind = "remote"
+repo_id_confidence = "high"
+
+[git]
+anchor_kind = "checkout_state"
+commit = ""
+tree = "9d21452527ebdab578801b033331276e291084e2"
+ref_name = "refs/heads/main"
+checkout_state_id = "a7c4e599d50bed82b8ac7cd621f021e97ba06ef5eefd40c8d4fad7d3b84ab5e3"
+base_commit = "0043565a9bda0a41759dc551ccd6e4945298f2c4"
+verified_sha = ""
+normalizer = "forget.checkout.v1"
+
+[review]
+verification_state = "unverified"
+reviewed = ""
+review_by = ""
+
+[trust]
+trust_level = "medium"
+
+[ranking]
+severity = "none"
+weight = 0
+

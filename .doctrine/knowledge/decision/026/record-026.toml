@@ -7,7 +7,7 @@ title = "Mail tools: five stateless tools over screwtape contract v1, behind a M
 record_kind = "decision"
 status = "accepted"
 created = "2026-10-27"
-updated = "2026-10-27"
+updated = "2026-10-29"
 tags = []
 
 [facet]                         # every field typed; seeded empty (captured later)

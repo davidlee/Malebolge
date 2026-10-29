@@ -12,7 +12,7 @@ tags = []
 
 [facet]                         # every field typed; seeded empty (captured later)
 context = "DEC-048 clamps bodies to Jev's window. Sender-controlled header text the agent sees but Jev does not (or sees stripped): display names, in_reply_to, references, message_id, attachment name/type/cid, URL paths/queries and address local parts."
-choice = "Display names capped at 64 bytes. in_reply_to and references dropped. message_id dropped or capped at one entry of 128 bytes (design picks). Attachment name and type capped at 128 bytes, cid at 64, at most 20 attachments. URL paths/queries and address local parts accepted as residue."
+choice = "Display names capped at 64 bytes. in_reply_to, references and message_id dropped. Attachment name and type capped at 128 bytes, cid at 64, at most 20 attachments. URL paths/queries and address local parts accepted as residue."
 alternatives = ["Drop display names too: stricter, but loses who-is-this context and the impersonation cue", "Accept all residue and document it: leaves references as an unbounded channel Jev never sees"]
 rationale = "Drop fields that give the agent nothing; cap structural ones to Jev's bound or tighter. Matching screwtape's PII stripping in malebolge would be a parallel implementation; with no egress (DEC-049) a URL is inert."
 consequences = ["Cuts are named in each item's cut list", "screwtape IMP-005 proposes relaxing PII erasure so Jev sees display names and URL path signals; malebolge would then follow Jev's view"]
@@ -27,6 +27,12 @@ notes       = []
 [relationships]                 # verb-written edges (set by doctrine supersede)
 supersedes    = []   # record ids this one replaces (set by doctrine supersede)
 superseded_by = []   # set on superseded predecessor (verb-written)
+
+[[relation]]
+label = "references"
+role = "concerns"
+descriptor = "narrows DEC-026 (SL-007 lock)"
+target = "DEC-026"
 
 [[relation]]
 label = "shapes"

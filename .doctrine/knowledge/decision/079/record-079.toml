@@ -1,0 +1,43 @@
+schema = "doctrine.knowledge"
+version = 1
+
+id = 79
+slug = "a-bridge-turn-dropped-by-an-operator-abort-in-pi-is-re-injected-without-starting-a-turn"
+title = "A bridge turn dropped by an operator abort in pi is re-injected without starting a turn"
+record_kind = "decision"
+status = "accepted"
+created = "2026-10-29"
+updated = "2026-10-29"
+tags = []
+
+[facet]                         # every field typed; seeded empty (captured later)
+context = "pi's abort clears its queues (agent-session.ts:2465-2473; agent.ts:318-332) and returns only user text to the editor (interactive-mode.ts:4698-4714). A queued bridge turn is dropped; the extension's handed-set skip and push-once-per-connection then strand it until pi restarts, breaking DEC-066/068's exactly-once (SL-009 RV-021 F-1). Notes sit in pi's next-turn queue, which abort does not clear."
+choice = "Refines DEC-069 for this case only: the extension's handed set is pending state. When pi settles it re-injects each handed turn-kind seq whose entry is not in the session with triggerTurn false; the delivery joins the operator's next turn. Notes are not reconciled. Every other turn delivery keeps DEC-069's triggerTurn true."
+alternatives = ["Re-inject with the delivery's own kind: a SATAN turn starts again right after the abort (DEC-069 unchanged)"]
+rationale = "Mirrors pi's own abort semantics, which put queued user text back rather than send it; the operator's stop holds and nothing is lost."
+consequences = ["the extension needs each delivery's kind (Q3; else inferred: all but a withdrawal notice are turns)", "VA in PHASE-01: busy delivery then Esc then settle shows the message once and no new turn"]
+decided_by = "operator"
+decided_on = "2026-10-29"
+
+[evidence]                      # free-text citations (supports / contradicts / notes)
+supports    = []
+contradicts = []
+notes       = []
+
+[relationships]                 # verb-written edges (set by doctrine supersede)
+supersedes    = []   # record ids this one replaces (set by doctrine supersede)
+superseded_by = []   # set on superseded predecessor (verb-written)
+
+[[relation]]
+label = "references"
+role = "concerns"
+target = "DEC-069"
+
+[[relation]]
+label = "references"
+role = "concerns"
+target = "DEC-066"
+
+[[relation]]
+label = "shapes"
+target = "SL-009"

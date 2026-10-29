@@ -7,7 +7,7 @@ title = "A toolset is a conversation's complete ordered extension list, prompt i
 record_kind = "decision"
 status = "accepted"
 created = "2026-10-27"
-updated = "2026-10-27"
+updated = "2026-10-29"
 tags = []
 
 [facet]                         # every field typed; seeded empty (captured later)

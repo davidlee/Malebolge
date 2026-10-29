@@ -1,0 +1,39 @@
+schema = "doctrine.knowledge"
+version = 1
+
+id = 60
+slug = "classifications-render-as-a-compact-type-generic-jev-object-in-each-items-core"
+title = "Classifications render as a compact, type-generic jev object in each item's core"
+record_kind = "decision"
+status = "accepted"
+created = "2026-10-29"
+updated = "2026-10-29"
+tags = []
+
+[facet]                         # every field typed; seeded empty (captured later)
+context = "Results are at most 50 KiB (pi-durable's default tool output bound, overridable per tool via outputLimits; harness/tool.js:190, boundContent keeps the head): a 2 KiB header reserve, then an equal share per item; an item's core must fit its share whole, then fill, then body. Smallest share about 1.2 KiB (list/thread at 40). CON-001 forbids naming questions outside the pre-filter."
+choice = "Each item's core, inside the untrusted block, carries jev: choice as [label, confidence], noul as its probability, score as [level, confidence], numbers to 2 dp, no probability vectors (about 250 bytes for mail-1). Bounded by JEV_MAX_BYTES (about 384): a larger schema keeps answers in schema order, cuts the tail, and names jev in the cut list; the pre-filter reads full answers before rendering. Unclassified: jev {unclassified: <DEC-056 reason>}. Answers sit inside the share; mail_new's joint max_bytes clamp deducts JEV_MAX_BYTES so the share never cuts a body below the caller's max_bytes. No model/schema header line. MAIL_SECTION explains jev in one question-agnostic sentence (DEC-061)."
+alternatives = ["On top of the share with a separate reserve, raising the mail tools' outputLimits: full body room, larger context cost", "Hand-picked subset (purpose and two hostility probabilities): names questions, breaking CON-001"]
+rationale = "Every result stays within pi's default bound; mail_read is unaffected (16 KiB body in a 48 KiB share); list/thread have no bodies; mail_new keeps its max_bytes promise via the clamp deduction."
+consequences = ["DEC-026 bounds gain the jev core field and the joint clamp deduction at lock", "Attachment contents never flow (screwtape keeps metadata only); attachment metadata stays a fill field"]
+decided_by = "operator"
+decided_on = "2026-10-29"
+
+[evidence]                      # free-text citations (supports / contradicts / notes)
+supports    = []
+contradicts = []
+notes       = []
+
+[relationships]                 # verb-written edges (set by doctrine supersede)
+supersedes    = []   # record ids this one replaces (set by doctrine supersede)
+superseded_by = []   # set on superseded predecessor (verb-written)
+
+[[relation]]
+label = "references"
+role = "concerns"
+descriptor = "narrows DEC-026 (SL-007 lock)"
+target = "DEC-026"
+
+[[relation]]
+label = "shapes"
+target = "SL-007"

@@ -1,0 +1,39 @@
+schema = "doctrine.knowledge"
+version = 1
+
+id = 8
+slug = "a-pi-extension-can-set-environment-variables-for-the-commands-pis-bash-tool-runs"
+title = "A pi extension can set environment variables for the commands pi's bash tool runs"
+record_kind = "assumption"
+status = "held"
+created = "2026-10-29"
+updated = "2026-10-29"
+tags = []
+
+[facet]                         # every field typed; seeded empty (captured later)
+claim = "The bridge extension can put MALEBOLGE_BRIDGE_CONVERSATION and MALEBOLGE_BRIDGE_TOKEN into the environment of every command pi's bash tool runs."
+confidence = "high"
+basis = "prior-art"
+validation_plan = "PHASE-01 probe: an extension using createBashTool's spawnHook sets a variable; assert a bash call in pi sees it and that the replaced bash tool keeps the built-in's behaviour."
+validated_by    = ""
+validated_on    = ""
+invalidated_by  = ""
+invalidated_on  = ""
+
+[evidence]                      # free-text citations (supports / contradicts / notes)
+supports    = []
+contradicts = []
+notes       = []
+
+[relationships]                 # verb-written edges (set by doctrine supersede)
+supersedes    = []   # record ids this one replaces (set by doctrine supersede)
+superseded_by = []   # set on superseded predecessor (verb-written)
+
+[[relation]]
+label = "references"
+role = "concerns"
+target = "DEC-075"
+
+[[relation]]
+label = "shapes"
+target = "SL-009"

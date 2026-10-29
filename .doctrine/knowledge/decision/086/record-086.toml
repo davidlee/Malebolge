@@ -1,0 +1,33 @@
+schema = "doctrine.knowledge"
+version = 1
+
+id = 86
+slug = "a-topics-model-is-a-ref-string-on-the-topic-frame-set-topic-model-no-model-and-a-fourth-topics-field"
+title = "A topic's model is a ref string on the topic frame, --set-topic --model/--no-model, and a fourth --topics field"
+record_kind = "decision"
+status = "accepted"
+created = "2026-10-29"
+updated = "2026-10-29"
+tags = []
+
+[facet]                         # every field typed; seeded empty (captured later)
+context = "DEC-016/DEC-017 define the topic frame and --set-topic family; toolset is the precedent (src/conversations.ts:282-289)."
+choice = "TopicMessage.model and TopicSummary.model carry the ref string (e.g. gateway/openai-david/gpt-6.1-terra), stored as a string in TopicRecord: absent unchanged, string sets, null clears. A modelChange beside toolsetChange judges it via requireModel. --set-topic NAME --model REF | --no-model; --model needs --set-topic. --topics prints name<TAB>dir<TAB>toolset<TAB>model. model joins SKEWED_KEYS."
+alternatives = ["Store a parsed ModelRef: widens written's type"]
+rationale = "Mirror the toolset precedent exactly."
+consequences = ["Amends DEC-016 and DEC-017"]
+decided_by = "operator, 2026-10-29 session"
+decided_on = "2026-10-29"
+
+[evidence]                      # free-text citations (supports / contradicts / notes)
+supports    = []
+contradicts = []
+notes       = []
+
+[relationships]                 # verb-written edges (set by doctrine supersede)
+supersedes    = []   # record ids this one replaces (set by doctrine supersede)
+superseded_by = []   # set on superseded predecessor (verb-written)
+
+[[relation]]
+label = "shapes"
+target = "SL-010"

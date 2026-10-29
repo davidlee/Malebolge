@@ -3,3 +3,13 @@
 <!-- Knowledge record body — context, detail, links. The structured, queried
      fields live in the sister `record-NNN.toml`; this prose is free-form and is
      never structurally parsed (the storage rule). -->
+
+Amended 2026-10-29 by the operator's simplicity pass (reply 'ok').
+
+
+
+Refined 2026-10-29 by DEC-077 (operator): Jev's state gains every address list the mail tools show, so their domains are no longer residue.
+
+
+
+SL-007 lock: attachment disposition is capped at 64 rendered bytes, as cid is.

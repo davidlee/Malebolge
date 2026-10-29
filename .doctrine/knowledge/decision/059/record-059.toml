@@ -1,0 +1,45 @@
+schema = "doctrine.knowledge"
+version = 1
+
+id = 59
+slug = "classify-reaches-jev-from-the-jail-through-a-launcher-run-loopback-bridge-with-screwtapes-own"
+title = "classify reaches Jev from the jail through a launcher-run loopback bridge, with screwtape's own credential decrypted by the unit"
+record_kind = "decision"
+status = "accepted"
+created = "2026-10-29"
+updated = "2026-10-29"
+tags = []
+
+[facet]                         # every field typed; seeded empty (captured later)
+context = "screwtape's jev.baseUrl is HTTP only (deployed http://127.0.0.1:4000, the gateway relay). The room jail is offline but holds the gateway client socket and has socat. malebolge-room is a systemd user service whose ExecStart is the jail launcher. classify reads its key only from $CREDENTIALS_DIRECTORY/jev."
+choice = "satan's launcher wraps the daemon inside the jail: socat TCP-LISTEN:4000,bind=127.0.0.1,fork to UNIX-CONNECT:<gateway client socket>, then the daemon; malebolge knows nothing of the transport and the one screwtape config serves host and jail. Key: malebolge-room.service gets LoadCredentialEncrypted=jev:%h/.config/credstore.encrypted/screwtape.jev; systemd decrypts host-side into the unit's private tmpfs CREDENTIALS_DIRECTORY, which the launcher binds read-only into the jail and names in MALEBOLGE_SCREWTAPE_CREDENTIALS. Only the classify child gets env {HOME, CREDENTIALS_DIRECTORY}; read verbs keep HOME alone. Unset variable: tools refuse every call (DEC-049). Malebolge's design owns the contract (variable, port, layout); satan and ~/flakes changes are made by their own sessions; the first phase probes that the gateway client socket serves Jev's path as the relay does."
+alternatives = ["Daemon spawns and supervises socat: malebolge owns transport (fallback if the launcher cannot wrap)", "New Jev-only plain key file: unneeded once the unit decrypts screwtape's credential", "Reuse malebolge's gateway key with Jev added: operator chose screwtape's credential", "Decrypt inside the jail via the user bus: jail escape, rejected"]
+rationale = "Transport and secrets are deployment concerns. No new key and no user bus in the jail; the plaintext lives only in a unit-private tmpfs while the unit runs. A dead bridge degrades to unclassified/withheld, named in the header."
+consequences = ["ASM-001 narrows to the read verbs at lock; DEC-028 gains the classify env", "satan backlog item for the wrapper, bind and variable; ~/flakes change for the unit credential", "screwtape README's 'never bind the credstore into a jail' wording may need to distinguish a unit's decrypted credentials directory", "Live check (inq-9) waits on the satan/flakes changes"]
+decided_by = "operator"
+decided_on = "2026-10-29"
+
+[evidence]                      # free-text citations (supports / contradicts / notes)
+supports    = []
+contradicts = []
+notes       = []
+
+[relationships]                 # verb-written edges (set by doctrine supersede)
+supersedes    = []   # record ids this one replaces (set by doctrine supersede)
+superseded_by = []   # set on superseded predecessor (verb-written)
+
+[[relation]]
+label = "references"
+role = "concerns"
+descriptor = "narrows DEC-028 (SL-007 lock)"
+target = "DEC-028"
+
+[[relation]]
+label = "references"
+role = "concerns"
+descriptor = "narrows ASM-001 to the read verbs"
+target = "ASM-001"
+
+[[relation]]
+label = "shapes"
+target = "SL-007"

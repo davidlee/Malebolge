@@ -7,7 +7,7 @@ title = "Screwtape client: configured absolute paths, shared bounded exec, fail-
 record_kind = "decision"
 status = "accepted"
 created = "2026-10-27"
-updated = "2026-10-27"
+updated = "2026-10-29"
 tags = []
 
 [facet]                         # every field typed; seeded empty (captured later)

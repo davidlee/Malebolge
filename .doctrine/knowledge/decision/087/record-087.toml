@@ -1,0 +1,33 @@
+schema = "doctrine.knowledge"
+version = 1
+
+id = 87
+slug = "the-list-reply-carries-per-id-summaries-topic-model-list-lines-are-id-topic-model-then-the-mark"
+title = "The list reply carries per-id summaries {topic, model}; --list lines are id, topic, model, then the mark"
+record_kind = "decision"
+status = "accepted"
+created = "2026-10-29"
+updated = "2026-10-29"
+tags = []
+
+[facet]                         # every field typed; seeded empty (captured later)
+context = "The Emacs chooser should show each conversation's topic and model. A conversation's model lives in its pi.agent document, not the index; the listing reads the index (src/conversations.ts:255-279)."
+choice = "ConversationsMessage gains summaries: { id: { topic, model? } } (DEC-007 additive), filled in the listing commit: topic from the index, model from each listed conversation's agent document (at most one page). marks stays. --list prints id<TAB>topic<TAB>model[<TAB>mark], always, with the full ref. The Emacs candidate regex changes in the same phase."
+alternatives = ["One map per fact (topics, models): parallel maps keyed by id", "Copy the model into the index at creation: stale after a future per-conversation model change", "Topic only"]
+rationale = "One widenable per-id record; model read from its source of truth."
+consequences = ["Amends DEC-039's line format", "One agent-document read per listed id"]
+decided_by = "operator, 2026-10-29 session"
+decided_on = "2026-10-29"
+
+[evidence]                      # free-text citations (supports / contradicts / notes)
+supports    = []
+contradicts = []
+notes       = []
+
+[relationships]                 # verb-written edges (set by doctrine supersede)
+supersedes    = []   # record ids this one replaces (set by doctrine supersede)
+superseded_by = []   # set on superseded predecessor (verb-written)
+
+[[relation]]
+label = "shapes"
+target = "SL-010"

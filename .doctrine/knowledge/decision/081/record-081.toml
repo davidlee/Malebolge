@@ -1,0 +1,45 @@
+schema = "doctrine.knowledge"
+version = 1
+
+id = 81
+slug = "classify-no-crash-dumps"
+title = "The classify child runs with crash dumps disabled: ERL_CRASH_DUMP_SECONDS=0, unit LimitCORE=0"
+record_kind = "decision"
+status = "accepted"
+created = "2026-10-29"
+updated = "2026-10-29"
+tags = []
+
+[facet]
+context      = "DEC-059 runs screwtape classify inside the room jail with the Jev credential in CREDENTIALS_DIRECTORY. Screwtape's own wrapper sets LimitCORE=0 and ERL_CRASH_DUMP_SECONDS=0 because a core dump or an erl_crash.dump could carry the key or the mail (screwtape README 'The key, and the wrapper'); DEC-059's env omitted them. An erl_crash.dump lands in the child's cwd, the jail's persisted HOME, shared with SATAN's interactive conversations (RSK-002)."
+choice       = "Refines DEC-059: the classify child's env is {HOME, CREDENTIALS_DIRECTORY, ERL_CRASH_DUMP_SECONDS=0}; malebolge-room.service sets LimitCORE=0 (flakes IMP-055)."
+alternatives = ["Keep DEC-059's env: a VM crash can leave the key and mail text in the shared jail home"]
+rationale    = "Two lines close both crash channels, matching screwtape's own wrapper. A crash leaves no dump to debug from; classify can be re-run by hand outside the jail."
+consequences = ["flakes IMP-055 gains LimitCORE=0 on the unit"]
+decided_by   = "operator"
+decided_on   = "2026-10-29"
+
+[evidence]                      # free-text citations (supports / contradicts / notes)
+supports    = []
+contradicts = []
+notes       = []
+
+[relationships]                 # verb-written edges (set by doctrine supersede)
+supersedes    = []   # record ids this one replaces (set by doctrine supersede)
+superseded_by = []   # set on superseded predecessor (verb-written)
+
+[[relation]]
+label = "references"
+role = "concerns"
+descriptor = "refines: classify env adds ERL_CRASH_DUMP_SECONDS=0; unit LimitCORE=0"
+target = "DEC-059"
+
+[[relation]]
+label = "references"
+role = "concerns"
+descriptor = "narrows DEC-028 (SL-007 lock)"
+target = "DEC-028"
+
+[[relation]]
+label = "shapes"
+target = "SL-007"

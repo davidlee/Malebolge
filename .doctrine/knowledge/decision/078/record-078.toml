@@ -1,0 +1,43 @@
+schema = "doctrine.knowledge"
+version = 1
+
+id = 78
+slug = "a-bridge-turns-budget-is-spent-in-its-own-commit-just-before-its-submit"
+title = "A bridge turn's budget is spent in its own commit just before its submit"
+record_kind = "decision"
+status = "accepted"
+created = "2026-10-29"
+updated = "2026-10-29"
+tags = []
+
+[facet]                         # every field typed; seeded empty (captured later)
+context = "DEC-070 spends the budget 'at admission in its submit commit' and DEC-067's consequence repeats it. pi-durable's Conversation.submit(submission, context) takes no transaction (dist/harness/types.d.ts:683) and Tx.createSubmission skips admission (dist/types.d.ts:860-864); so the spend and the submit are two commits (SL-009 design review r2 F-2)."
+choice = "Refines DEC-070 and DEC-067: for a turn-kind post or post-once one commit first reads tx.submissionByRequest for a post (a duplicate spends nothing and answers accepted again; post-once has no requestId) then runs admitTurn and increments spent; the submit follows in its own commit. A crash or a failed submit between them costs one unit with no turn."
+alternatives = ["Submit first then spend: a crash between gives one free turn and under-counts a loop bound"]
+rationale = "The safe direction for a loop bound; consistent with the accepted off-by-one under concurrency; no new mechanism."
+consequences = ["Accepted residual: a crash or failed submit after the spend costs one budget unit with no turn; refill restores it", "DEC-067's consequence 'spent in the same submit commit' reads as spent in the commit before the submit"]
+decided_by = "operator"
+decided_on = "2026-10-29"
+
+[evidence]                      # free-text citations (supports / contradicts / notes)
+supports    = []
+contradicts = []
+notes       = []
+
+[relationships]                 # verb-written edges (set by doctrine supersede)
+supersedes    = []   # record ids this one replaces (set by doctrine supersede)
+superseded_by = []   # set on superseded predecessor (verb-written)
+
+[[relation]]
+label = "references"
+role = "concerns"
+target = "DEC-070"
+
+[[relation]]
+label = "references"
+role = "concerns"
+target = "DEC-067"
+
+[[relation]]
+label = "shapes"
+target = "SL-009"

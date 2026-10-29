@@ -1,0 +1,46 @@
+memory_uid = "mem_01a1860a567b7173851c51716ae49b2f"
+memory_key = "mem.fact.malebolge.screwtape-classify-failure-line"
+schema_version = 1
+memory_type = "fact"
+status = "active"
+title = "screwtape classify failure line carries a cursor for any failure, not only per-message ones"
+summary = "classify writes its error line to stderr (exit 1 runtime, 2 config) with the failing line's cursor for every failure on a decoded line, http/rate_limited included; only limit_exceeded/jev_context blames the message"
+created = "2026-10-29"
+updated = "2026-10-29"
+
+[scope]
+paths = ["src/mail/screwtape.ts"]
+globs = []
+commands = []
+tags = ["screwtape", "jev"]
+workspace = "default"
+repo = "github.com/davidlee/Malebolge"
+repo_id_kind = "remote"
+repo_id_confidence = "high"
+
+[git]
+anchor_kind = "checkout_state"
+commit = ""
+tree = "815cd25e616dc0f505276ff3742a4949f6ddbf26"
+ref_name = "refs/heads/main"
+checkout_state_id = "980c475e1618eefe9dfe94db6227ee921f6a6c5eff4b39c65e029e181f41bbc7"
+base_commit = "dc9d818097db59cade3c5951351eaa405dc8744f"
+verified_sha = ""
+normalizer = "forget.checkout.v1"
+
+[review]
+verification_state = "unverified"
+reviewed = ""
+review_by = ""
+
+[trust]
+trust_level = "medium"
+
+[ranking]
+severity = "none"
+weight = 0
+
+[[source]]
+kind = "code"
+ref = "~/dev/screwtape/src/screwtape/cli.gleam:505-576"
+

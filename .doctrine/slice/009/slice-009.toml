@@ -28,11 +28,11 @@ intent = "scope-relevant"
 
 [[selector]]
 selector = "src/toolsets.ts"
-intent = "scope-relevant"
+intent = "design-target"
 
 [[selector]]
 selector = "src/bridge/**"
-intent = "scope-relevant"
+intent = "design-target"
 
 [[selector]]
 selector = "test/**"
@@ -41,6 +41,146 @@ intent = "scope-relevant"
 [[selector]]
 selector = "docs/**"
 intent = "scope-relevant"
+
+[[selector]]
+selector = "src/wake/**"
+intent = "scope-relevant"
+
+[[selector]]
+selector = "pi-bridge/**"
+intent = "design-target"
+
+[[selector]]
+selector = "src/config.ts"
+intent = "design-target"
+
+[[selector]]
+selector = "src/conversations.ts"
+intent = "design-target"
+
+[[selector]]
+selector = "src/submission-ending.ts"
+intent = "design-target"
+
+[[selector]]
+selector = "src/threads/task.ts"
+intent = "design-target"
+
+[[selector]]
+selector = "src/truncate.ts"
+intent = "design-target"
+
+[[selector]]
+selector = "src/wake/tools.ts"
+intent = "design-target"
+
+[[selector]]
+selector = "src/daemon.ts"
+intent = "design-target"
+
+[[selector]]
+selector = "src/daemon-start.ts"
+intent = "design-target"
+
+[[selector]]
+selector = "src/daemon-extensions.ts"
+intent = "design-target"
+
+[[selector]]
+selector = "test/bridge-*.test.ts"
+intent = "design-target"
+
+[[selector]]
+selector = "test/bridge-fixture.ts"
+intent = "design-target"
+
+[[selector]]
+selector = "test/pi-bridge-*.test.ts"
+intent = "design-target"
+
+[[selector]]
+selector = "test/toolsets.test.ts"
+intent = "design-target"
+
+[[selector]]
+selector = "test/wake-tools.test.ts"
+intent = "design-target"
+
+[[selector]]
+selector = "test/config.test.ts"
+intent = "design-target"
+
+[[selector]]
+selector = "test/daemon-sections.test.ts"
+intent = "design-target"
+
+[[selector]]
+selector = "test/structure.test.ts"
+intent = "design-target"
+
+[[selector]]
+selector = "test/daemon.test.ts"
+intent = "design-target"
+
+[[selector]]
+selector = "docs/internals.md"
+intent = "design-target"
+
+[[selector]]
+selector = "README.md"
+intent = "design-target"
+
+[[selector]]
+selector = "src/persona.ts"
+intent = "design-target"
+
+[[selector]]
+selector = "src/wake/extension.ts"
+intent = "design-target"
+
+[[selector]]
+selector = "src/unix-socket.ts"
+intent = "design-target"
+
+[[selector]]
+selector = "src/runner/control.ts"
+intent = "design-target"
+
+[[selector]]
+selector = "src/connection-reply.ts"
+intent = "design-target"
+
+[[selector]]
+selector = "test/pi-bridge-wire.test.ts"
+intent = "design-target"
+
+[[selector]]
+selector = "tsconfig.json"
+intent = "design-target"
+
+[[selector]]
+selector = "vitest.config.ts"
+intent = "design-target"
+
+[[selector]]
+selector = "package.json"
+intent = "design-target"
+
+[[selector]]
+selector = "eslint.config.js"
+intent = "design-target"
+
+[[selector]]
+selector = "biome.json"
+intent = "design-target"
+
+[[selector]]
+selector = "test/pi-bridge-state.test.ts"
+intent = "design-target"
+
+[[selector]]
+selector = "package-lock.json"
+intent = "design-target"
 
 [[relation]]
 label = "related"

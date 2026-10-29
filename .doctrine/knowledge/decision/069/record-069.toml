@@ -5,7 +5,7 @@ id = 69
 slug = "every-bridge-message-starts-a-turn-on-the-receiving-side-except-a-note-which-waits-for-the-next-one"
 title = "Every bridge message starts a turn on the receiving side, except a note, which waits for the next one"
 record_kind = "decision"
-status = "proposed"
+status = "accepted"
 created = "2026-10-29"
 updated = "2026-10-29"
 tags = []
@@ -15,7 +15,7 @@ context = "Operator: messages start turns; tee output is a note. pi-durable: an 
 choice = "A message has kind turn (default) or note. Into SATAN: turn = input, whenBusy followUp; note = write with model content, seen at the next turn. Into pi: turn = sendMessage triggerTurn true, deliverAs followUp when busy; note = sendMessage triggerTurn false (deliverAs nextTurn when busy). The post tools send turns; malebolge-bridge send and tee send notes by default. No reply ids: one pair, conversation order suffices."
 alternatives = ["Every message starts a turn: teed logs would each start a SATAN turn"]
 rationale = "Notes let pi hand SATAN material without spending a SATAN turn on it."
-consequences = ["notes do not count against the loop budget (they start nothing)", "ASM: a write with model content on an idle conversation does not start a run; verify in plan"]
+consequences = ["notes do not count against the loop budget (they start nothing)", "ASM: a write with model content on an idle conversation does not start a run; verify in plan", "a note carries the same requestId rule as a turn (DEC-067)"]
 decided_by = "operator, 2026-10-29 session"
 decided_on = "2026-10-29"
 

@@ -1,0 +1,42 @@
+memory_uid = "mem_01a1864129537231bbab0a4211bc3849"
+memory_key = "mem.pattern.malebolge.own-the-window-upstream"
+schema_version = 1
+memory_type = "pattern"
+status = "active"
+title = "Don't mirror an upstream filter's view; have the upstream report what it saw"
+summary = "When a safety invariant is 'consumer view ⊆ what the upstream checker saw', make the upstream report its view (e.g. seen extents) instead of re-implementing its cuts; mirrors break on every upstream change (SL-007 RV-020)."
+created = "2026-10-29"
+updated = "2026-10-29"
+
+[scope]
+paths = []
+globs = []
+commands = []
+tags = ["design", "mail"]
+workspace = "default"
+repo = "github.com/davidlee/Malebolge"
+repo_id_kind = "remote"
+repo_id_confidence = "high"
+
+[git]
+anchor_kind = "checkout_state"
+commit = ""
+tree = "b9d4286180c82374e5e1ab3563ed3d547796d171"
+ref_name = "refs/heads/main"
+checkout_state_id = "6f588e4129429b7f9f8fc89fd961f6bd447f775c0ef23b5da6441d6d584e6557"
+base_commit = "6396a65a8a5563dfdfd27f694b9ac36d7bcb1c4c"
+verified_sha = ""
+normalizer = "forget.checkout.v1"
+
+[review]
+verification_state = "unverified"
+reviewed = ""
+review_by = ""
+
+[trust]
+trust_level = "medium"
+
+[ranking]
+severity = "none"
+weight = 0
+

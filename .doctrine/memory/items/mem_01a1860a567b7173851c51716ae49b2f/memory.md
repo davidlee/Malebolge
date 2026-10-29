@@ -1,0 +1,1 @@
+Verified 2026-10-29 (SL-007 inquiry, DEC-056). Kept documents print on stdout; the one error line goes to stderr via line_at(error, cursor). Do not treat cursor presence as 'this message is at fault': a transient http error would then be cached as unclassified. Only LimitExceeded("jev_context") is deterministic per message.

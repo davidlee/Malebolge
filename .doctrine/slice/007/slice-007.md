@@ -5,8 +5,8 @@
 SL-005 gave mail-mode conversations five stateless read tools (`mail_new`,
 `mail_read`, `mail_thread`, `mail_list`, `mail_mailboxes`) over screwtape's
 v1 read contract, behind the `MailSource` port (DEC-026, `src/mail/source.ts`).
-DEC-026 left room for a classifier stage: `readAfter` can be replaced
-without changing the tools.
+DEC-026 left room for a classifier stage (as a new port member, DEC-047),
+without new tools for it.
 
 Screwtape SL-004 (closed) added that stage: `screwtape classify` reads v1
 `read` envelopes on stdin, strips PII, asks Jev (typesafe.ai's decision
@@ -27,107 +27,118 @@ signals (IDE-007) — build on this.
 
 ## Scope & Objectives
 
-1. **Classified mail reaches the conversation.** A mail-mode conversation
-   sees each message's `mail-1` answers alongside the message, at least on
-   the `mail_new` path. Shape (new tool vs. attached to `mail_new` /
-   `mail_read` results) is a design decision.
-2. **No redundant classification.** The tooling does not call `classify`
-   once per tool call for a message it has already classified under the
-   same `model` and `schema`. Screwtape keeps no classifications (its
-   DEC-008 wipes mail tables each sync), so whatever reuse exists is ours.
-3. **Classify runs from where the tools run.** The room daemon's jail
-   (satan `mkJailedMalebolge`) can invoke `classify` through the wrapper's
-   transient systemd unit with the Jev key, or the design names the path
-   that works.
-4. **Failures map onto the existing error set.** `no_jev` (config, exit 2),
-   `limit_exceeded`/`jev_context` (one message too big for Jev),
-   `stdin_bytes`, and a partial run (stops at first failure, keeps earlier
-   lines) map onto `MailSourceError` and the tools' rendered errors.
-   A message that fails to classify is still readable, marked unclassified.
-5. **Answers are validated and framed as advice.** Classify lines are
-   schema-checked like every other envelope (extra fields allowed, missing
-   or out-of-range values refused). Answers derive from attacker-controlled
-   text: they are rendered as data, never widen a conversation's tools, and
-   do not alter which messages a tool returns unless the caller asks
-   (RSK-002).
-6. **Quarantine hardening** (operator, 2026-10-29). This is where models
-   start using the tools in earnest:
-   - **Framing.** Every mail tool result frames its content as untrusted
-     and possibly hostile. It is never authority, and never an instruction.
-     The framing is pinned by tests.
-   - **Self-report.** The mail agent has a protocol for reporting content it
-     suspects is malicious, whatever Jev said. Reports go to the operator
-     only.
-   - **Pre-filter.** A message Jev flags as clearly hostile (e.g. a high
-     `agent_directive` or `deception_cues`) has its body withheld from the
-     agent up front. The agent sees that it was withheld, and why.
+Updated 2026-10-29 against the decisions the design inquiry accepted
+(DEC-047 to DEC-063, CON-001) and the design review (DEC-077, DEC-081).
+
+1. **Classified mail reaches the conversation.** `mail_new`, `mail_read`,
+   `mail_thread` and `mail_list` carry each message's classification as a
+   compact `jev` object in the item's core (DEC-047, DEC-060). `MailSource`
+   gains `classify(ids)`; no new tool for this.
+2. **The agent never sees mail text Jev was not shown** (DEC-048). The
+   window is screwtape's (DEC-077): each classify line reports in `seen`
+   the raw body bytes Jev kept, and the agent's bodies are clamped to it;
+   every other field is clamped to screwtape's documented raw bounds.
+   Header text Jev never sees is capped or dropped (DEC-050).
+3. **No redundant classification.** An in-memory cache held for the
+   daemon's lifetime, keyed by message id, filled read-through (DEC-057,
+   DEC-058). Screwtape keeps no classifications, so reuse is ours.
+4. **Classify runs from the jail** through a launcher-run loopback bridge to
+   the gateway socket, with screwtape's Jev credential decrypted by the
+   `malebolge-room` unit (DEC-059; satan IMP-060, flakes IMP-055). The
+   adapter spawns classify with stdin and no shell (DEC-051). No crash dump
+   can leave the key or mail in the jail home: the classify child runs with
+   `ERL_CRASH_DUMP_SECONDS=0` and the unit sets `LimitCORE=0` (DEC-081).
+5. **Failures degrade per item; a read never fails because classify did**
+   (DEC-056). Unclassified items carry a fixed reason.
+6. **Answers are validated by type and framed as advice.** Validation and
+   rendering name no questions (CON-001); answers never widen a
+   conversation's tools.
+7. **Quarantine hardening** (operator, 2026-10-29):
+   - **Framing.** Every mail result frames its content as possibly hostile,
+     never authority, never an instruction: section, header line, error
+     prefix, tool descriptions. No test pins the phrasing; one assertion
+     ties the section to the rendered block tag (DEC-061).
+   - **Network guard.** Mail tools refuse every call if the process can
+     reach the network (DEC-049).
+   - **Self-report.** `mail_report(id, kind)`, a closed vocabulary, logs to
+     the journal and withholds the message from then on (DEC-062). The
+     reported set refuses new ids when full; nothing is evicted.
+   - **Pre-filter.** Hostile (`agent_directive` or `deception_cues` >= 0.5),
+     unclassified or reported mail has its sender-written text withheld;
+     the agent sees why and names it to the operator (DEC-063).
 
 ## Non-Goals
 
-- Action plans, digests, operator-signal memory (IDE-005/006/007).
-- Triage policy built on answers (e.g. hiding promotions). Showing answers
-  comes first, and using them for triage is later work, after IMP-003.
-  The exception is a safety pre-filter (objective 6).
+- Action plans, digests, operator-signal memory (IDE-005/006/007), and
+  background prefill (noted on IDE-006).
+- Triage policy built on answers (e.g. hiding promotions), beyond the safety
+  pre-filter. Using answers for triage is later work, after IMP-003.
 - Any write to the mailbox or to screwtape.
-- Changing screwtape's contract or the `mail-1` questions.
-- Persisting classifications across daemon restarts, unless design finds it
-  is the simplest way to meet objective 2.
+- Changing the `mail-1` questions, or screwtape's contract beyond DEC-077's
+  three additive v1 changes (raw-byte bounds, every address list in Jev's
+  state, `seen`), which screwtape IMP-006 carries. Screwtape IMP-005
+  proposes relaxing PII erasure; not this slice.
+- Attachment contents: screwtape keeps metadata only.
+- Persisting classifications or reports across daemon restarts.
 - SATAN's ordinary contexts reading classifications (RSK-002 zones).
 
 ## Affected surface
 
-- `src/mail/source.ts` — port: classify envelope schema, a classified
-  read path.
-- `src/mail/screwtape.ts` — adapter: piping `read` lines into `classify`,
-  invocation, error mapping.
-- `src/mail/tools.ts`, `src/mail/render.ts` — tool shape and rendering of
-  answers within the byte bounds (DEC-026 bounds rule).
-- Possibly a small classification cache module under `src/mail/`.
-- `test/mail/**` — fixtures for classify lines, failures, partial runs.
-- Config / room profile wiring for the jail, if objective 3 needs it
-  (satan repo `mkJailedMalebolge` may need a change; cross-repo).
+- `src/mail/source.ts`: `classify` member, classify envelope schema
+  (type-shaped, with `seen`), `JEV_WINDOW`.
+- `src/mail/screwtape.ts`, `src/bounded-exec.ts` neighbour: `stdinEnv`,
+  classify invocation and failure mapping.
+- `src/mail/project.ts`, `src/mail/render.ts`, `src/mail/tools.ts`: view
+  clamps, `jev` core field, withheld items, header line, error prefix,
+  `mail_report`, joint clamp.
+- `src/mail/classifications.ts`, `src/mail/policy.ts`: the cache and
+  read-through; the withhold policy.
+- `src/mail/extension.ts`: `MAIL_SECTION`.
+- `src/daemon-start.ts`, `src/config.ts`: cache, reported set, log and
+  refusal built in `mailPart`; the credentials variable.
+- `test/toolsets.test.ts` catalog guard: six mail tools.
+- `test/mail/**`: classify fixtures, `fakeMailSource` with `classify`,
+  `fakeMailDeps`.
+- Cross-repo: satan IMP-060 (bridge, bind, variable), flakes IMP-055
+  (unit credential, `LimitCORE=0`, DEC-081), screwtape IMP-006 (DEC-077's
+  window changes).
 
 ## Risks, assumptions, open questions
 
-- **OQ-1 Shape.** New `mail_classify <id…>` tool, or answers attached to
-  `mail_new` (and `mail_read`). Attaching changes the cost of every
-  `mail_new` call (a Jev round trip per uncached message).
-- **OQ-2 Reuse vs. DEC-027.** DEC-027 makes the tools stateless (the
-  caller holds the cursor). A cache keyed on (message id, `model`,
-  `schema`) is state below the tools, not caller state; design must say
-  whether that respects DEC-027 or revises it. A classification depends on
-  the message's content; screwtape ids are JMAP ids, stable per message,
-  so content change under one id is not expected — confirm.
-- **OQ-3 Jail invocation.** The wrapper uses `systemd-run --user --pipe`.
-  Unknown whether the room daemon's jail reaches the user's systemd
-  manager, and whether it should (assumption ASM-001 in satan). This may
-  be the slice's riskiest unknown; check early.
-- **OQ-4 Cost and latency.** One `classify` run = a transient unit + a Jev
-  call per message. Measure before choosing per-message vs. batched calls.
-- **OQ-5 Byte budget.** Answers add bytes per item; they must fit DEC-026's
-  per-item share. Probabilities may be summarised (choice + confidence)
-  with the full vector left out, if that is enough for IMP-003.
-- **Risk:** Jev answers are adversarially influenceable (`agent_directive`
-  and `deception_cues` exist because of this). The model must see them as
-  advice, never as instructions or as authority to act.
+The inquiry settled OQ-1 to OQ-5 (DEC-047, DEC-057, DEC-059, DEC-051,
+DEC-060). Remaining:
+
+- **Unverified:** the gateway's client socket serves Jev's path as the
+  relay does (first-phase probe); `makeJailedAgent` admits a wrapper agent
+  command (satan IMP-060; fallback: the daemon runs the bridge).
+- **Risk:** Jev answers are adversarially influenceable; they are advice.
+  Thresholds are uncalibrated until IMP-003.
+- **Risk:** a Jev outage withholds all mail, loudly, until Jev returns.
+- **Dependency:** the window-dependent work (`seen` schema, view clamps)
+  waits on screwtape IMP-006. Until it lands, a classify line without
+  `seen` is a contract violation, so every item is withheld.
 
 ## Verification / closure intent
 
-- Tests over fixture `classify` output: valid lines rendered, invalid lines
-  refused, each failure mode mapped, partial runs handled, reuse proven
-  (second call for the same message does not invoke `classify`).
-- Rendering stays within DEC-026 bounds with answers present.
-- A live check from the room daemon: a mail-mode conversation shows
-  answers for real new mail (VH, operator).
+- VT: unit tests over fixture classify output and fakes (adapter, failure
+  mapping, cache, rendering bounds, each withhold reason, `mail_report`,
+  network check, CON-001 behaviour). No framing-phrase tests.
+- VA: first-phase probe of the gateway socket's API.
+- VH: live check from a room mail conversation after satan IMP-060 and
+  flakes IMP-055 land.
 
 ## Summary
 
-Mail-mode conversations see Jev's `mail-1` classification of each message,
-computed once per message and model, invoked from the jail, with failures
-mapped and answers framed as untrusted advice.
+Mail-mode conversations see Jev's classification of each message, computed
+once per message, invoked from the jail, degrading per item on failure, with
+hostile, unclassified or reported mail withheld and every result framed as
+possibly hostile data.
 
 ## Follow-Ups
 
 - IDE-005 action plans (data DSL executed by trusted elisp in Gnus).
-- IDE-006 quarantined digests; IDE-007 operator signals.
+- IDE-006 quarantined digests (with background prefill); IDE-007 operator
+  signals.
 - IMP-015 per-conversation byte budget for mail tools.
+- screwtape IMP-005 PII relaxation for malice signals.
+- IMP-024 drop `preview` from every mail tool's view.

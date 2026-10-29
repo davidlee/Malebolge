@@ -5,14 +5,14 @@ id = 75
 slug = "malebolge-bridge-send-and-tee-post-stdin-as-one-note-through-a-one-shot-frame"
 title = "malebolge-bridge send and tee post stdin as one note through a one-shot frame"
 record_kind = "decision"
-status = "proposed"
+status = "accepted"
 created = "2026-10-29"
 updated = "2026-10-29"
 tags = []
 
 [facet]                         # every field typed; seeded empty (captured later)
 context = "Operator: a tee-like binary so command output reaches SATAN without passing through pi's context."
-choice = "The extension sets MALEBOLGE_BRIDGE_CONVERSATION and MALEBOLGE_BRIDGE_TOKEN for the commands pi runs. malebolge-bridge send reads stdin to end and sends post-once {conversation, token, kind, text}, which the daemon answers once and closes (DEC-007), so it never displaces the extension's connection. Default kind note; --turn makes it a turn (counts against the budget). send prints only the ack; tee also copies stdin to stdout. Same caps and truncation as a post."
+choice = "The extension sets MALEBOLGE_BRIDGE_CONVERSATION and MALEBOLGE_BRIDGE_TOKEN for the commands pi runs. malebolge-bridge send reads stdin to end and sends post-once {conversation, token, kind, text}, which the daemon answers once and closes (DEC-007), so it never displaces the extension's connection. Default kind note; --turn makes it a turn (counts against the budget). send prints only the ack; tee also copies stdin to stdout. Same caps and truncation as a post. post-once carries no request id and is never retried: a lost reply exits with a distinct status saying the outcome is unknown, and a refusal exits with another. A connect failure exits non-zero with a stderr line naming both ends as far as known (MALEBOLGE_BRIDGE_CONVERSATION and the socket path), and runs notify-send best-effort with the same text; stderr reaches pi through its bash tool."
 alternatives = ["Stream chunks as they arrive: each would start or queue a turn", "Route through the extension: needs a second local channel"]
 rationale = "One message, bounded, no context double-handling."
 consequences = ["ASM: the extension can set env for pi's bash tool (bash-spawn-hook example); verify in plan"]
