@@ -1,0 +1,18 @@
+schema = "doctrine.observation"
+schema_version = 1
+uid = "01a187b4-54d7-7963-a8b6-254c38e3026f"
+recorded_at = "2026-10-29T12:48:24.791367627Z"
+kind = "friction"
+summary = "Host gate red from another slice's untracked files"
+detail = "SL-007 PHASE-02: just check failed at fmt-check on SL-009's untracked pi-bridge/state.ts, so lint/typecheck/test had to be run as separate recipes to judge SL-007's share. A gate that stops at its first failing recipe hides the rest when sessions share a tree."
+
+[facets.execution]
+schema_version = 1
+interface = "cli"
+interface_origin = "automatic"
+product_surface = "doctrine"
+product_surface_origin = "automatic"
+command = "observation record"
+command_origin = "automatic"
+repository_context = "primary"
+repository_context_origin = "automatic"
