@@ -403,6 +403,11 @@ so P4 reduces to `nix run .#jailed-pi-bridge`. Removed PHASE-01's
   either way. pi had flagged the empty entries at lines 6 and 10–13 as
   "duplicate-shaped": they are the pairing/unpaired `custom` records of two
   re-pairs, by design.
+- 10 (VH-1 connect failure): met (operator: "pass"). Daemon stopped 09:23:24
+  and started 09:23:58. 10b (DEC-095) was done: pi's session holds an
+  `unpaired` record at 09:23:47 (line 287), during the outage, and the
+  daemon's pairing document for 3949 has no `ended` delta (only the base's
+  `"ended":false`), so it was left as is.
 
 ## Autonomy log
 
