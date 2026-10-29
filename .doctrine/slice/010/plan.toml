@@ -66,7 +66,7 @@ exit_criteria = [
   { id = "EX-1", text = "src/topics.ts: TopicRecord.model?: string; TopicChange.model?: string | null; KEYS = [\"cwd\", \"toolset\", \"model\"]; merged/written/without unchanged; topicsOf unchanged (it spreads the record)." },
   { id = "EX-2", text = "src/conversations.ts: TopicWrite.model?: string | null; modelChange(write, catalog) beside toolsetChange — absent and null pass through, a string must pass catalog.require and is stored as given; a refusal writes nothing. conversations(session, defaults, profile, catalog); startDaemon passes its catalog." },
   { id = "EX-3", text = "src/protocol.ts: TopicMessage.model?: string | null; TOPIC_KEYS gains model; parsed by topicField, which refuses control characters; TopicSummary.model?: string." },
-  { id = "EX-4", text = "`default` stays refused by both the frame parser and writeTopicRecord." },
+  { id = "EX-4", text = "`default` stays refused by both the frame parser and writeTopicRecord: pinned by existing tests (test/topics.test.ts, test/protocol.test.ts), unchanged." },
   { id = "EX-5", text = "`just check` green." },
 ]
 verification = [
@@ -91,18 +91,19 @@ exit_criteria = [
   { id = "EX-1", text = "src/topics.ts: writeCreated returns the topic's record alongside the toolset it chose; the record is read once, in the creating commit." },
   { id = "EX-2", text = "src/conversations.ts: topicInit(profile, topic, catalog, fallback, thread?) replaces toolsetInit and, after writing the entry, calls configure(tx, id, { extensions, model: creationModel({ topic: record?.model, fallback }, catalog.require) }). openTopic and plain new pass it; fallback is the defaults' model. No caller of toolsetInit remains." },
   { id = "EX-3", text = "src/threads/tools.ts and src/threads/extension.ts: createStarted uses topicInit; thread deps carry the catalog. thread_fork is unchanged (no code)." },
-  { id = "EX-4", text = "A stored model the catalog lacks makes the creating commit throw UnknownModel: nothing is created — no conversation, no index entry, and for thread_start no post task. An attach answers the client an error naming the model (the daemon's generic error relay)." },
+  { id = "EX-4", text = "A stored model the catalog lacks makes the creating commit throw UnknownModel: nothing is created — no conversation, no index entry, and for thread_start no post task. An attach answers the client an error naming the model (the daemon's generic error relay; VT-6)." },
   { id = "EX-8", text = "thread_start surfaces UnknownModel as its refusal result (isError, naming the model), as it does a Refusal — not as a thrown bug. The thread tools' attempted maps only Refusal today (src/threads/tools.ts:447-458); widen it to UnknownModel, or rethrow it as a Refusal in createStarted, whichever is smaller. Design sec-4 is silent on this mapping; see plan.md." },
   { id = "EX-5", text = "src/daemon-start.ts: startRoomTasks catches UnknownModel only around ensureHeartbeat, logs `wake: no heartbeat: unknown model <ref> in topic <name>`, and the start continues. Any other heartbeat failure still fails the start and undoes it (the existing VT-3 f test stays unchanged and passing)." },
-  { id = "EX-6", text = "Runner job conversations (src/runner/conversations.ts) and root are untouched." },
+  { id = "EX-6", text = "Root keeps the defaults' model on every open (VT-1). Runner job conversations (src/runner/conversations.ts) are unchanged: no code." },
   { id = "EX-7", text = "`just check` green." },
 ]
 verification = [
-  { id = "VT-1", expects = "attach --topic and --topic --new in a topic with a model create with it; without one, the default; plain new takes the default; an existing conversation keeps its model after the topic's model changes", test_file = "test/conversations.test.ts", keywords = ["topicInit", "keeps its model"], waived = false },
+  { id = "VT-1", expects = "attach --topic and --topic --new in a topic with a model create with it; without one, the default; plain new takes the default; an existing conversation keeps its model after the topic's model changes; root keeps the defaults' model on every open", test_file = "test/conversations.test.ts", keywords = ["topicInit", "keeps its model", "root keeps the default"], waived = false },
   { id = "VT-2", expects = "a stored model the catalog lacks refuses creation in that topic, naming it, and creates nothing", test_file = "test/conversations.test.ts", keywords = ["unknown model", "creates nothing"], waived = false },
   { id = "VT-3", expects = "a started thread takes its topic's model; with a stale stored model the tool returns a refusal naming it and no child or post task exists", test_file = "test/threads-tools.test.ts", keywords = ["unknown model", "topic's model"], waived = false },
   { id = "VT-4", expects = "a fork keeps its parent's model even when the topic's model differs", test_file = "test/threads-fork.test.ts", keywords = ["parent's model"], waived = false },
-  { id = "VT-5", expects = "a wake topic with an unknown stored model and no conversation: the daemon starts, logs the no-heartbeat line, and creates no heartbeat", test_file = "test/daemon-start.test.ts", keywords = ["no heartbeat: unknown model", "VT-3 f"], waived = false },
+  { id = "VT-5", expects = "a wake topic with an unknown stored model and no conversation: the daemon starts, logs the no-heartbeat line, and creates no heartbeat; the existing VT-3 f test is unchanged", test_file = "test/daemon-start.test.ts", keywords = ["no heartbeat: unknown model"], waived = false },
+  { id = "VT-6", expects = "an attach --topic NAME --new frame into a topic whose stored model the catalog lacks is answered with an error naming the model, and nothing is created", test_file = "test/daemon.test.ts", keywords = ["unknown model"], waived = false },
 ]
 specs        = []
 requirements = []
@@ -125,7 +126,7 @@ exit_criteria = [
 verification = [
   { id = "VT-1", expects = "--set-topic NAME --model REF and --no-model parse to SetTopicInvocation.model (string, null); either without --set-topic is refused with `model needs set-topic`; --model with --no-model is refused", test_file = "test/attach-invocation.test.ts", keywords = ["--model", "--no-model", "model needs set-topic"], waived = false },
   { id = "VT-2", expects = "the set-topic request frame carries model; an old daemon's `unknown key model` refusal yields the restart hint", test_file = "test/request.test.ts", keywords = ["unknown key model"], waived = false },
-  { id = "VT-3", expects = "--topics lines carry a fourth model field, empty when unset", test_file = "test/render.test.ts", keywords = ["toolset"], patterns = ['(\\t.*){3}'], waived = false },
+  { id = "VT-3", expects = "--topics lines carry a fourth model field, empty when unset", test_file = "test/render.test.ts", keywords = ["toolset and model"], waived = false },
 ]
 specs        = []
 requirements = []
@@ -145,13 +146,14 @@ exit_criteria = [
   { id = "EX-3", text = "src/daemon.ts: listReply always sends summaries (`{}` for an empty page). The pinned reply-shape test (test/daemon.test.ts, `keeps the shipped list reply's shape … (EX-4)`) widens to include summaries, deliberately." },
   { id = "EX-4", text = "src/render.ts: one lineOf prints id<TAB>topic<TAB>model, plus <TAB>mark for threads; topic and model are always present, empty when unknown, including against a reply without summaries." },
   { id = "EX-5", text = "`just check` green." },
-  { id = "EX-6", text = "emacs/malebolge.el, landed with the line change so no commit leaves the chooser unable to read --list: malebolge--candidate-id accepts ID<TAB>TOPIC<TAB>MODEL with an optional <TAB>MARK; topic and model may be empty, a mark may not; lines are offered whole. `just ert` (byte-compile without warnings) and `just smoke` green." },
+  { id = "EX-6", text = "emacs/malebolge.el, landed with the line change so no commit leaves the chooser unable to read --list: malebolge--candidate-id accepts ID<TAB>TOPIC<TAB>MODEL with an optional <TAB>MARK; topic and model may be empty, a mark may not; lines are offered whole. `just ert` (byte-compile without warnings) and `just smoke` green. The same phase updates the tests the line change breaks: test/malebolge-ert.el's candidate cases (`malebolge--conversation-candidates` and `malebolge--candidate-id`, now three-field lines) and test/emacs-attach-smoke.ts, whose fake daemon's list reply carries `summaries` and whose picker stub finds the chosen id's whole line." },
 ]
 verification = [
   { id = "VT-1", expects = "summaries carry topic and model for all and topic pages; root's topic is default; a conversation without a stored model has no model", test_file = "test/conversations.test.ts", keywords = ["summaries"], waived = false },
-  { id = "VT-2", expects = "the list reply always carries summaries; the shipped-shape test lists conversations, summaries, truncated, type", test_file = "test/daemon.test.ts", keywords = ["summaries", "(EX-4)"], waived = false },
+  { id = "VT-2", expects = "the list reply always carries summaries; the shipped-shape test lists conversations, summaries, truncated, type", test_file = "test/daemon.test.ts", keywords = ["summaries"], waived = false },
   { id = "VT-3", expects = "--list lines: id, topic, model, then the mark for threads; empty topic and model fields against a reply without summaries", test_file = "test/render.test.ts", keywords = ["summaries"], waived = false },
-  { id = "VT-4", expects = "candidate parsing of id/topic/model lines with and without a mark, with empty topic or model, and refusal of an empty mark", test_file = "test/malebolge-ert.el", keywords = ["\\tdefault\\t", "malebolge--candidate-id"], waived = false },
+  { id = "VT-4", expects = "candidate parsing of id/topic/model lines with and without a mark, with empty topic or model, and refusal of an empty mark", test_file = "test/malebolge-ert.el", keywords = ["\\tdefault\\t"], waived = false },
+  { id = "VT-5", expects = "smoke: the fake daemon's list reply carries summaries; the picker offers the chosen id's whole line and attaches to it", test_file = "test/emacs-attach-smoke.ts", keywords = ["summaries"], waived = false },
   { id = "VA-1", text = "EN-2's measurement is recorded in notes.md with the page size and store used, and the go/consult outcome." },
 ]
 specs        = []
@@ -177,6 +179,7 @@ verification = [
   { id = "VT-2", expects = "a models list frame over the socket answers the catalog's refs without touching Conversations", test_file = "test/daemon.test.ts", keywords = ["models: true", "modelRefs"], waived = false },
   { id = "VT-3", expects = "--models parses alone and is refused with any other flag", test_file = "test/attach-invocation.test.ts", keywords = ["--models"], waived = false },
   { id = "VT-4", expects = "a --models request accepts the models reply; an old daemon's `unknown key models` refusal yields the restart hint", test_file = "test/request.test.ts", keywords = ["--models", "unknown key models"], waived = false },
+  { id = "VT-5", expects = "a models reply renders one ref per line", test_file = "test/render.test.ts", keywords = ["models"], waived = false },
 ]
 specs        = []
 requirements = []
@@ -197,9 +200,9 @@ exit_criteria = [
 ]
 verification = [
   { id = "VT-1", expects = "new with a topic builds --topic NAME --new --emacs; default builds --new --emacs; the target label reads a new conversation in TOPIC", test_file = "test/malebolge-ert.el", keywords = ["(new . ", "a new conversation in"], waived = false },
-  { id = "VT-2", expects = "malebolge--client signals a user-error naming the args on non-zero exit, and within the bound against a client that never exits", test_file = "test/malebolge-ert.el", keywords = ["malebolge--client", "malebolge--list-timeout"], waived = false },
+  { id = "VT-2", expects = "malebolge--client signals a user-error naming the args on non-zero exit, and within the bound against a client that never exits", test_file = "test/malebolge-ert.el", keywords = ["malebolge--client"], waived = false },
   { id = "VT-3", expects = "set-topic-model offers --models lines plus none, builds --set-topic NAME --model REF or --no-model, and reports the client's refusal", test_file = "test/malebolge-ert.el", keywords = ["malebolge-set-topic-model", "--no-model"], waived = false },
-  { id = "VT-4", expects = "smoke: new asks for a topic against the fake daemon and sends --topic NAME --new; the fake daemon's list reply carries summaries", test_file = "test/emacs-attach-smoke.ts", keywords = ["summaries", "Topic: "], waived = false },
+  { id = "VT-4", expects = "smoke: new asks for a topic against the fake daemon and sends --topic NAME --new", test_file = "test/emacs-attach-smoke.ts", keywords = ["Topic: "], waived = false },
   { id = "VH-1", text = "Operator, against the live gateway: set a topic to gateway/openai-david/gpt-6.1-terra from Emacs, create a conversation in it from the chooser, see the model on its chooser line, and get a reply from that model." },
 ]
 specs        = []

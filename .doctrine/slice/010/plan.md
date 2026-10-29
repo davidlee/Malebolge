@@ -82,3 +82,6 @@ RV-022, the design's review ledger, holds no findings: round 1 was informal
   catch and the thread_start mapping rely on `UnknownModel` leaving
   `createConversation` with its class intact, as `Refusal` already does
   through `api.commit`. The first red test confirms it.
+- **PHASE-07/EX-2 is a gap.** It held the chooser's line parsing, moved to
+  PHASE-05/EX-6 so no commit breaks the chooser. Ids are immutable, so EX-2 is
+  not reused.
