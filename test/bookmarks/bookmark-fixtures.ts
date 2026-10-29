@@ -4,11 +4,16 @@
 // The tree builders below are the same idea for the projection: a test says the
 // shape it means, and never spells a node out as an inline object.
 
+import { mkdir, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import type {
   BackupContainer,
   BackupNode,
   BackupPlace,
   BackupSeparator,
+  BookmarkSource,
+  BookmarkSourceError,
+  Snapshot,
 } from "../../src/bookmarks/backup.ts";
 
 /** Firefox's mozlz4 magic: "mozLz40" followed by a NUL. */
@@ -135,4 +140,65 @@ export function backupTree(
 ): BackupContainer {
   const children = ROOT_ORDER.map((key) => rootFolder(key, roots[key] ?? []));
   return container("", children, { root: "placesRoot" });
+}
+
+// --------------------------------------------------------------- sources
+//
+// A source is what every later bookmark tool holds: the newest backup as a
+// Snapshot, or a refusal. The fake records each read, so a test can see how
+// many times a call re-read (DEC-027); it otherwise knows nothing.
+
+/** One recorded read: a BookmarkSource has this one verb. */
+export interface RecordedRead {
+  readonly verb: "read";
+}
+
+/** A BookmarkSource that records each read; `calls` is live, in call order. */
+export interface FakeBookmarkSource extends BookmarkSource {
+  readonly calls: readonly RecordedRead[];
+}
+
+/**
+ * A BookmarkSource that answers `result` and records every read: the snapshot to
+ * resolve, or the BookmarkSourceError to reject with (mirrors fakeMailSource).
+ */
+export function fakeBookmarkSource(result: Snapshot | BookmarkSourceError): FakeBookmarkSource {
+  const calls: RecordedRead[] = [];
+  return {
+    calls,
+    read: (): Promise<Snapshot> => {
+      calls.push({ verb: "read" });
+      return result instanceof Error ? Promise.reject(result) : Promise.resolve(result);
+    },
+  };
+}
+
+// --------------------------------------------------------- backup files
+
+/** Firefox's backup name for `date`: `bookmarks-<date>_446_<suffix>.jsonlz4`. */
+export function backupName(date: string, suffix = "AbCdEf=="): string {
+  return `bookmarks-${date}_446_${suffix}.jsonlz4`;
+}
+
+/**
+ * The bytes a backup file holds for `body`: raw bytes as given, a string as its
+ * own JSON text, a tree as `JSON.stringify` of it; the last two encoded to mozlz4.
+ */
+function backupBytes(body: Buffer | string | BackupContainer): Buffer {
+  if (Buffer.isBuffer(body)) {
+    return body;
+  }
+  return encodeMozLz4(typeof body === "string" ? body : JSON.stringify(body));
+}
+
+/** Writes `body` as the backup `name` under `dir` (created if needed); returns its path. */
+export async function writeBackup(
+  dir: string,
+  name: string,
+  body: Buffer | string | BackupContainer,
+): Promise<string> {
+  await mkdir(dir, { recursive: true });
+  const path = join(dir, name);
+  await writeFile(path, backupBytes(body));
+  return path;
 }
