@@ -43,6 +43,7 @@ wanted, is left to phase-plan as checks against code, not design questions:
 - PHASE-03 · EX-8 via widening `attempted` (Refusal | UnknownModel), not a rethrow in createStarted · the smaller of plan.md's two options; shared by all thread tools, only thread_start can raise it · decided
 - PHASE-03 · heartbeat catch extracted as `ensureHeartbeatOrLog` in src/daemon-start.ts · keeps startRoomTasks' shape; catches UnknownModel only · decided (adjacent refactor)
 - PHASE-03 · `test/thread-fixture.ts` gains `SECOND_MODEL`/`SECOND_REF` (faux/faux-2) and a world catalog holding both · a topic's model must differ observably from the world default for VT-3/VT-4 · decided (fixture)
+- PHASE-04 · `parseAttachArgs`' seven valued-option copies folded into a `VALUED_FIELDS` table + loop · eslint `complexity` (8) refused the added `model` branch; same behaviour, all rows green · decided (adjacent refactor)
 
 ## PHASE-01 run log
 
@@ -62,6 +63,16 @@ wanted, is left to phase-plan as checks against code, not design questions:
 - pi `implement` (deepseek-flash), 2 runs on one session: 61 requests $0.08 (hit the request ceiling mid-edit), continuation 20 requests $0.02. VT-1/2/3/5/6 red-first for the right reasons (wrong model, resolved-not-rejected, missing refusal, missing log line, attach succeeded); VT-4 and the root pin green on first run (pins). No misses of substance; it updated more toolsetInit callers than briefed (topics, session, wake-tools tests).
 - Negative controls (orchestrator): heartbeat catch widened to every error → `VT-3 f` red; `attempted` without the UnknownModel arm → VT-3 refusal test red.
 - `VT-3 f` unchanged. Gate: `just check` 104 files / 3569 tests green.
+
+## PHASE-04 run log
+
+- pi `implement` (deepseek-flash), 2 runs on one session: tests-red 15 requests $0.02 (VT-1 10 red, VT-2 4 red, VT-3 1 red, all assertion/unknown-option failures; 9 `toThrow(UsageError)` twin rows vacuously green before EX-1, meaningful after), implementation 20 requests $0.02. Miss: none of substance; it flagged the pre-existing `--topics` expectation in test/request.test.ts the four-field line breaks, and refactored for the complexity rule (Autonomy log).
+- Gate: `just check` 104 files / 3592 tests green.
+
+## PHASE-05 EN-2 measurement (VA-1)
+
+- 2026-10-29, host, node-sqlite store (`openNodeSqliteStorage`, the daemon's), 60 conversations created via `Conversations.open({kind:"new"})`, page = LIST_PAGE (50): one commit of `scanConversations` + `readIndexDoc` + 50 `tx.doc(AgentDoc, id)` (all 50 carried a model). Warm session, 20 reps: median 0.14 ms, max 0.31 ms (scan + index alone: 0.03 ms). Cold, first commit after reopening the file: 0.30 ms.
+- Outcome: go. Three orders of magnitude under the 100 ms consult threshold. Throwaway test kept at `.doctrine/state/slice/010/en2-bench.test.ts.txt` (gitignored), not committed.
 
 ## Harvest
 <!-- single-copy: updated in place each harvest; ids only, never restated content -->

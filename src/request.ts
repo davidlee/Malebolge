@@ -90,7 +90,7 @@ const UNKNOWN_TYPE = /^unknown message type "([^"]+)"$/;
 const UNKNOWN_KEY = /^[a-z-]+: unknown key ([A-Za-z0-9_]+)$/;
 
 /** The keys whose refusal means the daemon predates the feature the key carries. */
-const SKEWED_KEYS = ["topic", "topics", "toolset"] as const;
+const SKEWED_KEYS = ["topic", "topics", "toolset", "model"] as const;
 
 /**
  * The feature the answering daemon predates, when `message` says it predates
@@ -124,13 +124,16 @@ export function requestFrameOf(invocation: RequestInvocation): JsonRecord {
     case "topics":
       return { type: "list", topics: true };
     case "set-topic": {
-      // `cwd` and `toolset` absent create the topic, or leave that field unchanged.
+      // `cwd`, `toolset` and `model` absent create the topic, or leave that field unchanged.
       const frame: JsonRecord = { type: "topic", name: invocation.name };
       if (invocation.cwd !== undefined) {
         frame["cwd"] = invocation.cwd;
       }
       if (invocation.toolset !== undefined) {
         frame["toolset"] = invocation.toolset;
+      }
+      if (invocation.model !== undefined) {
+        frame["model"] = invocation.model;
       }
       return frame;
     }

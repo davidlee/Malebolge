@@ -97,6 +97,10 @@ describe("attachTargetOf", () => {
     [["--toolset", "mail"]],
     [["--no-toolset"]],
     [["--new", "--toolset", "mail"]],
+    // ...nor does a model, for the same reason (SL-010 PHASE-04).
+    [["--model", "faux/faux-2"]],
+    [["--no-model"]],
+    [["--new", "--model", "faux/faux-2"]],
     // ...and beside a topic target it is still not one: `--cwd` is the attach's directory.
     [["--topic", "work", "--dir", "/x"]],
     [["--topic", "work", "--new", "--dir", "/x"]],
@@ -158,10 +162,35 @@ describe("attachInvocationOf", () => {
       ["--set-topic", "work", "--no-dir", "--toolset", "mail"],
       { mode: "set-topic", wait: LIST_WAIT, name: "work", cwd: null, toolset: "mail" },
     ],
+    // `model` reads the same three ways (SL-010 PHASE-04): a ref sets it, `--no-model`
+    // clears it, neither leaves it, and `toolset` beside it is the other field.
+    [
+      ["--set-topic", "work", "--model", "faux/faux-2"],
+      { mode: "set-topic", wait: LIST_WAIT, name: "work", cwd: undefined, model: "faux/faux-2" },
+    ],
+    [
+      ["--set-topic", "work", "--no-model"],
+      { mode: "set-topic", wait: LIST_WAIT, name: "work", cwd: undefined, model: null },
+    ],
+    [
+      ["--set-topic", "work", "--toolset", "mail", "--model", "faux/faux-2"],
+      {
+        mode: "set-topic",
+        wait: LIST_WAIT,
+        name: "work",
+        cwd: undefined,
+        toolset: "mail",
+        model: "faux/faux-2",
+      },
+    ],
     // `--here` names the directory; the toolset it was given stays with it.
     [
       ["--set-topic", "work", "--here", "--toolset", "mail"],
       { mode: "set-topic", wait: LIST_WAIT, name: "work", cwd: HERE, toolset: "mail" },
+    ],
+    [
+      ["--set-topic", "work", "--here", "--model", "faux/faux-2"],
+      { mode: "set-topic", wait: LIST_WAIT, name: "work", cwd: HERE, model: "faux/faux-2" },
     ],
     // `--here` parses to a marker, where a topic's name or a directory would stand.
     [["--here"], { ...ROOT_LINES, target: { kind: "topic", name: HERE, new: false } }],
@@ -192,6 +221,17 @@ describe("attachInvocationOf", () => {
     expect(usageErrorOf(args)).toBe(message);
   });
 
+  // VT-1: `--model` mirrors `--toolset` exactly, one refusal for each way it is misused.
+  it.each<[string[], string]>([
+    [["--set-topic", "work", "--model", "x", "--no-model"], "model and no-model are exclusive"],
+    [["--model", "x"], "model needs set-topic"],
+    [["--no-model"], "model needs set-topic"],
+    [["--new", "--model", "x"], "model needs set-topic"],
+    [["--topic", "work", "--no-model"], "model needs set-topic"],
+  ])("%j refuses with %j", (args, message) => {
+    expect(usageErrorOf(args)).toBe(message);
+  });
+
   it("still refuses an unknown flag", () => {
     expect(() => attachInvocationOf(["--emacs", "--wat"])).toThrow(UsageError);
   });
@@ -211,6 +251,8 @@ describe("checkAlone: exclusive flags", () => {
     [["--topics", "--no-dir"]],
     [["--topics", "--toolset", "mail"]],
     [["--topics", "--no-toolset"]],
+    [["--topics", "--model", "faux/faux-2"]],
+    [["--topics", "--no-model"]],
     [["--topics", "--set-topic", "work"]],
     // --set-topic takes a directory and nothing else.
     [["--set-topic", "work", "--dir", "/x", "--no-dir"]],
@@ -232,6 +274,8 @@ describe("checkAlone: exclusive flags", () => {
     [["--list", "--no-dir"]],
     [["--list", "--toolset", "mail"]],
     [["--list", "--no-toolset"]],
+    [["--list", "--model", "faux/faux-2"]],
+    [["--list", "--no-model"]],
     [["--list", "--topic", "work", "--conversation", "3"]],
     // --here stands where a topic's name or a directory would: it cannot also be given.
     [["--here", "--topic", "work"]],
@@ -250,6 +294,7 @@ describe("checkAlone: exclusive flags", () => {
     [["--set-topic", "Work"]],
     [["--set-topic", ""]],
     [["--set-topic", "work", "--toolset"]],
+    [["--set-topic", "work", "--model"]],
     [["--list", "--topic", "Work"]],
     [["--list", "--topic"]],
   ])("%j is a usage error: a name off the rule, or none at all", (args) => {
@@ -416,6 +461,26 @@ describe("resolveHere: --set-topic --here (EX-3)", () => {
         name: "fresh",
         cwd: "/repo",
         toolset: "mail",
+      });
+    }
+  });
+
+  it("keeps the model the write was given when --here names the directory (SL-010 PHASE-04)", async () => {
+    const { path } = await answering(topicsReply("host", []));
+    const resolved = await resolvedHere(
+      ["--set-topic", "fresh", "--here", "--model", "faux/faux-2"],
+      path,
+      "/repo",
+    );
+    expect(resolved.mode).toBe("set-topic");
+    if (resolved.mode === "set-topic") {
+      expect(resolved.cwd).toBe("/repo");
+      expect(resolved.model).toBe("faux/faux-2");
+      expect(requestFrameOf(resolved)).toEqual({
+        type: "topic",
+        name: "fresh",
+        cwd: "/repo",
+        model: "faux/faux-2",
       });
     }
   });

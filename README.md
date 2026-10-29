@@ -181,6 +181,7 @@ node src/attach-main.ts --set-topic NAME               # create it, no directory
 node src/attach-main.ts --set-topic NAME --dir DIR     # create it, or re-point it
 node src/attach-main.ts --set-topic NAME --no-dir      # clear its directory
 node src/attach-main.ts --set-topic NAME --toolset T   # mail-only, or --no-toolset
+node src/attach-main.ts --set-topic NAME --model REF   # its model, or --no-model
 node src/attach-main.ts --topic NAME                   # its latest conversation
 node src/attach-main.ts --topic NAME --new [--cwd DIR] # a fresh one in that topic
 node src/attach-main.ts --topics                       # topics, one per line
@@ -190,9 +191,11 @@ node src/attach-main.ts --list --topic NAME            # that topic's ids
 A name matches `[a-z0-9][a-z0-9._-]{0,63}`. `--set-topic` writes one record and
 prints it; without `--dir` it leaves the directory as it was, and on a topic it
 has to create, that means none. `--topics` prints `default` first, then the
-rest by name, as `NAME<TAB>DIR<TAB>TOOLSET`, the tabs and empty fields
+rest by name, as `NAME<TAB>DIR<TAB>TOOLSET<TAB>MODEL`, the tabs and empty fields
 included, so a script can read it. A topic's toolset works the same way and is
-written the same way ([Where tools run](#where-tools-run)). A topic's
+written the same way ([Where tools run](#where-tools-run)). A topic's model is
+written the same way too, and new conversations in that topic take it; the
+catalogue judges the ref, and an unknown one is refused. A topic's
 directory is only a default: it reaches conversations created in that topic
 afterwards, and a conversation already made keeps the directory it was created
 with. `--topic NAME` binds the topic's latest conversation (highest id),

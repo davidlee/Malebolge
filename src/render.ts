@@ -347,10 +347,13 @@ function notices(p: PresentationTable, interrupt: (out: string) => string): Noti
     // `id<TAB>mark` when the id is a thread, the bare id otherwise: same text in both presents.
     conversations: (event) =>
       event.conversations.map((id) => lineOf(id, event.marks?.[String(id)])).join(""),
-    // `name<TAB>cwd<TAB>toolset`, one per line: every field a topic leaves unset prints empty.
+    // `name<TAB>cwd<TAB>toolset<TAB>model`, one per line: every field a topic leaves unset prints empty.
     topics: (event) =>
       event.topics
-        .map((topic) => `${topic.name}\t${topic.cwd ?? ""}\t${topic.toolset ?? ""}\n`)
+        .map(
+          (topic) =>
+            `${topic.name}\t${topic.cwd ?? ""}\t${topic.toolset ?? ""}\t${topic.model ?? ""}\n`,
+        )
         .join(""),
     client_notice: (event) => interrupt(p.notice(event.text)),
     agent_changed: silent,

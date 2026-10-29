@@ -209,7 +209,7 @@ describe("request --topics and --set-topic", () => {
     const { reply, errors } = requested(path, ["--topics"]);
     const topics = await reply;
     expect(topics).toEqual({ type: "topics", profile: "host", topics: [{ name: "default" }] });
-    expect(printed(topics)).toBe("default\t\t\n");
+    expect(printed(topics)).toBe("default\t\t\t\n");
     expect(errors()).toBe("");
   });
 
@@ -247,6 +247,22 @@ describe("requestFrameOf", () => {
     };
     expect(requestFrameOf(invocation)).toEqual(frame);
   });
+
+  // VT-2: `model` rides beside `cwd` and `toolset` the same three ways (SL-010 PHASE-04).
+  it.each<[string, string | null | undefined, Record<string, unknown>]>([
+    ["a ref", "faux/faux-2", { type: "topic", name: "work", model: "faux/faux-2" }],
+    ["a cleared model", null, { type: "topic", name: "work", model: null }],
+    ["no model at all", undefined, { type: "topic", name: "work" }],
+  ])("sends %s as the frame's `model`", (_case, model, frame) => {
+    const invocation = {
+      mode: "set-topic" as const,
+      wait: LIST_WAIT,
+      name: "work",
+      cwd: undefined,
+      model,
+    };
+    expect(requestFrameOf(invocation)).toEqual(frame);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -262,6 +278,8 @@ describe("skewOf", () => {
     ["list: unknown key topic", "topic"],
     // A daemon that predates `toolset` refuses the key it does not know (PHASE-04).
     ["topic: unknown key toolset", "toolset"],
+    // ...and one that predates `model` likewise (SL-010 PHASE-04 VT-2).
+    ["topic: unknown key model", "model"],
     // Not a skew: an ordinary failure, a refusal of a key we still know, and a name rule.
     ["listing failed", undefined],
     ["list: unknown key page", undefined],
@@ -279,6 +297,7 @@ describe("request: version skew", () => {
     [["--topics"], "list: unknown key topics", "topics"],
     [["--list", "--topic", "work"], "list: unknown key topic", "topic"],
     [["--set-topic", "work", "--toolset", "mail"], "topic: unknown key toolset", "toolset"],
+    [["--set-topic", "work", "--model", "faux/faux-2"], "topic: unknown key model", "model"],
   ])("%j prints the restart hint for %j", async (args, message, feature) => {
     const path = await socketPath();
     const fake = await fakeDaemon(path, (socket) => {

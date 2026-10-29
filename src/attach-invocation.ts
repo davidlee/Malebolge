@@ -33,6 +33,7 @@ interface AttachArgs {
   dir?: string;
   setTopic?: string;
   toolset?: string;
+  model?: string;
   isNew: boolean;
   here: boolean;
   emacs: boolean;
@@ -40,6 +41,7 @@ interface AttachArgs {
   topics: boolean;
   noDir: boolean;
   noToolset: boolean;
+  noModel: boolean;
 }
 
 /** The options `parseArgs` reads, named as the user writes them. */
@@ -52,12 +54,25 @@ const OPTIONS = {
   here: { type: "boolean" },
   "set-topic": { type: "string" },
   toolset: { type: "string" },
+  model: { type: "string" },
   emacs: { type: "boolean" },
   list: { type: "boolean" },
   topics: { type: "boolean" },
   "no-dir": { type: "boolean" },
   "no-toolset": { type: "boolean" },
+  "no-model": { type: "boolean" },
 } as const;
+
+/** The options that take a value, and the `AttachArgs` field each lands in. */
+const VALUED_FIELDS = [
+  ["conversation", "conversation"],
+  ["topic", "topic"],
+  ["cwd", "cwd"],
+  ["dir", "dir"],
+  ["set-topic", "setTopic"],
+  ["toolset", "toolset"],
+  ["model", "model"],
+] as const;
 
 /** `parseArgs`, strict, with every one of its throws turned into a `UsageError`. */
 function parseAttachArgs(args: string[]): AttachArgs {
@@ -76,24 +91,13 @@ function parseAttachArgs(args: string[]): AttachArgs {
       topics: values.topics === true,
       noDir: values["no-dir"] === true,
       noToolset: values["no-toolset"] === true,
+      noModel: values["no-model"] === true,
     };
-    if (values.conversation !== undefined) {
-      parsed.conversation = values.conversation;
-    }
-    if (values.topic !== undefined) {
-      parsed.topic = values.topic;
-    }
-    if (values.cwd !== undefined) {
-      parsed.cwd = values.cwd;
-    }
-    if (values.dir !== undefined) {
-      parsed.dir = values.dir;
-    }
-    if (values["set-topic"] !== undefined) {
-      parsed.setTopic = values["set-topic"];
-    }
-    if (values.toolset !== undefined) {
-      parsed.toolset = values.toolset;
+    for (const [option, field] of VALUED_FIELDS) {
+      const value = values[option];
+      if (value !== undefined) {
+        parsed[field] = value;
+      }
     }
     return parsed;
   } catch (error) {
@@ -112,6 +116,8 @@ function flagsOf(args: AttachArgs): ReadonlyMap<string, boolean> {
     ["no-dir", args.noDir],
     ["toolset", args.toolset !== undefined],
     ["no-toolset", args.noToolset],
+    ["model", args.model !== undefined],
+    ["no-model", args.noModel],
     ["here", args.here],
     ["emacs", args.emacs],
     ["list", args.list],
@@ -200,6 +206,8 @@ export interface SetTopicInvocation<T = string> {
   cwd: T | null | undefined;
   /** The same three cases for the toolset; the profile's policy judges a name. */
   toolset?: string | null | undefined;
+  /** The same three cases for the model; the catalogue judges a ref. */
+  model?: string | null | undefined;
 }
 
 /** The modes that ask one question over one connection, and print its one reply. */
@@ -244,8 +252,9 @@ function newTargetFrom({ conversation, cwd }: AttachArgs): AttachTarget {
 }
 
 /**
- * A topic's directory and toolset are written only by `--set-topic`, never by an
- * attach: either pair given without it is a refusal, before any target is named.
+ * A topic's directory, toolset and model are written only by `--set-topic`, never
+ * by an attach: any of them given without it is a refusal, before any target is
+ * named.
  */
 function requireSetTopic(args: AttachArgs): void {
   if (args.dir !== undefined || args.noDir) {
@@ -253,6 +262,9 @@ function requireSetTopic(args: AttachArgs): void {
   }
   if (args.toolset !== undefined || args.noToolset) {
     throw new UsageError("toolset needs set-topic");
+  }
+  if (args.model !== undefined || args.noModel) {
+    throw new UsageError("model needs set-topic");
   }
 }
 
@@ -290,7 +302,7 @@ export function attachTargetOf(args: string[]): AttachTarget<string | Here> {
 
 /**
  * One field a `--set-topic` writes: `value` sets it, `clear` clears it, neither
- * leaves it unchanged. Both of the write's fields take this one reading.
+ * leaves it unchanged. Every field of the write takes this one reading.
  */
 function writeOf<T>(value: T | undefined, clear: boolean, name: string): T | null | undefined {
   if (value !== undefined && clear) {
@@ -310,6 +322,10 @@ const directoryOf = ({ dir, noDir }: AttachArgs): string | null | undefined =>
 const toolsetOf = ({ toolset, noToolset }: AttachArgs): string | null | undefined =>
   writeOf(toolset, noToolset, "toolset");
 
+/** The model a `--set-topic` writes: a ref sets it, `--no-model` clears it, neither leaves it. */
+const modelOf = ({ model, noModel }: AttachArgs): string | null | undefined =>
+  writeOf(model, noModel, "model");
+
 /** The one parse of a command line: what it asks, or a `UsageError` refusing it. */
 export function attachInvocationOf(args: string[]): AttachInvocation {
   const parsed = parseAttachArgs(args);
@@ -321,7 +337,11 @@ export function attachInvocationOf(args: string[]): AttachInvocation {
     return { mode: "topics", wait: LIST_WAIT };
   }
   if (parsed.setTopic !== undefined) {
-    checkAlone("set-topic", ["dir", "no-dir", "here", "toolset", "no-toolset"], given);
+    checkAlone(
+      "set-topic",
+      ["dir", "no-dir", "here", "toolset", "no-toolset", "model", "no-model"],
+      given,
+    );
     return {
       mode: "set-topic",
       wait: LIST_WAIT,
@@ -329,6 +349,7 @@ export function attachInvocationOf(args: string[]): AttachInvocation {
       // The git root, once resolved, is the directory; nothing else is a directory.
       cwd: parsed.here ? HERE : directoryOf(parsed),
       toolset: toolsetOf(parsed),
+      model: modelOf(parsed),
     };
   }
   if (parsed.list) {
@@ -360,10 +381,10 @@ export class HereRefusedError extends Error {
 /** `--here` stands where a topic's name or a directory would, so it takes neither. */
 function checkHereAlone(here: boolean, given: ReadonlyMap<string, boolean>): void {
   if (here) {
-    // `--set-topic --here` still takes the toolset: `--here` names the directory alone.
+    // `--set-topic --here` still takes the toolset and model: `--here` names the directory alone.
     checkAlone(
       "here",
-      ["new", "cwd", "emacs", "list", "set-topic", "toolset", "no-toolset"],
+      ["new", "cwd", "emacs", "list", "set-topic", "toolset", "no-toolset", "model", "no-model"],
       given,
     );
   }

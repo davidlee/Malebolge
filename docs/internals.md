@@ -107,9 +107,10 @@ code, opens the harness with no index and stores no name.
 
 **Where the toolset is recorded.**
 
-- **The topic record** (`TopicRecord = { cwd?, toolset? }`) is the source for
+- **The topic record** (`TopicRecord = { cwd?, toolset?, model? }`) is the source for
   a new conversation in that topic, written by the `topic` frame and by
-  `malebolge-attach --set-topic NAME --toolset T` (`--no-toolset` clears it).
+  `malebolge-attach --set-topic NAME --toolset T` (`--no-toolset` clears it) and
+  `--model REF` (`--no-model` clears it).
   The profile's policy judges the name, whatever its origin, and refuses one
   it does not allow.
 - **The index entry** (`{ topic, parent?, toolset }`) carries the name a

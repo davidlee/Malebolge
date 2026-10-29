@@ -234,18 +234,19 @@ describe("renderer", () => {
     expect(renderAll([frame], { presentation: "emacs" })).toBe(lines);
   });
 
-  it("renders a topics frame as name, directory and toolset, one per line, in both presentations", () => {
-    // Every field is empty when unset: `default` has neither directory nor toolset (PHASE-04).
+  it("renders a topics frame as name, directory, toolset and model, one per line, in both presentations", () => {
+    // Every field is empty when unset: `default` has neither directory, toolset nor model
+    // (SL-010 PHASE-04 VT-3).
     const frame = {
       type: "topics",
       profile: "host",
       topics: [
         { name: "default" },
         { name: "work", cwd: "/tmp/work" },
-        { name: "mail", cwd: "/tmp/mail", toolset: "mail" },
+        { name: "mail", cwd: "/tmp/mail", toolset: "mail", model: "faux/faux-2" },
       ],
     };
-    const lines = "default\t\t\nwork\t/tmp/work\t\nmail\t/tmp/mail\tmail\n";
+    const lines = "default\t\t\t\nwork\t/tmp/work\t\t\nmail\t/tmp/mail\tmail\tfaux/faux-2\n";
     expect(renderAll([frame])).toBe(lines);
     expect(renderAll([frame], { presentation: "emacs" })).toBe(lines);
     expect(renderAll([{ type: "topics", profile: "room", topics: [] }])).toBe("");
