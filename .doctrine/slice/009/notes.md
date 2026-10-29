@@ -92,6 +92,10 @@ the PHASE-01 probes cover directly.
 - PHASE-01 VT-1: pi `implement` (deepseek-flash), 36 requests, $0.035: ASM-006 test + negative control, green first pass. Miss: placed the block mid-file (moved to end); `npx biome` crashes in-form, used flake biome.
 - PHASE-01 VA-1: Claude Sonnet capsule-worker (host; pi/nix not in the quotient form): 5 real-pi rpc probes with a fake provider, all premises held; rerun by the orchestrator reproduced them.
 
+- PHASE-02 (sub-orchestrator): pi `implement` x2 (deepseek-flash). T1 contract tests VT-1/VT-2, red shown, $0.029; T2 moves, gate-green first try, $0.031. Misses: none material; tests duplicate the refusal-message expression (left). Negative controls by me: drop uid check -> VT-1 uid case fails; drop require hook -> VT-2 fails.
+
+- PHASE-03 (sub-orchestrator): pi `implement` x2. T1 contract tests (VT-1..4), red shown, self-checked against a throwaway impl, $0.054; T2 code + config, gate-green first try, 58 requests, $0.148. Misses: capTail reversed the whole string by code points (I replaced it with a byte-wise step); string-key checks were only tested with a number (a "non-number passes" negative control survived) - I added null/object/boolean/2^53 cases. Negative controls by me: drop tail boundary step -> 5 fail; loose string check -> 3 fail.
+
 ## Implementation run (2026-10-29, super-orchestrator)
 
 Seat: super-orchestrator in the main worktree. Scope this run: PHASE-01
@@ -226,3 +230,7 @@ Outcomes (operator, 2026-10-29; recorded on the ASMs):
 - PHASE-01: ASM-005 invalidated but pre-ruled acceptable by PHASE-01 EX-2 and DEC-073; PHASE-01 closed without /consult. decided
 - PHASE-01: ~/flakes agents/jailed-agents.nix gains `lib.optional piInJail pkgs.nodejs_24` (+ test in jailed-agents-test.nix, red-checked); operator assent 2026-10-29 ("you can make this edit"); left uncommitted in ~/flakes for the operator. decided
 - PHASE-02 EN-2: operator 2026-10-29 "it's ready for audit after a VH" — SL-010 code complete on main (2538398); topicInit, ModelCatalog, ModelsMessage, modelRefs present. SL-010's audit may still touch src/; treat its edits as another writer. decided
+- PHASE-02: topicInit's hooks type named `CreationHooks` (replaces `StartedThread`, both fields optional); servePrivateUnix throws its own `PrivateDirectoryRefused` (unix-socket.ts cannot import runner/errors), control maps it to StartRefused with the same text; connection-reply's state is a structural `Replying {socket, ended}`. Names not in the design; local, flag for audit. Tier: decide.
+- PHASE-02: VT-1's other-uid case spies `process.getuid` (no chown without root). Tier: decide.
+- PHASE-03: BRIDGE_POST_WAIT_MS = 30 s (design names no value); BRIDGE_LINE_MAX_BYTES = 6 x body + 4 KiB (JSON escapes a byte to at most 6, so the line cap never refuses a capped body); parser strict on unknown keys; refusal reason texts fixed in pi-bridge/wire.ts and pinned by test/pi-bridge-wire.test.ts. Tier: decide.
+- PHASE-03: design sec-8 omitted flake.nix. The dev dependency changes package-lock.json, so the runner package's npmDepsHash changed; src/truncate.ts now imports pi-bridge/wire.ts and the runner reaches truncate.ts, so the runner fileset and installPhase copy gained pi-bridge(/wire.ts). Built `.#runner` and `checks.runner-starts` green on host. Read the "flake edits need operator assent" ruling as ~/flakes (the jail); this is this repo's own package, mechanical consequence of planned EX-1/EX-4. Local design correction, flag for audit. Tier: decide (flagged).
