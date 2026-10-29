@@ -1,0 +1,50 @@
+memory_uid = "mem_01a186827e027a339b7ac79e93a2f210"
+memory_key = "mem.pattern.malebolge.negative-controls-that-bite"
+schema_version = 1
+memory_type = "pattern"
+status = "active"
+title = "Leak, allocation and deep-nesting tests pass vacuously unless built to bite"
+summary = "Three test traps from SL-008: V8 JSON.parse quotes ~10 chars, Linux overcommit hides alloc order, TypeBox Value.Check throws RangeError on deep nesting"
+created = "2026-10-29"
+updated = "2026-10-29"
+
+[scope]
+paths = ["test/bookmarks", "src/bookmarks"]
+globs = []
+commands = []
+tags = ["testing"]
+workspace = "default"
+repo = "github.com/davidlee/Malebolge"
+repo_id_kind = "remote"
+repo_id_confidence = "high"
+
+[git]
+anchor_kind = "checkout_state"
+commit = ""
+tree = "2f2aa83aebc434508456e3c436c3b6a4959c2705"
+ref_name = "refs/heads/main"
+checkout_state_id = "17f93e04d779e787f1cdb37cac0a76e2ff4fada67737b9b69a9e677799243584"
+base_commit = "c045e59ea71a9eb6c4295829054d6527e3857b70"
+verified_sha = ""
+normalizer = "forget.checkout.v1"
+
+[review]
+verification_state = "unverified"
+reviewed = ""
+review_by = ""
+
+[trust]
+trust_level = "high"
+
+[ranking]
+severity = "medium"
+weight = 0
+
+[[source]]
+kind = "commit"
+ref = "c210362"
+
+[[source]]
+kind = "commit"
+ref = "4d3ddb0"
+

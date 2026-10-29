@@ -6,37 +6,44 @@ disposable phase sheet (`.doctrine/state/.../phase-NN.md`) that must survive
 
 ## Harvest
 <!-- single-copy: updated in place each harvest; ids only, never restated content -->
-fresh-as-of: 2026-10-29 · ready (plan approved by operator: "ah. approve.") · 1384894
+fresh-as-of: 2026-10-29 · PHASE-07 (all 7 phases complete; VH-1 passed) → audit · c045e59
 
 ### Produced
-- Slice scoped, researched (`research/research.md`, round 1), design run
-  dr-01a18592… locked (rev 40) after RV-019; `design.md` materialised (8 sections).
-- Plan: `plan.toml` / `plan.md`, 7 phases; operator approved it with the
-  planner's settled choices (plan.md), 2026-10-29.
-- minted: DEC-052 — read the daily jsonlz4 backup; DEC-053 — RSK-002 carve-out
-  with field caps; DEC-054 — shared `src/untrusted-block.ts`; DEC-055 — optional
-  env, explicit refusal; CHR-006 — operator rollout (env + jail bind); IDE-008,
-  IMP-023 — originating backlog items.
-- No code yet.
+- Design locked (dr-01a18592…, RV-019); plan approved; minted DEC-052..055,
+  CHR-006 (see `doctrine show`).
+- Implementation run (/super-orchestrator, pi workers, no Claude spawns, ≈$0.70):
+  PHASE-01 8c755fe · 02 c210362 · 03 6396a65 · 04 4d3ddb0 · 05 0043565 ·
+  06 b88faf8 · 07 1d24b99; docs fix c045e59. Host `just check` green at 1d24b99
+  (104 files / 3542 tests); c045e59 is docs-only (fmt-check green).
+- Envelope decisions: § Autonomy log (all decided except VH-1, now passed).
+  Evidence per phase: § Review passes (VA-1 counts, F-12 probe, mutants).
+- Operator rollout (CHR-006) made out of repo: satan 95e40a8 (launcher
+  `bookmarkBackups` → set-env + readonly bind); ~/flakes 08c0f37d (passes the
+  path). Deployed on Sleipnir via `just home-switch` + room restart.
+- `.doctrine` changes committed with each phase / separately; nothing pending
+  for SL-008.
 
 ### Learned
 - mem.fact.malebolge.firefox-bookmark-data — where tags live, locked DB, backup format.
-
-### Further review
-RV-019 concluded (pi + GPT passes, 21 findings answered, operator settled
-Q1–Q3). No further design pass needed: the findings narrowed to wording and
-module placement, and what remains is recipe-level — the LZ4 decoder's exact
-behaviour and Firefox's guid form — which the plan's red/green tests and the
-VA check on the live backup settle faster than another review. The next
-review belongs to the plan.
+- mem.fact.malebolge.room-daemon-env-via-jail — daemon env/binds come from the
+  jail launcher; home-switch builds against local satan.
+- mem.pattern.malebolge.negative-controls-that-bite — V8 parse-error quoting,
+  overcommit, TypeBox deep-nesting RangeError.
 
 ### Open
-- RV-019 — concluded; design locked on the operator's sign-off.
-- Next: `/phase-plan` PHASE-01 (shared-module move; SL-007 overlap — second to
-  execute rebases).
-- SL-007 overlap on `src/mail/render.ts` (DEC-054) — second to execute rebases.
+- For audit: `biome.json` fixture exclusion (shared file, outside slice dirs);
+  stacked doc comment on `count` in `src/untrusted-block.ts`; docs gained
+  `threads` rows (SL-006 gap); design sec-4/sec-3 silent choices now in the
+  Autonomy log (header line order, stale-days local date, empty filters,
+  code-unit sort).
+- For audit: rollout docs drift corrected (c045e59) — design sec-5 / CHR-006
+  text may still say "env in ~/flakes, bind in satan".
+- satan 95e40a8 unpushed; ~/flakes lock pins satan cacfd5d, so a non-override
+  switch fails until push + `nix flake update satan` (operator act).
+- RV-019 F-21 guid assumption held on the live backup (VA-1, 0 misses).
 - New ASM (bookmark dir from configured path, jail-bound) and DEC-029 / RSK-002 /
   SL-005 / IMP-023 notes — due at reconcile (design sec-8).
+- SL-007 rebases onto 8c755fe if it touches `src/mail/render.ts` / `tools.ts` (DEC-054).
 
 ## Implementation run
 <!-- written by the /super-orchestrator seat, 2026-10-29; charters point here -->

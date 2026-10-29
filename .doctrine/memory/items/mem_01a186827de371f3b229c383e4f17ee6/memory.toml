@@ -1,0 +1,50 @@
+memory_uid = "mem_01a186827de371f3b229c383e4f17ee6"
+memory_key = "mem.fact.malebolge.room-daemon-env-via-jail"
+schema_version = 1
+memory_type = "fact"
+status = "active"
+title = "Room daemon env reaches it only through the jail launcher, not systemd Environment"
+summary = "malebolge-room's env and binds come from satan's mkJailedMalebolge (set-env/readonly); ~/flakes passes values; just home-switch builds against local satan"
+created = "2026-10-29"
+updated = "2026-10-29"
+
+[scope]
+paths = ["src/config.ts", "docs/internals.md"]
+globs = []
+commands = []
+tags = ["deploy", "jail"]
+workspace = "default"
+repo = "github.com/davidlee/Malebolge"
+repo_id_kind = "remote"
+repo_id_confidence = "high"
+
+[git]
+anchor_kind = "checkout_state"
+commit = ""
+tree = "2f2aa83aebc434508456e3c436c3b6a4959c2705"
+ref_name = "refs/heads/main"
+checkout_state_id = "bb3258c7e57fdec547315efd6bf5a921696f6267c93be43b47466a876f3f402f"
+base_commit = "c045e59ea71a9eb6c4295829054d6527e3857b70"
+verified_sha = ""
+normalizer = "forget.checkout.v1"
+
+[review]
+verification_state = "unverified"
+reviewed = ""
+review_by = ""
+
+[trust]
+trust_level = "high"
+
+[ranking]
+severity = "medium"
+weight = 0
+
+[[source]]
+kind = "commit"
+ref = "95e40a8"
+
+[[source]]
+kind = "commit"
+ref = "c045e59"
+
