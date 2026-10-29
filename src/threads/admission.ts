@@ -20,11 +20,14 @@ import { isEpisodeClass, isOrigin, type Origin } from "./origin.ts";
 import { POST_KIND } from "./task.ts";
 import { isReaped, reapedRefusal, threadsDoc } from "./tombstones.ts";
 
-/** K: active posts per origin (DEC-036). */
-export const FAMILY_CAP = 8;
+/** K: conversations an origin's active posts reach — its fan-out (DEC-036). */
+export const FAMILY_CONVERSATION_CAP = 8;
+
+/** P: active posts per origin, however few conversations they reach (DEC-036). */
+export const FAMILY_POST_CAP = 32;
 
 /** N: active posts daemon-wide (DEC-036). */
-export const GLOBAL_CAP = 16;
+export const GLOBAL_POST_CAP = 48;
 
 /** A call refused with a text the model reads. */
 export class Refusal extends Error {}

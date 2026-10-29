@@ -10,7 +10,11 @@ import { context } from "../src/context.ts";
 import { daemonExtensions } from "../src/daemon-extensions.ts";
 import { isRecord } from "../src/json.ts";
 import { mailExtension } from "../src/mail/extension.ts";
-import { FAMILY_CAP, GLOBAL_CAP } from "../src/threads/admission.ts";
+import {
+  FAMILY_CONVERSATION_CAP,
+  FAMILY_POST_CAP,
+  GLOBAL_POST_CAP,
+} from "../src/threads/admission.ts";
 import type { Origin } from "../src/threads/origin.ts";
 import { THREADS_SECTION, threadBinding, threadsExtension } from "../src/threads/extension.ts";
 import { writeTopicRecord } from "../src/topics.ts";
@@ -167,7 +171,7 @@ describe("thread_post (PHASE-05 EX-1, EX-2, EX-5, EX-6, VT-4, VT-6)", () => {
     expect(tool?.executionMode).toBe("sequential");
     expect(tool?.replay).toBe("unsafe");
     expect(tool?.description).toBe(
-      `Post to another conversation by id; it starts or queues a turn there. Reply to a post by posting to its from. At most ${String(FAMILY_CAP)} active posts per activity and ${String(GLOBAL_CAP)} in all; crossing a cap stops the activity. Returns the post id.`,
+      `Post to another conversation by id; it starts or queues a turn there. Reply to a post by posting to its from. Per activity, active posts may reach at most ${String(FAMILY_CONVERSATION_CAP)} conversations and number at most ${String(FAMILY_POST_CAP)}; at most ${String(GLOBAL_POST_CAP)} in all; crossing a cap stops the activity. Returns the post id.`,
     );
   });
 });

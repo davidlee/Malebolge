@@ -24,7 +24,11 @@ import { describe, expect, it, vi } from "vitest";
 import { context } from "../src/context.ts";
 import { isRecord } from "../src/json.ts";
 import { DEFAULT_TOPIC } from "../src/protocol.ts";
-import { FAMILY_CAP, GLOBAL_CAP } from "../src/threads/admission.ts";
+import {
+  FAMILY_CONVERSATION_CAP,
+  FAMILY_POST_CAP,
+  GLOBAL_POST_CAP,
+} from "../src/threads/admission.ts";
 import { familiesOf, verdict } from "../src/threads/caps.ts";
 import { type Origin, originKey } from "../src/threads/origin.ts";
 import { afterReap, reapIn } from "../src/threads/reap.ts";
@@ -89,15 +93,19 @@ const taskIdOf = (n: number): TaskId<JsonValue> => idOf(n, isTaskId, "task id");
 const CONVERSATION = conversationIdOf(1);
 const RECIPIENT = conversationIdOf(2);
 
-/** K and N: every scenario is sized from the caps, so tuning them needs no test edit. */
-const K = FAMILY_CAP;
-const N = GLOBAL_CAP;
+/** K, P and N: every scenario is sized from the caps, so tuning them needs no test edit. */
+const K = FAMILY_CONVERSATION_CAP;
+const P = FAMILY_POST_CAP;
+const N = GLOBAL_POST_CAP;
 
-/** The reason a family-cap reap names: the caller's post over K. */
-const CAP_REASON = `${String(K + 1)} active (cap ${String(K)})`;
+/** The reason a conversation-cap reap names: the caller's call reaching one conversation over K. */
+const CONVERSATION_REASON = `${String(K + 1)} conversations active (cap ${String(K)})`;
+
+/** The reason a post-cap reap names: the caller's post over P. */
+const POST_REASON = `${String(P + 1)} posts active (cap ${String(P)})`;
 
 /** The reason a global-cap reap names: the caller's post over N. */
-const GLOBAL_REASON = `${String(N + 1)} active daemon-wide (cap ${String(N)}); largest family`;
+const GLOBAL_REASON = `${String(N + 1)} posts active daemon-wide (cap ${String(N)}); largest family`;
 
 /** Three families' sizes at N exactly, the two youngest tied at the top: the tie the global cap breaks. */
 const TIED_TOP = Math.ceil(N / 3);
@@ -122,13 +130,14 @@ const postInputOf = (
   id: TaskId<JsonValue>,
   origin: Origin,
   letter: PostInput["letter"],
+  to: ConversationId,
 ): JsonObject => {
   const from = originData(origin);
   switch (letter) {
     case "post":
       return {
         letter,
-        to: RECIPIENT,
+        to,
         from: CONVERSATION,
         topic: "topic",
         origin: from,
@@ -150,18 +159,23 @@ const postInputOf = (
   }
 };
 
-/** A live task inspection as the caps read it: its id, origin, letter, kind and scheduler state. */
+/** A live task inspection as the caps read it: its id, origin, letter, recipient, kind and scheduler state. */
 const postInspection = (
   id: TaskInspection["record"]["id"],
   origin: Origin,
-  options: { letter?: PostInput["letter"]; state?: "running" | "blocked"; kind?: string } = {},
+  options: {
+    letter?: PostInput["letter"];
+    to?: ConversationId;
+    state?: "running" | "blocked";
+    kind?: string;
+  } = {},
 ): TaskInspection => ({
   record: {
     id,
     conversationId: CONVERSATION,
     kind: options.kind ?? POST_KIND,
     version: 1,
-    input: postInputOf(id, origin, options.letter ?? "post"),
+    input: postInputOf(id, origin, options.letter ?? "post", options.to ?? RECIPIENT),
     background: true,
     abortRequested: false,
     state: { status: "running", checkpoint: {} },
@@ -176,9 +190,16 @@ const postInspection = (
 const idsFrom = (first: number, count: number): number[] =>
   Array.from({ length: count }, (_unused, offset) => first + offset);
 
-/** `count` live posts of `origin`, ids running from `first`. */
+/** `count` live posts of `origin` to the one recipient, ids running from `first`. */
 const posts = (first: number, origin: Origin, count: number): TaskInspection[] =>
   idsFrom(first, count).map((id) => postInspection(taskIdOf(id), origin));
+
+/** The conversation a spread post with id `id` is sent to: one per post. */
+const spreadTo = (id: number): ConversationId => conversationIdOf(1000 + id);
+
+/** `count` live posts of `origin`, each to a conversation of its own, ids running from `first`. */
+const spread = (first: number, origin: Origin, count: number): TaskInspection[] =>
+  idsFrom(first, count).map((id) => postInspection(taskIdOf(id), origin, { to: spreadTo(id) }));
 
 /** `total` split into sizes of at most `max`, largest first. */
 const sizesOf = (total: number, max: number): number[] =>
@@ -202,7 +223,11 @@ describe("familiesOf and verdict (PHASE-06 EX-4, VT-3)", () => {
     );
 
     // The parked task waits for its definition; only the running post is active.
-    expect(families.get(originKey(origin))).toEqual({ origin, active: 1, taskIds: [2] });
+    expect(families.get(originKey(origin))).toEqual({
+      origin,
+      recipients: [RECIPIENT],
+      taskIds: [2],
+    });
   });
 
   it("familiesOf leaves out reaped origins and notices", () => {
@@ -222,44 +247,79 @@ describe("familiesOf and verdict (PHASE-06 EX-4, VT-3)", () => {
 
     // Notices are cap-exempt, another kind is not a post, and the reaped family is gone.
     expect(families.has(originKey(reapedOrigin))).toBe(false);
-    expect(families.get(originKey(live))).toEqual({ origin: live, active: 1, taskIds: [5] });
+    expect(families.get(originKey(live))).toEqual({
+      origin: live,
+      recipients: [RECIPIENT],
+      taskIds: [5],
+    });
   });
 
-  it("verdict admits under both caps", () => {
+  it("familiesOf names each recipient once, however many posts it holds", () => {
+    const origin = human(10);
+    const families = familiesOf([...posts(1, origin, 3), ...spread(10, origin, 2)], NOTHING_REAPED);
+
+    expect(families.get(originKey(origin))?.recipients).toEqual([
+      RECIPIENT,
+      spreadTo(10),
+      spreadTo(11),
+    ]);
+  });
+
+  it("verdict admits under every cap", () => {
     const caller = human(40);
     const alone = familiesOf([postInspection(taskIdOf(1), caller)], NOTHING_REAPED);
-    expect(verdict(alone, caller)).toEqual({ kind: "admit" });
+    expect(verdict(alone, caller, RECIPIENT)).toEqual({ kind: "admit" });
 
-    // The caller's family at K exactly: K - 1 live plus the post being admitted.
-    const atFamilyCap = familiesOf([...posts(1, caller, K - 1), ...othersOf([1])], NOTHING_REAPED);
-    expect(verdict(atFamilyCap, caller)).toEqual({ kind: "admit" });
+    // K conversations exactly: K - 1 held, and the call reaches one more.
+    const atConversationCap = familiesOf(spread(1, caller, K - 1), NOTHING_REAPED);
+    expect(verdict(atConversationCap, caller, RECIPIENT)).toEqual({ kind: "admit" });
+
+    // P posts exactly, all to one conversation: chatter, not fan-out.
+    const atPostCap = familiesOf(posts(1, caller, P - 1), NOTHING_REAPED);
+    expect(verdict(atPostCap, caller, RECIPIENT)).toEqual({ kind: "admit" });
 
     // The daemon at N exactly: N - 1 elsewhere plus the caller's first post.
-    const atGlobalCap = familiesOf(othersOf(sizesOf(N - 1, K)), NOTHING_REAPED);
-    expect(verdict(atGlobalCap, caller)).toEqual({ kind: "admit" });
+    const atGlobalCap = familiesOf(othersOf(sizesOf(N - 1, P)), NOTHING_REAPED);
+    expect(verdict(atGlobalCap, caller, RECIPIENT)).toEqual({ kind: "admit" });
   });
 
-  it("the post over K reaps its own family", () => {
+  it("a call reaching a conversation over K reaps its own family", () => {
     const caller = human(40);
-    const families = familiesOf(posts(1, caller, K), NOTHING_REAPED);
+    const families = familiesOf(spread(1, caller, K), NOTHING_REAPED);
 
-    // K are live already; the post being admitted is one over.
-    expect(families.get(originKey(caller))?.active).toBe(K);
-    expect(verdict(families, caller)).toEqual({ kind: "reap-own", reason: CAP_REASON });
+    // A post to a conversation the family already reaches adds none.
+    expect(verdict(families, caller, spreadTo(1))).toEqual({ kind: "admit" });
+    // A post to a new one, or a start or fork (a conversation not yet made), is one over.
+    expect(verdict(families, caller, RECIPIENT)).toEqual({
+      kind: "reap-own",
+      reason: CONVERSATION_REASON,
+    });
+    expect(verdict(families, caller, undefined)).toEqual({
+      kind: "reap-own",
+      reason: CONVERSATION_REASON,
+    });
+  });
+
+  it("the post over P reaps its own family, even to one conversation", () => {
+    const caller = human(40);
+    const families = familiesOf(posts(1, caller, P), NOTHING_REAPED);
+
+    expect(families.get(originKey(caller))?.taskIds).toHaveLength(P);
+    expect(verdict(families, caller, RECIPIENT)).toEqual({ kind: "reap-own", reason: POST_REASON });
   });
 
   it("the global cap reaps the largest other family and admits the call", () => {
     const caller = human(40);
     const largest = human(30);
     const families = familiesOf(
-      [...posts(1, largest, K), ...othersOf(sizesOf(N - K, K - 1))],
+      [...posts(1, largest, P), ...othersOf(sizesOf(N - P, P - 1))],
       NOTHING_REAPED,
     );
 
-    // N live, the largest at K, plus the caller's post: one over N.
-    expect(verdict(families, caller)).toEqual({
+    // N live, the largest at P, plus the caller's post: one over N.
+    expect(verdict(families, caller, RECIPIENT)).toEqual({
       kind: "reap-other",
-      family: { origin: largest, active: K, taskIds: idsFrom(1, K) },
+      family: { origin: largest, recipients: [RECIPIENT], taskIds: idsFrom(1, P) },
       reason: GLOBAL_REASON,
     });
   });
@@ -277,9 +337,9 @@ describe("familiesOf and verdict (PHASE-06 EX-4, VT-3)", () => {
     );
 
     // The top two tied: the highest entry id (30) is the one reaped.
-    expect(verdict(families, caller)).toEqual({
+    expect(verdict(families, caller, RECIPIENT)).toEqual({
       kind: "reap-other",
-      family: { origin: youngest, active: TIED[2], taskIds: idsFrom(200, TIED[2]) },
+      family: { origin: youngest, recipients: [RECIPIENT], taskIds: idsFrom(200, TIED[2]) },
       reason: GLOBAL_REASON,
     });
   });
@@ -287,22 +347,25 @@ describe("familiesOf and verdict (PHASE-06 EX-4, VT-3)", () => {
   it("the global cap reaps the caller's family when it is the largest", () => {
     const caller = human(40);
     const families = familiesOf(
-      [...posts(1, caller, K - 1), ...othersOf(sizesOf(N - K + 1, K - 1))],
+      [...posts(1, caller, P - 1), ...othersOf(sizesOf(N - P + 1, P - 1))],
       NOTHING_REAPED,
     );
 
-    // The caller's family counts as K, every other under it, and the total is one over N.
-    expect(verdict(families, caller)).toEqual({ kind: "reap-own", reason: GLOBAL_REASON });
+    // The caller's family counts as P, every other under it, and the total is one over N.
+    expect(verdict(families, caller, RECIPIENT)).toEqual({
+      kind: "reap-own",
+      reason: GLOBAL_REASON,
+    });
   });
 
   it("a reaped family is never chosen again", () => {
     const caller = human(40);
     const largest = human(30);
-    const tasks = [...posts(1, largest, K), ...othersOf(sizesOf(N - K, K - 1))];
+    const tasks = [...posts(1, largest, P), ...othersOf(sizesOf(N - P, P - 1))];
 
-    expect(verdict(familiesOf(tasks, NOTHING_REAPED), caller)).toEqual({
+    expect(verdict(familiesOf(tasks, NOTHING_REAPED), caller, RECIPIENT)).toEqual({
       kind: "reap-other",
-      family: { origin: largest, active: K, taskIds: idsFrom(1, K) },
+      family: { origin: largest, recipients: [RECIPIENT], taskIds: idsFrom(1, P) },
       reason: GLOBAL_REASON,
     });
 
@@ -310,14 +373,14 @@ describe("familiesOf and verdict (PHASE-06 EX-4, VT-3)", () => {
     const reaped = (key: string): boolean => key === originKey(largest);
     const after = familiesOf(tasks, reaped);
     expect(after.has(originKey(largest))).toBe(false);
-    expect(verdict(after, caller)).toEqual({ kind: "admit" });
+    expect(verdict(after, caller, RECIPIENT)).toEqual({ kind: "admit" });
   });
 });
 
 const INTENT = "Summarise the failing test runs";
 
 /** The refusal a crossing call reads. */
-const reapRefusal = (origin: Origin, reason = CAP_REASON): string =>
+const reapRefusal = (origin: Origin, reason = POST_REASON): string =>
   `origin ${originKey(origin)} was reaped for fan-out: ${reason}; posts and thread starts from it are refused`;
 
 /** `request`'s transcript as text: its messages, the system prompt's sections excluded. */
@@ -375,7 +438,7 @@ function reapStage(): Promise<ReapStage> {
 
 /** The scripted answers of a round issuing `calls`: one factory, shared by every conversation. */
 const scriptCalls = (stage: ReapStage, calls: readonly ToolCall[]): void => {
-  stage.world.faux.setResponses(Array.from({ length: 12 }, () => round(calls)));
+  stage.world.faux.setResponses(Array.from({ length: 2 * K + 12 }, () => round(calls)));
 };
 
 /** The scripted answers of a round of `count` thread_post calls to the recipient. */
@@ -440,16 +503,16 @@ async function familyReaped(conversation: Conversation): Promise<EntryRecord[]> 
 const letterOf = (entry: EntryRecord): unknown => dataOf(entry)["letter"];
 
 describe("the reap (PHASE-06 EX-5..EX-7)", () => {
-  it("one message issuing more thread calls than K admits K and the crossing call reaps the family", async () => {
+  it("one message issuing more posts than P admits P and the crossing call reaps the family", async () => {
     const stage = await reapStage();
-    scriptRound(stage, K + 1);
+    scriptRound(stage, P + 1);
     await holdRecipient(stage);
     const results = await runRound(stage);
 
-    // The first K calls are admitted: one round, so each counts the previous call's post.
-    const admitted = results.slice(0, K);
+    // The first P calls are admitted: one round, so each counts the previous call's post.
+    const admitted = results.slice(0, P);
     const ids = admitted.map(postIdOf);
-    expect(new Set(ids).size).toBe(K);
+    expect(new Set(ids).size).toBe(P);
     for (const result of admitted) {
       expect(JSON.parse(textOf(result))).toEqual({
         post: postIdOf(result),
@@ -457,16 +520,16 @@ describe("the reap (PHASE-06 EX-5..EX-7)", () => {
       });
     }
 
-    // The next crosses K and is refused, naming the cap and the origin.
+    // The next crosses P and is refused, naming the cap and the origin.
     const origin = await originOfCaller(stage.caller);
-    const crossing = only(results.slice(K));
+    const crossing = only(results.slice(P));
     expect(crossing.isError).toBe(true);
     expect(textOf(crossing)).toBe(reapRefusal(origin));
 
-    // The tombstone stands, and the K posts are the only post tasks the round created.
+    // The tombstone stands, and the P posts are the only post tasks the round created.
     const reaped = await reapedOrigins(stage.session.harness);
     expect(Object.keys(reaped)).toEqual([originKey(origin)]);
-    expect(reaped[originKey(origin)]?.reason).toBe(CAP_REASON);
+    expect(reaped[originKey(origin)]?.reason).toBe(POST_REASON);
 
     // Their inputs are withdrawn and they settle reaped, with no post-failed notice.
     for (const id of ids) {
@@ -486,9 +549,9 @@ describe("the reap (PHASE-06 EX-5..EX-7)", () => {
     expect(live).toEqual([]);
   });
 
-  it("a family over K is reaped and its originator told, while a co-resident loop is untouched", async () => {
+  it("a family over P is reaped and its originator told, while a co-resident loop is untouched", async () => {
     const stage = await reapStage();
-    scriptRound(stage, K + 1);
+    scriptRound(stage, P + 1);
     await holdRecipient(stage);
 
     // Another origin's post, queued at the same recipient before the round: a co-resident loop.
@@ -521,25 +584,25 @@ describe("the reap (PHASE-06 EX-5..EX-7)", () => {
     }, WAIT);
     const notice = only(await familyReaped(stage.caller));
     expect(dataOf(notice)["origin"]).toEqual(originData(origin));
-    expect(dataOf(notice)["reason"]).toBe(CAP_REASON);
+    expect(dataOf(notice)["reason"]).toBe(POST_REASON);
   });
 
   it("the reap journals the withdrawn count and notifies the operator, SATAN threads reaped", async () => {
     const stage = await reapStage();
-    scriptRound(stage, K + 1);
+    scriptRound(stage, P + 1);
     await holdRecipient(stage);
     const results = await runRound(stage);
 
     const origin = await originOfCaller(stage.caller);
-    const line = `family ${originKey(origin)} reaped: ${CAP_REASON}; withdrew ${String(K)}`;
+    const line = `family ${originKey(origin)} reaped: ${POST_REASON}; withdrew ${String(P)}`;
     await vi.waitFor(() => {
       expect(stage.world.lines).toContain(line);
     }, WAIT);
 
-    // K post lines, then the reap's line: withdrawal found every family input queued.
+    // P post lines, then the reap's line: withdrawal found every family input queued.
     const postLines = stage.world.lines.filter((entry) => entry.startsWith("post "));
-    expect(postLines).toHaveLength(K);
-    const ids = results.slice(0, K).map(postIdOf);
+    expect(postLines).toHaveLength(P);
+    const ids = results.slice(0, P).map(postIdOf);
     for (const id of ids) {
       expect(postLines.some((entry) => entry.startsWith(`post ${String(id)} `))).toBe(true);
     }
@@ -552,13 +615,15 @@ describe("the reap (PHASE-06 EX-5..EX-7)", () => {
     expect(notifications[0]?.args["body"]).toBe(line);
   });
 
-  it("K posts alone are admitted, write no tombstone and notify nobody", async () => {
+  it("P posts to one conversation are admitted, write no tombstone and notify nobody", async () => {
     const stage = await reapStage();
-    scriptRound(stage, K);
+    scriptRound(stage, P);
     await holdRecipient(stage);
     const results = await runRound(stage);
 
-    expect(results).toHaveLength(K);
+    // Chatter to one conversation is not fan-out: P is over K, and nothing is reaped.
+    expect(P).toBeGreaterThan(K);
+    expect(results).toHaveLength(P);
     for (const result of results) {
       expect(result.isError).toBe(false);
       expect(JSON.parse(textOf(result))).toEqual({
@@ -571,7 +636,7 @@ describe("the reap (PHASE-06 EX-5..EX-7)", () => {
     expect(await reapedOrigins(stage.session.harness)).toEqual({});
     expect(await familyReaped(stage.caller)).toEqual([]);
     expect(notifyCalls(stage.world)).toEqual([]);
-    expect(stage.world.lines).toHaveLength(K);
+    expect(stage.world.lines).toHaveLength(P);
     expect(stage.world.lines.every((entry) => entry.startsWith("post "))).toBe(true);
   });
 });
@@ -830,6 +895,35 @@ const CREATING_CALLS = [
   ["thread_fork", fauxToolCall("thread_fork", { intent: INTENT }, { id: "call-1" })],
 ] as const;
 
+/** `count` thread_start calls, as one message carries them. */
+const startCalls = (count: number): ToolCall[] =>
+  Array.from({ length: count }, (_unused, index) =>
+    fauxToolCall(
+      "thread_start",
+      { intent: INTENT, topic: DEFAULT_TOPIC },
+      { id: `call-${String(index + 1)}` },
+    ),
+  );
+
+describe("the conversation cap", () => {
+  it("one message starting more threads than K admits K and the crossing start reaps the family", async () => {
+    const stage = await reapStage();
+    scriptCalls(stage, startCalls(K + 1));
+    const results = await runRound(stage);
+
+    // Each start reaches a conversation not yet made: K are admitted, the next is one over.
+    expect(results.slice(0, K).map((result) => result.isError)).toEqual(
+      Array.from({ length: K }, () => false),
+    );
+    const origin = await originOfCaller(stage.caller);
+    const crossing = only(results.slice(K));
+    expect(crossing.isError).toBe(true);
+    expect(textOf(crossing)).toBe(reapRefusal(origin, CONVERSATION_REASON));
+    const reaped = await reapedOrigins(stage.session.harness);
+    expect(reaped[originKey(origin)]?.reason).toBe(CONVERSATION_REASON);
+  });
+});
+
 /** The indexed conversations: a created child adds one, a rolled-back call none. */
 async function indexedCount(stage: ReapStage): Promise<number> {
   return Object.keys((await readIndex(stage.session.harness)).conversations).length;
@@ -894,7 +988,7 @@ describe("concurrent and crashed reaps", () => {
 
     // Two conversations of one family reap it at once: two commits, serialised by the line.
     const answers = await Promise.all([
-      reapCommit(stage, origin, CAP_REASON),
+      reapCommit(stage, origin, POST_REASON),
       reapCommit(stage, origin, GLOBAL_REASON),
     ]);
 
@@ -902,10 +996,10 @@ describe("concurrent and crashed reaps", () => {
     expect(answers).toEqual([true, false]);
     const reaped = await reapedOrigins(stage.session.harness);
     expect(Object.keys(reaped)).toEqual([originKey(origin)]);
-    expect(reaped[originKey(origin)]?.reason).toBe(CAP_REASON);
+    expect(reaped[originKey(origin)]?.reason).toBe(POST_REASON);
     const notices = await reapedNotices(stage.session.harness);
     expect(notices).toHaveLength(1);
-    expect(inputOf(only(notices))["reason"]).toBe(CAP_REASON);
+    expect(inputOf(only(notices))["reason"]).toBe(POST_REASON);
     // The notice is created with the tombstone but not yet delivered: the originator is held.
     expect(await entriesWithLetter(stage.caller, "family-reaped")).toEqual([]);
   });
@@ -918,7 +1012,7 @@ describe("concurrent and crashed reaps", () => {
 
     // Two families, two origins, both reaped at once.
     const answers = await Promise.all([
-      reapCommit(stage, callerOrigin, CAP_REASON),
+      reapCommit(stage, callerOrigin, POST_REASON),
       reapCommit(stage, rootOrigin, GLOBAL_REASON),
     ]);
     expect(answers).toEqual([true, true]);
@@ -936,7 +1030,7 @@ describe("concurrent and crashed reaps", () => {
     expect(Object.keys(reaped).sort()).toEqual(
       [originKey(callerOrigin), originKey(rootOrigin)].sort(),
     );
-    expect(reaped[originKey(callerOrigin)]?.reason).toBe(CAP_REASON);
+    expect(reaped[originKey(callerOrigin)]?.reason).toBe(POST_REASON);
     expect(reaped[originKey(rootOrigin)]?.reason).toBe(GLOBAL_REASON);
     // Two notices, one per origin, still exactly one each after the restart.
     const caller = await conversationOf(reopened.harness, stage.caller.id);
@@ -962,7 +1056,7 @@ describe("concurrent and crashed reaps", () => {
     await waitQueuedPost(stage.session, neighbour, stage.recipient.id);
 
     // The crash: only the reap's commit lands, with none of its withdrawals.
-    expect(await reapCommit(stage, family.origin, CAP_REASON)).toBe(true);
+    expect(await reapCommit(stage, family.origin, POST_REASON)).toBe(true);
     await stage.session.harness.close(context);
 
     // Restart: each remaining family task withdraws its own input, and nothing of the family is placed.
@@ -990,7 +1084,7 @@ describe("concurrent and crashed reaps", () => {
     const origin: Origin = { conversation: stage.caller.id, entry: 1, kind: "human" };
     // The originator is busy with a held run: the notice is created but not delivered before the crash.
     await holdConversation(stage.world, stage.caller);
-    expect(await reapCommit(stage, origin, CAP_REASON)).toBe(true);
+    expect(await reapCommit(stage, origin, POST_REASON)).toBe(true);
     expect(await reapedNotices(stage.session.harness)).toHaveLength(1);
     expect(await entriesWithLetter(stage.caller, "family-reaped")).toEqual([]);
     await stage.session.harness.close(context);
@@ -1038,10 +1132,10 @@ describe("concurrent and crashed reaps", () => {
     }, WAIT);
 
     // The reap commits and runs its withdrawal: the placed input is not queued, so none is withdrawn.
-    expect(await reapCommit(stage, origin, CAP_REASON)).toBe(true);
-    await afterReap(stage.world.threads, origin, CAP_REASON, context);
+    expect(await reapCommit(stage, origin, POST_REASON)).toBe(true);
+    await afterReap(stage.world.threads, origin, POST_REASON, context);
     expect(stage.world.lines).toContain(
-      `family ${originKey(origin)} reaped: ${CAP_REASON}; withdrew 0`,
+      `family ${originKey(origin)} reaped: ${POST_REASON}; withdrew 0`,
     );
 
     // The placed turn runs to its end and cannot post: admission refuses R's turn, which inherits O.

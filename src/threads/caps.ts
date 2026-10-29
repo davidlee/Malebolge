@@ -2,34 +2,45 @@
 // posts are live per origin, and what admitting one more post does. Pure: the caller
 // reads an inspection, this counts and decides; no Tx and no harness.
 
-import type { TaskId, TaskInspection } from "@earendil-works/pi-durable";
-import { FAMILY_CAP, GLOBAL_CAP } from "./admission.ts";
+import type { ConversationId, TaskId, TaskInspection } from "@earendil-works/pi-durable";
+import { FAMILY_CONVERSATION_CAP, FAMILY_POST_CAP, GLOBAL_POST_CAP } from "./admission.ts";
 import { type Origin, originKey } from "./origin.ts";
 import { isPostInput, POST_KIND } from "./task.ts";
 
-/** One origin's active posts, in inspection order. */
+/** One origin's active posts, in inspection order, and the conversations they reach. */
 export interface Family {
   origin: Origin;
-  active: number;
+  recipients: readonly ConversationId[];
   taskIds: readonly TaskId[];
 }
 
+/** A live post as the caps count it: its origin and recipient. */
+interface Counted {
+  origin: Origin;
+  to: ConversationId;
+}
+
 /**
- * The origin a task is counted under, or nothing. Only a live post counts: a task of
- * another kind, a parked (`blocked`) one, a notice (`post-failed`, `family-reaped`,
- * which are cap-exempt) or one whose family was reaped adds nothing.
+ * The post a task counts as, or nothing. Only a live post counts: a task of another
+ * kind, a parked (`blocked`) one, a notice (`post-failed`, `family-reaped`, which are
+ * cap-exempt) or one whose family was reaped adds nothing.
  */
-const countedOriginOf = (
-  task: TaskInspection,
-  reaped: (key: string) => boolean,
-): Origin | undefined => {
+const countedOf = (task: TaskInspection, reaped: (key: string) => boolean): Counted | undefined => {
   const { record, state } = task;
   if (record.kind !== POST_KIND || state.kind === "blocked" || !isPostInput(record.input)) {
     return undefined;
   }
-  const { origin } = record.input;
-  return record.input.letter === "post" && !reaped(originKey(origin)) ? origin : undefined;
+  const { input } = record;
+  return input.letter === "post" && !reaped(originKey(input.origin))
+    ? { origin: input.origin, to: input.to }
+    : undefined;
 };
+
+/** `recipients` with `to` added once. */
+const withRecipient = (
+  recipients: readonly ConversationId[],
+  to: ConversationId,
+): readonly ConversationId[] => (recipients.includes(to) ? recipients : [...recipients, to]);
 
 /** Active posts per origin key: live satan.post tasks whose letter is post; blocked tasks and reaped origins left out. */
 export function familiesOf(
@@ -38,18 +49,17 @@ export function familiesOf(
 ): ReadonlyMap<string, Family> {
   const families = new Map<string, Family>();
   for (const task of tasks) {
-    const origin = countedOriginOf(task, reaped);
-    if (origin === undefined) {
+    const counted = countedOf(task, reaped);
+    if (counted === undefined) {
       continue;
     }
-    const key = originKey(origin);
-    const family = families.get(key);
-    families.set(
-      key,
-      family === undefined
-        ? { origin, active: 1, taskIds: [task.record.id] }
-        : { ...family, active: family.active + 1, taskIds: [...family.taskIds, task.record.id] },
-    );
+    const key = originKey(counted.origin);
+    const family = families.get(key) ?? { origin: counted.origin, recipients: [], taskIds: [] };
+    families.set(key, {
+      ...family,
+      recipients: withRecipient(family.recipients, counted.to),
+      taskIds: [...family.taskIds, task.record.id],
+    });
   }
   return families;
 }
@@ -59,58 +69,63 @@ export type Verdict =
   | { kind: "reap-own"; reason: string }
   | { kind: "reap-other"; family: Family; reason: string };
 
-/** The caller's family once the post being admitted is live: its entry's active posts + 1, or 1 with no entry. */
-const ownFamily = (families: ReadonlyMap<string, Family>, origin: Origin): Family => {
-  const entry = families.get(originKey(origin));
-  return entry === undefined
-    ? { origin, active: 1, taskIds: [] }
-    : { ...entry, active: entry.active + 1 };
+/** A family as the global cap weighs it: its live posts, the caller's with the one being admitted. */
+interface Weighed {
+  family: Family;
+  posts: number;
+}
+
+/** Whether `a` outranks `b` as the family to reap: more posts, ties to the younger origin (the higher entry). */
+const outranks = (a: Weighed, b: Weighed): boolean =>
+  a.posts > b.posts || (a.posts === b.posts && a.family.origin.entry > b.family.origin.entry);
+
+/** What the caller's family-cap breach is, if any: conversations first, then posts. */
+const familyBreach = (own: Family, to: ConversationId | undefined): string | undefined => {
+  const conversations =
+    own.recipients.length + (to !== undefined && own.recipients.includes(to) ? 0 : 1);
+  if (conversations > FAMILY_CONVERSATION_CAP) {
+    return `${String(conversations)} conversations active (cap ${String(FAMILY_CONVERSATION_CAP)})`;
+  }
+  const posts = own.taskIds.length + 1;
+  return posts > FAMILY_POST_CAP
+    ? `${String(posts)} posts active (cap ${String(FAMILY_POST_CAP)})`
+    : undefined;
 };
 
-/** Every family as the admission would leave it: the caller's counted with its +1. */
-const withCaller = (families: ReadonlyMap<string, Family>, own: Family): readonly Family[] => {
-  const key = originKey(own.origin);
-  const others = [...families]
-    .filter(([familyKey]) => familyKey !== key)
-    .map(([, family]) => family);
-  return [...others, own];
-};
-
-/** Whether `a` outranks `b` as the family to reap: more active, ties to the younger origin (the higher entry). */
-const outranks = (a: Family, b: Family): boolean =>
-  a.active > b.active || (a.active === b.active && a.origin.entry > b.origin.entry);
-
-/** The largest family of `all`, starting from `first`. */
-const largestOf = (all: readonly Family[], first: Family): Family => {
-  let largest = first;
-  for (const family of all) {
-    if (outranks(family, largest)) {
-      largest = family;
-    }
+/**
+ * What admitting one more call from `origin` does. `to` is the conversation it posts
+ * to, or undefined for a start or fork, whose conversation is not yet made.
+ */
+export function verdict(
+  families: ReadonlyMap<string, Family>,
+  origin: Origin,
+  to: ConversationId | undefined,
+): Verdict {
+  const key = originKey(origin);
+  const own = families.get(key) ?? { origin, recipients: [], taskIds: [] };
+  const breach = familyBreach(own, to);
+  if (breach !== undefined) {
+    return { kind: "reap-own", reason: breach };
   }
-  return largest;
-};
-
-/** What admitting one more post from `origin` does. */
-export function verdict(families: ReadonlyMap<string, Family>, origin: Origin): Verdict {
-  const own = ownFamily(families, origin);
-  if (own.active > FAMILY_CAP) {
-    return {
-      kind: "reap-own",
-      reason: `${String(own.active)} active (cap ${String(FAMILY_CAP)})`,
-    };
-  }
-  const all = withCaller(families, own);
-  let total = 0;
-  for (const family of all) {
-    total += family.active;
-  }
-  if (total <= GLOBAL_CAP) {
+  const caller: Weighed = { family: own, posts: own.taskIds.length + 1 };
+  const all = [
+    ...[...families]
+      .filter(([familyKey]) => familyKey !== key)
+      .map(([, family]) => ({ family, posts: family.taskIds.length })),
+    caller,
+  ];
+  const total = all.reduce((sum, weighed) => sum + weighed.posts, 0);
+  if (total <= GLOBAL_POST_CAP) {
     return { kind: "admit" };
   }
-  const largest = largestOf(all, own);
-  const reason = `${String(total)} active daemon-wide (cap ${String(GLOBAL_CAP)}); largest family`;
-  return originKey(largest.origin) === originKey(origin)
+  let largest = caller;
+  for (const weighed of all) {
+    if (outranks(weighed, largest)) {
+      largest = weighed;
+    }
+  }
+  const reason = `${String(total)} posts active daemon-wide (cap ${String(GLOBAL_POST_CAP)}); largest family`;
+  return largest === caller
     ? { kind: "reap-own", reason }
-    : { kind: "reap-other", family: largest, reason };
+    : { kind: "reap-other", family: largest.family, reason };
 }

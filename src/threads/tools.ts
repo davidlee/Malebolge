@@ -31,8 +31,9 @@ import {
   admitCaller,
   admitPost,
   admitStart,
-  FAMILY_CAP,
-  GLOBAL_CAP,
+  FAMILY_CONVERSATION_CAP,
+  FAMILY_POST_CAP,
+  GLOBAL_POST_CAP,
   type PostAdmission,
   Refusal,
   refuseOutsideTalkSet,
@@ -354,17 +355,19 @@ async function postInto(
 /**
  * The shared steps of any thread call (design § The thread tools, shared steps 1-3):
  * the call's admission in one commit, then the count the verdict reads. Not
- * thread_post-specific: each tool passes the admission it runs.
+ * thread_post-specific: each tool passes the admission it runs, and the conversation
+ * it posts to — undefined for a start or fork, whose conversation is not yet made.
  */
 async function decided<A extends PostAdmission>(
   call: Call,
   admit: (tx: Tx) => Promise<A>,
+  to: ConversationId | undefined,
 ): Promise<Claimed<A>> {
   const { api, ctx, deps } = call;
   const admitted = await api.commit(admit, ctx);
   const { tasks } = await deps.harness.inspect(ctx);
   const families = familiesOf(tasks, (key) => admitted.reaped.has(key));
-  return { admitted, outcome: verdict(families, admitted.origin) };
+  return { admitted, outcome: verdict(families, admitted.origin, to) };
 }
 
 /**
@@ -392,8 +395,10 @@ async function branched(
 /** One thread_post call: the shared steps, then the post's creating commit. */
 async function attemptPost(call: Call, post: PostArgs): Promise<ToolExecutionResult> {
   const { deps, caller } = call;
-  const { admitted, outcome } = await decided(call, (tx) =>
-    admitPost(tx, deps.profile, caller, post.to),
+  const { admitted, outcome } = await decided(
+    call,
+    (tx) => admitPost(tx, deps.profile, caller, post.to),
+    post.to,
   );
   return branched(call, admitted, outcome, (other) => postInto(call, post, other));
 }
@@ -417,7 +422,11 @@ async function startInto(
 /** One thread_start call: the shared steps, then the child's creating commit. */
 async function attemptStart(call: Call, start: StartArgs): Promise<ToolExecutionResult> {
   const { caller } = call;
-  const { admitted, outcome } = await decided(call, (tx) => admitStart(tx, caller, start.topic));
+  const { admitted, outcome } = await decided(
+    call,
+    (tx) => admitStart(tx, caller, start.topic),
+    undefined,
+  );
   return branched(call, admitted, outcome, (other) => startInto(call, start, other));
 }
 
@@ -439,7 +448,11 @@ async function forkInto(
 
 /** One thread_fork call: the shared steps, then the fork's creating commit. */
 async function attemptFork(call: Call, fork: ForkArgs): Promise<ToolExecutionResult> {
-  const { admitted, outcome } = await decided(call, (tx) => admitCaller(tx, call.caller));
+  const { admitted, outcome } = await decided(
+    call,
+    (tx) => admitCaller(tx, call.caller),
+    undefined,
+  );
   return branched(call, admitted, outcome, (other) => forkInto(call, fork, other));
 }
 
@@ -468,7 +481,8 @@ export const threadPost = (
     description:
       "Post to another conversation by id; it starts or queues a turn there. " +
       "Reply to a post by posting to its from. " +
-      `At most ${String(FAMILY_CAP)} active posts per activity and ${String(GLOBAL_CAP)} in all; ` +
+      `Per activity, active posts may reach at most ${String(FAMILY_CONVERSATION_CAP)} conversations and number at most ${String(FAMILY_POST_CAP)}; ` +
+      `at most ${String(GLOBAL_POST_CAP)} in all; ` +
       "crossing a cap stops the activity. Returns the post id.",
     parameters: postParameters,
     executionMode: "sequential",
