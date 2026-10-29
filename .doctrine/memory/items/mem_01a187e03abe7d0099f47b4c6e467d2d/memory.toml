@@ -1,0 +1,46 @@
+memory_uid = "mem_01a187e03abe7d0099f47b4c6e467d2d"
+memory_key = "mem.pattern.malebolge.gate-on-committed-tree"
+schema_version = 1
+memory_type = "pattern"
+status = "active"
+title = "With other writers dirtying the tree, gate on a git-archive export of HEAD"
+summary = "When concurrent sessions leave uncommitted src/test changes, run just check on a git archive export of HEAD with node_modules symlinked; say which tree was gated"
+created = "2026-10-29"
+updated = "2026-10-29"
+
+[scope]
+paths = []
+globs = []
+commands = []
+tags = ["gate", "concurrency"]
+workspace = "default"
+repo = "github.com/davidlee/Malebolge"
+repo_id_kind = "remote"
+repo_id_confidence = "high"
+
+[git]
+anchor_kind = "checkout_state"
+commit = ""
+tree = "bbaca2f20038fd201dffbde16e3ea73315fe18f5"
+ref_name = "refs/heads/main"
+checkout_state_id = "4261e996bedad4400e89dced9274ecf08597599ac0fd2051326f8344b7b6cb7d"
+base_commit = "75f02bbe67d1a8180e0fd5a150255be20ee0c3a6"
+verified_sha = ""
+normalizer = "forget.checkout.v1"
+
+[review]
+verification_state = "unverified"
+reviewed = ""
+review_by = ""
+
+[trust]
+trust_level = "medium"
+
+[ranking]
+severity = "none"
+weight = 0
+
+[[source]]
+kind = "slice"
+ref = "SL-009"
+

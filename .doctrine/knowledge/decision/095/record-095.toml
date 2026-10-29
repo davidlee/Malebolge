@@ -1,0 +1,33 @@
+schema = "doctrine.knowledge"
+version = 1
+
+id = 95
+slug = "bridge-end-during-an-outage-unpairs-locally-pairing-and-resuming-stay-busy"
+title = "/bridge end during an outage unpairs locally; pairing and resuming stay busy"
+record_kind = "decision"
+status = "accepted"
+created = "2026-10-29"
+updated = "2026-10-29"
+tags = []
+
+[facet]                         # every field typed; seeded empty (captured later)
+context = "SL-009 PHASE-08 built design sec-7's table, which has no row for /bridge end in outage, so it was refused as busy; an operator stuck in a long outage could not end the pairing from pi."
+choice = "In outage, /bridge end unpairs locally: settle pending posts as outcome unknown, close the socket, append the unpaired marker, clear the bash env, info notice 'ended locally'; no frame to the daemon, whose pairing document is left as is. Pairing and resuming still refuse end as busy."
+alternatives = ["Keep refusing end as busy in outage"]
+rationale = "The operator must always be able to leave a pairing from pi; the daemon document stays resumable or endable later. In pairing/resuming a reply in flight could land on a session that has given the pairing up."
+consequences = ["design sec-7 gains an outage /bridge end row and the 'ended locally' notice (fold in at /reconcile)"]
+decided_by = "operator, 2026-10-30 session"
+decided_on = "2026-10-30"
+
+[evidence]                      # free-text citations (supports / contradicts / notes)
+supports    = []
+contradicts = []
+notes       = []
+
+[relationships]                 # verb-written edges (set by doctrine supersede)
+supersedes    = []   # record ids this one replaces (set by doctrine supersede)
+superseded_by = []   # set on superseded predecessor (verb-written)
+
+[[relation]]
+label = "shapes"
+target = "SL-009"

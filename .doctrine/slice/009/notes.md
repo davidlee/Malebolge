@@ -6,42 +6,24 @@ disposable phase sheet (`.doctrine/state/.../phase-NN.md`) that must survive
 
 ## Harvest
 <!-- single-copy: updated in place each harvest; ids only, never restated content -->
-fresh-as-of: 2026-10-29 · ready (plan PHASE-01..10, none started) · 8fca207
+fresh-as-of: 2026-10-30 · PHASE-10 (VH pending) · 75f02bb
 
 ### Produced
-- Design run dr-01a185c0… locked (rev 45); `design.md` 9 sections;
-  slice-009.md scope reconciled to the decisions.
-- Accepted: DEC-064..DEC-076, DEC-078, DEC-079, DEC-080, DEC-090
-  (DEC-076 refines DEC-032; 078 refines 070; 079/090 refine 069; 080/090
-  refine 066).
-- ASM-004..ASM-008 (verify in plan PHASE-01); CHR-007 (~/flakes contract,
-  DEC-074); ISS-003; IDE-009.
-- Design revised for SL-010 (ISS-004, resolved): DEC-092, DEC-093; RV-023
-  waived (operator).
-- plan.toml / plan.md: PHASE-01..10; RV-021 routed findings transcribed
-  (index in plan.md § Notes).
-- RV-021 (design review) done: 14 findings, all fix-now, verified, routed
-  (probe: F-1, F-6, F-9, F-10; demonstrate: the rest).
+- PHASE-01 probes — ASM-004/006/007/008/009 validated, ASM-005 invalidated as EX-2 allows (c4430fc, 73a3263)
+- PHASE-02..09 — extractions, wire, bridge mode, pairing/listener, both message directions, pi state machine, shell + malebolge-bridge (ede54f3 .. af200b5; read-only resume fix 1ed42f6)
+- PHASE-10 docs + operator runbook (0df3e9e, 75f02bb); real-jail VH outstanding
+- ~/flakes node in pi jails (482256f0 there, unpushed); repo flake.nix runner hash + pi-bridge fileset (bdccd93)
+- minted: IMP-025 — jail notifications via filtered D-Bus proxy; CHR-008 — author the posture texts
+- audit flags: § Autonomy log (decided lines marked "flag"), incl. PHASE-09 range carrying SL-007 commits
 
 ### Learned
-- pi-durable `submit` takes no transaction — budget spend is its own commit
-  (DEC-078).
-- pi `clearQueue` on abort drops queued extension messages; `agent_settled
-  {aborted}` and `ctx.isIdle()` are the safe injection points (DEC-090).
-- Room SATAN's bash runs as `satan` in the room VM; it cannot reach host
-  sockets under /run/user/1000 (rulings r1).
-- Lock needs a route on every severe RV finding — set `--route` at first
-  disposition.
-- Room daemon jail already binds `/run/user/1000/satan/durable/room` rw
-  (`~/dev/satan/flake.nix:486`).
+- mem.fact.pi.extension-idle-and-settle-timing — real-pi event timing the extension relies on
+- mem.pattern.malebolge.gate-on-committed-tree — gate a git-archive export when others dirty the tree
 
 ### Open
-- PHASE-01 next: ASM-004..008 and real-pi probes, plus EX-10 (jail node
-  type stripping for malebolge-bridge; new ASM to record). PHASE-02 waits
-  on SL-010 landing.
-- Posture texts are placeholder corpus prose (DEC-040) pending the
-  satan-corpus session.
-- CHR-007 awaits a ~/flakes session.
+- DEC-095 — /bridge end in outage unpairs locally; sec-7 row to fold in at /reconcile
+- CHR-007 — ~/flakes bridge mounts (needs `mkdir -m 700` for bridge/)
+- CHR-008 — posture texts (DEC-040 placeholders)
 
 ## Design triage (2026-10-29, exploring)
 

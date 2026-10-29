@@ -1,0 +1,46 @@
+memory_uid = "mem_01a187e03aa27bf0ab64d04f8058d1d0"
+memory_key = "mem.fact.pi.extension-idle-and-settle-timing"
+schema_version = 1
+memory_type = "fact"
+status = "active"
+title = "pi extension timing: isIdle flips false on sendMessage(triggerTurn), abort waits on before_agent_start"
+summary = "Real pi 1.4.0: isIdle() is false synchronously after sendMessage(triggerTurn:true), before agent_start; abort waits for a slow before_agent_start; a turn sent from agent_settled starts a fresh run with its own agent_settled"
+created = "2026-10-29"
+updated = "2026-10-29"
+
+[scope]
+paths = []
+globs = []
+commands = []
+tags = ["pi", "pi-extension"]
+workspace = "default"
+repo = "github.com/davidlee/Malebolge"
+repo_id_kind = "remote"
+repo_id_confidence = "high"
+
+[git]
+anchor_kind = "checkout_state"
+commit = ""
+tree = "bbaca2f20038fd201dffbde16e3ea73315fe18f5"
+ref_name = "refs/heads/main"
+checkout_state_id = "d0980abdaef5c086abf8cb7b6014f0820d0a0eae3d351ccf381626a5276dbf41"
+base_commit = "75f02bbe67d1a8180e0fd5a150255be20ee0c3a6"
+verified_sha = ""
+normalizer = "forget.checkout.v1"
+
+[review]
+verification_state = "unverified"
+reviewed = ""
+review_by = ""
+
+[trust]
+trust_level = "high"
+
+[ranking]
+severity = "none"
+weight = 0
+
+[[source]]
+kind = "slice"
+ref = "SL-009"
+
