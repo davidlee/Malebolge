@@ -25,6 +25,9 @@ folded in as a duplicate).
 4. **`malebolge-set-topic-model`'s `none` says "now uses no model".** The
    topic's new conversations take the daemon default; the message should say
    so (`emacs/malebolge.el`, SL-010 PHASE-07; RV-025 F-12).
+   **Done 2026-10-29:** now "new conversations in topic X take the daemon
+   default model"; ERT `malebolge-set-topic-model-clears-the-model-with-none`
+   pins it.
 
 Outside this repo, noted only: the operator's `dl-satan.el` `:commands`
 autoloads only attach/start/stop (so `malebolge-set-topic-model` is undefined

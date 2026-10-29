@@ -1168,7 +1168,7 @@ Choosing a ref writes --set-topic NAME --model REF and says so."
                      malebolge-test--messages))))
 
 (ert-deftest malebolge-set-topic-model-clears-the-model-with-none ()
-  "Choosing `none' writes --no-model and says the topic now uses no model."
+  "Choosing `none' writes --no-model and says new conversations take the default."
   (malebolge-test--with-client-choice
       (malebolge-test--set-topic-answers '("--set-topic" "work" "--no-model"))
       '(("Topic" . "work") ("Model for work" . "none"))
@@ -1177,7 +1177,7 @@ Choosing a ref writes --set-topic NAME --model REF and says so."
                    (car malebolge-test--client-calls)))
     (should (cl-some (lambda (message)
                        (and (string-match-p "work" message)
-                            (string-match-p "no model" message)))
+                            (string-match-p "daemon default model" message)))
                      malebolge-test--messages))))
 
 (ert-deftest malebolge-set-topic-model-reports-the-clients-refusal ()

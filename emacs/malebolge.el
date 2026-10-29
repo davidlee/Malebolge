@@ -488,7 +488,8 @@ client's own `user-error', reported as it comes."
     (if (equal ref "none")
         (progn
           (malebolge--client (list "--set-topic" topic "--no-model"))
-          (message "malebolge: topic %s now uses no model" topic))
+          (message "malebolge: new conversations in topic %s take the daemon default model"
+                   topic))
       (malebolge--client (list "--set-topic" topic "--model" ref))
       (message "malebolge: topic %s now uses %s" topic ref))))
 
