@@ -300,7 +300,7 @@ to root (`src/daemon.ts`). Every later line acts on that binding.
 |---|---|---|
 | `attach`, well-formed | `attached`, then the snapshot | bound to that conversation |
 | `attach`, refused | one `error` | ended, binding nothing |
-| `list`, well-formed | `conversations`, or `topics` for a `topics:true` query | ended cleanly: reply, then end, no error |
+| `list`, well-formed | `conversations`, or `topics` for a `topics:true` query, or `models` for `models:true` | ended cleanly: reply, then end, no error |
 | `list`, refused | one `error` | ended, binding nothing |
 | `topic`, well-formed | `topics`, the one record written | ended cleanly |
 | `topic`, refused | one `error` | ended, binding nothing |
@@ -331,13 +331,15 @@ rule below, not served.
   reaches root by name.
 - client → daemon, the `list` frame, valid only as the first line:
   `{"type":"list"}` (this store's page), `{"type":"list","topic":"NAME"}`
-  (that topic's ids from the index, newest first), or
-  `{"type":"list","topics":true}` (the topic records). Strict too: any key it
+  (that topic's ids from the index, newest first),
+  `{"type":"list","topics":true}` (the topic records), or
+  `{"type":"list","models":true}` (the catalogue's chat-model refs, answered
+  without a store call). Strict too: any key it
   does not know is refused before anything is read, so `{"type":"list","page":2}`
   answers `list: unknown key page` and ends the connection, binding nothing
-  (`src/protocol.ts`). `topic` and `topics` are exclusive, `topics` must be
-  `true`, and a `topic` no write made is `no topic NAME`. The page size is the
-  daemon's, not the client's.
+  (`src/protocol.ts`). `topic`, `topics` and `models` are exclusive, `topics`
+  and `models` must be `true`, and a `topic` no write made is `no topic NAME`.
+  The page size is the daemon's, not the client's.
 - client → daemon, the `topic` frame, valid only as the first line:
   `{"type":"topic","name":"NAME"}` creates the topic, or leaves an existing
   record exactly as it is, so the frame is idempotent;

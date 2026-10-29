@@ -88,8 +88,8 @@ export interface Conversations {
   setTopic(topic: TopicWrite): Promise<NamedTopic>;
 }
 
-/** A listing that answers with one page of ids; `topics` answers with records instead. */
-export type PageQuery = Exclude<ListQuery, { kind: "topics" }>;
+/** A listing that answers with one page of ids; `topics` and `models` answer with records instead. */
+export type PageQuery = Exclude<ListQuery, { kind: "topics" } | { kind: "models" }>;
 
 /** Conversations read per listing page: small, so a listing never stalls the turn chain. */
 export const LIST_PAGE = 50;

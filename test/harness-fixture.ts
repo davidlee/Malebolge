@@ -383,4 +383,5 @@ export const serveTest = (test: TestHarness, path: string): Promise<Daemon> =>
     ),
     beforeInput: () => Promise.resolve(),
     orientation: () => Promise.resolve(""),
+    modelRefs: () => FAUX_CATALOG.refs(),
   });

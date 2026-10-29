@@ -13,13 +13,20 @@ import { orientationOf } from "./boot-context.ts";
 import type { Config, Profile, ScrewtapePaths } from "./config.ts";
 import { context } from "./context.ts";
 import { type ConversationDefaults, type Conversations, conversations } from "./conversations.ts";
-import { type Daemon, serve } from "./daemon.ts";
+import { type Daemon, serve, type ServeOptions } from "./daemon.ts";
 import { type DaemonEnv, daemonEnv, requireGatewaySocket } from "./daemon-env.ts";
 import { daemonExtensions } from "./daemon-extensions.ts";
 import { acquireInstanceLock } from "./instance-lock.ts";
 import { mailExtension } from "./mail/extension.ts";
 import { screwtapeSource } from "./mail/screwtape.ts";
-import { loadGatewayModels, modelCatalog, type ModelRef, refOf, UnknownModel } from "./models.ts";
+import {
+  loadGatewayModels,
+  modelCatalog,
+  type ModelCatalog,
+  type ModelRef,
+  refOf,
+  UnknownModel,
+} from "./models.ts";
 import { personaFiles, readPersona, requirePersonaFiles } from "./persona.ts";
 import { renderProjectContext } from "./project-context.ts";
 import { registryOf } from "./registry.ts";
@@ -223,6 +230,25 @@ export interface DaemonHandle {
 }
 
 /**
+ * The options the daemon's socket opens with: the conversations the session
+ * resolves, the one gate, and the two answers the daemon gives from its own
+ * ports — the orientation a fresh turn gets, and the catalogue's chat-model refs
+ * a `models` listing returns (SL-010 PHASE-06).
+ */
+const serveOptionsOf = (
+  config: Config,
+  satan: SatanTools,
+  conversations: Promise<Conversations>,
+  catalog: ModelCatalog,
+): ServeOptions => ({
+  socketPath: config.daemonSocket,
+  conversations,
+  beforeInput: satan.refresh,
+  orientation: (conversation) => orientationOf(satan.call, conversation),
+  modelRefs: catalog.refs,
+});
+
+/**
  * Start the profile's daemon: lock, claim the socket, refresh SATAN's tools,
  * then open and resume the session. A failure undoes what preceded it in
  * reverse, releasing the lock last.
@@ -262,12 +288,7 @@ export async function startDaemon(config: Config, deps: StartDeps): Promise<Daem
     threads.bindEarly({ profile: config.execution.profile, defaults, catalog, now, log, satan });
     // Resolved in `beforeResume`, so a client's continuation runs after `resume()`.
     const conversationsReady = Promise.withResolvers<Conversations>();
-    daemon = await serve({
-      socketPath: config.daemonSocket,
-      conversations: conversationsReady.promise,
-      beforeInput: satan.refresh,
-      orientation: (conversation) => orientationOf(satan.call, conversation),
-    });
+    daemon = await serve(serveOptionsOf(config, satan, conversationsReady.promise, catalog));
     // Before the session resumes, so a turn's SATAN call runs, not `tool_unavailable`.
     await satan.refresh();
     session = await openBoundSession(config, log, {

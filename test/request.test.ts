@@ -1,6 +1,6 @@
-// One frame out, one typed reply in: the request path `--list`, `--topics` and
-// `--set-topic` share, and the skew an older daemon answers it with (SL-003
-// EX-1 and EX-4).
+// One frame out, one typed reply in: the request path `--list`, `--topics`,
+// `--models` and `--set-topic` share, and the skew an older daemon answers it
+// with (SL-003 EX-1 and EX-4).
 
 import { PassThrough } from "node:stream";
 import { describe, expect, it, onTestFinished } from "vitest";
@@ -9,7 +9,6 @@ import { context } from "../src/context.ts";
 import { conversations } from "../src/conversations.ts";
 import { refOf } from "../src/models.ts";
 import { encodeLine } from "../src/ndjson.ts";
-import type { ConversationsMessage, TopicsMessage } from "../src/protocol.ts";
 import { createRenderer } from "../src/render.ts";
 import {
   requestFrameOf,
@@ -44,7 +43,7 @@ function requested(
 }
 
 /** A mode's reply as `attach-main` prints it: one renderer per reply, as the CLI makes one. */
-const printed = (reply: ConversationsMessage | TopicsMessage): string => createRenderer()(reply);
+const printed = (reply: ReplyMessage): string => createRenderer()(reply);
 
 /** A request-reply invocation's connect wait: a listing runs against a daemon already up. */
 const LIST_WAIT = { intervalMs: 200, timeoutMs: 1_000 };
@@ -271,6 +270,35 @@ describe("requestFrameOf", () => {
 });
 
 // ---------------------------------------------------------------------------
+// `--models` (SL-010 PHASE-06): one frame, the catalog's refs back (VT-4).
+// ---------------------------------------------------------------------------
+
+describe("request --models", () => {
+  it("sends `models: true` and expects the `models` reply for --models", () => {
+    const invocation = attachInvocationOf(["--models"]);
+    if (invocation.mode !== "models") {
+      throw new Error("--models is not a models invocation");
+    }
+    expect(requestFrameOf(invocation)).toEqual({ type: "list", models: true });
+    expect(replyTypeOf(invocation)).toBe("models");
+  });
+
+  it("resolves a models reply, one ref per line, writing nothing else", async () => {
+    const path = await socketPath();
+    const fake = await fakeDaemon(path, (socket) => {
+      socket.end(encodeLine({ type: "models", models: ["faux/faux", "faux/faux-2"] }));
+    });
+    const { reply, errors } = requested(path, ["--models"]);
+    const models = await reply;
+    expect(models).toEqual({ type: "models", models: ["faux/faux", "faux/faux-2"] });
+    await fake.lines.next((line) => line.includes('"models":true'));
+    expect(JSON.parse(fake.lines.items.join("").trim())).toEqual({ type: "list", models: true });
+    expect(errors()).toBe("");
+    await fake.closed;
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Skew (inq-7): an older daemon fails a new shape in one of two ways.
 // ---------------------------------------------------------------------------
 
@@ -281,6 +309,8 @@ describe("skewOf", () => {
     ["attach: unknown key topic", "topic"],
     ["list: unknown key topics", "topics"],
     ["list: unknown key topic", "topic"],
+    // ...and the catalog's refs likewise (SL-010 PHASE-06 VT-4).
+    ["list: unknown key models", "models"],
     // A daemon that predates `toolset` refuses the key it does not know (PHASE-04).
     ["topic: unknown key toolset", "toolset"],
     // ...and one that predates `model` likewise (SL-010 PHASE-04 VT-2).
@@ -300,6 +330,7 @@ describe("request: version skew", () => {
     // A `topic` first line is not a frame the old daemon knows: it binds root and says so.
     [["--set-topic", "work"], 'unknown message type "topic"', "topic"],
     [["--topics"], "list: unknown key topics", "topics"],
+    [["--models"], "list: unknown key models", "models"],
     [["--list", "--topic", "work"], "list: unknown key topic", "topic"],
     [["--set-topic", "work", "--toolset", "mail"], "topic: unknown key toolset", "toolset"],
     [["--set-topic", "work", "--model", "faux/faux-2"], "topic: unknown key model", "model"],

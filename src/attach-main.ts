@@ -16,7 +16,7 @@ import { requestFrameOf, replyTypeOf, request } from "./request.ts";
 import { codeOf } from "./unix-socket.ts";
 
 const USAGE = [
-  "usage: malebolge-attach [--list [--topic NAME | --here]] | [--topics]",
+  "usage: malebolge-attach [--list [--topic NAME | --here]] | [--topics] | [--models]",
   " | [--set-topic NAME [--dir DIR | --no-dir | --here] [--toolset NAME | --no-toolset] [--model REF | --no-model]]",
   " | [--conversation N | --new [--cwd DIR] | (--topic NAME | --here) [--new [--cwd DIR]]] [--emacs]",
 ].join("\n");

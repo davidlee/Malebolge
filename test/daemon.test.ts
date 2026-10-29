@@ -206,6 +206,8 @@ describe("daemon", () => {
       ),
       beforeInput,
       orientation,
+      // The catalogue the test's conversations were built with answers `models` itself.
+      modelRefs: () => FAUX_CATALOG.refs(),
     });
 
   const start = async (
@@ -256,6 +258,24 @@ describe("daemon", () => {
     if (!isRecord(reply) || reply["type"] !== "conversations") {
       throw new Error(`not a listing: ${JSON.stringify(reply)}`);
     }
+    return reply;
+  };
+
+  /**
+   * One first-line frame's reply as the daemon wrote it, whatever it is, and the
+   * clean close every first-line answer ends with: an error frame fails the test
+   * at its assertion, not on a parser (SL-010 PHASE-06 VT-2).
+   */
+  const replyOnWire = async (frame: JsonRecord): Promise<JsonRecord> => {
+    const client = await lineClient<unknown>(socketPath, (value) => value);
+    clients.push(client);
+    client.send(frame);
+    const reply = await client.next(() => true);
+    await client.closed();
+    if (!isRecord(reply)) {
+      throw new Error(`not a frame: ${JSON.stringify(reply)}`);
+    }
+    expect(client.received()).toHaveLength(1);
     return reply;
   };
 
@@ -963,6 +983,34 @@ describe("daemon", () => {
     });
   });
 
+  // SL-010 PHASE-06 VT-2: the refs come from the catalog, never from the store.
+  it("answers a models listing with the catalog's refs, touching no conversations (VT-2)", async () => {
+    test = await openTestHarness([]);
+    const api = conversations(test, DEFAULTS, "host", FAUX_CATALOG);
+    // A listing that asked the store would fail here: `models` is a catalog question.
+    const untouched: Conversations = {
+      ...api,
+      list: () => {
+        throw new Error("a models listing must not list conversations");
+      },
+      topics: () => {
+        throw new Error("a models listing must not read the store's topics");
+      },
+    };
+    daemon = await serve({
+      socketPath,
+      conversations: Promise.resolve(untouched),
+      beforeInput: noGate,
+      orientation: noOrientation,
+      // ServeOptions.modelRefs: the catalog's chat-model refs (PHASE-06 EX-2).
+      modelRefs: () => ["faux/faux", "faux/faux-2"],
+    });
+    expect(await replyOnWire({ type: "list", models: true })).toEqual({
+      type: "models",
+      models: ["faux/faux", "faux/faux-2"],
+    });
+  });
+
   it("names the profile its own conversations were built for, room here (EX-4)", async () => {
     test = await openTestHarness([]);
     daemon = await serve({
@@ -970,6 +1018,7 @@ describe("daemon", () => {
       conversations: Promise.resolve(conversations(test, DEFAULTS, "room", FAUX_CATALOG)),
       beforeInput: noGate,
       orientation: noOrientation,
+      modelRefs: () => FAUX_CATALOG.refs(),
     });
     expect((await replyTo({ type: "list", topics: true }, isTopics)).profile).toBe("room");
   });
@@ -1004,6 +1053,7 @@ describe("daemon", () => {
       conversations: Promise.resolve(failing),
       beforeInput: noGate,
       orientation: noOrientation,
+      modelRefs: () => FAUX_CATALOG.refs(),
     });
     const client = await lineClient(socketPath, toPrintable);
     clients.push(client);
@@ -1230,6 +1280,7 @@ describe("daemon", () => {
       conversations: Promise.resolve(seam),
       beforeInput: noGate,
       orientation: noOrientation,
+      modelRefs: () => FAUX_CATALOG.refs(),
     });
     const entered = Promise.withResolvers<undefined>();
     const release = Promise.withResolvers<undefined>();

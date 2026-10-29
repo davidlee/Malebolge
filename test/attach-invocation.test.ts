@@ -134,6 +134,8 @@ describe("attachInvocationOf", () => {
     [["--list"], { mode: "list", wait: LIST_WAIT }],
     [["--list", "--topic", "work"], { mode: "list", wait: LIST_WAIT, topic: "work" }],
     [["--topics"], { mode: "topics", wait: LIST_WAIT }],
+    // SL-010 PHASE-06 VT-3: `--models` asks the daemon for the catalog's chat-model refs.
+    [["--models"], { mode: "models", wait: LIST_WAIT }],
     // `cwd` absent leaves the topic's directory unchanged; `--no-dir` clears it.
     [["--set-topic", "work"], { mode: "set-topic", wait: LIST_WAIT, name: "work", cwd: undefined }],
     [
@@ -234,6 +236,33 @@ describe("attachInvocationOf", () => {
 
   it("still refuses an unknown flag", () => {
     expect(() => attachInvocationOf(["--emacs", "--wat"])).toThrow(UsageError);
+  });
+});
+
+// VT-3: `--models` is a stand-alone question, exactly as `--topics` is.
+describe("checkAlone: --models takes no other flag", () => {
+  it.each<string[][]>([
+    [["--models", "--list"]],
+    [["--models", "--topics"]],
+    [["--topics", "--models"]],
+    [["--models", "--new"]],
+    [["--models", "--topic", "work"]],
+    [["--models", "--set-topic", "work"]],
+    [["--models", "--here"]],
+    [["--list", "--models"]],
+  ])("%j is a usage error naming the clash", (args) => {
+    // The one shape: `<subject> and <other> are exclusive`; which name comes
+    // first is the parse's order, not the test's business.
+    expect(usageErrorOf(args)).toMatch(/(^models and [a-z-]+|^[a-z-]+ and models) are exclusive$/);
+  });
+
+  it.each<string[][]>([
+    [["--models", "--emacs"]],
+    [["--models", "--conversation", "3"]],
+    [["--models", "--dir", "/x"]],
+    [["--models", "--model", "faux/faux-2"]],
+  ])("%j is a usage error", (args) => {
+    expect(() => attachInvocationOf(args)).toThrow(UsageError);
   });
 });
 

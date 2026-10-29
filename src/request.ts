@@ -1,14 +1,19 @@
-// One frame out, one typed reply in: the request path `--list`, `--topics` and
-// `--set-topic` share, and the skew an older daemon answers it with. Nothing
-// here renders a reply — its caller does (SL-003 design sec-5).
+// One frame out, one typed reply in: the request path `--list`, `--topics`,
+// `--models` and `--set-topic` share, and the skew an older daemon answers it
+// with. Nothing here renders a reply — its caller does (SL-003 design sec-5).
 
 import type { Socket } from "node:net";
 import type { Writable } from "node:stream";
-import type { RequestInvocation } from "./attach-invocation.ts";
+import type { RequestInvocation, SetTopicInvocation } from "./attach-invocation.ts";
 import { isRecord, type JsonRecord } from "./json.ts";
 import { messageOf } from "./message-of.ts";
 import { encodeLine, lineSplitter } from "./ndjson.ts";
-import type { ConversationsMessage, ErrorMessage, TopicsMessage } from "./protocol.ts";
+import type {
+  ConversationsMessage,
+  ErrorMessage,
+  ModelsMessage,
+  TopicsMessage,
+} from "./protocol.ts";
 import { type ClientNotice, createRenderer, type Printable, toPrintable } from "./render.ts";
 import { type ConnectWait, codeOf, connectUnixWaiting } from "./unix-socket.ts";
 
@@ -90,7 +95,7 @@ const UNKNOWN_TYPE = /^unknown message type "([^"]+)"$/;
 const UNKNOWN_KEY = /^[a-z-]+: unknown key ([A-Za-z0-9_]+)$/;
 
 /** The keys whose refusal means the daemon predates the feature the key carries. */
-const SKEWED_KEYS = ["topic", "topics", "toolset", "model"] as const;
+const SKEWED_KEYS = ["topic", "topics", "models", "toolset", "model"] as const;
 
 /**
  * The feature the answering daemon predates, when `message` says it predates
@@ -111,8 +116,26 @@ export function skewOf(message: string): string | undefined {
 export const skewHint = (feature: string): string =>
   `the daemon predates ${feature}: restart it (malebolge-stop, then malebolge-start)`;
 
-/** The replies a request is answered with: ids for a listing, topic records for the rest. */
-export type ReplyMessage = ConversationsMessage | TopicsMessage;
+/** The replies a request is answered with: ids for a listing, records or refs for the rest. */
+export type ReplyMessage = ConversationsMessage | TopicsMessage | ModelsMessage;
+
+/**
+ * The `topic` write's frame: `cwd`, `toolset` and `model` ride beside the name,
+ * each one sent only when the command line gave it.
+ */
+function topicFrameOf(invocation: SetTopicInvocation): JsonRecord {
+  const frame: JsonRecord = { type: "topic", name: invocation.name };
+  if (invocation.cwd !== undefined) {
+    frame["cwd"] = invocation.cwd;
+  }
+  if (invocation.toolset !== undefined) {
+    frame["toolset"] = invocation.toolset;
+  }
+  if (invocation.model !== undefined) {
+    frame["model"] = invocation.model;
+  }
+  return frame;
+}
 
 /** The frame a request-reply invocation sends, as it goes on the wire (design sec-4). */
 export function requestFrameOf(invocation: RequestInvocation): JsonRecord {
@@ -123,26 +146,19 @@ export function requestFrameOf(invocation: RequestInvocation): JsonRecord {
         : { type: "list", topic: invocation.topic };
     case "topics":
       return { type: "list", topics: true };
-    case "set-topic": {
-      // `cwd`, `toolset` and `model` absent create the topic, or leave that field unchanged.
-      const frame: JsonRecord = { type: "topic", name: invocation.name };
-      if (invocation.cwd !== undefined) {
-        frame["cwd"] = invocation.cwd;
-      }
-      if (invocation.toolset !== undefined) {
-        frame["toolset"] = invocation.toolset;
-      }
-      if (invocation.model !== undefined) {
-        frame["model"] = invocation.model;
-      }
-      return frame;
-    }
+    case "models":
+      return { type: "list", models: true };
+    case "set-topic":
+      return topicFrameOf(invocation);
   }
 }
 
 /** The reply that answers `invocation`'s frame. */
 export function replyTypeOf(invocation: RequestInvocation): ReplyMessage["type"] {
-  return invocation.mode === "list" ? "conversations" : "topics";
+  if (invocation.mode === "list") {
+    return "conversations";
+  }
+  return invocation.mode === "models" ? "models" : "topics";
 }
 
 const CLOSED_BEFORE_REPLY = "the daemon closed before the request was answered";

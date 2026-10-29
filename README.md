@@ -185,6 +185,7 @@ node src/attach-main.ts --set-topic NAME --model REF   # its model, or --no-mode
 node src/attach-main.ts --topic NAME                   # its latest conversation
 node src/attach-main.ts --topic NAME --new [--cwd DIR] # a fresh one in that topic
 node src/attach-main.ts --topics                       # topics, one per line
+node src/attach-main.ts --models                       # the gateway's chat models, one per line
 node src/attach-main.ts --list --topic NAME            # that topic's ids
 ```
 
@@ -200,7 +201,7 @@ directory is only a default: it reaches conversations created in that topic
 afterwards, and a conversation already made keeps the directory it was created
 with. `--topic NAME` binds the topic's latest conversation (highest id),
 starts its first when it has none, and `--new` always starts a fresh one.
-`--topics` takes no other flag, `--set-topic`
+`--topics` and `--models` take no other flag, `--set-topic`
 takes neither an attach nor a list flag, `--topic` and `--conversation` are
 exclusive, and `--dir` and `--no-dir` are exclusive: each is one usage line and
 exit 2. A refused topic — an unwritten name, a bad name, `default` written to, a
@@ -239,7 +240,7 @@ to start listening.
 a daemon older than the frame it sent. That daemon answers in one of two ways:
 `unknown message type "<frame>"`, naming a first-line frame it did not know
 (`attach`, `list`, `topic`), or `<frame>: unknown key <key>`, refusing a key a
-newer client added (`topic`, `topics`). Either way the client prints
+newer client added (`topic`, `topics`, `models`). Either way the client prints
 `[the daemon predates <feature>: restart it (malebolge-stop, then malebolge-start)]`,
 naming the frame or the key.
 Restart the daemon (`M-x malebolge-stop`, then `M-x malebolge-start`) and the

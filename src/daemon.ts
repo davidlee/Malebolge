@@ -16,6 +16,8 @@ import {
   type ErrorMessage,
   type FirstLineFrame,
   FrameRefused,
+  type ListQuery,
+  type ModelsMessage,
   parseConnectionMessage,
   type TopicSummary,
   type TopicsMessage,
@@ -32,6 +34,8 @@ export interface ServeOptions {
   beforeInput: () => Promise<void>;
   /** The input an `orient` line submits to `conversation`: its fresh SATAN context (IMP-016). */
   orientation: (conversation: ConversationId) => Promise<string>;
+  /** The catalogue's chat-model refs, for a `models` listing: the store is never asked. */
+  modelRefs: () => string[];
 }
 
 /** One connection: its socket, the chain that orders its lines, and its one binding. */
@@ -40,6 +44,8 @@ interface Connection {
   conversations: Promise<Conversations>;
   beforeInput: () => Promise<void>;
   orientation: (conversation: ConversationId) => Promise<string>;
+  /** The catalogue's chat-model refs, for a `models` listing (SL-010 PHASE-06). */
+  modelRefs: () => string[];
   /** The conversation the first line bound; `undefined` until then. */
   bound?: Conversation;
   /** The bound conversation's event stream, once acquired. */
@@ -210,15 +216,39 @@ const topicsReply = (
 });
 
 /**
+ * The `models` reply: the catalogue's chat-model refs, read from the daemon's own
+ * port. No store call is made, so this answers while nothing is loaded.
+ */
+const modelsReply = (state: Connection): ModelsMessage => ({
+  type: "models",
+  models: state.modelRefs(),
+});
+
+/** The `list` frame's one reply, by the question it asked (design sec-4, sec-5). */
+async function listAnswer(
+  state: Connection,
+  conversations: Conversations,
+  query: ListQuery,
+): Promise<ConversationsMessage | ModelsMessage | TopicsMessage> {
+  if (query.kind === "models") {
+    return modelsReply(state);
+  }
+  if (query.kind === "topics") {
+    return topicsReply(conversations, await conversations.topics());
+  }
+  return listReply(await conversations.list(query));
+}
+
+/**
  * Answer a first-line frame with the one reply `produce` builds, then close cleanly:
  * no binding, nothing created, no durable state (DEC-007). A rejection goes through
  * `fail`, because an error left on an open connection strands the client.
  */
 async function answer(
   state: Connection,
-  produce: () => Promise<ConversationsMessage | TopicsMessage>,
+  produce: () => Promise<ConversationsMessage | ModelsMessage | TopicsMessage>,
 ): Promise<void> {
-  let reply: ConversationsMessage | TopicsMessage;
+  let reply: ConversationsMessage | ModelsMessage | TopicsMessage;
   try {
     reply = await produce();
   } catch (error) {
@@ -243,12 +273,7 @@ type FrameHandler<K extends FirstLineFrame["type"]> = (
 const FIRST_LINE: { [K in FirstLineFrame["type"]]: FrameHandler<K> } = {
   attach: (state, conversations, frame) => bindTarget(state, conversations, frame.target),
   list: (state, conversations, frame) =>
-    answer(state, async () => {
-      const { query } = frame;
-      return query.kind === "topics"
-        ? topicsReply(conversations, await conversations.topics())
-        : listReply(await conversations.list(query));
-    }),
+    answer(state, () => listAnswer(state, conversations, frame.query)),
   // One write, one record back, the same reply shape a topics listing uses.
   topic: (state, conversations, frame) =>
     answer(state, async () => topicsReply(conversations, [await conversations.setTopic(frame)])),
@@ -363,6 +388,7 @@ function startConnection(options: ServeOptions, socket: Socket): void {
     conversations: options.conversations,
     beforeInput: options.beforeInput,
     orientation: options.orientation,
+    modelRefs: options.modelRefs,
     ended: false,
     queue: Promise.resolve(),
   };

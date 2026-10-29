@@ -9,6 +9,7 @@ import type {
   ConversationSummary,
   ConversationsMessage,
   ErrorMessage,
+  ModelsMessage,
   ThreadMark,
   TopicsMessage,
 } from "./protocol.ts";
@@ -27,6 +28,7 @@ export type Printable =
   | ErrorMessage
   | AttachedMessage
   | ConversationsMessage
+  | ModelsMessage
   | TopicsMessage
   | ClientNotice;
 
@@ -369,6 +371,8 @@ function notices(p: PresentationTable, interrupt: (out: string) => string): Noti
             `${topic.name}\t${topic.cwd ?? ""}\t${topic.toolset ?? ""}\t${topic.model ?? ""}\n`,
         )
         .join(""),
+    // One ref per line, the catalogue's order kept: same text in both presents.
+    models: (event) => event.models.map((ref) => `${ref}\n`).join(""),
     client_notice: (event) => interrupt(p.notice(event.text)),
     agent_changed: silent,
     auto_retry_end: silent,

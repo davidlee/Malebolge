@@ -7,6 +7,7 @@
 //   daemon → client   AgentEvent (pi-durable `watchEvents`, the first a `snapshot`)
 //                     | AttachedMessage, the reply to a successful attach
 //                     | ConversationsMessage, the reply to a `list` frame
+//                     | ModelsMessage, the reply to a `models` listing
 //                     | TopicsMessage, the reply to a `topics` listing or a `topic` write
 //                     | ErrorMessage, for a line the daemon could not act on
 //
@@ -58,8 +59,12 @@ export interface AttachedMessage {
   conversation: number;
 }
 
-/** What a `list` frame asks for: everything, one topic's ids, or the topics themselves. */
-export type ListQuery = { kind: "all" } | { kind: "topic"; name: string } | { kind: "topics" };
+/** What a `list` frame asks for: everything, one topic's ids, the topics themselves, or the catalogue's refs. */
+export type ListQuery =
+  | { kind: "all" }
+  | { kind: "topic"; name: string }
+  | { kind: "topics" }
+  | { kind: "models" };
 
 /** The `list` frame: this store's conversations, asked for on a fresh connection. */
 export interface ListMessage {
@@ -124,6 +129,15 @@ export interface TopicsMessage {
   topics: TopicSummary[];
 }
 
+/**
+ * The daemon's reply to a `models` listing: the chat models its catalogue serves,
+ * as refs, in the catalogue's own order (design sec-5). The store is not asked.
+ */
+export interface ModelsMessage {
+  type: "models";
+  models: string[];
+}
+
 /** A refused first-line frame; `instanceof` tells it from an ordinary parse error. */
 export class FrameRefused extends Error {
   constructor(message: string) {
@@ -146,7 +160,7 @@ function unknownKey(message: JsonRecord, allowed: readonly string[]): string | u
 const ATTACH_KEYS: readonly string[] = ["type", "conversation", "new", "cwd", "topic"];
 
 /** Strict too: `{"type":"list","page":2}` is a refusal, not root's transcript. */
-const LIST_KEYS: readonly string[] = ["type", "topic", "topics"];
+const LIST_KEYS: readonly string[] = ["type", "topic", "topics", "models"];
 
 /** Strict: a `topic` write names the name, the directory, the toolset and the model, nothing else. */
 const TOPIC_KEYS: readonly string[] = ["type", "name", "cwd", "toolset", "model"];
@@ -273,23 +287,29 @@ function attachTarget(message: JsonRecord): AttachTarget {
   return conversation === undefined ? { kind: "root" } : existingTarget(conversation);
 }
 
-/** `topic` and `topics` name different questions, so asking both is a refusal. */
+/** The three questions a `list` frame can ask: any two of them are a refusal. */
+const LIST_QUESTIONS = ["topic", "topics", "models"] as const;
+
+/**
+ * `topic`, `topics` and `models` name different questions, so asking any two of
+ * them is a refusal; `topics` and `models` are asked by being `true` (design sec-5).
+ */
 function listQuery(message: JsonRecord): ListQuery {
-  const topic = message["topic"];
-  const topics = message["topics"];
-  if (topic !== undefined) {
-    if (topics !== undefined) {
-      frameRefused("list", "topic and topics are exclusive");
-    }
-    return { kind: "topic", name: topicNamed("list", topic) };
+  const asked = LIST_QUESTIONS.filter((key) => message[key] !== undefined);
+  const [question, clash] = asked;
+  if (clash !== undefined) {
+    frameRefused("list", `${String(question)} and ${clash} are exclusive`);
   }
-  if (topics === undefined) {
+  if (question === undefined) {
     return { kind: "all" };
   }
-  if (topics !== true) {
-    frameRefused("list", "topics must be true");
+  if (question === "topic") {
+    return { kind: "topic", name: topicNamed("list", message["topic"]) };
   }
-  return { kind: "topics" };
+  if (message[question] !== true) {
+    frameRefused("list", `${question} must be true`);
+  }
+  return { kind: question };
 }
 
 /** The `list` frame, parsed strictly: a field this daemon does not know is a refusal. */

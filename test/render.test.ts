@@ -288,6 +288,15 @@ describe("renderer", () => {
     expect(renderAll([{ type: "topics", profile: "room", topics: [] }])).toBe("");
   });
 
+  // SL-010 PHASE-06 VT-5: the catalog's chat-model refs, one per line, just the refs.
+  it("renders a models frame as one ref per line, in both presentations", () => {
+    const frame = { type: "models", models: ["faux/faux", "faux/faux-2"] };
+    const lines = "faux/faux\nfaux/faux-2\n";
+    expect(renderAll([frame])).toBe(lines);
+    expect(renderAll([frame], { presentation: "emacs" })).toBe(lines);
+    expect(renderAll([{ type: "models", models: [] }])).toBe("");
+  });
+
   it("ignores bookkeeping events", () => {
     expect(renderAll([{ type: "usage_changed", usage: {} }, { type: "turn_start" }])).toBe("");
   });

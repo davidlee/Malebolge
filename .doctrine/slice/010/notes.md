@@ -45,6 +45,10 @@ wanted, is left to phase-plan as checks against code, not design questions:
 - PHASE-03 · `test/thread-fixture.ts` gains `SECOND_MODEL`/`SECOND_REF` (faux/faux-2) and a world catalog holding both · a topic's model must differ observably from the world default for VT-3/VT-4 · decided (fixture)
 - PHASE-04 · `parseAttachArgs`' seven valued-option copies folded into a `VALUED_FIELDS` table + loop · eslint `complexity` (8) refused the added `model` branch; same behaviour, all rows green · decided (adjacent refactor)
 - PHASE-05 · `knownTopicIn(index, name)` extracted from `indexOfTopic` · `topicPage` now reads the index inside its commit and needs the same refusal; one check, two callers · decided (adjacent refactor)
+- PHASE-06 · `--topics`/`--models` branches extracted to `standaloneListing` in src/attach-invocation.ts; set-topic frame building extracted to `topicFrameOf` in src/request.ts · eslint `complexity` (8) on `attachInvocationOf` / `requestFrameOf`; same behaviour · decided (adjacent refactor)
+- PHASE-06 · `listQuery` reads `topic`/`topics`/`models` from one `LIST_QUESTIONS` table; a clash names the first two present (`topic and topics are exclusive` unchanged) · one check for three questions; exclusive-pair wording otherwise free in design sec-5 · decided
+- PHASE-06 · `SKEWED_KEYS` gains `models` (carried from PHASE-04's hand-back; PHASE-06/EX-4 names it) · in plan, no adaptation needed · decided
+- PHASE-06 · `serveOptionsOf` helper in src/daemon-start.ts builds `ServeOptions` (adds `modelRefs: catalog.refs`) · `startDaemon` at `max-lines-per-function` · decided (adjacent refactor)
 
 ## PHASE-01 run log
 
@@ -76,6 +80,12 @@ wanted, is left to phase-plan as checks against code, not design questions:
 - pi `implement` (deepseek-flash): tests run 51 requests $0.08 (hit the 50 ceiling while finishing) + continuation 2 requests $0.004; implementation run (fresh session) 35 requests $0.03. TS VTs red-first on missing `summaries` / old line shape (13 failures); ERT red on host before the regex moved (2 candidate tests). Misses: one `no-unnecessary-condition` lint error in its VT-1 test (orchestrator fixed); `topicPage` duplicated the unknown-topic check (orchestrator extracted `knownTopicIn`); lineOf's two branches collapsed. Test mark texts in ERT (`forked from 12`) are not the daemon's wording; harmless to parsing.
 - Host: `just ert` 42/42 + byte-compile clean; `just smoke` 4/4. Negative control: a mark regex allowing empty (`[^\t\n]*`) → ERT `…reject-malformed-ones` red.
 - Gate: `just check` 104 files / 3596 tests green.
+
+## PHASE-06 run log
+
+- pi `implement` (deepseek-flash), one session: tests-red 30 requests $0.04 (VT-1 6, VT-2 1, VT-3 9, VT-4 4, VT-5 1 red; VT-5 red as a missing-renderer-row TypeError, not a diff); implementation 51 requests $0.07 (hit the request ceiling during its final diff read, work complete). Misses: none of substance; the orchestrator collapsed `listQuery`'s helper (`listingAsked` returned a pointless `true`) into the table form and merged `hereOf`'s two `undefined` cases.
+- Negative controls (orchestrator): `models` dropped from `SKEWED_KEYS` → VT-4 red (2); clash check disabled → VT-1 red (4). VT-2's Conversations stub throws on `list`/`topics`, so a store-touching answer cannot pass.
+- Gate: `just check` 104 files / 3621 tests green.
 
 ## PHASE-05 EN-2 measurement (VA-1)
 

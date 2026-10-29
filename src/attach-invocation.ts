@@ -39,6 +39,7 @@ interface AttachArgs {
   emacs: boolean;
   list: boolean;
   topics: boolean;
+  models: boolean;
   noDir: boolean;
   noToolset: boolean;
   noModel: boolean;
@@ -58,6 +59,7 @@ const OPTIONS = {
   emacs: { type: "boolean" },
   list: { type: "boolean" },
   topics: { type: "boolean" },
+  models: { type: "boolean" },
   "no-dir": { type: "boolean" },
   "no-toolset": { type: "boolean" },
   "no-model": { type: "boolean" },
@@ -89,6 +91,7 @@ function parseAttachArgs(args: string[]): AttachArgs {
       emacs: values.emacs === true,
       list: values.list === true,
       topics: values.topics === true,
+      models: values.models === true,
       noDir: values["no-dir"] === true,
       noToolset: values["no-toolset"] === true,
       noModel: values["no-model"] === true,
@@ -122,6 +125,7 @@ function flagsOf(args: AttachArgs): ReadonlyMap<string, boolean> {
     ["emacs", args.emacs],
     ["list", args.list],
     ["topics", args.topics],
+    ["models", args.models],
     ["set-topic", args.setTopic !== undefined],
   ]);
 }
@@ -197,6 +201,12 @@ export interface TopicsInvocation {
   wait: ConnectWait;
 }
 
+/** The catalogue's chat models: one `list` frame with `models:true` (design sec-5). */
+export interface ModelsInvocation {
+  mode: "models";
+  wait: ConnectWait;
+}
+
 /** A topic write: create the topic, set its directory, or leave it (design sec-4). */
 export interface SetTopicInvocation<T = string> {
   mode: "set-topic";
@@ -211,7 +221,11 @@ export interface SetTopicInvocation<T = string> {
 }
 
 /** The modes that ask one question over one connection, and print its one reply. */
-export type RequestInvocation = ListInvocation | TopicsInvocation | SetTopicInvocation;
+export type RequestInvocation =
+  | ListInvocation
+  | TopicsInvocation
+  | ModelsInvocation
+  | SetTopicInvocation;
 
 /**
  * What a command line asks for: attach to a target, or ask the daemon one
@@ -221,6 +235,7 @@ export type AttachInvocation<T = string | Here> =
   | AttachCommand<T>
   | ListInvocation<T>
   | TopicsInvocation
+  | ModelsInvocation
   | SetTopicInvocation<T>;
 
 /** A command line with every `--here` resolved: what `attach-main` dispatches. */
@@ -326,15 +341,35 @@ const toolsetOf = ({ toolset, noToolset }: AttachArgs): string | null | undefine
 const modelOf = ({ model, noModel }: AttachArgs): string | null | undefined =>
   writeOf(model, noModel, "model");
 
+/**
+ * The stand-alone listings, which take no other flag: `--topics` asks the store
+ * for its records, `--models` asks the catalogue for its refs (DEC-008, sec-5).
+ */
+function standaloneListing(
+  parsed: AttachArgs,
+  given: ReadonlyMap<string, boolean>,
+): TopicsInvocation | ModelsInvocation | undefined {
+  if (parsed.topics) {
+    // The topics are a question about the store, so they take no other flag.
+    checkAlone("topics", [], given);
+    return { mode: "topics", wait: LIST_WAIT };
+  }
+  if (!parsed.models) {
+    return undefined;
+  }
+  // The models are a question about the catalogue, and take no other flag either.
+  checkAlone("models", [], given);
+  return { mode: "models", wait: LIST_WAIT };
+}
+
 /** The one parse of a command line: what it asks, or a `UsageError` refusing it. */
 export function attachInvocationOf(args: string[]): AttachInvocation {
   const parsed = parseAttachArgs(args);
   const given = flagsOf(parsed);
   checkHereAlone(parsed.here, given);
-  if (parsed.topics) {
-    // The topics are a question about the store, so they take no other flag.
-    checkAlone("topics", [], given);
-    return { mode: "topics", wait: LIST_WAIT };
+  const listing = standaloneListing(parsed, given);
+  if (listing !== undefined) {
+    return listing;
   }
   if (parsed.setTopic !== undefined) {
     checkAlone(
@@ -402,6 +437,7 @@ const hereIn = (value: string | Here | null | undefined): Here | undefined =>
 function hereOf(invocation: AttachInvocation): Here | undefined {
   switch (invocation.mode) {
     case "topics":
+    case "models":
       return undefined;
     case "list":
       return hereIn(invocation.topic);

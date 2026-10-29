@@ -126,6 +126,9 @@ describe("parseConnectionMessage", () => {
     ['{"type":"list","topic":"work","topics":true}', "list: topic and topics are exclusive"],
     ['{"type":"list","topics":false}', "list: topics must be true"],
     ['{"type":"list","topics":"yes"}', "list: topics must be true"],
+    // `models` is read exactly as `topics`: it must be the boolean `true` (PHASE-06 VT-1).
+    ['{"type":"list","models":false}', "list: models must be true"],
+    ['{"type":"list","models":"yes"}', "list: models must be true"],
     ['{"type":"list","topic":"A"}', `list: ${NAME_RULE}`],
     ['{"type":"list","page":2}', "list: unknown key page"],
     ['{"type":"list","conversation":3}', "list: unknown key conversation"],
@@ -166,6 +169,27 @@ describe("parseConnectionMessage", () => {
     expect(errorOf(() => parseConnectionMessage(line))).toBe(message);
   });
 
+  // VT-1: `models` is a third question, so any two of `topic`, `topics` and
+  // `models` are a refusal that names the clash (the pair's wording is free).
+  it.each([
+    '{"type":"list","models":true,"topic":"work"}',
+    '{"type":"list","models":true,"topics":true}',
+  ])("refuses the exclusive pair %s, naming the clash", (line) => {
+    const message = errorOf(() => parseConnectionMessage(line));
+    expect(message).toMatch(/^list: [a-z-]+ and [a-z-]+ are exclusive$/);
+    expect(message).toMatch(/models/);
+    expect(message).toMatch(/topics?/);
+  });
+
+  // All three at once is still one refusal: naming the pair it names is enough.
+  it("refuses every question at once, naming the clash", () => {
+    expect(
+      errorOf(() =>
+        parseConnectionMessage('{"type":"list","topic":"work","models":true,"topics":true}'),
+      ),
+    ).toMatch(/^list: [a-z-]+ and [a-z-]+ are exclusive$/);
+  });
+
   it.each([
     [{ type: "list" }, { type: "list", query: { kind: "all" } }],
     [
@@ -175,6 +199,11 @@ describe("parseConnectionMessage", () => {
     [
       { type: "list", topics: true },
       { type: "list", query: { kind: "topics" } },
+    ],
+    // The catalog's chat-model refs are a third question, its own query kind (VT-1).
+    [
+      { type: "list", models: true },
+      { type: "list", query: { kind: "models" } },
     ],
     [
       { type: "topic", name: "work" },
