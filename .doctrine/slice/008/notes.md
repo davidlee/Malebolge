@@ -6,11 +6,13 @@ disposable phase sheet (`.doctrine/state/.../phase-NN.md`) that must survive
 
 ## Harvest
 <!-- single-copy: updated in place each harvest; ids only, never restated content -->
-fresh-as-of: 2026-10-29 · design reviewing (RV-019 open) · 4560aa2 + this session's commit
+fresh-as-of: 2026-10-29 · ready (plan approved by operator: "ah. approve.") · a5a8761 + plan commit
 
 ### Produced
 - Slice scoped, researched (`research/research.md`, round 1), design run
-  dr-01a18592… at stage reviewing; `design.md` materialised (8 sections).
+  dr-01a18592… locked (rev 40) after RV-019; `design.md` materialised (8 sections).
+- Plan: `plan.toml` / `plan.md`, 7 phases; operator approved it with the
+  planner's settled choices (plan.md), 2026-10-29.
 - minted: DEC-052 — read the daily jsonlz4 backup; DEC-053 — RSK-002 carve-out
   with field caps; DEC-054 — shared `src/untrusted-block.ts`; DEC-055 — optional
   env, explicit refusal; CHR-006 — operator rollout (env + jail bind); IDE-008,
@@ -30,6 +32,8 @@ review belongs to the plan.
 
 ### Open
 - RV-019 — concluded; design locked on the operator's sign-off.
+- Next: `/phase-plan` PHASE-01 (shared-module move; SL-007 overlap — second to
+  execute rebases).
 - SL-007 overlap on `src/mail/render.ts` (DEC-054) — second to execute rebases.
 - New ASM (bookmark dir from configured path, jail-bound) and DEC-029 / RSK-002 /
   SL-005 / IMP-023 notes — due at reconcile (design sec-8).

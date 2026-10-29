@@ -1,0 +1,205 @@
+# Implementation plan for SL-008 — the authored, durable phase plan.
+#
+# This is the single source of each phase's objective, criteria, verification,
+# and links. Runtime status lives separately under .doctrine/state/ (phase
+# tracking) — never record progress here. Hand-edit freely: the tool reads this
+# file but does not rewrite it.
+schema  = "doctrine.plan.overview"
+version = 1
+slice   = "SL-008"
+
+# Canonical spec/requirement links — cite ids, never restate what they say. The
+# plan reader does not model these yet, so nothing downstream consumes them.
+[specs]
+primary       = []
+collaborators = []
+
+[requirements]
+targets      = []
+dependencies = []
+
+# One [[phase]] per ordered phase, in execution order — the authored array order
+# IS the order; never sort by id. Ids are PHASE-NN (zero-padded), immutable and
+# never reused once authored — edits append, they never renumber. Criterion ids
+# are local to their phase, bare, and equally immutable.
+
+# ---------------------------------------------------------------------------
+[[phase]]
+id        = "PHASE-01"
+name      = "Shared framing and ranges: src/untrusted-block.ts, src/ranges.ts"
+objective = "Move mail's framing primitives into src/untrusted-block.ts and its input-range code into src/ranges.ts (design sec-4; DEC-054), behaviour unchanged, mail re-importing them; add the structure rule that src/bookmarks/ imports nothing from src/mail/. No bookmark code. This phase is the SL-007 overlap: whichever of SL-007 / SL-008 executes second rebases onto it."
+entrance_criteria = [
+  { id = "EN-1", text = "Design SL-008 locked (run dr-01a18592…, rev 40); RV-019 concluded; `just check` green on main (3351 tests at plan time)." },
+  { id = "EN-2", text = "SL-007 has not landed changes to src/mail/render.ts or src/mail/tools.ts since this plan; if it has, rebase the move list onto its version first (DEC-054) and note it in notes.md." },
+]
+exit_criteria = [
+  { id = "EX-1", text = "src/untrusted-block.ts exports RESULT_MAX_BYTES (51200), HEADER_RESERVE, WRAPPER_BYTES, HEADER_MAX_BYTES, ITEMS_MAX_BYTES, dataLine, renderedLength, cutRendered, count, assertWithin, clampsLine, fitWhole and renderBlock, per design sec-4. count throws `header: <what> is not a count`; mail's next-cursor check keeps its own `mail header:` text." },
+  { id = "EX-2", text = "fitWhole(values) returns {lines, shown, of}: the longest prefix of whole data lines within ITEMS_MAX_BYTES, stopping at the first that does not fit. fitMailboxes is gone; mail_mailboxes uses fitWhole." },
+  { id = "EX-3", text = "renderBlock(tag, header, lines) emits header, `<tag untrusted=\"true\">`, one data line each, `</tag>`, and asserts RESULT_MAX_BYTES. Mail's result wrapper is a use of it (`mail-data`); no second copy of the wrapper or the open/close-tag text remains in src/mail/." },
+  { id = "EX-4", text = "src/ranges.ts exports Range, Clamp<N extends string>, bounded and report, generic in N; it imports nothing from src/untrusted-block.ts; src/untrusted-block.ts imports only the Clamp type from it. Mail instantiates N = \"limit\" | \"max_bytes\" | \"offset\". MAIL_MAX_BYTES is gone; its users use RESULT_MAX_BYTES." },
+  { id = "EX-5", text = "Mail behaviour unchanged: in test/mail/ only import lines and the renamed identifiers (MAIL_MAX_BYTES → RESULT_MAX_BYTES, fitMailboxes → fitWhole) change; every assertion and expected string is byte-identical. The fitMailboxes cases move to test/untrusted-block.test.ts as fitWhole cases." },
+  { id = "EX-6", text = "test/structure.test.ts gains the rule that a src/bookmarks/ module imports nothing in src/mail/, beside seamAllows, with a negative case (design sec-6)." },
+  { id = "EX-7", text = "`just check` green." },
+]
+verification = [
+  { id = "VT-1", expects = "fitWhole keeps whole lines in order within ITEMS_MAX_BYTES, stops at the first that does not fit, and reports shown/of", test_file = "test/untrusted-block.test.ts", keywords = ["fitWhole", "ITEMS_MAX_BYTES", "shown"], waived = false },
+  { id = "VT-2", expects = "renderBlock wraps lines in the given tag with untrusted=\"true\", escapes <>& in data lines, and fails closed beyond RESULT_MAX_BYTES", test_file = "test/untrusted-block.test.ts", keywords = ["renderBlock", "RESULT_MAX_BYTES", "untrusted"], waived = false },
+  { id = "VT-3", expects = "count refuses a negative or non-integer value with `header: <what> is not a count`", test_file = "test/untrusted-block.test.ts", keywords = ["is not a count", "count("], waived = false },
+  { id = "VT-4", expects = "bounded: omitted and non-integer take the default, out-of-range clamps and reports once per name, in-range reports nothing", test_file = "test/ranges.test.ts", keywords = ["bounded", "report", "Clamp"], waived = false },
+  { id = "VT-5", expects = "the structure checker rejects a bookmarks module importing a mail module", test_file = "test/structure.test.ts", keywords = ["bookmarks/", "rejects a bookmarks module importing a mail module"], waived = false },
+  { id = "VA-1", text = "`git diff -- test/mail/` shows only import-line and identifier-rename changes (EX-5); no assertion or expected string changed." },
+]
+specs        = []
+requirements = []
+
+# ---------------------------------------------------------------------------
+[[phase]]
+id        = "PHASE-02"
+name      = "mozlz4 decoder"
+objective = "A pure in-repo decoder for Firefox's mozlz4 format, decodeMozLz4 in src/bookmarks/mozlz4.ts (design sec-2 'Decoding'), tested directly against a real fixture, an independent decoder's output, hand-built boundary vectors and every refusal; plus the test-side literal-only encoder later phases build fixtures with."
+entrance_criteria = [
+  { id = "EN-1", text = "PHASE-01 completed; suite green." },
+]
+exit_criteria = [
+  { id = "EX-1", text = "decodeMozLz4(buf, maxBytes) returns the decoded Buffer. It refuses bad magic, a literal or match running past the input or past the declared size, a match offset of 0 or beyond the bytes written, and an output length ≠ declared size, as corrupt; a declared size over maxBytes is refused as too_large before any allocation. Its refusal is a decoder-local error carrying one of those two kinds and fixed text only; PHASE-04 maps it to BookmarkSourceError." },
+  { id = "EX-2", text = "Fixture test/bookmarks/fixtures/scratchpad.jsonlz4 is the operator's 857-byte scratchpad-profile backup (Mozilla defaults only); beside it, the bytes an independent decoder produced once (e.g. python lz4.block via a nix shell), with test/bookmarks/fixtures/SOURCE.md stating both files' provenance and the one-off command." },
+  { id = "EX-3", text = "test/bookmarks/bookmark-fixtures.ts exports a literal-only LZ4 encoder producing mozlz4 bytes; it round-trips through decodeMozLz4." },
+  { id = "EX-4", text = "src/bookmarks/mozlz4.ts imports nothing outside node builtins; the decoder is ~30 lines plus its refusals." },
+  { id = "EX-5", text = "`just check` green." },
+]
+verification = [
+  { id = "VT-1", expects = "the real scratchpad backup decodes byte-equal to the independent decoder's stored output, and parses as JSON", test_file = "test/bookmarks/mozlz4.test.ts", keywords = ["decodeMozLz4", "scratchpad.jsonlz4"], waived = false },
+  { id = "VT-2", expects = "each refusal: bad magic, truncated input, offset 0, offset beyond written, overrun past declared size, size mismatch, truncated length extension → corrupt; declared size over the cap → too_large", test_file = "test/bookmarks/mozlz4.test.ts", keywords = ["corrupt", "too_large", "magic", "offset"], waived = false },
+  { id = "VT-3", expects = "an overlapping match (offset 1, length ≥ 4) decodes correctly; exact-output vectors for literal and match length extensions at 15 and 255, including a terminating zero extension byte", test_file = "test/bookmarks/mozlz4.test.ts", keywords = ["overlap", "255", "15"], waived = false },
+  { id = "VT-4", expects = "the literal-only encoder's output round-trips through decodeMozLz4", test_file = "test/bookmarks/mozlz4.test.ts", keywords = ["encodeMozLz4", "round-trip"], waived = false },
+]
+specs        = []
+requirements = []
+
+# ---------------------------------------------------------------------------
+[[phase]]
+id        = "PHASE-03"
+name      = "Backup schema and projection"
+objective = "The pure half of reading a backup: the fail-closed TypeBox schema of the node shapes the projection reads (in src/bookmarks/backup.ts) and the projection tree → Snapshot body (src/bookmarks/project.ts): Bookmark[] with folder path, tags, added date, field caps and `cut`, plus every container in `folders` with its direct count (design sec-2 'Validation', 'Projection')."
+entrance_criteria = [
+  { id = "EN-1", text = "PHASE-02 completed; suite green." },
+]
+exit_criteria = [
+  { id = "EX-1", text = "The schema accepts container, place and separator shapes with extra fields allowed; place.guid must match ^[A-Za-z0-9_-]{12}$; any other node, or a missing required field, fails validation (→ invalid in PHASE-04). One malformed guid invalidates the whole backup (RV-019 F-21)." },
+  { id = "EX-2", text = "project(tree) yields bookmarks and folders per design sec-2: root names Menu/Toolbar/Other/Mobile from `root`; folder paths joined with `/`; tags split on `,`, trimmed, empties dropped; added as UTC YYYY-MM-DD, absent when missing or not a safe integer; separators and `place:` URIs skipped." },
+  { id = "EX-3", text = "Field caps TITLE_MAX_BYTES 200, URL_MAX_BYTES 512, TAG_MAX_BYTES 64, TAGS_MAX 20, FOLDER_MAX_BYTES 256, applied with cutRendered(…, \"…\") from src/untrusted-block.ts, each cut naming its field in `cut`." },
+  { id = "EX-4", text = "folders lists every container's capped path with its direct bookmark count, zero allowed; equal paths after caps merge with summed counts (RV-019 F-13, F-20)." },
+  { id = "EX-5", text = "Fixture builders for trees (containers, places, separators, roots) live in test/bookmarks/bookmark-fixtures.ts; tests build trees through them, not inline JSON." },
+  { id = "EX-6", text = "`just check` green." },
+]
+verification = [
+  { id = "VT-1", expects = "folder paths and root names; tags split and trimmed; separators and place: skipped; added dates including missing and unsafe", test_file = "test/bookmarks/project.test.ts", keywords = ["Menu", "Toolbar", "place:", "added"], waived = false },
+  { id = "VT-2", expects = "an empty folder and a parent holding only subfolders appear in folders with count 0; two same-titled siblings give one entry with the summed count (RV-019 F-13, F-20)", test_file = "test/bookmarks/project.test.ts", keywords = ["count 0", "same-titled", "folders"], waived = false },
+  { id = "VT-3", expects = "each cap cuts its field and names it in cut; the 21st tag is dropped with tags in cut", test_file = "test/bookmarks/project.test.ts", keywords = ["TITLE_MAX_BYTES", "URL_MAX_BYTES", "TAG_MAX_BYTES", "TAGS_MAX", "FOLDER_MAX_BYTES"], waived = false },
+  { id = "VT-4", expects = "the schema refuses an unknown node type, a missing uri and a guid that is not 12 characters of [A-Za-z0-9_-]; it accepts extra fields", test_file = "test/bookmarks/project.test.ts", keywords = ["guid", "schema"], waived = false },
+]
+specs        = []
+requirements = []
+
+# ---------------------------------------------------------------------------
+[[phase]]
+id        = "PHASE-04"
+name      = "Backup source: the port, file choice, caps and errors"
+objective = "The I/O half: BookmarkSource, Snapshot, BookmarkSourceError, backupSource(dir) (choose the newest backup by name date, stat and capped read, decode, parse, validate, project), unconfiguredSource(), and the recording fakeBookmarkSource for tests (design sec-2). Stateless per call (DEC-027)."
+entrance_criteria = [
+  { id = "EN-1", text = "PHASE-03 completed; suite green." },
+]
+exit_criteria = [
+  { id = "EX-1", text = "File choice: names matching ^bookmarks-(\\d{4}-\\d{2}-\\d{2})_\\d+_[A-Za-z0-9_=+-]+\\.jsonlz4$ with a real calendar date; greatest date, ties by lexically greatest name; none → no_backup. Snapshot.date is the chosen name's date." },
+  { id = "EX-2", text = "Caps: stat over BACKUP_FILE_MAX_BYTES (16 MiB) → too_large; then one open reading at most BACKUP_FILE_MAX_BYTES + 1 bytes, the extra byte → too_large; declared size over BACKUP_JSON_MAX_BYTES (64 MiB) → too_large." },
+  { id = "EX-3", text = "BookmarkSourceError.reason is closed: not_configured | no_backup | too_large | unreadable | corrupt | invalid. Messages are built from fixed text and the file name's date only, never file content; a missing or unreadable directory → unreadable, naming the directory." },
+  { id = "EX-4", text = "unconfiguredSource().read() rejects not_configured. fakeBookmarkSource(snapshot | error) in test/bookmarks/bookmark-fixtures.ts records its calls." },
+  { id = "EX-5", text = "`just check` green." },
+]
+verification = [
+  { id = "VT-1", expects = "newest by name date; non-matching files and a name dated 9999-99-99 ignored; empty dir → no_backup; missing dir → unreadable", test_file = "test/bookmarks/backup.test.ts", keywords = ["backupSource", "no_backup", "9999-99-99", "unreadable"], waived = false },
+  { id = "VT-2", expects = "oversize file → too_large; a file that grows past the cap after stat → too_large; corrupt bytes → corrupt; schema miss including an oversized guid → invalid (RV-019 F-12, first half)", test_file = "test/bookmarks/backup.test.ts", keywords = ["too_large", "grows", "corrupt", "invalid", "guid"], waived = false },
+  { id = "VT-3", expects = "no error message carries file content (a distinctive marker in the fixture never appears in any message)", test_file = "test/bookmarks/backup.test.ts", keywords = ["never", "message"], waived = false },
+  { id = "VT-4", expects = "unconfiguredSource rejects not_configured", test_file = "test/bookmarks/backup.test.ts", keywords = ["unconfiguredSource", "not_configured"], waived = false },
+  { id = "VA-1", text = "Decode the operator's newest live backup through backupSource in a scratch run (outside the repo); report place and tagged counts against research F5 (≈446 places, ≈306 tagged), the backup date, and any reason other than success, without printing titles, URLs or tags." },
+]
+specs        = []
+requirements = []
+
+# ---------------------------------------------------------------------------
+[[phase]]
+id        = "PHASE-05"
+name      = "Bookmark rendering: page fill, trusted header, cutCount"
+objective = "src/bookmarks/render.ts: the page (fitWhole over matches from offset), the fixed-form trusted header for each tool (items, matched, next_offset, source, stale, clamps, shown N of M, cut by caps), cutCount, and the result through renderBlock(\"bookmark-data\", …) (design sec-4)."
+entrance_criteria = [
+  { id = "EN-1", text = "PHASE-04 completed; suite green." },
+]
+exit_criteria = [
+  { id = "EX-1", text = "Search header lines exactly as design sec-4: `bookmarks_search: N items, K with cuts`, `matched: M` with `next_offset: X` only when matches remain (X = offset + items emitted), `source: bookmark backup YYYY-MM-DD`, `stale: D days` only when the backup is more than 2 days older than the injected now, clamps via clampsLine. Fails closed on any value not in a fixed form; header within HEADER_MAX_BYTES." },
+  { id = "EX-2", text = "Tags/folders header: `shown N of M` (N = items emitted), next_offset when more, source/stale, and `cut by caps: N bookmarks` only when cutCount(bookmarks) > 0." },
+  { id = "EX-3", text = "A page holds ≥1 item whenever any match remains past offset; an offset at or past the last match gives 0 items and no next_offset." },
+  { id = "EX-4", text = "RV-019 F-12 (probe): the item-size bound holds for any field of any length inside a backup that passes the file caps and the schema. Criterion: an oversized-guid fixture through the real backupSource yields invalid, and a fixture with every field at its cap, read through the real backupSource and rendered, gives one item within ITEMS_MAX_BYTES." },
+  { id = "EX-5", text = "`just check` green." },
+]
+verification = [
+  { id = "VT-1", expects = "header fixed forms; a non-count or non-date value fails closed; stale only past 2 days; cut by caps only when cutCount > 0", test_file = "test/bookmarks/render.test.ts", keywords = ["stale", "cut by caps", "cutCount", "fails closed"], waived = false },
+  { id = "VT-2", expects = "a page stops at budget with ≥1 item and next_offset = offset + items; offset past the end gives 0 items and no next_offset", test_file = "test/bookmarks/render.test.ts", keywords = ["next_offset", "budget"], waived = false },
+  { id = "VT-3", expects = "the block escapes <>& and is wrapped in bookmark-data untrusted=\"true\"", test_file = "test/bookmarks/render.test.ts", keywords = ["bookmark-data", "\\u003c"], waived = false },
+  { id = "VT-4", expects = "RV-019 F-12: an every-field-at-cap backup read through the real backupSource renders one item within ITEMS_MAX_BYTES; an oversized guid through the real backupSource is invalid", test_file = "test/bookmarks/render.test.ts", keywords = ["RV-019 F-12", "backupSource", "ITEMS_MAX_BYTES", "invalid"], waived = false },
+]
+specs        = []
+requirements = []
+
+# ---------------------------------------------------------------------------
+[[phase]]
+id        = "PHASE-06"
+name      = "The three tools and the bookmarks extension"
+objective = "bookmarks_search, bookmarks_tags and bookmarks_folders in src/bookmarks/tools.ts (design sec-3) over BookmarkSource, with bounded limit/offset from src/ranges.ts, input refusals before the source is read, and descriptions carrying usage (DEC-030); bookmarksExtension({source, now}) and BOOKMARKS_SECTION in src/bookmarks/extension.ts."
+entrance_criteria = [
+  { id = "EN-1", text = "PHASE-05 completed; suite green." },
+]
+exit_criteria = [
+  { id = "EX-1", text = "Each tool: defineTool, replay \"safe\", one text output, isError true for input and source errors (the mail pattern, src/mail/tools.ts). limit 1–200 default 50; offset 0–10000 default 0; out-of-range clamps named in the header; offset 1e21 is clamped, not thrown." },
+  { id = "EX-2", text = "Search: every whitespace-split, lowercased query term is a substring of the lowercased title, url, a tag or folder; tag is case-insensitive equality; folder is a case-insensitive prefix at a segment boundary; filters AND; matching on capped fields. Order: added desc, missing last, then guid." },
+  { id = "EX-3", text = "Tags: {tag, count} by count desc then tag. Folders: every Snapshot.folders entry, empty ones included, by path asc." },
+  { id = "EX-4", text = "Input refusals before the source is read: query over 512 bytes, tag over 64, folder over 256; the refusal text never repeats the value." },
+  { id = "EX-5", text = "Descriptions state: results come from a daily backup up to a day behind; run several searches or page the full list for loose recall; use bookmarks_tags / bookmarks_folders to see structure first; matching and counts use capped fields (with the caps); folders counts are direct while the search folder filter includes subfolders." },
+  { id = "EX-6", text = "bookmarksExtension({source, now}) registers the three tools and the BOOKMARKS_SECTION text of design sec-4; not_configured surfaces as an error result." },
+  { id = "EX-7", text = "`just check` green." },
+]
+verification = [
+  { id = "VT-1", expects = "search AND-terms across fields, tag equality, folder segment-boundary prefix (Menu/dev matches Menu/dev/cli, not Menu/devops), order including missing added", test_file = "test/bookmarks/tools.test.ts", keywords = ["bookmarks_search", "Menu/devops", "missing added"], waived = false },
+  { id = "VT-2", expects = "paging and next_offset; clamps in header; offset 1e21 clamped", test_file = "test/bookmarks/tools.test.ts", keywords = ["1e21", "clamped", "next_offset"], waived = false },
+  { id = "VT-3", expects = "oversize query/tag/folder refused with no source call recorded", test_file = "test/bookmarks/tools.test.ts", keywords = ["no source call", "calls"], waived = false },
+  { id = "VT-4", expects = "tags and folders counts and order; empty folders listed; not_configured is an error result", test_file = "test/bookmarks/tools.test.ts", keywords = ["bookmarks_tags", "bookmarks_folders", "not_configured", "isError"], waived = false },
+  { id = "VT-5", expects = "each description carries the staleness, structure-first and cap clauses", test_file = "test/bookmarks/tools.test.ts", keywords = ["description", "up to a day"], waived = false },
+]
+specs        = []
+requirements = []
+
+# ---------------------------------------------------------------------------
+[[phase]]
+id        = "PHASE-07"
+name      = "Configuration, wiring, toolset membership and docs"
+objective = "Wire bookmarks into the daemon (design sec-5; DEC-055): bookmarkBackupsOf and Config.bookmarkBackups, the builder in src/daemon-extensions.ts, construction in src/daemon-start.ts, \"bookmarks\" before SATAN in CATALOG.interactive; extend the toolset baseline tests; pin the section; document the toolset, env var and jail bind."
+entrance_criteria = [
+  { id = "EN-1", text = "PHASE-06 completed; suite green." },
+  { id = "EN-2", text = "The other session's src/threads/ and toolset work is not mid-flight on src/toolsets.ts or test/toolsets.test.ts; if it is, coordinate via the team lead before editing them." },
+]
+exit_criteria = [
+  { id = "EX-1", text = "bookmarkBackupsOf(env, profile): read when the profile allows interactive (room and host); unset or empty → undefined; set but not absolute → startup refuses (absolutePathEnv). Config.bookmarkBackups?: string." },
+  { id = "EX-2", text = "daemon-start builds bookmarksExtension({source, now}) with backupSource(dir) when configured, else unconfiguredSource(); daemon-extensions has an always-present bookmarks builder." },
+  { id = "EX-3", text = "CATALOG.interactive gains \"bookmarks\" immediately before SATAN; mail and job never include it; startup logs each changed list (DEC-029(6))." },
+  { id = "EX-4", text = "test/toolsets.test.ts: VT-1 excludes bookmarks by name (as threads); VT-5's delta extends to room = baseline + threads + bookmarks, host = baseline + bookmarks. test/fixtures/interactive-baseline.json is not regenerated." },
+  { id = "EX-5", text = "docs/internals.md and README.md: toolset tables, a Bookmarks section, MALEBOLGE_BOOKMARK_BACKUPS, and the read-only jail bind as an operator rollout step (CHR-006)." },
+  { id = "EX-6", text = "`just check` green." },
+]
+verification = [
+  { id = "VT-1", expects = "config: unset and empty → undefined; relative → refusal; room and host both read it", test_file = "test/config.test.ts", keywords = ["bookmarkBackupsOf", "MALEBOLGE_BOOKMARK_BACKUPS"], waived = false },
+  { id = "VT-2", expects = "toolset baseline: bookmarks excluded by name in VT-1; the delta test adds bookmarks for room and host; mail and job never include bookmarks", test_file = "test/toolsets.test.ts", keywords = ["\"bookmarks\"", "BOOKMARKS_SECTION"], waived = false },
+  { id = "VT-3", expects = "BOOKMARKS_SECTION text is pinned in the rendered system prompt", test_file = "test/daemon-sections.test.ts", keywords = ["BOOKMARKS_SECTION", "bookmark-data"], waived = false },
+  { id = "VT-4", expects = "daemon-start wires backupSource when configured and an unconfigured source otherwise", test_file = "test/daemon-start.test.ts", keywords = ["bookmarks", "not_configured"], waived = false },
+  { id = "VH-1", text = "After the operator rollout (CHR-006: env var + read-only jail bind), the operator asks the Kegan question in an interactive conversation and gets plausible bookmarks. Checked at audit; does not block the phase." },
+]
+specs        = []
+requirements = []
