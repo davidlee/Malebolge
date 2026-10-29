@@ -33,6 +33,17 @@ wanted, is left to phase-plan as checks against code, not design questions:
 
 ## Autonomy log
 
+- PHASE-01 · ModelCatalog members are function-typed properties (`require: (ref) => ModelRef`), not method signatures as design sec-2 writes them · typescript-eslint `unbound-method` refuses passing `catalog.require` unbound, which design sec-4's `creationModel(..., catalog.require)` does; names/types unchanged · decided (local design correction; flag for audit)
+- PHASE-01 · `startDaemon`'s first three preflight calls extracted into a `preflight` helper (same calls, order, errors) · `max-lines-per-function` (80) was saturated and the catalog check needs two lines · decided (adjacent refactor)
+- PHASE-01 · shared fixture placed in new `test/model-fixture.ts` (EX-6 allows "beside" harness-fixture): `SLASHED_REF`, `FLASH_REF`, `IMAGE_REF`, `slashedModels()`, `catalogOf(...refs)` · model-only module avoids harness-fixture's conversation/daemon imports · decided (fixture)
+- PHASE-01 · UnknownModel message is `unknown model <ref>` for both refusals; an unparseable ref carries the parse error as `cause` · one wording satisfies EX-2 · decided
+
+## PHASE-01 run log
+
+- EN-2: pi-ai 1.4.0 `Models.getModelsOfType(type, provider?)` confirmed at dist/models.d.ts:151; name unchanged.
+- pi `implement` (deepseek-flash), 1 run, 23 requests, $0.05: fixture + VT-1..4 red-first (VT-4 already green, as predicted), then implementation; green. Misses: VT-2's "only chat" assertion was vacuous-risk (no proof the fixture held the image model) and sorting was unpinned (fixture catalog already in sorted order); both fixed by the orchestrator. The worker also noted the coverage threshold fails targeted runs: use `--coverage.enabled=false` for those.
+- Negative controls (orchestrator): fallback on an unknown topic, all model types in refs, refs unsorted, split on the last slash, start check removed: each turns its VT red.
+
 ## Harvest
 <!-- single-copy: updated in place each harvest; ids only, never restated content -->
 fresh-as-of: 2026-10-29 · ready (PHASE-01..07 planned, none started) · cf7049a

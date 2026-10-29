@@ -166,6 +166,13 @@ describe("startDaemon", () => {
     lockFree(w.config);
   });
 
+  it("VT-4: refuses a configured model the injected catalog lacks", async () => {
+    const w = await world();
+    w.config.model = { provider: "faux", modelId: "absent" };
+    await expect(start(w)).rejects.toThrow("unknown model faux/absent");
+    lockFree(w.config);
+  });
+
   it("claims the socket and serves before it opens the store", async () => {
     const w = await world();
     const mcp = await fakeMcpServer(w.config.mcpSocket, [note], { silent: ["tools/list"] });

@@ -19,7 +19,7 @@ import { daemonExtensions } from "./daemon-extensions.ts";
 import { acquireInstanceLock } from "./instance-lock.ts";
 import { mailExtension } from "./mail/extension.ts";
 import { screwtapeSource } from "./mail/screwtape.ts";
-import { loadGatewayModels, type ModelRef } from "./models.ts";
+import { loadGatewayModels, modelCatalog, type ModelRef, refOf } from "./models.ts";
 import { personaFiles, readPersona, requirePersonaFiles } from "./persona.ts";
 import { renderProjectContext } from "./project-context.ts";
 import { registryOf } from "./registry.ts";
@@ -51,15 +51,6 @@ export interface StartDeps {
   now?: () => number;
   /** The profile's execution environment; `daemonEnv`'s when omitted (a test seam: no room needed). */
   environment?: DaemonEnv;
-}
-
-/** `models`, or an error naming the model the catalog lacks. */
-function requireKnownModel(models: Models, model: ModelRef): Models {
-  const { provider, modelId } = model;
-  if (models.getModelOfType("chat", provider, modelId) === undefined) {
-    throw new Error(`unknown model ${provider}/${modelId}`);
-  }
-  return models;
 }
 
 /** What the wakes read that exists before the session: step 1 of their binding. */
@@ -116,12 +107,17 @@ const openBoundSession = async (
   });
 };
 
-/** The injected catalog, or the gateway's; either must know the configured model. */
+/** The injected catalog, or the gateway's. */
 const modelsFor = async (config: Config, injected: Models | undefined): Promise<Models> =>
-  requireKnownModel(
-    injected ?? (await loadGatewayModels(config.gatewayCatalog, config.gatewayKeyFile)),
-    config.model,
-  );
+  injected ?? (await loadGatewayModels(config.gatewayCatalog, config.gatewayKeyFile));
+
+/** The profile's static requirements, then its skills: the first work a start does. */
+const preflight = (config: Config, log: Log): Skill[] => {
+  requirePersonaFiles(config.corpusRoot, config.execution.profile);
+  const skills = loadSkills(config.skillDirs, log);
+  requireGatewaySocket(config.execution);
+  return skills;
+};
 
 /** The instance lock; on refusal the environment is closed first. */
 const lockOrClose = (config: Config, environment: DaemonEnv): { release: () => void } => {
@@ -217,10 +213,11 @@ export interface DaemonHandle {
  */
 export async function startDaemon(config: Config, deps: StartDeps): Promise<DaemonHandle> {
   const { log, now = Date.now } = deps;
-  requirePersonaFiles(config.corpusRoot, config.execution.profile);
-  const skills = loadSkills(config.skillDirs, log);
-  requireGatewaySocket(config.execution);
+  const skills = preflight(config, log);
   const models = await modelsFor(config, deps.models);
+  // The configured model must be one the catalog serves; later phases pass the port on.
+  const catalog = modelCatalog(models);
+  catalog.require(refOf(config.model));
 
   // Local configuration is checked before the room is reached.
   const environment = deps.environment ?? daemonEnv(config.execution, log);

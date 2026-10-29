@@ -22,17 +22,23 @@ import { onTestFinished, describe, expect, it, vi } from "vitest";
 import { context } from "../src/context.ts";
 import { isRecord, type JsonRecord } from "../src/json.ts";
 import {
+  creationModel,
   GATEWAY_PROVIDER,
   gatewayProvider,
   loadGatewayModels,
+  modelCatalog,
   MODEL_STREAM_DEADLINE_MS,
   parseGatewayCatalog,
+  parseModel,
+  refOf,
+  UnknownModel,
   withStreamDeadline,
 } from "../src/models.ts";
 import { registryOf } from "../src/registry.ts";
 import { openSession } from "../src/session.ts";
 import { tempDir } from "./fixtures.ts";
 import { closing, nodeEnv } from "./harness-fixture.ts";
+import { catalogOf, FLASH_REF, IMAGE_REF, SLASHED_REF, slashedModels } from "./model-fixture.ts";
 
 /** The catalog as `piGatewayConfig` renders it (see test/gateway-catalog.json). */
 const GATEWAY_CATALOG_TEXT = readFileSync(
@@ -496,5 +502,44 @@ describe("model stream deadline (withStreamDeadline; RV-062 F-13 as amended by F
     );
     controller.abort();
     expect((await result.result()).stopReason).toBe("aborted");
+  });
+});
+
+describe("model catalog port (modelCatalog, refOf, creationModel)", () => {
+  it("VT-1: require parses a slashed ref, and refuses one the catalog lacks or cannot parse", () => {
+    const catalog = modelCatalog(slashedModels());
+    expect(catalog.require(SLASHED_REF)).toEqual({
+      provider: "gateway",
+      modelId: "openai-david/gpt-6.1-terra",
+    });
+    expect(() => catalog.require("gateway/nope")).toThrow(UnknownModel);
+    expect(() => catalog.require("gateway/nope")).toThrow("unknown model gateway/nope");
+    expect(() => catalog.require("noslash")).toThrow(UnknownModel);
+    expect(() => catalog.require("noslash")).toThrow(/noslash/);
+  });
+
+  it("VT-2: refs lists every chat ref sorted, no non-chat model; refOf inverts parseModel", () => {
+    const models = slashedModels();
+    // Not vacuous: the catalog does hold the image model, as a non-chat type.
+    expect(models.getModelsOfType("image").map((model) => model.id)).toEqual([
+      parseModel(IMAGE_REF).modelId,
+    ]);
+    const refs = modelCatalog(models).refs();
+    expect(refs).toEqual([FLASH_REF, SLASHED_REF]);
+    expect(refs).not.toContain(IMAGE_REF);
+    expect(refOf(parseModel(SLASHED_REF))).toBe(SLASHED_REF);
+  });
+
+  it("VT-3: creationModel takes a known topic, refuses an unknown one, and trusts the fallback unchecked", () => {
+    const { require } = catalogOf(SLASHED_REF, FLASH_REF);
+    const fallback = parseModel(SLASHED_REF);
+    expect(creationModel({ topic: FLASH_REF, fallback }, require)).toEqual(parseModel(FLASH_REF));
+    expect(() => creationModel({ topic: "gateway/absent", fallback }, require)).toThrow(
+      UnknownModel,
+    );
+    const refuse = (ref: string): never => {
+      throw new Error(`require was called for ${ref}`);
+    };
+    expect(creationModel({ fallback }, refuse)).toBe(fallback);
   });
 });

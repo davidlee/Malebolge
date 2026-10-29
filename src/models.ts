@@ -44,6 +44,69 @@ export function parseModel(ref: string): ModelRef {
   return { provider: ref.slice(0, slash), modelId: ref.slice(slash + 1) };
 }
 
+/** `provider/modelId`: parseModel's inverse. */
+export function refOf(model: ModelRef): string {
+  return `${model.provider}/${model.modelId}`;
+}
+
+/** A ref the gateway catalog cannot serve: unparseable, or not a chat model it holds. */
+export class UnknownModel extends Error {
+  readonly ref: string;
+
+  constructor(ref: string, options?: ErrorOptions) {
+    super(`unknown model ${ref}`, options);
+    this.name = "UnknownModel";
+    this.ref = ref;
+  }
+}
+
+/**
+ * What conversation code knows of the gateway catalog. Function properties, not
+ * methods: callers pass `catalog.require` on its own (`creationModel`).
+ */
+export interface ModelCatalog {
+  /** The ref parsed, or an `UnknownModel` naming it: `unknown model <ref>`. */
+  require: (ref: string) => ModelRef;
+  /** Every chat model's ref, `provider/modelId`, sorted. */
+  refs: () => string[];
+}
+
+/** The catalog `models` holds, as the port: refs parse and are checked against its chat models. */
+export function modelCatalog(models: Models): ModelCatalog {
+  return {
+    require: (ref: string): ModelRef => {
+      let parsed: ModelRef;
+      try {
+        parsed = parseModel(ref);
+      } catch (error) {
+        throw new UnknownModel(ref, { cause: error });
+      }
+      if (models.getModelOfType("chat", parsed.provider, parsed.modelId) === undefined) {
+        throw new UnknownModel(ref);
+      }
+      return parsed;
+    },
+    refs: () =>
+      models
+        .getModelsOfType("chat")
+        .map((model) => refOf({ provider: model.provider, modelId: model.id }))
+        .sort(),
+  };
+}
+
+/** Where a new conversation's model may come from, highest precedence first. */
+export interface ModelSources {
+  /** The topic's stored model, if it has one. */
+  topic?: string;
+  /** The daemon default. */
+  fallback: ModelRef;
+}
+
+/** The model a new conversation takes; a source the catalog lacks is refused. */
+export function creationModel(sources: ModelSources, require: ModelCatalog["require"]): ModelRef {
+  return sources.topic === undefined ? sources.fallback : require(sources.topic);
+}
+
 type GatewayModel = Model<"openai-completions">;
 
 /** A parsed gateway catalog: the provider's endpoint and its models, `provider` and `baseUrl` set. */
