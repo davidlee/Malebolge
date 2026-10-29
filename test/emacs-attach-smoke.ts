@@ -131,8 +131,9 @@ const frameOf =
 
 /**
  * A fake daemon on `path`: answers the attach frame with `attachReply` then
- * runs `serve`, and answers a `list` frame with `LISTED` before closing, as
- * the daemon's own clean close does.  Records every frame the client sends.
+ * runs `serve`, and answers a `list` frame with `LISTED` and its summaries
+ * before closing, as the daemon's own clean close does.  Records every frame
+ * the client sends.
  */
 async function fakeDaemon(
   path: string,
@@ -149,7 +150,17 @@ async function fakeDaemon(
         received.push(value);
         if (frameOf("list")(value)) {
           socket.end(
-            encodeLine({ type: "conversations", conversations: LISTED, truncated: false }),
+            encodeLine({
+              type: "conversations",
+              conversations: LISTED,
+              truncated: false,
+              // SL-010: the chooser's lines are `id<TAB>topic<TAB>model`.
+              summaries: {
+                "9": { topic: "work", model: "faux/faux-2" },
+                [String(CHOSEN)]: { topic: "default", model: "faux/faux-1" },
+                "3": { topic: "default" },
+              },
+            }),
           );
         }
         if (isRecord(value) && value["type"] === "attach") {
@@ -295,10 +306,16 @@ const targetedElisp = (outFile: string): string => `
 (require 'cl-lib)
 (cl-letf (((symbol-function 'completing-read)
            (lambda (_prompt collection &rest _)
-             (unless (member ${JSON.stringify(String(CHOSEN))} collection)
-               (mlb-smoke-fail "the listing never offered the chosen id"
-                               ${JSON.stringify(outFile)}))
-             ${JSON.stringify(String(CHOSEN))})))
+             ;; SL-010: each candidate is a whole line: id<TAB>topic<TAB>model.
+             (let ((line (cl-find-if
+                          (lambda (candidate)
+                            (equal (malebolge--candidate-id candidate)
+                                   ${JSON.stringify(String(CHOSEN))}))
+                          collection)))
+               (unless line
+                 (mlb-smoke-fail "the listing never offered the chosen id"
+                                 ${JSON.stringify(outFile)}))
+               line))))
   (malebolge-attach t))
 (unless (mlb-smoke-wait ${ANSWER_DONE})
   (mlb-smoke-fail "the chosen conversation's snapshot never arrived"
@@ -488,9 +505,11 @@ async function checkTerminal(dir: string): Promise<void> {
 
 /**
  * 4: a prefix-argument attach lists the store, picks, and sends the chosen
- * target's argv.  The argv is `--conversation CHOSEN`, so the socket must see
- * the attach frame naming it -- the argument reaching the client is what the
- * picker got right, not the frame the fake happened to expect.
+ * target's argv.  The fake's list reply carries summaries, so the picker sees
+ * `id<TAB>topic<TAB>model` lines and must answer a whole one.  The argv is
+ * `--conversation CHOSEN`, so the socket must see the attach frame naming it --
+ * the argument reaching the client is what the picker got right, not the frame
+ * the fake happened to expect.
  */
 async function checkTargetedAttach(dir: string): Promise<void> {
   const received = recorder<unknown>();

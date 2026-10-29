@@ -44,6 +44,7 @@ wanted, is left to phase-plan as checks against code, not design questions:
 - PHASE-03 · heartbeat catch extracted as `ensureHeartbeatOrLog` in src/daemon-start.ts · keeps startRoomTasks' shape; catches UnknownModel only · decided (adjacent refactor)
 - PHASE-03 · `test/thread-fixture.ts` gains `SECOND_MODEL`/`SECOND_REF` (faux/faux-2) and a world catalog holding both · a topic's model must differ observably from the world default for VT-3/VT-4 · decided (fixture)
 - PHASE-04 · `parseAttachArgs`' seven valued-option copies folded into a `VALUED_FIELDS` table + loop · eslint `complexity` (8) refused the added `model` branch; same behaviour, all rows green · decided (adjacent refactor)
+- PHASE-05 · `knownTopicIn(index, name)` extracted from `indexOfTopic` · `topicPage` now reads the index inside its commit and needs the same refusal; one check, two callers · decided (adjacent refactor)
 
 ## PHASE-01 run log
 
@@ -68,6 +69,13 @@ wanted, is left to phase-plan as checks against code, not design questions:
 
 - pi `implement` (deepseek-flash), 2 runs on one session: tests-red 15 requests $0.02 (VT-1 10 red, VT-2 4 red, VT-3 1 red, all assertion/unknown-option failures; 9 `toThrow(UsageError)` twin rows vacuously green before EX-1, meaningful after), implementation 20 requests $0.02. Miss: none of substance; it flagged the pre-existing `--topics` expectation in test/request.test.ts the four-field line breaks, and refactored for the complexity rule (Autonomy log).
 - Gate: `just check` 104 files / 3592 tests green.
+
+## PHASE-05 run log
+
+- EN-2: see the measurement section below (go).
+- pi `implement` (deepseek-flash): tests run 51 requests $0.08 (hit the 50 ceiling while finishing) + continuation 2 requests $0.004; implementation run (fresh session) 35 requests $0.03. TS VTs red-first on missing `summaries` / old line shape (13 failures); ERT red on host before the regex moved (2 candidate tests). Misses: one `no-unnecessary-condition` lint error in its VT-1 test (orchestrator fixed); `topicPage` duplicated the unknown-topic check (orchestrator extracted `knownTopicIn`); lineOf's two branches collapsed. Test mark texts in ERT (`forked from 12`) are not the daemon's wording; harmless to parsing.
+- Host: `just ert` 42/42 + byte-compile clean; `just smoke` 4/4. Negative control: a mark regex allowing empty (`[^\t\n]*`) → ERT `…reject-malformed-ones` red.
+- Gate: `just check` 104 files / 3596 tests green.
 
 ## PHASE-05 EN-2 measurement (VA-1)
 

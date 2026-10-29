@@ -85,6 +85,12 @@ export interface TopicMessage {
  */
 export type ThreadMark = { forkOf: number } | { startedBy: number };
 
+/** One conversation as a listing describes it: the topic it is filed in, and its model ref. */
+export interface ConversationSummary {
+  topic: string;
+  model?: string;
+}
+
 /**
  * The daemon's reply to a `list` frame: bare ids, newest first, and whether the
  * page was cut. A framed object rather than a bare array so keys can widen
@@ -96,6 +102,8 @@ export interface ConversationsMessage {
   truncated: boolean;
   /** Present when any listed id is a thread: its mark, by id. */
   marks?: Record<string, ThreadMark>;
+  /** Every listed id's summary: optional on the wire only so a new client tolerates an old daemon. */
+  summaries?: Record<string, ConversationSummary>;
 }
 
 /** One topic as a `topics` reply shows it: its name, its directory, its toolset and its model. */

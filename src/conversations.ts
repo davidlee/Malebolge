@@ -15,17 +15,24 @@
 
 import {
   type AgentChange,
+  AgentDoc,
   type AgentEventStream,
   type Conversation,
   configure,
   type ConversationId,
   type ConversationInit,
+  type Tx,
   watchEvents,
 } from "@earendil-works/pi-durable";
 import type { Profile } from "./config.ts";
 import { context } from "./context.ts";
-import { creationModel, type ModelCatalog, type ModelRef } from "./models.ts";
-import { type AttachTarget, type ListQuery, type ThreadMark } from "./protocol.ts";
+import { creationModel, type ModelCatalog, type ModelRef, refOf } from "./models.ts";
+import {
+  type AttachTarget,
+  type ConversationSummary,
+  type ListQuery,
+  type ThreadMark,
+} from "./protocol.ts";
 import type { Session } from "./session.ts";
 import {
   idsIn,
@@ -87,12 +94,14 @@ export type PageQuery = Exclude<ListQuery, { kind: "topics" }>;
 /** Conversations read per listing page: small, so a listing never stalls the turn chain. */
 export const LIST_PAGE = 50;
 
-/** One page of a listing: the ids newest first, the cut, and the threads' marks. */
+/** One page of a listing: the ids newest first, the cut, the threads' marks and every id's summary. */
 export interface ConversationPage {
   ids: number[];
   truncated: boolean;
   /** Present when an id on the page is a thread: its mark, by id. */
   marks?: Record<string, ThreadMark>;
+  /** Every listed id's topic and, when it has one, its model ref. */
+  summaries: Record<string, ConversationSummary>;
 }
 
 /**
@@ -111,13 +120,38 @@ function marksOf(index: IndexDoc, ids: readonly number[]): Record<string, Thread
   return Object.keys(marks).length === 0 ? undefined : marks;
 }
 
+/**
+ * The summaries of a page's `ids`, read in its commit: each id's topic from the index,
+ * and the model ref its agent document stores, when it stores one. An id the index does
+ * not know gets no summary at all.
+ */
+async function summariesOf(
+  tx: Tx,
+  index: IndexDoc,
+  ids: readonly number[],
+): Promise<Record<string, ConversationSummary>> {
+  const summaries: Record<string, ConversationSummary> = {};
+  for (const id of ids) {
+    const topic = index.conversations[String(id)]?.topic;
+    if (topic === undefined || !isConversationKey(id)) {
+      continue;
+    }
+    const { model } = await tx.doc(AgentDoc, id);
+    // `exactOptionalPropertyTypes`: an unset model is no key, not `model: undefined`.
+    const ref = model === undefined ? undefined : refOf(model);
+    summaries[String(id)] = ref === undefined ? { topic } : { topic, model: ref };
+  }
+  return summaries;
+}
+
 /** `ids` as a page, carrying `marks` only when there are any. */
 function pageOf(
   ids: number[],
   truncated: boolean,
   marks: ConversationPage["marks"],
+  summaries: Record<string, ConversationSummary>,
 ): ConversationPage {
-  return marks === undefined ? { ids, truncated } : { ids, truncated, marks };
+  return marks === undefined ? { ids, truncated, summaries } : { ids, truncated, marks, summaries };
 }
 
 /** The safe positive integer the wire parser accepts, as pi's branded id. */
@@ -208,13 +242,17 @@ function create(
   );
 }
 
-/** The index, with `name` known: `default` always is, a topic nobody wrote is refused. */
-async function indexOfTopic(session: Session, name: string): Promise<IndexDoc> {
-  const index = await readIndex(session.harness);
+/** `index`, with `name` known in it: `default` always is, a topic nobody wrote is refused. */
+function knownTopicIn(index: IndexDoc, name: string): IndexDoc {
   if (!isKnownTopic(index, name)) {
     throw noTopic(name);
   }
   return index;
+}
+
+/** The index, with `name` known: `default` always is, a topic nobody wrote is refused. */
+async function indexOfTopic(session: Session, name: string): Promise<IndexDoc> {
+  return knownTopicIn(await readIndex(session.harness), name);
 }
 
 /**
@@ -265,28 +303,41 @@ function serially<A extends readonly unknown[], R>(
 /** One page of this store's ownerless conversations, newest first (the SL-002 read). */
 async function scanPage(session: Session): Promise<ConversationPage> {
   // One read, one page, no cursor kept: `next` means the page was cut, not "keep going".
-  // The index is read in the same commit, so its marks describe exactly the ids this page holds.
-  const { ids, marks, truncated } = await session.harness.commit(async (tx) => {
+  // The index is read in the same commit, so its marks and summaries describe exactly
+  // the ids this page holds.
+  const { ids, marks, summaries, truncated } = await session.harness.commit(async (tx) => {
     const page = await tx.scanConversations({ order: "descending" }, LIST_PAGE);
     // A task-owned conversation is refused at attach, so listing one would be noise.
     const pageIds = page.items
       .filter((record) => record.owner === undefined)
       .map((record) => record.id);
+    const index = await readIndexDoc(tx);
     return {
       ids: pageIds,
-      marks: marksOf(await readIndexDoc(tx), pageIds),
+      marks: marksOf(index, pageIds),
+      summaries: await summariesOf(tx, index, pageIds),
       truncated: page.next !== undefined,
     };
   }, context);
-  return pageOf(ids, truncated, marks);
+  return pageOf(ids, truncated, marks, summaries);
 }
 
 /** One topic's conversations, newest first, cut at `LIST_PAGE` like every page. */
 async function topicPage(session: Session, name: string): Promise<ConversationPage> {
-  const index = await indexOfTopic(session, name);
-  const ids = idsIn(index, name);
-  const page = ids.slice(0, LIST_PAGE);
-  return pageOf(page, ids.length > LIST_PAGE, marksOf(index, page));
+  // One commit: the refused-or-known index, the ids it yields and their summaries are
+  // one read, so a topic written mid-listing cannot split the page from its summaries.
+  const { ids, marks, summaries, truncated } = await session.harness.commit(async (tx) => {
+    const index = knownTopicIn(await readIndexDoc(tx), name);
+    const all = idsIn(index, name);
+    const page = all.slice(0, LIST_PAGE);
+    return {
+      ids: page,
+      marks: marksOf(index, page),
+      summaries: await summariesOf(tx, index, page),
+      truncated: all.length > LIST_PAGE,
+    };
+  }, context);
+  return pageOf(ids, truncated, marks, summaries);
 }
 
 /** `write`'s toolset as the index stores it: absent leaves it, `null` clears it, a name is judged. */

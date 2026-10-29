@@ -6,6 +6,7 @@ import type { AgentEvent, EntryRecord, MessageChange } from "@earendil-works/pi-
 import { isRecord } from "./json.ts";
 import type {
   AttachedMessage,
+  ConversationSummary,
   ConversationsMessage,
   ErrorMessage,
   ThreadMark,
@@ -313,9 +314,20 @@ function applyChange(blocks: string[], change: MessageChange): string[] {
 const markText = (mark: ThreadMark): string =>
   "forkOf" in mark ? `fork of ${String(mark.forkOf)}` : `started by ${String(mark.startedBy)}`;
 
-/** One listing line: the id alone, or the id and its thread mark after a tab. */
-const lineOf = (id: number, mark: ThreadMark | undefined): string =>
-  mark === undefined ? `${String(id)}\n` : `${String(id)}\t${markText(mark)}\n`;
+/** One listing line's summary fields: the topic, then the model, empty when absent. */
+const summaryFields = (summary: ConversationSummary | undefined): string =>
+  `${summary?.topic ?? ""}\t${summary?.model ?? ""}`;
+
+/**
+ * One listing line: `id<TAB>topic<TAB>model`, and the thread mark after another tab
+ * when the id has one. A reply without summaries still prints both empty fields.
+ */
+const lineOf = (
+  id: number,
+  summary: ConversationSummary | undefined,
+  mark: ThreadMark | undefined,
+): string =>
+  `${String(id)}\t${summaryFields(summary)}${mark === undefined ? "" : `\t${markText(mark)}`}\n`;
 
 /**
  * What events outside the answer in flight print; most print nothing. Those
@@ -344,9 +356,11 @@ function notices(p: PresentationTable, interrupt: (out: string) => string): Noti
     error: (event) => interrupt(p.notice(`error: ${event.message}`)),
     attached: (event) =>
       interrupt(p.notice(`attached to conversation ${String(event.conversation)}`)),
-    // `id<TAB>mark` when the id is a thread, the bare id otherwise: same text in both presents.
+    // `id<TAB>topic<TAB>model`, then `\tmark` when the id is a thread: same text in both presents.
     conversations: (event) =>
-      event.conversations.map((id) => lineOf(id, event.marks?.[String(id)])).join(""),
+      event.conversations
+        .map((id) => lineOf(id, event.summaries?.[String(id)], event.marks?.[String(id)]))
+        .join(""),
     // `name<TAB>cwd<TAB>toolset<TAB>model`, one per line: every field a topic leaves unset prints empty.
     topics: (event) =>
       event.topics

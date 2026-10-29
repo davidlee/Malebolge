@@ -74,6 +74,7 @@ import {
   conversationOf,
   createIndexedThread,
   INTENT,
+  SECOND_REF,
   type ThreadWorld,
   threadWorld,
 } from "./thread-fixture.ts";
@@ -344,6 +345,52 @@ describe("conversations", () => {
     expect(await apiOf(session).list({ kind: "all" })).toEqual({
       ids: [session.root.id],
       truncated: false,
+      summaries: {
+        [String(session.root.id)]: { topic: "default", model: refOf(FAUX_MODEL) },
+      },
+    });
+  });
+
+  // SL-010 PHASE-05 VT-1: every listed id carries its topic and stored model.
+  describe("summaries", () => {
+    it("carry topic and model for every listed id, root's topic default (VT-1)", async () => {
+      const session = await passive();
+      const api = conversations(
+        session,
+        DEFAULTS,
+        "host",
+        modelCatalogOf(refOf(FAUX_MODEL), SECOND_REF),
+      );
+      await api.setTopic({ name: "work", model: SECOND_REF });
+      const work = await api.open({ kind: "topic", name: "work", new: true });
+      const plain = await api.open({ kind: "new" });
+
+      const all = await api.list({ kind: "all" });
+      expect(all.summaries).toEqual({
+        [String(work.id)]: { topic: "work", model: SECOND_REF },
+        [String(plain.id)]: { topic: "default", model: refOf(FAUX_MODEL) },
+        [String(session.root.id)]: { topic: "default", model: refOf(FAUX_MODEL) },
+      });
+      // Root (id 0 in the index) is filed in `default`, not a name of its own.
+      expect(all.summaries[String(session.root.id)]?.topic).toBe("default");
+
+      // A topic page carries the same summary for the same id.
+      const page = await api.list({ kind: "topic", name: "work" });
+      expect(page.summaries).toEqual({
+        [String(work.id)]: { topic: "work", model: SECOND_REF },
+      });
+    });
+
+    it("omit model for a conversation without a stored one (VT-1)", async () => {
+      const session = await passive();
+      const api = apiOf(session);
+      await api.setTopic({ name: "work" });
+      const work = await api.open({ kind: "topic", name: "work", new: true });
+      // Clear the agent's model: the summary then has no `model` key at all.
+      await session.harness.commit((tx) => configure(tx, work.id, { model: null }), context);
+      const summary = (await api.list({ kind: "topic", name: "work" })).summaries[String(work.id)];
+      expect(summary).toEqual({ topic: "work" });
+      expect(summary).not.toHaveProperty("model");
     });
   });
 
@@ -442,20 +489,19 @@ describe("conversations", () => {
       [String(thread.id)]: { startedBy: operator.id },
       [String(forked.id)]: { forkOf: operator.id },
     };
-    // Both listings mark exactly the threads: every conversation, and the topic's own.
-    expect(await api.list({ kind: "all" })).toEqual({
-      ids: [forked.id, thread.id, operator.id, session.root.id],
-      truncated: false,
-      marks,
-    });
-    expect(await api.list({ kind: "topic", name: "work" })).toEqual({
-      ids: [forked.id, thread.id, operator.id],
-      truncated: false,
-      marks,
-    });
+    // Both listings mark exactly the threads, and carry every listed id's summary.
+    const all = await api.list({ kind: "all" });
+    expect(all.ids).toEqual([forked.id, thread.id, operator.id, session.root.id]);
+    expect(all.truncated).toBe(false);
+    expect(all.marks).toEqual(marks);
+    const topicPage = await api.list({ kind: "topic", name: "work" });
+    expect(topicPage.ids).toEqual([forked.id, thread.id, operator.id]);
+    expect(topicPage.truncated).toBe(false);
+    expect(topicPage.marks).toEqual(marks);
     // A page no thread is on carries no `marks` key at all: the frame is unchanged (DEC-007).
     const unmarked = await api.list({ kind: "topic", name: "default" });
-    expect(unmarked).toEqual({ ids: [session.root.id], truncated: false });
+    expect(unmarked.ids).toEqual([session.root.id]);
+    expect(unmarked.truncated).toBe(false);
     expect(Object.hasOwn(unmarked, "marks")).toBe(false);
   });
 
@@ -791,6 +837,10 @@ describe("conversations", () => {
     expect(await api.list({ kind: "topic", name: "work" })).toEqual({
       ids: [second.id, first.id],
       truncated: false,
+      summaries: {
+        [String(second.id)]: { topic: "work", model: refOf(FAUX_MODEL) },
+        [String(first.id)]: { topic: "work", model: refOf(FAUX_MODEL) },
+      },
     });
     // The conversation outside the topic is not in the page, whatever its id.
     expect((await api.list({ kind: "topic", name: "work" })).ids).not.toContain(elsewhere.id);
@@ -952,6 +1002,7 @@ describe("conversations", () => {
     expect(await api.list({ kind: "topic", name: "mailbox" })).toEqual({
       ids: [],
       truncated: false,
+      summaries: {},
     });
     expect((await api.list({ kind: "all" })).ids).toEqual([session.root.id]);
   });

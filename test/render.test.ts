@@ -215,23 +215,59 @@ describe("renderer", () => {
     );
   });
 
-  it("renders a conversations frame as one id per line, in both presentations", () => {
-    const frame = { type: "conversations", conversations: [9, 7, 3], truncated: false };
-    expect(renderAll([frame])).toBe("9\n7\n3\n");
-    expect(renderAll([frame], { presentation: "emacs" })).toBe("9\n7\n3\n");
+  // SL-010 PHASE-05 VT-3: a line is `id<TAB>topic<TAB>model[<TAB>mark]`, in both presents.
+  it("renders a conversations frame as id, topic and model per line, in both presentations", () => {
+    const frame = {
+      type: "conversations",
+      conversations: [9, 7, 3],
+      truncated: false,
+      summaries: {
+        "9": { topic: "work", model: "faux/faux-2" },
+        "7": { topic: "default", model: "faux/faux-1" },
+        "3": { topic: "default" },
+      },
+    };
+    const lines = "9\twork\tfaux/faux-2\n7\tdefault\tfaux/faux-1\n3\tdefault\t\n";
+    expect(renderAll([frame])).toBe(lines);
+    expect(renderAll([frame], { presentation: "emacs" })).toBe(lines);
     expect(renderAll([{ type: "conversations", conversations: [], truncated: true }])).toBe("");
   });
 
-  it("marks a thread's listing line with what created it, in both presentations", () => {
+  it("marks a thread's listing line after its model, in both presentations", () => {
     const frame = {
       type: "conversations",
       conversations: [14, 13, 12],
       truncated: false,
+      summaries: {
+        "14": { topic: "work", model: "faux/faux-1" },
+        "13": { topic: "work", model: "faux/faux-1" },
+        "12": { topic: "work", model: "faux/faux-1" },
+      },
       marks: { "14": { startedBy: 12 }, "13": { forkOf: 12 } },
     };
-    const lines = "14\tstarted by 12\n13\tfork of 12\n12\n";
+    const lines =
+      "14\twork\tfaux/faux-1\tstarted by 12\n13\twork\tfaux/faux-1\tfork of 12\n" +
+      "12\twork\tfaux/faux-1\n";
     expect(renderAll([frame])).toBe(lines);
     expect(renderAll([frame], { presentation: "emacs" })).toBe(lines);
+  });
+
+  it("prints empty topic and model fields when the reply carries no summaries (VT-3)", () => {
+    // An old daemon sends no `summaries`: the columns are still there, empty.
+    const frame = { type: "conversations", conversations: [9, 7], truncated: false };
+    expect(renderAll([frame])).toBe("9\t\t\n7\t\t\n");
+    expect(renderAll([frame], { presentation: "emacs" })).toBe("9\t\t\n7\t\t\n");
+    // A thread mark still follows the empty fields.
+    expect(
+      renderAll([
+        {
+          type: "conversations",
+          conversations: [9],
+          truncated: false,
+          marks: { "9": { forkOf: 7 } },
+        },
+      ]),
+    ).toBe("9\t\t\tfork of 7\n");
   });
 
   it("renders a topics frame as name, directory, toolset and model, one per line, in both presentations", () => {

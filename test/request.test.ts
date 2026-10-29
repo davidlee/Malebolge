@@ -7,6 +7,7 @@ import { describe, expect, it, onTestFinished } from "vitest";
 import { attachInvocationOf, isResolved } from "../src/attach-invocation.ts";
 import { context } from "../src/context.ts";
 import { conversations } from "../src/conversations.ts";
+import { refOf } from "../src/models.ts";
 import { encodeLine } from "../src/ndjson.ts";
 import type { ConversationsMessage, TopicsMessage } from "../src/protocol.ts";
 import { createRenderer } from "../src/render.ts";
@@ -71,13 +72,17 @@ describe("request --list", () => {
     const { reply, errors } = requested(path, ["--list"]);
     const conversationsReply = await reply;
     const ids = [second.id, first.id, test.root.id];
+    const summary = { topic: "default", model: refOf(FAUX_MODEL) };
     expect(conversationsReply).toEqual({
       type: "conversations",
       conversations: ids,
       truncated: false,
+      summaries: Object.fromEntries(ids.map((id) => [String(id), summary])),
     });
-    // SL-002's bytes, still: newest first, one id per line, nothing else.
-    expect(printed(conversationsReply)).toBe(ids.map((id) => `${String(id)}\n`).join(""));
+    // SL-010's line: newest first, id, topic and model, nothing else.
+    expect(printed(conversationsReply)).toBe(
+      ids.map((id) => `${String(id)}\tdefault\t${refOf(FAUX_MODEL)}\n`).join(""),
+    );
     expect(errors()).toBe("");
   });
 
@@ -89,8 +94,8 @@ describe("request --list", () => {
     const { reply, errors } = requested(path, ["--list"]);
     const truncated = await reply;
     expect(truncated).toEqual({ type: "conversations", conversations: [9, 7], truncated: true });
-    // The ids are the caller's to print; the truncation is the only line stderr gets.
-    expect(printed(truncated)).toBe("9\n7\n");
+    // The ids are the caller's to print, with empty topic and model fields (no summaries).
+    expect(printed(truncated)).toBe("9\t\t\n7\t\t\n");
     expect(
       errors()
         .split("\n")

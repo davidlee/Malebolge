@@ -38,9 +38,10 @@
 ;;   string) into the extra argv.
 ;; - `malebolge--list-conversations' is the listing seam: it returns a plist
 ;;   (:stdout TEXT :stderr TEXT).  No ERT case starts a real client.
-;; - `malebolge--conversation-candidates' parses stdout's lines: a bare id,
-;;   or an id, a tab and a mark, offered whole.  `malebolge--candidate-id'
-;;   names the id of such a line.
+;; - `malebolge--conversation-candidates' parses stdout's lines: each is
+;;   `id<TAB>topic<TAB>model', with an optional `<TAB>mark', offered whole.
+;;   Topic and model may be empty, a mark may not, and a bare id names
+;;   nothing.  `malebolge--candidate-id' names the id of such a line.
 ;; - `malebolge--await-exit' waits boundedly for the client to go, then
 ;;   deletes it.  `malebolge--detach-timeout' bounds the wait, and
 ;;   `malebolge--list-timeout' bounds the synchronous listing.
@@ -755,28 +756,39 @@ The chosen target reaches the command as --conversation N, before --emacs."
 
 ;;; Candidates come from stdout only
 
-(ert-deftest malebolge-candidates-keep-only-the-numeric-stdout-lines ()
-  "Only whole numeric or marked lines are candidates; prose never becomes one."
-  (should (equal '("9" "7" "3")
-                 (malebolge--conversation-candidates "9\n7\n\n3\n")))
-  (should (equal '("9")
+(ert-deftest malebolge-candidates-keep-only-the-listing-lines ()
+  "Only whole id/topic/model lines are candidates; prose and bare ids never are.
+Topic and model may be empty, and a marked line is offered whole (SL-010)."
+  (should (equal '("9\twork\tfaux/faux-1" "0\tdefault\tfaux/faux-1" "3\t\t")
                  (malebolge--conversation-candidates
-                  (concat "9\nthe listing was truncated: older conversations"
+                  "9\twork\tfaux/faux-1\n0\tdefault\tfaux/faux-1\n\n3\t\t\n")))
+  (should (equal '("0\tdefault\tfaux/faux-1")
+                 (malebolge--conversation-candidates
+                  (concat "0\tdefault\tfaux/faux-1\n"
+                          "the listing was truncated: older conversations"
                           " are not shown\n"))))
-  (should-not (malebolge--conversation-candidates " 7 \nnew\n")))
+  ;; A leading space, prose and a bare id are all no candidates.
+  (should-not (malebolge--conversation-candidates
+               " 7\tdefault\tm\nnew\n7\n")))
 
 (ert-deftest malebolge-candidates-offer-marked-lines-whole-and-reject-malformed-ones ()
   "A marked line is a candidate offered whole; its id is what it attaches to.
-An id whose mark is empty, or a mark on a non-numeric line, is no candidate."
-  (should (equal '("14\tstarted by 12" "13\tfork of 12" "12")
+An empty mark is malformed, and so is a three-field line with no id."
+  (should (equal '("14\twork\t\tforked from 12" "13\tdefault\tfaux/faux-1\tfork of 12")
                  (malebolge--conversation-candidates
-                  "14\tstarted by 12\n13\tfork of 12\n12\n")))
+                  "14\twork\t\tforked from 12\n13\tdefault\tfaux/faux-1\tfork of 12\n")))
+  ;; Empty topic and model, no mark: still a line the daemon printed.
+  (should (equal '("7\t\t")
+                 (malebolge--conversation-candidates "7\t\t\n")))
+  ;; An empty mark, a non-numeric id and a prose line are all refused.
   (should-not (malebolge--conversation-candidates
-               "14\t\nx\tfork of 1\n"))
-  (should (equal "14" (malebolge--candidate-id "14\tstarted by 12")))
-  (should (equal "7" (malebolge--candidate-id "7")))
+               "14\tdefault\tm\t\nx\twork\tm\nnew\n"))
+  (should (equal "14" (malebolge--candidate-id "14\twork\t\tforked from 12")))
+  (should (equal "7" (malebolge--candidate-id "7\t\t")))
   (should-not (malebolge--candidate-id "new"))
-  (should-not (malebolge--candidate-id "14\t")))
+  (should-not (malebolge--candidate-id "7"))
+  (should-not (malebolge--candidate-id " 7\tdefault\tm"))
+  (should-not (malebolge--candidate-id "14\tdefault\tm\t")))
 
 ;;; The listing's stderr is a message, not a candidate
 
@@ -784,12 +796,13 @@ An id whose mark is empty, or a mark on a non-numeric line, is no candidate."
   "The truncation prose is a message; the candidates are stdout's ids plus new."
   (malebolge-test--with-session
     (malebolge-test--with-target-choice
-        '(:stdout "9\n7\n"
+        '(:stdout "9\twork\tfaux/faux-1\n7\tdefault\tfaux/faux-1\n"
           :stderr "the listing was truncated: older conversations are not shown\n")
-        "7"
+        "7\tdefault\tfaux/faux-1"
       (malebolge-test--with-fast-detach
         (malebolge-test--started-args (lambda () (malebolge-attach '(4)))))
-      (should (equal '("9" "7" "new") malebolge-test--offered))
+      (should (equal '("9\twork\tfaux/faux-1" "7\tdefault\tfaux/faux-1" "new")
+                     malebolge-test--offered))
       (should (cl-some (lambda (message) (string-match-p "truncated" message))
                        malebolge-test--messages)))))
 
@@ -799,7 +812,9 @@ An id whose mark is empty, or a mark on a non-numeric line, is no candidate."
   "A non-empty draft refuses a draft-bearing switch before detaching.
 The client stays attached and the draft survives untouched."
   (malebolge-test--with-session
-    (malebolge-test--with-target-choice '(:stdout "9\n7\n" :stderr "") "7"
+    (malebolge-test--with-target-choice
+        '(:stdout "9\twork\tfaux/faux-1\n7\tdefault\tfaux/faux-1\n" :stderr "")
+        "7\tdefault\tfaux/faux-1"
       (malebolge-test--insert-draft "unsent words")
       (malebolge-test--with-fast-detach
         (should-error (malebolge-attach '(4)) :type 'user-error))
@@ -811,7 +826,9 @@ The client stays attached and the draft survives untouched."
 (ert-deftest malebolge-switch-detaches-then-attaches-with-the-chosen-target-as-argv ()
   "The switch sends the quit frame, then starts the client with --conversation N."
   (malebolge-test--with-session
-    (malebolge-test--with-target-choice '(:stdout "9\n7\n" :stderr "") "7"
+    (malebolge-test--with-target-choice
+        '(:stdout "9\twork\tfaux/faux-1\n7\tdefault\tfaux/faux-1\n" :stderr "")
+        "7\tdefault\tfaux/faux-1"
       (let (quit-before-attach started)
         (malebolge-test--with-fast-detach
           (cl-letf (((symbol-function 'make-comint-in-buffer)
@@ -828,19 +845,28 @@ The client stays attached and the draft survives untouched."
 the client starts with the bare id it names."
   (malebolge-test--with-session
     (malebolge-test--with-target-choice
-        '(:stdout "14\tstarted by 12\n13\tfork of 12\n12\n" :stderr "")
-        "14\tstarted by 12"
+        (list :stdout
+              (concat "14\twork\t\tforked from 12\n"
+                      "13\tdefault\tfaux/faux-1\tfork of 12\n"
+                      "12\twork\tfaux/faux-1\n")
+              :stderr "")
+        "14\twork\t\tforked from 12"
       (let ((started (malebolge-test--with-fast-detach
                        (malebolge-test--started-args
                         (lambda () (malebolge-attach '(4)))))))
-        (should (equal '("14\tstarted by 12" "13\tfork of 12" "12" "new")
+        (should (equal '("14\twork\t\tforked from 12"
+                         "13\tdefault\tfaux/faux-1\tfork of 12"
+                         "12\twork\tfaux/faux-1"
+                         "new")
                        malebolge-test--offered))
         (should (equal '("--conversation" "14" "--emacs") started))))))
 
 (ert-deftest malebolge-switch-leaves-the-transcript-empty-when-the-second-attach-fails ()
   "A failed second attach reports and leaves the transcript empty, never root."
   (malebolge-test--with-session
-    (malebolge-test--with-target-choice '(:stdout "9\n7\n" :stderr "") "7"
+    (malebolge-test--with-target-choice
+        '(:stdout "9\twork\tfaux/faux-1\n7\tdefault\tfaux/faux-1\n" :stderr "")
+        "7\tdefault\tfaux/faux-1"
       (malebolge-test--feed "old conversation\n")
       (malebolge-test--with-fast-detach
         (cl-letf (((symbol-function 'make-comint-in-buffer)
@@ -912,7 +938,9 @@ window whose point is at the process mark, so the switch sets each window point.
           (set-window-start w2 (point-min)))
         (select-window draft-window)
         (malebolge-test--redisplay)
-        (malebolge-test--with-target-choice '(:stdout "9\n" :stderr "") "9"
+        (malebolge-test--with-target-choice
+            '(:stdout "9\tdefault\tfaux/faux-1\n" :stderr "")
+            "9\tdefault\tfaux/faux-1"
           (malebolge-test--with-fast-detach
             (malebolge-test--started-args (lambda () (malebolge-attach '(4)))))
           (malebolge-test--feed-lines 200)
@@ -958,11 +986,13 @@ window to the process mark; the helper makes it independent of that."
 ;;; The listing itself, without a daemon
 
 (ert-deftest malebolge-listing-keeps-stdout-and-stderr-apart ()
-  "The listing's ids and its prose arrive in separate streams, never merged."
+  "The listing's lines and its prose arrive in separate streams, never merged."
   (let ((malebolge-attach-command
-         '("sh" "-c" "printf '9\\n7\\n'; printf 'cut short\\n' >&2")))
+         '("sh" "-c"
+           "printf '9\\twork\\tfaux/faux-1\\n7\\tdefault\\t\\n'; printf 'cut short\\n' >&2")))
     (let ((listing (malebolge--list-conversations)))
-      (should (equal "9\n7\n" (plist-get listing :stdout)))
+      (should (equal "9\twork\tfaux/faux-1\n7\tdefault\t\n"
+                     (plist-get listing :stdout)))
       (should (equal "cut short\n" (plist-get listing :stderr))))))
 
 (ert-deftest malebolge-listing-gives-up-when-the-daemon-never-answers ()

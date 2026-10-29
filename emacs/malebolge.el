@@ -315,16 +315,21 @@ The client answers and closes; one still running after
 
 (defun malebolge--candidate-id (candidate)
   "The conversation id the candidate line CANDIDATE names, or nil.
-A line is either a bare id (`12') or an id, a tab and a non-empty mark
-(`14\tstarted by 12'); prose names nothing."
+A line is `id<TAB>topic<TAB>model', with an optional `<TAB>mark'
+after it: topic and model may be empty, a mark may not, and so a
+bare id or prose names nothing."
   (when (and (stringp candidate)
-             (string-match "\\`\\([0-9]+\\)\\(?:\t[^\t]+\\)?\\'" candidate))
+             (string-match
+              "\\`\\([0-9]+\\)\t[^\t\n]*\t[^\t\n]*\\(?:\t[^\t\n]+\\)?\\'"
+              candidate))
     (match-string 1 candidate)))
 
 (defun malebolge--conversation-candidates (stdout)
   "The conversation lines in STDOUT, one per line, in the daemon's order.
-A marked line (`id\tmark') is offered whole, so the prompt can show the
-mark; prose is not a candidate, nor is an id whose mark is empty."
+A line is `id<TAB>topic<TAB>model', with an optional `<TAB>mark'
+after it, and is offered whole so the prompt can show the topic, the
+model and the mark; prose is not a candidate, nor is a line whose
+mark is empty."
   (let (candidates)
     (dolist (line (split-string stdout "\n" t))
       (when (malebolge--candidate-id line)

@@ -247,10 +247,10 @@ describe("daemon", () => {
    * One `list` frame's reply as the daemon wrote it, before any parser: the keys a
    * listing carries on the wire are what an older client reads (DEC-007).
    */
-  const wireList = async (): Promise<JsonRecord> => {
+  const wireList = async (frame: JsonRecord = { type: "list" }): Promise<JsonRecord> => {
     const client = await lineClient<unknown>(socketPath, (value) => value);
     clients.push(client);
-    client.send({ type: "list" });
+    client.send(frame);
     const reply = await client.next(() => true);
     await client.closed();
     if (!isRecord(reply) || reply["type"] !== "conversations") {
@@ -820,9 +820,26 @@ describe("daemon", () => {
 
   it("keeps the shipped list reply's shape, so SL-002's clients still read it (EX-4)", async () => {
     await start();
-    const reply = await replyTo({ type: "list" }, isListing);
-    expect(Object.keys(reply).sort()).toEqual(["conversations", "truncated", "type"]);
-    expect(reply.conversations).toEqual([test.root.id]);
+    // The wire keys, before any parser: `summaries` is the one widening this phase adds.
+    const reply = await wireList();
+    expect(Object.keys(reply).sort()).toEqual(["conversations", "summaries", "truncated", "type"]);
+    expect(reply["conversations"]).toEqual([test.root.id]);
+  });
+
+  // SL-010 PHASE-05 VT-2: the reply always carries summaries, an empty map included.
+  it("always carries summaries, {} for an empty topic page and one per id otherwise (VT-2)", async () => {
+    await start();
+    await replyTo({ type: "topic", name: "work" }, isTopics);
+    // A topic with no conversation lists nothing, and its summaries map is empty, not absent.
+    const empty = await wireList({ type: "list", topic: "work" });
+    expect(empty["conversations"]).toEqual([]);
+    expect(empty["summaries"]).toEqual({});
+
+    const created = await attachWith({ type: "attach", topic: "work" });
+    const page = await wireList({ type: "list", topic: "work" });
+    expect(page["summaries"]).toEqual({
+      [String(created)]: { topic: "work", model: refOf(FAUX_MODEL) },
+    });
   });
 
   it("binds a topic's latest conversation, creating only with `new` or in an empty topic (EX-3)", async () => {
@@ -907,10 +924,14 @@ describe("daemon", () => {
     const second = await attachWith({ type: "attach", topic: "work", new: true });
     const outside = await attachWith({ type: "attach", new: true });
     expect(outside).toBeGreaterThan(second);
-    expect(await replyTo({ type: "list", topic: "work" }, isListing)).toEqual({
+    expect(await wireList({ type: "list", topic: "work" })).toEqual({
       type: "conversations",
       conversations: [second, first],
       truncated: false,
+      summaries: {
+        [String(second)]: { topic: "work", model: refOf(FAUX_MODEL) },
+        [String(first)]: { topic: "work", model: refOf(FAUX_MODEL) },
+      },
     });
   });
 
