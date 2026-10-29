@@ -110,10 +110,14 @@ slips are left to red/green tests; the next review is of the plan.
 - PHASE-01 · `test/mail/project.test.ts` projection sweep excludes `contract/classify.json` (classify has no view) · needed for green; not in plan's file list · decided
 - PHASE-01 · fixture scores set to the probability-weighted level (0.9, 1.5) per screwtape § classify's "within 0.05" rule · transcription fidelity · decided
 - PHASE-01 · fakeMailSource.classify: an unscripted id answers `failed`; no reply rejects like the other verbs · EX-4 leaves the default open · decided
+- PHASE-02 · `ScrewtapeOptions` gains optional `credentials` and `stdinEnv` (default the real stdinEnv); credentials absent → every id `unavailable`, nothing spawns · design names no injection seam; optional keeps daemon-start.ts (PHASE-04 wires credentials) and smoke.test.ts untouched · decided
+- PHASE-02 · classify positions and "at most n lines" count over the batch of surviving reads; an unterminated last line (no breach) is a contract violation; a stdout breach keeps the checked prefix (table's last row) · design's prefix rule read literally · decided
+- PHASE-02 · host gate: fmt-check and lint fail only on SL-009's untracked `pi-bridge/state.ts`, vitest fails only in its untracked `test/pi-bridge-state.test.ts` (59, red TDD); tsc green · not ours per the green-for-SL-007 rule · decided
 
 ## Pi runs
 
 - PHASE-01 · 5 implement runs (red A, red B, green A, green B, refactor B), ~$0.14 total · misses: widened the answers schema instead of flagging the test conflict; briefed `biome lint` (my error — lint is ESLint), so green B landed 12 ESLint errors, fixed in the refactor run
+- PHASE-02 · 2 implement runs (red, green), ~$0.12 · clean; I added the caller-abort classify test and folded the empty-batch branch into mergeOutcomes
 
 ## Harvest
 <!-- single-copy: updated in place each harvest; ids only, never restated content -->

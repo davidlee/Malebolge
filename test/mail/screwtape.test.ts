@@ -17,17 +17,28 @@ import {
 } from "@earendil-works/pi-durable/env";
 import { describe, expect, it } from "vitest";
 import {
+  CLASSIFY_READ_BYTES,
+  CLASSIFY_TIMEOUT_S,
   MAIL_STDOUT_MAX,
+  MAIL_TIMEOUT_S,
   type ScrewtapeOptions,
   screwtapeSource,
 } from "../../src/mail/screwtape.ts";
-import { type MailSource, MailSourceError } from "../../src/mail/source.ts";
+import {
+  type Classification,
+  type ClassifyOutcome,
+  type MailSource,
+  MailSourceError,
+  type ReadData,
+  type Unclassified,
+} from "../../src/mail/source.ts";
 import {
   type Envelope,
   loadData,
   loadEnvelopes,
   loadReadPage,
   type MailKind,
+  mustCheck,
   setAt,
   withExtraFields,
 } from "./mail-fixtures.ts";
@@ -108,14 +119,24 @@ function fakeExec(script: Script = {}): Fake {
   return { env, calls, emitted: () => emitted, stopped: () => stopped };
 }
 
-function sourceOver(fake: Fake, overrides: Partial<ScrewtapeOptions> = {}): MailSource {
-  return screwtapeSource({
+/** `ScrewtapeOptions` plus the classify members this phase adds. */
+interface ClassifyOptions {
+  readonly credentials?: string;
+  readonly stdinEnv?: (input: string) => Pick<ExecutionEnv, "exec">;
+}
+
+function sourceOver(
+  fake: Pick<Fake, "env">,
+  overrides: Partial<ScrewtapeOptions> & ClassifyOptions = {},
+): MailSource {
+  const options: ScrewtapeOptions & ClassifyOptions = {
     binary: BINARY,
     config: CONFIG,
     home: HOME,
     env: fake.env,
     ...overrides,
-  });
+  };
+  return screwtapeSource(options);
 }
 
 function fixtureText(name: string): string {
@@ -137,6 +158,205 @@ async function failureOf(call: Promise<unknown>): Promise<MailSourceError> {
     throw outcome instanceof Error ? outcome : new Error("resolved with data");
   }
   return outcome;
+}
+
+// ------------------------------------------------------- the classify fakes
+
+/** Jev's credentials directory: the classify child's CREDENTIALS_DIRECTORY. */
+const CREDENTIALS = "/run/credentials/screwtape";
+/** The ms part of the cursor of every message these cases use. */
+const CURSOR_MS = "1793120280000";
+const IDS = ["MsgA", "MsgB", "MsgC"] as const;
+
+/** A canonical cursor for `id`. */
+const cursorOf = (id: string): string => `${CURSOR_MS}:${id}`;
+
+/** The one envelope of a fixture file. */
+function envelopeOf(name: string): Envelope {
+  const [envelope] = loadEnvelopes(name);
+  if (envelope === undefined) {
+    throw new Error(`${name}: no envelope`);
+  }
+  return envelope;
+}
+
+/** `contract/read.json`'s data with `id` and its cursor set: what `read <id>` prints. */
+function readDataOf(id: string): ReadData {
+  const withId = setAt(envelopeOf("contract/read.json").data, ["id"], id);
+  return mustCheck("read", setAt(withId, ["cursor"], cursorOf(id)));
+}
+
+/** `contract/classify.json`'s data with `id` and its cursor set: one id's answers. */
+function classifyDataOf(id: string): Classification {
+  const withId = setAt(envelopeOf("contract/classify.json").data, ["id"], id);
+  return mustCheck("classify", setAt(withId, ["cursor"], cursorOf(id)));
+}
+
+/** The read envelope line a `read <id>` spawn prints. */
+const readLineOf = (id: string): string => line({ version: 1, kind: "read", data: readDataOf(id) });
+
+/** The classify envelope line the classify child prints for one id. */
+const classifiedLineOf = (id: string): string =>
+  line({ version: 1, kind: "classify", data: classifyDataOf(id) });
+
+/** One line of the classify child's stdin: the checked read re-encoded, as `classify` reads it. */
+const stdinLineOf = (id: string): unknown => ({ version: 1, kind: "read", data: readDataOf(id) });
+
+/** How one `read <id>` spawn answers. */
+interface ReadReply {
+  /** The whole stdout text. Default: none. */
+  readonly stdout?: string;
+  /** An exit code, or the ExecutionError the env answers. Default: exit 0. */
+  readonly result?: number | ExecutionError;
+}
+
+interface Spawn {
+  readonly argv: readonly string[];
+  readonly options: ShellExecOptions | undefined;
+  /** The stdin text the classify child was given; undefined for a read verb. */
+  readonly stdin: string | undefined;
+}
+
+interface ClassifyFake {
+  /** The read verbs' exec. */
+  readonly env: Pick<ExecutionEnv, "exec">;
+  /** The classify verb's exec, made per spawn from the stdin text. */
+  readonly stdinEnv: (input: string) => Pick<ExecutionEnv, "exec">;
+  /** Every spawn, in order. */
+  readonly calls: Spawn[];
+  /** The text the classify child was given; undefined when no classify spawn happened. */
+  stdin: () => string | undefined;
+}
+
+const argvOf = (command: string | readonly string[]): readonly string[] =>
+  typeof command === "string" ? [command] : command;
+
+/** The verb of a spawn: the argv after `--config <config>`. */
+const verbOf = (call: Spawn): string | undefined => call.argv[PREFIX.length];
+
+/** The read verbs' exec: the id after `read` names the per-id reply. */
+function readsOver(
+  calls: Spawn[],
+  reads: Readonly<Record<string, ReadReply>>,
+): Pick<ExecutionEnv, "exec"> {
+  return {
+    exec: (command, options, at): Promise<ExecResult> => {
+      const argv = argvOf(command);
+      calls.push({ argv, options, stdin: undefined });
+      const id = argv[PREFIX.length + 1];
+      const reply = id === undefined ? undefined : reads[id];
+      if (reply === undefined) {
+        throw new Error(`no read reply for ${String(id)}`);
+      }
+      play(chunksOf(reply.stdout ?? ""), true, at, options);
+      return Promise.resolve(answer(reply.result ?? 0, at.abortSignal?.aborted === true));
+    },
+  };
+}
+
+/** The classify verb's exec, made per spawn from the stdin text it is given. */
+function classifyOver(
+  calls: Spawn[],
+  script: Script,
+): (input: string) => Pick<ExecutionEnv, "exec"> {
+  const { stdout = [], stderr = "", result = 0, killable = true } = script;
+  return (input: string): Pick<ExecutionEnv, "exec"> => ({
+    exec: (command, options, at): Promise<ExecResult> => {
+      calls.push({ argv: argvOf(command), options, stdin: input });
+      options?.onOutput?.(stderr, at, { stream: "stderr" });
+      play(stdout, killable, at, options);
+      return Promise.resolve(answer(result, killable && at.abortSignal?.aborted === true));
+    },
+  });
+}
+
+/** A spawn's exec options, which every spawn is given. */
+function optionsOf(call: Spawn): ShellExecOptions {
+  if (call.options === undefined) {
+    throw new Error(`${String(verbOf(call))} spawn has no exec options`);
+  }
+  return call.options;
+}
+
+/** The one spawn of `verb` among `calls`. */
+function spawnOf(calls: readonly Spawn[], verb: string): Spawn {
+  const found = calls.filter((call) => verbOf(call) === verb);
+  const [only] = found;
+  if (only === undefined || found.length > 1) {
+    throw new Error(`expected one ${verb} spawn, got ${String(found.length)}`);
+  }
+  return only;
+}
+
+/** A fake env for one classify batch: reads answer by id, the classify child plays `script`. */
+function classifyFake(
+  reads: Readonly<Record<string, ReadReply>>,
+  script: Script = {},
+): ClassifyFake {
+  const calls: Spawn[] = [];
+  return {
+    env: readsOver(calls, reads),
+    stdinEnv: classifyOver(calls, script),
+    calls,
+    stdin: () => calls.find((call) => call.stdin !== undefined)?.stdin,
+  };
+}
+
+interface ClassifySetup {
+  /** The ids the tool asks for, in order. */
+  readonly ids: readonly string[];
+  /** Read reply per id; the default prints the id's read envelope. */
+  readonly reads?: Readonly<Record<string, ReadReply>>;
+  /** The classify child; the default prints one line per id and exits 0. */
+  readonly classify?: Script;
+  /** false: no credentials directory, so nothing spawns. Default: set. */
+  readonly credentials?: boolean;
+  /** The caller's signal. */
+  readonly signal?: AbortSignal;
+}
+
+/** Runs one classify batch over the multi-spawn fake. */
+function classifyRun(setup: ClassifySetup): {
+  fake: ClassifyFake;
+  result: Promise<ClassifyOutcome[]>;
+} {
+  const { ids, reads = {}, classify = {}, credentials = true, signal } = setup;
+  const replies = Object.fromEntries(
+    ids.map((id): [string, ReadReply] => [id, reads[id] ?? { stdout: readLineOf(id) }]),
+  );
+  const fake = classifyFake(replies, {
+    stdout: chunksOf(ids.map(classifiedLineOf).join("")),
+    ...classify,
+  });
+  const source = sourceOver(fake, {
+    stdinEnv: fake.stdinEnv,
+    ...(credentials ? { credentials: CREDENTIALS } : {}),
+  });
+  return { fake, result: source.classify({ ids, signal }) };
+}
+
+/** One error-level stderr diagnostic line, as screwtape writes it. */
+const errorLine = (fields: Readonly<Record<string, unknown>>): string =>
+  `${JSON.stringify({ level: "error", ...fields })}\n`;
+
+/** `ids` classified with the fixture's answers, in order. */
+const classifiedOutcomes = (ids: readonly string[]): ClassifyOutcome[] =>
+  ids.map((id) => ({ id, classified: classifyDataOf(id) }));
+
+/** `ids` unclassified for one fixed reason, in order. */
+const unclassifiedOutcomes = (ids: readonly string[], reason: Unclassified): ClassifyOutcome[] =>
+  ids.map((id) => ({ id, unclassified: reason }));
+
+/** The classify child's stdin as one JSON value per non-empty line. */
+function stdinValues(fake: ClassifyFake): unknown[] {
+  const text = fake.stdin() ?? "";
+  return text
+    .split("\n")
+    .filter((part) => part !== "")
+    .map((part) => {
+      const value: unknown = JSON.parse(part);
+      return value;
+    });
 }
 
 // ----------------------------------------------------------------- the verbs
@@ -372,11 +592,11 @@ describe("argv", () => {
 // ---------------------------------------------------------- exec options
 
 describe("exec options", () => {
-  it.each(VERBS)("$name: timeout 10 s and no cwd", async (verb) => {
+  it.each(VERBS)("$name: MAIL_TIMEOUT_S and cwd HOME", async (verb) => {
     const { fake, result } = run(verb, { stdout: chunksOf(goodText(verb)) });
     await result;
-    expect(fake.calls[0]?.options?.timeout).toBe(10);
-    expect(fake.calls[0]?.options?.cwd).toBeUndefined();
+    expect(fake.calls[0]?.options?.timeout).toBe(MAIL_TIMEOUT_S);
+    expect(fake.calls[0]?.options?.cwd).toBe(HOME);
   });
 
   describe("negative control: an inherited environment fails (RV-015 F-13)", () => {
@@ -969,6 +1189,304 @@ describe("oversize output", () => {
       const error = await failureOf(result);
       expect(error.failure).toBe("oversize");
       expect(error.message).toBe(message);
+    });
+  });
+});
+
+// --------------------------------------------------------------- classify
+
+describe("classify", () => {
+  describe("VT-1: the prefix of classify lines is checked in order", () => {
+    it("classifies every id in order", async () => {
+      const { fake, result } = classifyRun({ ids: IDS });
+      await expect(result).resolves.toEqual(classifiedOutcomes(IDS));
+      expect(fake.calls.map(verbOf)).toEqual([...IDS.map(() => "read"), "classify"]);
+      expect(fake.calls.slice(0, IDS.length).map((call) => call.argv[PREFIX.length + 1])).toEqual([
+        ...IDS,
+      ]);
+      const stdin = fake.stdin() ?? "";
+      expect(stdin.endsWith("\n")).toBe(true);
+      expect(stdinValues(fake)).toEqual(IDS.map(stdinLineOf));
+    });
+
+    it("a failed per-id read fails only that id", async () => {
+      const { fake, result } = classifyRun({
+        ids: IDS,
+        reads: { MsgB: { result: 1 } },
+        classify: { stdout: chunksOf(classifiedLineOf("MsgA") + classifiedLineOf("MsgC")) },
+      });
+      await expect(result).resolves.toEqual([
+        { id: "MsgA", classified: classifyDataOf("MsgA") },
+        { id: "MsgB", unclassified: "failed" },
+        { id: "MsgC", classified: classifyDataOf("MsgC") },
+      ]);
+      expect(stdinValues(fake)).toEqual([stdinLineOf("MsgA"), stdinLineOf("MsgC")]);
+    });
+
+    it("no classify spawn when every read fails", async () => {
+      const { fake, result } = classifyRun({
+        ids: IDS,
+        reads: { MsgA: { result: 1 }, MsgB: { result: 2 }, MsgC: { result: 1 } },
+      });
+      await expect(result).resolves.toEqual(unclassifiedOutcomes(IDS, "failed"));
+      expect(fake.calls.map(verbOf)).toEqual(IDS.map(() => "read"));
+      expect(fake.stdin()).toBeUndefined();
+    });
+
+    describe("a bad prefix fails every id of the batch", () => {
+      const INVALID = line({
+        version: 1,
+        kind: "classify",
+        data: setAt(envelopeOf("contract/classify.json").data, ["id"], "bad id"),
+      });
+      const MANY = IDS.map(classifiedLineOf).join("") + classifiedLineOf("MsgD");
+      const cases: [string, Script][] = [
+        [
+          "a line whose id is not the input's at that position",
+          {
+            stdout: chunksOf(
+              classifiedLineOf("MsgA") + classifiedLineOf("MsgZ") + classifiedLineOf("MsgC"),
+            ),
+          },
+        ],
+        ["one line too many (n+1)", { stdout: chunksOf(MANY) }],
+        ["one line too many (n+1) even on exit 1", { stdout: chunksOf(MANY), result: 1 }],
+        [
+          "a line that is not a classify envelope",
+          {
+            stdout: chunksOf(
+              classifiedLineOf("MsgA") + readLineOf("MsgB") + classifiedLineOf("MsgC"),
+            ),
+          },
+        ],
+        [
+          "a line whose data is invalid",
+          { stdout: chunksOf(classifiedLineOf("MsgA") + INVALID + classifiedLineOf("MsgC")) },
+        ],
+        [
+          "exit 0 with k < n lines",
+          { stdout: chunksOf(classifiedLineOf("MsgA") + classifiedLineOf("MsgB")) },
+        ],
+      ];
+
+      it.each(cases)("%s fails every id of the batch", async (_name, script) => {
+        const { result } = classifyRun({ ids: IDS, classify: script });
+        await expect(result).resolves.toEqual(unclassifiedOutcomes(IDS, "failed"));
+      });
+    });
+  });
+
+  describe("VT-2: the ending maps onto the failing suffix", () => {
+    describe("jev_context", () => {
+      const limited = (cursor: string): string =>
+        errorLine({ error: "limit_exceeded", bound: "jev_context", cursor });
+
+      it("jev_context for input[k] makes it too_large and the rest failed", async () => {
+        const { result } = classifyRun({
+          ids: IDS,
+          classify: {
+            stdout: chunksOf(classifiedLineOf("MsgA")),
+            stderr: limited(cursorOf("MsgB")),
+            result: 1,
+          },
+        });
+        await expect(result).resolves.toEqual([
+          { id: "MsgA", classified: classifyDataOf("MsgA") },
+          { id: "MsgB", unclassified: "too_large" },
+          { id: "MsgC", unclassified: "failed" },
+        ]);
+      });
+
+      it("jev_context naming another message's cursor is not too_large", async () => {
+        const { result } = classifyRun({
+          ids: IDS,
+          classify: {
+            stdout: chunksOf(classifiedLineOf("MsgA")),
+            stderr: limited(cursorOf("MsgC")),
+            result: 1,
+          },
+        });
+        await expect(result).resolves.toEqual([
+          { id: "MsgA", classified: classifyDataOf("MsgA") },
+          ...unclassifiedOutcomes(["MsgB", "MsgC"], "failed"),
+        ]);
+      });
+    });
+
+    describe("unavailable", () => {
+      const cases: [string, Script][] = [
+        [
+          "config (exit 2)",
+          {
+            stdout: chunksOf(classifiedLineOf("MsgA")),
+            stderr: errorLine({ error: "config" }),
+            result: 2,
+          },
+        ],
+        [
+          "credential (exit 1)",
+          {
+            stdout: chunksOf(classifiedLineOf("MsgA")),
+            stderr: errorLine({ error: "credential" }),
+            result: 1,
+          },
+        ],
+      ];
+
+      it.each(cases)("%s makes input[k] and the rest unavailable", async (_name, script) => {
+        const { result } = classifyRun({ ids: IDS, classify: script });
+        await expect(result).resolves.toEqual([
+          { id: "MsgA", classified: classifyDataOf("MsgA") },
+          ...unclassifiedOutcomes(["MsgB", "MsgC"], "unavailable"),
+        ]);
+      });
+
+      it("unavailable everywhere, and no spawn, when credentials is absent", async () => {
+        const { fake, result } = classifyRun({ ids: IDS, credentials: false });
+        await expect(result).resolves.toEqual(unclassifiedOutcomes(IDS, "unavailable"));
+        expect(fake.calls).toEqual([]);
+      });
+    });
+
+    describe("any other ending", () => {
+      const cases: [string, Script][] = [
+        [
+          "exit 1 with another error",
+          {
+            stdout: chunksOf(classifiedLineOf("MsgA")),
+            stderr: errorLine({ error: "boom" }),
+            result: 1,
+          },
+        ],
+        [
+          "timeout",
+          {
+            stdout: chunksOf(classifiedLineOf("MsgA")),
+            result: new ExecutionError("timeout", "slow"),
+          },
+        ],
+        [
+          "spawn_error",
+          {
+            stdout: chunksOf(classifiedLineOf("MsgA")),
+            result: new ExecutionError("spawn_error", "ENOENT"),
+          },
+        ],
+        [
+          "a stdout breach (one line over MAIL_STDOUT_MAX)",
+          {
+            stdout: [classifiedLineOf("MsgA"), `${"z".repeat(MAIL_STDOUT_MAX + 1)}\n`],
+            result: 1,
+          },
+        ],
+      ];
+
+      it.each(cases)(
+        "%s after k lines: the prefix classified, the rest failed",
+        async (_name, script) => {
+          const { result } = classifyRun({ ids: IDS, classify: script });
+          await expect(result).resolves.toEqual([
+            { id: "MsgA", classified: classifyDataOf("MsgA") },
+            ...unclassifiedOutcomes(["MsgB", "MsgC"], "failed"),
+          ]);
+        },
+      );
+    });
+
+    describe("the ending after all n lines does not matter", () => {
+      const cases: [string, Script][] = [
+        [
+          "exit 1",
+          {
+            stderr: errorLine({
+              error: "limit_exceeded",
+              bound: "jev_context",
+              cursor: cursorOf("MsgC"),
+            }),
+            result: 1,
+          },
+        ],
+        ["timeout", { result: new ExecutionError("timeout", "slow") }],
+      ];
+
+      it.each(cases)("%s after all n lines: every id classified", async (_name, script) => {
+        const { result } = classifyRun({ ids: IDS, classify: script });
+        await expect(result).resolves.toEqual(classifiedOutcomes(IDS));
+      });
+    });
+
+    it("the caller's abort mid-classify rejects with an error that is not a MailSourceError", async () => {
+      const controller = new AbortController();
+      function* aborting(): Generator<string> {
+        yield classifiedLineOf("MsgA");
+        controller.abort(new Error("caller gave up"));
+        yield classifiedLineOf("MsgB");
+      }
+      const { result } = classifyRun({
+        ids: IDS,
+        classify: { stdout: aborting() },
+        signal: controller.signal,
+      });
+      const error = await result.then(
+        () => undefined,
+        (e: unknown) => e,
+      );
+      expect(error).toBeInstanceOf(Error);
+      expect(error).not.toBeInstanceOf(MailSourceError);
+    });
+
+    it("no child text reaches an outcome", async () => {
+      const { result } = classifyRun({
+        ids: IDS,
+        classify: {
+          stdout: chunksOf(classifiedLineOf("MsgA")),
+          stderr: errorLine({
+            error: "limit_exceeded",
+            bound: "jev_context",
+            cursor: cursorOf("MsgB"),
+            message: SENTINEL,
+            detail: SENTINEL,
+          }),
+          result: 1,
+        },
+      });
+      const outcomes = await result;
+      expect(outcomes).toEqual([
+        { id: "MsgA", classified: classifyDataOf("MsgA") },
+        { id: "MsgB", unclassified: "too_large" },
+        { id: "MsgC", unclassified: "failed" },
+      ]);
+      expect(outcomes.map((outcome) => Object.keys(outcome).sort())).toEqual([
+        ["classified", "id"],
+        ["id", "unclassified"],
+        ["id", "unclassified"],
+      ]);
+      expect(JSON.stringify(outcomes)).not.toContain(SENTINEL);
+    });
+  });
+
+  describe("VT-3: the children's environment and caps", () => {
+    it("ERL_CRASH_DUMP_SECONDS, CREDENTIALS_DIRECTORY, HOME and cwd HOME on every spawn", async () => {
+      const { fake, result } = classifyRun({ ids: IDS });
+      await result;
+      const reads = fake.calls.filter((call) => verbOf(call) === "read");
+      expect(reads.map((call) => call.argv)).toEqual(
+        IDS.map((id) => [...PREFIX, "read", id, "--max-bytes", String(CLASSIFY_READ_BYTES)]),
+      );
+      expect(reads.map((call) => optionsOf(call).env)).toEqual(IDS.map(() => ({ HOME })));
+      expect(reads.map((call) => optionsOf(call).inheritEnv)).toEqual(IDS.map(() => false));
+      expect(reads.map((call) => optionsOf(call).timeout)).toEqual(IDS.map(() => MAIL_TIMEOUT_S));
+      expect(reads.map((call) => optionsOf(call).cwd)).toEqual(IDS.map(() => HOME));
+      const child = spawnOf(fake.calls, "classify");
+      expect(child.argv).toEqual([...PREFIX, "classify"]);
+      expect(optionsOf(child).env).toEqual({
+        HOME,
+        CREDENTIALS_DIRECTORY: CREDENTIALS,
+        ERL_CRASH_DUMP_SECONDS: "0",
+      });
+      expect(optionsOf(child).inheritEnv).toBe(false);
+      expect(optionsOf(child).timeout).toBe(CLASSIFY_TIMEOUT_S);
+      expect(optionsOf(child).cwd).toBe(HOME);
     });
   });
 });
