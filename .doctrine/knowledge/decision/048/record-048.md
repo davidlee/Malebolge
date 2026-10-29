@@ -7,3 +7,5 @@
 
 
 Refined 2026-10-29 by DEC-077 (operator): screwtape owns Jev's window; classify reports what Jev saw and the agent's view is clamped to it.
+
+Refined 2026-10-29 by DEC-094 (operator): every sender-written text a shown item carries is taken from seen, so the invariant holds by construction.

@@ -6,7 +6,7 @@ through five tools over screwtape's v1 read contract. This slice adds Jev's
 classification of each message to the four tools that return mail text, and
 hardens the quarantine around that text. Jev is typesafe.ai's decision
 model (not an LLM); `screwtape classify` strips PII from a message, asks Jev
-the `mail-1` questions, and prints typed answers.
+its questions (schema `mail-2`), and prints typed answers.
 
 **Why.** The operator wants to see whether Jev's answers earn their place
 (screwtape IMP-003) before SATAN depends on them, and wants mail the agent
@@ -18,9 +18,10 @@ sender-written text withheld.
 screwtape; nothing persists across a daemon restart. Transport to Jev and
 the Jev credential are deployment concerns owned by satan and `~/flakes`;
 this design fixes only the contract they must meet (§ Reaching Jev from the jail).
-Screwtape's contract gains three additive v1 changes, owned by screwtape
-(IMP-006, DEC-077): raw-byte bounds, every address list in Jev's state,
-and a `seen` field on each classify line.
+Screwtape owns Jev's window (DEC-077): its classify line carries `seen`,
+the window text Jev's state was stripped from (screwtape SL-005, which
+carries screwtape IMP-006), and the agent's mail text comes from it
+(DEC-094).
 
 ```mermaid
 flowchart LR
@@ -45,10 +46,11 @@ classified.
 
 **Invariants the rest of the design keeps.**
 
-1. Agent-visible mail text is a subset of what Jev was shown (DEC-048).
+1. Agent-visible mail text is a subset of what Jev was shown (DEC-048):
+   all of it is taken from `seen` (DEC-094).
 2. A read never fails because classify did; an item without a
    classification is withheld, and says why (DEC-056, DEC-063).
-3. Malebolge names `mail-1` questions only in the pre-filter policy table
+3. Malebolge names questions only in the pre-filter policy table
    (CON-001).
 4. Every mail result frames its content as possibly hostile, never an
    instruction, never authority (DEC-061).
@@ -57,8 +59,8 @@ classified.
 
 Out of scope: action plans, digests, operator signals (IDE-005/006/007);
 background prefill (IDE-006); triage built on answers; attachment
-contents; persisting classifications or reports; changing `mail-1`; changing
-screwtape's contract beyond IMP-006.
+contents; persisting classifications or reports; changing the questions; changing
+screwtape's contract.
 
 <!-- doctrine:section sec-10 -->
 ## The port: `classify(ids)` and classification types
@@ -104,46 +106,52 @@ const NoulAnswer = Type.Object({ noul: Probability });
 const ScoreAnswer = Type.Object({ score: Type.Number({ minimum: 0 }), confidence: Probability });
 // probabilities objects are allowed as extra fields and not copied (F-39)
 
+const Count = Type.Integer({ minimum: 0 });
+const SeenAddress = Type.Object({ name: NullableString, email: Type.String() });
+const SeenBody = Type.Object({ text: Type.String(), is_truncated: Type.Boolean(), conversion_failed: Type.Boolean() });
+const SeenAttachment = Type.Object({ type: Type.String(), name: NullableString });
+
+/** The window Jev's state was stripped from (screwtape "classify_state"); shape only, never its bounds. */
+const SeenSchema = Type.Object({
+  subject: NullableString,
+  from: Type.Array(SeenAddress), from_omitted: Count,
+  sender: Type.Array(SeenAddress), sender_omitted: Count,
+  reply_to: Type.Array(SeenAddress), reply_to_omitted: Count,
+  to: Type.Array(SeenAddress), to_omitted: Count,
+  cc: Type.Array(SeenAddress), cc_omitted: Count,
+  bcc: Type.Array(SeenAddress), bcc_omitted: Count,
+  bodies: Type.Array(SeenBody), bodies_omitted: Count,
+  attachments: Type.Array(SeenAttachment), attachments_omitted: Count,
+});
+
 export const ClassifySchema = Type.Object({
   id: Id,
   cursor: Cursor,
-  schema: Type.String(),       // passed through, never compared to "mail-1"
+  schema: Type.String(),       // passed through, never compared to "mail-2"
   model: Type.String(),
+  seen: SeenSchema,
   answers: Type.Record(Type.String(), Type.Union([ChoiceAnswer, NoulAnswer, ScoreAnswer])),
-  seen: Type.Object({ bodies: Type.Array(Type.Integer({ minimum: 0 })) }), // raw bytes Jev kept per body
 });
 export type Classification = Static<typeof ClassifySchema>;
+export type Seen = Classification["seen"];
 ```
 
 `Probability` is a number in [0, 1]. An answer matching none of the three
 shapes is a contract violation. A question name is never checked here, so
-the operator can add, drop or rename `mail-1` questions without a malebolge
+the operator can add, drop or rename questions without a malebolge
 change, except for the names in the pre-filter table (§ The pre-filter).
 
-`seen` is screwtape IMP-006's additive v1 field (DEC-077). Until it lands,
-a classify line without `seen` is a contract violation: every id is
-`failed` and so withheld, which fails safe.
+**`seen` is the window itself (DEC-094).** Screwtape prints on each line
+the text Jev's state was stripped from: every text control-stripped and cut
+to screwtape's bounds, each list and count with its `_omitted` count. The
+schema checks its shape only. Its bounds are screwtape's, documented in
+its README; malebolge copies none of them, because it shows the agent only
+text from `seen` (§ Jev's window), so the invariant holds whatever the
+bounds are. A line without a well-formed `seen` is a contract violation:
+every id is `failed` and so withheld, which fails safe.
 
-**Screwtape's documented raw bounds are one constant**, beside the
-schemas, used by the adapter's classify read (§ The screwtape adapter) and
-by every view clamp other than the body's (§ Jev's window):
-
-```ts
-/** Screwtape's raw-byte bounds on what classify sends Jev (screwtape README "classify_state"). */
-export const JEV_WINDOW = {
-  bodyBytes: 16_384,
-  subjectBytes: 512,
-  attachments: 20,
-  attachmentTextBytes: 128,
-  domainsPerList: 10,
-  domainBytes: 253,
-} as const;
-```
-
-`domainsPerList` is IMP-006's to document; until it does, it is the `from`
-bound screwtape documents today. One test pins `JEV_WINDOW` against
-screwtape's documented bounds, and pins that
-`READ_MAX_BYTES.max === JEV_WINDOW.bodyBytes`.
+Screwtape's schema id is `mail-2` today (screwtape SL-005); malebolge
+passes it through and never compares it (CON-001).
 
 <!-- doctrine:section sec-11 -->
 ## The screwtape adapter: classify invocation and failure mapping
@@ -210,7 +218,7 @@ sequenceDiagram
   A-->>T: n outcomes, in ids order
 ```
 
-1. **Read.** For each id, `read <id> --max-bytes JEV_WINDOW.bodyBytes`,
+1. **Read.** For each id, `read <id> --max-bytes CLASSIFY_READ_BYTES` (16,384, screwtape's body budget: more is never sent to Jev),
    sequentially, through `run`. The checked data is re-encoded as
    `{"version":1,"kind":"read","data":…}`; the checked object keeps its
    extra fields, so the line is faithful. A failed read makes that id
@@ -265,6 +273,12 @@ cost matters.
 evicts the least recently used. Transient outcomes (`unavailable`,
 `failed`) are never stored.
 
+**Memory.** An entry holds the whole classification, `seen` included,
+because every shown item's sender text comes from it (DEC-094). Screwtape
+bounds `seen` at about 45 KB of text, so a full cache holds about 90 MB in
+the worst case and far less for ordinary mail. The operator accepted that
+bound (2026-10-29) over a smaller cache or one holding less.
+
 The cache lives in `src/mail/classifications.ts`; its LRU over a `Map`
 is a private detail there:
 
@@ -300,8 +314,8 @@ looks items up in.
 (RFC 8621). Jev's input excludes keywords and mailboxes, the read line's
 only mutable parts (screwtape `classify/input.gleam`), so a cached
 `too_large` stays true. The classify read is fixed at
-`JEV_WINDOW.bodyBytes`, not the caller's `max_bytes` (DEC-048), so a
-cached `seen` stays exact; and the screwtape config is a store path
+`CLASSIFY_READ_BYTES`, not the caller's `max_bytes` (DEC-048), so a
+cached `seen` is the window Jev saw for that id; and the screwtape config is a store path
 fixed for the daemon's lifetime, so a model or schema change is a redeploy
 and a restart, which empties the cache.
 
@@ -317,44 +331,41 @@ The invariant (DEC-048): agent-visible mail text is a subset of what Jev
 was shown. An attacker who pads a message and puts the payload past Jev's
 window must find the agent's view clamped at the same place.
 
-**Screwtape owns the window (DEC-077).** `classify` bounds every text in
-raw bytes before PII stripping (cut, drop the partial word, then strip),
-puts every address list in Jev's state, and reports on each line what Jev
-saw: `seen.bodies[i]`, the raw bytes Jev kept of body `i` (screwtape
-IMP-006). Malebolge copies none of those rules. It clamps each body to
-`seen`, held in the cache beside the answers (§ The classification cache),
-and every other field to screwtape's documented raw bounds, held in
-`JEV_WINDOW` (§ The port). Every clamp lives in the projection
+**The agent's sender text is `seen` (DEC-094).** Screwtape owns the window
+(DEC-077): each classify line carries `seen`, the window Jev's state was
+stripped from (§ The port). Every sender-written text a shown item carries
+is taken from the cached classification's `seen`, never from the tool's
+read. Malebolge's own caps only shorten it, so each shown text is a prefix
+of the text Jev was shown, and the invariant holds by construction,
+whatever screwtape's bounds are. Malebolge copies none of them.
+
+The read supplies the rest: fields the server or the operator's clients
+set, which the sender does not write. Every rule lives in the projection
 (`src/mail/project.ts`; signatures in § One tool call), so it applies to
-every tool; a withheld or
-unclassified item shows no body or other sender text anyway.
+every tool. A withheld item shows no `seen` text (§ The pre-filter).
 
-| Field | Jev sees | Agent sees (target) | Today |
-|---|---|---|---|
-| body text | body `i`: `seen.bodies[i]` raw bytes | body `i` cut to `seen.bodies[i]` raw bytes; bodies past `seen.bodies.length` cut; `mail_read` `max_bytes` at most `JEV_WINDOW.bodyBytes` (16,384) | up to 32,768; all bodies |
-| subject | `subjectBytes` (512) raw bytes, PII stripped | 200 rendered bytes (unchanged); dropped when over `subjectBytes` | same |
-| address lists (`from`, `sender`, `reply_to`, `to`, `cc`, `bcc`) | domains of each list, at most `domainsPerList`, each at most `domainBytes` (253) | first `domainsPerList` addresses of each list, the rest cut; an address whose domain is over `domainBytes` dropped | all, uncapped |
-| display names | none until screwtape IMP-005 | at most 64 rendered bytes each (DEC-050) | uncapped |
-| `message_id`, `in_reply_to`, `references` | none | dropped (DEC-050) | shown |
-| attachments | first `attachments` (20); name and type `attachmentTextBytes` (128) raw bytes each | first 20; name and type dropped when over 128 raw bytes; `cid` 64 rendered bytes (DEC-050); `disposition` capped at 64 as DEC-050 caps `cid` | all, uncapped |
-| `keywords` | none | shown: set by the operator's clients and server, not sender-written | same |
-| `preview` | none | shown (server-made, ≤ 256 chars, normally the first text body's start): accepted residue, inert without egress (DEC-049); IMP-024 drops it | same |
-| URL paths and queries, address local parts | replaced by `/[…]`, `[email]` | shown: accepted residue, inert without egress (DEC-049, DEC-050) | same |
+| Field | Agent sees | From |
+|---|---|---|
+| `subject` | `seen.subject`, cut to 200 rendered bytes as today | `seen` |
+| address lists (`from`, `sender`, `reply_to`, `to`, `cc`, `bcc`) | `seen`'s entries, name and email; a list whose `_omitted` count is non-zero is named in `cut` | `seen` |
+| body text | `seen.bodies[i].text` joined as `foldBodies` joins them today, then cut to the caller's `max_bytes` raw bytes on a codepoint boundary | `seen` |
+| body flags | `is_truncated`: any `seen` body's, or `bodies_omitted` > 0; `conversion_failed`: any `seen` body's; `is_encoding_problem`, `truncated_by`: the read's parts, as today; `output_truncated`: malebolge's `max_bytes` cut shortened the text | both |
+| attachments | first `seen.attachments.length`: `type` and `name` from `seen`, `part_id`, `blob_id`, `size` from the read's attachment at the same index (screwtape takes the first 20 in read order); `attachments_omitted` > 0 names `attachments` in `cut` | both |
+| `cid`, `disposition` | dropped: sender-written, never shown to Jev, of no use to the agent | — |
+| `message_id`, `in_reply_to`, `references` | dropped (DEC-050) | — |
+| `id`, `thread_id`, `received_at`, `size`, `is_seen`, `is_flagged`, `has_attachment`, `keywords`, `mailbox_ids`, `sent_at`, `account_id` | as today | the read |
+| `preview` | as today (server-made, ≤ 256 chars): accepted residue, inert without egress (DEC-049); IMP-024 drops it | the read |
 
-**Why this holds.** Content is immutable, so the agent's read and Jev's
-read of a message hold the same bodies in the same order, and the first
-`seen.bodies[i]` bytes of body `i` are exactly what Jev kept. The agent's
-own `max_bytes` cut only shortens that prefix. A non-body text field
-within its bound reached Jev whole, so any tighter cap is a prefix of it;
-one over its bound was cut for Jev with its partial word dropped, so the
-agent sees none of it. Display names, `cid` and `disposition` are DEC-050's
-exceptions: Jev never reads them, and they stay capped. The agent's first `domainsPerList` addresses hold no domain outside
-the first `domainsPerList` distinct domains Jev kept.
+`seen`'s texts are control-stripped (bidi overrides included), so the agent
+sees what Jev was shown, not a raw prefix of it. Display names show as Jev
+saw them (screwtape bounds them at 128 bytes); DEC-050's 64-byte name cap
+goes. `mail_read`'s `max_bytes` stays at most 16,384: `seen` holds no more
+body text than that.
 
-A capped field, one past a count, or one dropped for its bound is named in
-the item's `cut` list, as today. Fields never shown leave the projection
-and `CUT_ORDER` entirely, with `MESSAGE_ID_MAX_ENTRIES` and
-`MESSAGE_ID_ENTRY_MAX_BYTES`: naming them on every item would be noise.
+A field cut or named by an `_omitted` count is named in the item's `cut`
+list, as today. Fields never shown leave the projection and `CUT_ORDER`
+entirely, with `MESSAGE_ID_MAX_ENTRIES` and `MESSAGE_ID_ENTRY_MAX_BYTES`:
+naming them on every item would be noise.
 
 <!-- doctrine:section sec-14 -->
 ## The pre-filter and withheld items
@@ -364,7 +375,7 @@ sender-written text is withheld from the agent (DEC-063). It runs after
 classification and before projection, on full answers, so the rendering
 bound (§ Rendering) never hides an answer from it.
 
-**The policy table is the only place `mail-1` question names appear**
+**The policy table is the only place question names appear**
 (CON-001), in `src/mail/policy.ts`:
 
 ```ts
@@ -413,10 +424,12 @@ the server computed, plus the sender's domain:
 Sender-sized fields are fill, so the core stays within the smallest share;
 a fill field that does not fit is cut whole and named, as in shown items.
 
-`sender_domains` follows screwtape's bound for `from`: the text after the
-last `@` of each address, lowercased, deduplicated in order, the first
-`JEV_WINDOW.domainsPerList`, a domain over `domainBytes` raw bytes
-dropped (§ Jev's window). The domain
+`sender_domains` comes from the read's `from`, the one source every
+withheld item has (an unclassified one has no `seen`): the text after the
+last `@` of each address, lowercased, deduplicated in order, at most
+`SENDER_DOMAINS_MAX` (10), a domain over 253 raw bytes dropped. That bound
+is malebolge's own, sized for the share, not a copy of screwtape's. The
+domain
 identifies the message for the operator and is no exfiltration
 destination without egress (DEC-049). `withheld` renders as, for example,
 `{"reason":"hostile","detail":"agent_directive","score":0.82}`; scores are
@@ -450,7 +463,7 @@ the header stays trusted text.
 | score | `[level, confidence]` |
 
 Numbers are rounded to 2 dp; probability vectors and `model`/`schema` are
-never rendered. For today's `mail-1`:
+never rendered. For today's `mail-2`:
 
 ```json
 "jev":{"primary_purpose":["promotion",0.91],"security_related":0.02,"recipient_action_requested":0.64,"deadline_present":0.1,"deception_cues":0.07,"agent_directive":0.01,"claimed_time_pressure":[1,0.72],"substance":[0,0.8]}
@@ -463,7 +476,7 @@ That is 217 bytes. An unclassified item renders
 288 is within the measured headroom: a maximal list or thread core
 (255-char ids, a 200-byte subject, every fill field cut, `jev` in `cut`)
 leaves 310 and 311 bytes for `jev` within `shareOf(40)`, probed through
-`projectListItem` / `projectThreadItem` and `fitItem`; today's `mail-1`
+`projectListItem` / `projectThreadItem` and `fitItem`; today's `mail-2`
 renders at most about 226. A larger
 schema keeps whole answers in order while they fit, drops the rest, and
 names `jev` in the item's `cut` list (a new `CutName`, ordered after
@@ -744,25 +757,25 @@ async function screened<T extends { id: string }>(
 ): Promise<{ item: T; outcome: ClassifyOutcome; withheld: Withheld | undefined }[]>;
 ```
 
-**Projection.** Each screened item goes to one projector. Shown projectors
-take the item's rendered `jev`, and those that carry a body take `seen`;
+**Projection.** Each screened item goes to one projector. A shown item is
+classified, so its projector takes the classification: it renders `jev`
+from the answers (`jevField`) and takes every sender-written text from
+`seen` (§ Jev's window). Projectors that carry a body take the caller's
+`max_bytes`, which now cuts `seen`'s text rather than the read.
 `projectWithheld` takes the item as the tool read it, so it keeps `size`
-where the tool has it:
+where the tool has it, and the outcome, for `jev`:
 
 ```ts
-type Jev = ReturnType<typeof jevField>;
-type Seen = Classification["seen"];
-
-export function projectListItem(summary: Summary, jev: Jev, heldBack?: boolean): ProjectedItem;
-/** `jev` is undefined only for an `in_store: false` entry. */
-export function projectThreadItem(entry: ThreadItem, jev: Jev | undefined): ProjectedItem;
-export function projectNew(read: ReadData, jev: Jev, seen: Seen, heldBack?: boolean): ProjectedItem;
-export function projectRead(read: ReadData, jev: Jev, seen: Seen): ProjectedItem;
+export function projectListItem(summary: Summary, classified: Classification, heldBack?: boolean): ProjectedItem;
+/** `classified` is undefined only for an `in_store: false` entry. */
+export function projectThreadItem(entry: ThreadItem, classified: Classification | undefined): ProjectedItem;
+export function projectNew(read: ReadData, classified: Classification, maxBytes: number, heldBack?: boolean): ProjectedItem;
+export function projectRead(read: ReadData, classified: Classification, maxBytes: number): ProjectedItem;
 /** `size` only when `item` is a read; held-back and `in_store` flags as the shown projector writes them. */
 export function projectWithheld(
   item: Summary | ReadData,
+  outcome: ClassifyOutcome,
   withheld: Withheld,
-  jev: Jev,
   flags: { heldBack?: boolean; inStore?: boolean },
 ): ProjectedItem;
 ```
@@ -783,14 +796,14 @@ changes `next` or `caught_up`.
 | path | change |
 |---|---|
 | `src/stdin-env.ts` (new) | `stdinEnv(input)`: an argv-only exec with stdin piped, over `node:child_process.spawn` |
-| `src/mail/source.ts` | `ClassifySchema` in `KIND_SCHEMAS`; `Classification`, `ClassifyOutcome`, `Unclassified`, `ClassifyQuery`; `classify` port member; `seen` in `ClassifySchema`; `JEV_WINDOW` with screwtape's documented raw bounds |
-| `src/mail/screwtape.ts` | `run` split into `spawnBounded` + `run`; `classify` member: per-id reads, classify spawn, prefix check, failure table; `CLASSIFY_TIMEOUT_S` |
+| `src/mail/source.ts` | `ClassifySchema` in `KIND_SCHEMAS`; `Classification`, `ClassifyOutcome`, `Unclassified`, `ClassifyQuery`; `classify` port member; `SeenSchema` (shape only) in `ClassifySchema`; `Seen` |
+| `src/mail/screwtape.ts` | `run` split into `spawnBounded` + `run`; `classify` member: per-id reads, classify spawn, prefix check, failure table; `CLASSIFY_TIMEOUT_S`; `CLASSIFY_READ_BYTES` |
 | `src/mail/classifications.ts` (new) | `classificationCache` (its LRU private) and `classificationsOf`: read-through over the cache |
 | `src/mail/policy.ts` (new) | `WITHHOLD_POLICY`, `Withheld`, `withholding`: the only question names |
-| `src/mail/project.ts` | view clamps (bodies to `seen`; subject, attachment name and type to their `JEV_WINDOW` bounds; address lists per list; display names and `cid` per DEC-050, `disposition` as `cid`); drop `message_id`, `in_reply_to`, `references`; `jevField`; shown projectors take `jev` (and `seen` where they carry a body); `projectWithheld`; `jev` cut name |
+| `src/mail/project.ts` sender text from `seen` (subject, address lists, bodies cut to `max_bytes`, attachment name and type joined by index); `_omitted` counts named in `cut`; drop `cid`, `disposition`, `message_id`, `in_reply_to`, `references`; `jevField`; shown projectors take the classification (and `max_bytes` where they carry a body); `projectWithheld` with `sender_domains`; `jev` cut name |
 | `src/untrusted-block.ts` | `renderBlock` emits the UNTRUSTED line for its tag; `WRAPPER_BYTES` covers it |
 | `src/mail/render.ts` | withheld count; missing-question line; `MailTool` adds `mail_report` |
-| `src/mail/tools.ts` | `MailDeps`; `screened`; `READ_MAX_BYTES.max` 16,384; joint clamp deducts `JEV_MAX_BYTES`; refusal; `malebolge: ` error prefix; description suffix; `mail_report` |
+| `src/mail/tools.ts` | `MailDeps`; `screened`; `READ_MAX_BYTES.max` 16,384; `max_bytes` passed to the body projectors; joint clamp deducts `JEV_MAX_BYTES`; refusal; `malebolge: ` error prefix; description suffix; `mail_report` |
 | `src/mail/extension.ts` | `MAIL_SECTION` rewritten; `mailRefusal` |
 | `src/config.ts` | `ScrewtapePaths.credentials` from `MALEBOLGE_SCREWTAPE_CREDENTIALS` |
 | `src/daemon-start.ts` | `mailPart` builds cache, reported set, log, refusal; classify env |
@@ -833,7 +846,7 @@ wording (DEC-061); one assertion ties `MAIL_SECTION` to the rendered tag.
   and without extra fields); the kind list is per directory (`real` four,
   `contract` five).
 - `checkData("classify", …)` rejects an answer matching none of the three
-  shapes and a probability outside [0, 1].
+  shapes, a probability outside [0, 1], and a `seen` missing a field.
 - Cache: classified and `too_large` are stored and not re-asked;
   `unavailable` and `failed` are re-asked next call; eviction at the bound;
   one classify call per tool call at most.
@@ -857,18 +870,16 @@ wording (DEC-061); one assertion ties `MAIL_SECTION` to the rendered tag.
   - preconditions: an injected interface list with more than `lo`, an
     unreadable list, and an unset credentials variable each refuse every
     tool;
-  - view clamps: body `i` cut to `seen.bodies[i]` raw bytes and bodies
-    past `seen.bodies.length` cut, in `mail_read` and `mail_new`; a subject,
-    attachment name or type over its `JEV_WINDOW` bound dropped and named;
-    each address list past `domainsPerList` cut, an over-bound domain's
-    address dropped; attachments past 20 cut; display names, `cid` and
-    `disposition` capped;
-    dropped fields absent;
-  - a classify line without `seen` is a contract violation: every id
-    `failed`, withheld.
-- One test pins `JEV_WINDOW` against screwtape's documented bounds and
-  `READ_MAX_BYTES.max === JEV_WINDOW.bodyBytes`; no other test pins a
-  bound's value.
+  - text from `seen`: a fake whose read and `seen` disagree (a longer
+    subject, an extra address, a longer body, a renamed attachment) shows
+    `seen`'s text in every tool, never the read's; a non-zero `_omitted`
+    count names its field in `cut`; `max_bytes` cuts `seen`'s body text and
+    sets `output_truncated`; attachments join the read's `part_id`,
+    `blob_id` and `size` by index; dropped fields (`cid`, `disposition`,
+    `message_id`, `in_reply_to`, `references`) absent;
+  - a classify line without a well-formed `seen` is a contract violation:
+    every id `failed`, withheld.
+- No test pins a bound's value.
 - The catalog guard (§ Preconditions) is the one test that pins the six
   mail tool names; `daemon-start.test.ts` checks only `mailTools === 6`,
   and `daemon-sections.test.ts` only the extension name and its section.
@@ -908,6 +919,7 @@ governance choice (inq-8): each older record gets a one-line
 | ASM-001 (screwtape runs with `HOME` alone) | DEC-059 | claim narrows to the read verbs |
 | RSK-002 (foreign text can carry instructions: quarantine) | DEC-049, 061, 062, 063 | controls facet lists the network guard, framing, self-report, pre-filter |
 | DEC-048 (agent text ⊂ Jev's), DEC-050 (header text Jev never sees) | DEC-077 | screwtape owns the window: bodies clamped to `seen`, other fields to screwtape's documented raw bounds, address lists per list |
+| DEC-077 (screwtape owns Jev's window), DEC-048, DEC-050 | DEC-094 | every shown sender text is taken from `seen`; no mirrored bounds; `cid` and `disposition` dropped; display names uncapped beyond screwtape's 128 bytes |
 | DEC-030 (mail persona; the untrusted-data rule pinned by a test) | DEC-061 | the pin is one structural assertion: the section names the rendered block tag; framing wording is unpinned |
 
 **Shared module.** The UNTRUSTED line touches DEC-054's shared module:
@@ -918,10 +930,12 @@ in mail.
 Lock notes on the narrowed records themselves:
 
 - DEC-060: its rationale sentence on the `max_bytes` promise is corrected;
-  `JEV_MAX_BYTES` goes from about 384 to 288; the `mail-1` example renders
+  `JEV_MAX_BYTES` goes from about 384 to 288; the `mail-2` example renders
   at 217 bytes, not about 250.
-- DEC-050: `disposition` joins the capped attachment fields, at 64 as
-  `cid`.
+- DEC-050: attachment `cid` and `disposition` are dropped, and its 64-byte
+  display-name cap goes: names come from `seen` (DEC-094).
+- DEC-077: the clamp to `seen.bodies[i]` byte counts and the mirrored
+  bounds table give way to text taken from `seen` (DEC-094).
 
 At /reconcile, any older record the implementation actually contradicts is
 rewritten rather than noted.
@@ -932,8 +946,11 @@ rewritten rather than noted.
 
 **Follow-up:** drop `preview` everywhere (IMP-024).
 
-**Waits on screwtape IMP-006 (DEC-077).** SL-007's window-dependent work
-(the `seen` schema and the view clamps of § Jev's window) waits on it.
+**Screwtape's `seen` has landed** (screwtape SL-005, carrying IMP-006; in
+audit on 2026-10-29). The `seen`-dependent work (the schema and § Jev's
+window) builds against screwtape's README contract and a transcribed
+fixture, and ships after SL-005 closes: a deployed screwtape without
+`seen` withholds every item.
 
 **Open assumptions:** ASM-002 (gateway socket serves Jev's path; first-phase
 VA) and ASM-003 (launcher can wrap the daemon; satan IMP-060, with a

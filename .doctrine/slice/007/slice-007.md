@@ -10,10 +10,11 @@ without new tools for it.
 
 Screwtape SL-004 (closed) added that stage: `screwtape classify` reads v1
 `read` envelopes on stdin, strips PII, asks Jev (typesafe.ai's decision
-model, not an LLM) the `mail-1` questions, and prints one line per message:
+model, not an LLM) its questions (schema `mail-2` since screwtape SL-005), and prints one line per message:
 `id`, `cursor`, `schema`, `model`, and typed `answers` (a choice label,
-noul probabilities, scores, each with probabilities and confidence).
-Contract: screwtape README, "classify", "mail-1", "What Jev sees",
+noul probabilities, scores, each with probabilities and confidence), and
+`seen`, the window text Jev's state was stripped from.
+Contract: screwtape README, "classify", "classify_state", "mail-2",
 "Resume and skip", "The key, and the wrapper".
 
 satan:RFC-020 (amended at screwtape SL-004 close) narrows D5: SATAN triages
@@ -28,17 +29,17 @@ signals (IDE-007) — build on this.
 ## Scope & Objectives
 
 Updated 2026-10-29 against the decisions the design inquiry accepted
-(DEC-047 to DEC-063, CON-001) and the design review (DEC-077, DEC-081).
+(DEC-047 to DEC-063, CON-001) and the design review (DEC-077, DEC-081), and the rebase on screwtape's
+landed `seen` (DEC-094).
 
 1. **Classified mail reaches the conversation.** `mail_new`, `mail_read`,
    `mail_thread` and `mail_list` carry each message's classification as a
    compact `jev` object in the item's core (DEC-047, DEC-060). `MailSource`
    gains `classify(ids)`; no new tool for this.
 2. **The agent never sees mail text Jev was not shown** (DEC-048). The
-   window is screwtape's (DEC-077): each classify line reports in `seen`
-   the raw body bytes Jev kept, and the agent's bodies are clamped to it;
-   every other field is clamped to screwtape's documented raw bounds.
-   Header text Jev never sees is capped or dropped (DEC-050).
+   window is screwtape's (DEC-077), and every sender-written text the
+   agent sees is taken from the classify line's `seen` (DEC-094).
+   Header text Jev never sees is dropped (DEC-050).
 3. **No redundant classification.** An in-memory cache held for the
    daemon's lifetime, keyed by message id, filled read-through (DEC-057,
    DEC-058). Screwtape keeps no classifications, so reuse is ours.
@@ -74,10 +75,9 @@ Updated 2026-10-29 against the decisions the design inquiry accepted
 - Triage policy built on answers (e.g. hiding promotions), beyond the safety
   pre-filter. Using answers for triage is later work, after IMP-003.
 - Any write to the mailbox or to screwtape.
-- Changing the `mail-1` questions, or screwtape's contract beyond DEC-077's
-  three additive v1 changes (raw-byte bounds, every address list in Jev's
-  state, `seen`), which screwtape IMP-006 carries. Screwtape IMP-005
-  proposes relaxing PII erasure; not this slice.
+- Changing screwtape's questions or its contract. DEC-077's changes
+  (raw-byte bounds, every address list, `seen`) landed in screwtape
+  SL-005, which carries screwtape IMP-006 and IMP-005.
 - Attachment contents: screwtape keeps metadata only.
 - Persisting classifications or reports across daemon restarts.
 - SATAN's ordinary contexts reading classifications (RSK-002 zones).
@@ -85,11 +85,11 @@ Updated 2026-10-29 against the decisions the design inquiry accepted
 ## Affected surface
 
 - `src/mail/source.ts`: `classify` member, classify envelope schema
-  (type-shaped, with `seen`), `JEV_WINDOW`.
+  (type-shaped, with `seen`).
 - `src/mail/screwtape.ts`, `src/bounded-exec.ts` neighbour: `stdinEnv`,
   classify invocation and failure mapping.
-- `src/mail/project.ts`, `src/mail/render.ts`, `src/mail/tools.ts`: view
-  clamps, `jev` core field, withheld items, header line, error prefix,
+- `src/mail/project.ts`, `src/mail/render.ts`, `src/mail/tools.ts`: sender
+  text from `seen`, `jev` core field, withheld items, header line, error prefix,
   `mail_report`, joint clamp.
 - `src/mail/classifications.ts`, `src/mail/policy.ts`: the cache and
   read-through; the withhold policy.
@@ -100,8 +100,8 @@ Updated 2026-10-29 against the decisions the design inquiry accepted
 - `test/mail/**`: classify fixtures, `fakeMailSource` with `classify`,
   `fakeMailDeps`.
 - Cross-repo: satan IMP-060 (bridge, bind, variable), flakes IMP-055
-  (unit credential, `LimitCORE=0`, DEC-081), screwtape IMP-006 (DEC-077's
-  window changes).
+  (unit credential, `LimitCORE=0`, DEC-081). Screwtape SL-005 (`seen`)
+  has landed and is in audit.
 
 ## Risks, assumptions, open questions
 
@@ -114,9 +114,10 @@ DEC-060). Remaining:
 - **Risk:** Jev answers are adversarially influenceable; they are advice.
   Thresholds are uncalibrated until IMP-003.
 - **Risk:** a Jev outage withholds all mail, loudly, until Jev returns.
-- **Dependency:** the window-dependent work (`seen` schema, view clamps)
-  waits on screwtape IMP-006. Until it lands, a classify line without
-  `seen` is a contract violation, so every item is withheld.
+- **Dependency:** the `seen`-dependent work builds against screwtape's
+  README contract and ships after screwtape SL-005 closes. A deployed
+  screwtape without `seen` is a contract violation, so every item is
+  withheld.
 
 ## Verification / closure intent
 

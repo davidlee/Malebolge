@@ -1,0 +1,204 @@
+# Implementation plan for SL-007 — the authored, durable phase plan.
+#
+# This is the single source of each phase's objective, criteria, verification,
+# and links. Runtime status lives separately under .doctrine/state/ (phase
+# tracking) — never record progress here. Hand-edit freely: the tool reads this
+# file but does not rewrite it.
+schema  = "doctrine.plan.overview"
+version = 1
+slice   = "SL-007"
+
+# Canonical spec/requirement links — cite ids, never restate what they say. The
+# plan reader does not model these yet, so nothing downstream consumes them.
+[specs]
+primary       = []
+collaborators = []
+
+[requirements]
+targets      = []
+dependencies = []
+
+# One [[phase]] per ordered phase, in execution order — the authored array order
+# IS the order; never sort by id. Ids are PHASE-NN (zero-padded), immutable and
+# never reused once authored. Criterion ids are local to their phase, bare, and
+# equally immutable. Reference a criterion from another phase phase-qualified
+# (PHASE-03/EX-8).
+
+# ---------------------------------------------------------------------------
+[[phase]]
+id        = "PHASE-01"
+name      = "Probe the gateway socket; the classify port and a stdin spawner"
+objective = "First check ASM-002 (the gateway client socket serves Jev's path as the relay does), so a failure surfaces before any code depends on DEC-059's transport. Then the behaviour-neutral foundations: the classify types and envelope schema with seen (design § The port), the classify member on MailSource with fakeMailSource extended, and src/stdin-env.ts (design § A stdin-capable spawner). No tool changes behaviour."
+entrance_criteria = [
+  { id = "EN-1", text = "Design locked at run revision 70 (DEC-094 rebase); suite green on main." },
+  { id = "EN-2", text = "Screwtape's README sections 'classify', 'classify_state' and 'mail-2' read at the commit the fixture is transcribed from (screwtape 65879a9 or later); record the commit in test/mail/fixtures/SOURCE.md." },
+]
+exit_criteria = [
+  { id = "EX-1", text = "FIRST: VA-1 is run and its result recorded in notes.md before any code of the phase. If the socket does not serve Jev's path as the relay does, STOP and return to the operator: DEC-059's transport is in question and satan IMP-060 must hear of it." },
+  { id = "EX-2", text = "src/mail/source.ts exports Unclassified, ClassifyOutcome, ClassifyQuery, Classification, Seen and ClassifySchema (SeenSchema checks shape only, never screwtape's bounds; DEC-094). ClassifySchema joins KIND_SCHEMAS as kind 'classify'. MailSource gains classify(query); the screwtape adapter's member may throw 'not implemented' until PHASE-02." },
+  { id = "EX-3", text = "test/mail/fixtures/contract/classify.json is transcribed from screwtape's contract (schema mail-2, seen included) and joins the per-fixture sweep with and without extra fields; 'cover every verb' becomes per directory (real four kinds, contract five)." },
+  { id = "EX-4", text = "fakeMailSource (test/mail/mail-fixtures.ts) gains classify, answering scripted outcomes per id and recording its calls; every existing caller still compiles unchanged." },
+  { id = "EX-5", text = "src/stdin-env.ts exports stdinEnv(input) with the behaviour listed in design § A stdin-capable spawner; src/bounded-exec.ts is unchanged." },
+  { id = "EX-6", text = "just check green (fmt-check, lint with zero warnings, typecheck, test)." },
+]
+verification = [
+  { id = "VA-1", expects = "the agent bridges a host loopback port to the gateway client socket (socat) and compares unauthenticated responses on Jev's path with the relay on 127.0.0.1:4000; same status and body shape means ASM-002 holds (record it on ASM-002)" },
+  { id = "VT-1", expects = "the contract classify fixture passes checkData with and without extra fields; the kind list is per directory", test_file = "test/mail/source.test.ts", keywords = ["classify.json", "\"classify\""], waived = false },
+  { id = "VT-2", expects = "checkData('classify', …) rejects an answer of no known shape, a probability outside [0, 1], and a seen missing a field", test_file = "test/mail/source.test.ts", keywords = ["an answer of no known shape", "a seen missing a field"], waived = false },
+  { id = "VT-3", expects = "stdinEnv delivers and closes stdin; timeout, abort and spawn failure map to timeout, aborted and spawn_error; env replaced, not inherited; cwd honoured; a string command refused", test_file = "test/stdin-env.test.ts", keywords = ["stdinEnv", "spawn_error", "aborted", "inheritEnv"], waived = false },
+]
+specs        = []
+requirements = []
+
+# ---------------------------------------------------------------------------
+[[phase]]
+id        = "PHASE-02"
+name      = "The adapter's classify: per-id reads, one classify spawn, the failure table"
+objective = "screwtapeSource implements classify (design § The screwtape adapter): run splits into spawnBounded + run with no behaviour change for the read verbs; classify reads each id at CLASSIFY_READ_BYTES, spawns classify once with the read lines on stdin and the classify env, checks the output prefix, and maps every ending to outcomes by the failure table. Never throws for a classify failure."
+entrance_criteria = [
+  { id = "EN-1", text = "PHASE-01 completed; suite green." },
+]
+exit_criteria = [
+  { id = "EX-1", text = "spawnBounded and run as in the design; every screwtape spawn runs with cwd: home; the read verbs keep MAIL_TIMEOUT_S, MAIL_STDOUT_MAX and env { HOME }. Existing test/mail/screwtape.test.ts cases pass unchanged." },
+  { id = "EX-2", text = "ScrewtapeOptions gains the credentials directory; the classify child env is exactly { HOME, CREDENTIALS_DIRECTORY, ERL_CRASH_DUMP_SECONDS: '0' } with inheritEnv false (DEC-059, DEC-081); CLASSIFY_TIMEOUT_S is 30; CLASSIFY_READ_BYTES is 16,384." },
+  { id = "EX-3", text = "The prefix rule and every failure-table row (design § One classify(ids) call) map as written; stderr is read only for error, bound and cursor through errorDiagnostic; no child text reaches an outcome." },
+  { id = "EX-4", text = "just check green." },
+]
+verification = [
+  { id = "VT-1", expects = "classifies every id in order; a mismatched or extra line fails every id of the batch; exit 0 with k < n fails every id; a failed per-id read fails only that id", test_file = "test/mail/screwtape.test.ts", keywords = ["classifies every id in order", "fails every id of the batch"], waived = false },
+  { id = "VT-2", expects = "stderr jev_context at input[k] gives too_large then failed; config or credential gives unavailable; any other ending gives failed; exit != 0 or timeout after n lines keeps all classified", test_file = "test/mail/screwtape.test.ts", keywords = ["jev_context", "too_large", "unavailable"], waived = false },
+  { id = "VT-3", expects = "the classify child's env is exactly HOME, CREDENTIALS_DIRECTORY, ERL_CRASH_DUMP_SECONDS=0; the read verbs' env is HOME alone; every spawn runs with cwd home", test_file = "test/mail/screwtape.test.ts", keywords = ["ERL_CRASH_DUMP_SECONDS", "CREDENTIALS_DIRECTORY"], waived = false },
+]
+specs        = []
+requirements = []
+
+# ---------------------------------------------------------------------------
+[[phase]]
+id        = "PHASE-03"
+name      = "The classification cache and the withhold policy"
+objective = "Two pure modules (design § The classification cache, § The pre-filter): src/mail/classifications.ts (classificationCache with a private LRU at CLASSIFICATIONS_MAX 2000, and classificationsOf, the read-through) and src/mail/policy.ts (WITHHOLD_POLICY, Withheld, withholding, REPORT_KINDS and ReportKind). Nothing calls them yet."
+entrance_criteria = [
+  { id = "EN-1", text = "PHASE-01 completed (PHASE-02 not required)." },
+]
+exit_criteria = [
+  { id = "EX-1", text = "classificationsOf deduplicates ids, makes at most one classify call (none when all are cached), stores classified and too_large outcomes, never unavailable or failed, and returns a map by id." },
+  { id = "EX-2", text = "withholding applies reported, unclassified, missing_question, hostile in that order, first match wins; a policy question under a non-noul shape counts as missing. src/mail/policy.ts is the only src file naming a question (CON-001)." },
+  { id = "EX-3", text = "just check green." },
+]
+verification = [
+  { id = "VT-1", expects = "classified and too_large are stored and not re-asked; unavailable and failed are re-asked next call; the oldest is evicted at the bound; at most one classify call", test_file = "test/mail/classifications.test.ts", keywords = ["classificationsOf", "classificationCache", "CLASSIFICATIONS_MAX"], waived = false },
+  { id = "VT-2", expects = "each withhold reason in order: reported, unclassified per reason, missing question (absent and non-noul), hostile per policy row; below threshold is shown", test_file = "test/mail/policy.test.ts", keywords = ["withholding", "missing_question", "hostile"], waived = false },
+  { id = "VA-1", expects = "the agent greps src/ for every question name in WITHHOLD_POLICY and finds it only in src/mail/policy.ts (CON-001)" },
+]
+specs        = []
+requirements = []
+
+# ---------------------------------------------------------------------------
+[[phase]]
+id        = "PHASE-04"
+name      = "MailDeps, preconditions, wiring and framing"
+objective = "Everything the tools need injected, and every framing place (design § Preconditions, § Framing, § Reaching Jev from the jail): MailDeps grows to { source, now, cache, reported, log, refusal } with fakeMailDeps as the one test builder; config reads MALEBOLGE_SCREWTAPE_CREDENTIALS; mailRefusal; mailPart builds the cache, reported set, log and refusal and passes the credentials to the adapter; mailTool returns the refusal and prefixes every error with 'malebolge: '; every tool description gains the suffix; renderBlock writes the UNTRUSTED line; MAIL_SECTION is rewritten. Tools do not classify yet."
+entrance_criteria = [
+  { id = "EN-1", text = "PHASE-02 and PHASE-03 completed; suite green." },
+]
+exit_criteria = [
+  { id = "EX-1", text = "test/mail/mail-fixtures.ts exports fakeMailDeps(overrides?); test/daemon-sections.test.ts, test/daemon-start.test.ts, test/threads-tools.test.ts, test/mail/tools.test.ts and test/toolsets.test.ts build MailDeps through it and nowhere else." },
+  { id = "EX-2", text = "ScrewtapePaths.credentials from MALEBOLGE_SCREWTAPE_CREDENTIALS, read only for profiles that allow mail; unset is not a startup error, set but not absolute is." },
+  { id = "EX-3", text = "mailRefusal is pure over { interfaces, credentials } with the three refusal texts of design § Preconditions; mailPart reads /sys/class/net once at build." },
+  { id = "EX-4", text = "renderBlock (src/untrusted-block.ts) ends every header with the UNTRUSTED line for its tag; WRAPPER_BYTES grows by the line at the longest tag in use, so HEADER_MAX_BYTES shrinks and assertWithin still bounds the result. Bookmark results pick it up unchanged." },
+  { id = "EX-5", text = "MAIL_SECTION carries design § Framing's text; the existing three-phrase pin in test/daemon-sections.test.ts is reduced to one assertion: the section names the block exactly as renderBlock writes it with the mail tag. No other test pins framing wording (DEC-061)." },
+  { id = "EX-6", text = "just check green." },
+]
+verification = [
+  { id = "VT-1", expects = "an interface list with more than lo, an unreadable list, and an unset credentials variable each make every mail tool return its refusal, prefixed once with malebolge:", test_file = "test/mail/tools.test.ts", keywords = ["mailRefusal", "malebolge: "], waived = false },
+  { id = "VT-2", expects = "config reads the credentials variable for mail profiles; a relative path is a startup error; unset is not", test_file = "test/config.test.ts", keywords = ["MALEBOLGE_SCREWTAPE_CREDENTIALS"], waived = false },
+  { id = "VT-3", expects = "MAIL_SECTION names the rendered block tag", test_file = "test/daemon-sections.test.ts", keywords = ["names the rendered block tag", "renderBlock"], waived = false },
+  { id = "VT-4", expects = "fakeMailDeps is the one MailDeps builder in tests", test_file = "test/mail/mail-fixtures.ts", keywords = ["export function fakeMailDeps"], waived = false },
+]
+specs        = []
+requirements = []
+
+# ---------------------------------------------------------------------------
+[[phase]]
+id        = "PHASE-05"
+name      = "Screening: jev on every item, withheld items, the header count"
+objective = "The four item tools screen their page (design § One tool call, § The pre-filter, § Rendering): screened runs classificationsOf and withholding once per call; shown projectors take the classification and render jev (jevField, JEV_MAX_BYTES 288, the jev cut name); projectWithheld writes the withheld shape with sender_domains; the header gains ', N withheld' and the missing-question line; the joint clamp deducts JEV_MAX_BYTES. Sender text still comes from the read here; PHASE-07 moves it to seen."
+entrance_criteria = [
+  { id = "EN-1", text = "PHASE-04 completed; suite green." },
+]
+exit_criteria = [
+  { id = "EX-1", text = "Shown projectors take (…, classified: Classification, …) per design § One tool call; projectWithheld(item, outcome, withheld, flags); mail_thread entries with in_store false skip classification; mail_new's pagePosition runs before screening." },
+  { id = "EX-2", text = "jev renders by answer shape alone, 2 dp, in the answers' order; a larger schema keeps whole answers while they fit and names jev in cut; unclassified renders {\"unclassified\": reason}." },
+  { id = "EX-3", text = "sender_domains: from the read's from, lowercased, deduplicated in order, at most SENDER_DOMAINS_MAX (10), a domain over 253 raw bytes dropped; fill, cut whole when it does not fit." },
+  { id = "EX-4", text = "tools.test.ts one-port-call assertions widen to one read and at most one classify. Every tool stays replay safe; withholding never changes next or caught_up." },
+  { id = "EX-5", text = "just check green." },
+]
+verification = [
+  { id = "VT-1", expects = "jev rendering; a maximal list item and a maximal thread item with a JEV_MAX_BYTES jev fit shareOf(40) through fitItem; a longer jev is cut and names jev", test_file = "test/mail/render.test.ts", keywords = ["jevField", "JEV_MAX_BYTES", "a maximal list item with jev"], waived = false },
+  { id = "VT-2", expects = "each withhold reason in every item tool, the withheld shape keeping and dropping the listed fields; a withheld item whose from holds 40 long domains fits shareOf(40) with sender_domains cut", test_file = "test/mail/tools.test.ts", keywords = ["projectWithheld", "sender_domains"], waived = false },
+  { id = "VT-3", expects = "CON-001: an unknown extra question renders; a missing policy question withholds and is named in the header; the header counts withheld items", test_file = "test/mail/tools.test.ts", keywords = ["missing question:", "withheld"], waived = false },
+  { id = "VT-4", expects = "the joint clamp deducts JEV_MAX_BYTES at limit 20 and limit 5", test_file = "test/mail/tools.test.ts", keywords = ["NEW_JOINT_BYTES", "JEV_MAX_BYTES"], waived = false },
+]
+specs        = []
+requirements = []
+
+# ---------------------------------------------------------------------------
+[[phase]]
+id        = "PHASE-06"
+name      = "mail_report and the catalog guard"
+objective = "The sixth mail tool (design § mail_report): closed-vocabulary input, one journal line through the injected log, the reported set with REPORTED_MAX 1000 and refusal when full, never evicting. The catalog guard pins the six mail tool names, none with egress."
+entrance_criteria = [
+  { id = "EN-1", text = "PHASE-05 completed; suite green." },
+]
+exit_criteria = [
+  { id = "EX-1", text = "mail_report validates id with idOf and kind against REPORT_KINDS; logs 'malebolge: mail_report conversation=<n> id=<id> kind=<kind> jev=<jev|none>' from the cache only (never classifies); returns 'reported' with the usual framing; replay safe." },
+  { id = "EX-2", text = "MailTool adds mail_report; test/toolsets.test.ts holds the catalog guard; test/daemon-start.test.ts checks only mailTools === 6; test/daemon-sections.test.ts checks only the extension name and its section." },
+  { id = "EX-3", text = "just check green." },
+]
+verification = [
+  { id = "VT-1", expects = "mail_report logs one line, then the id is withheld as reported in every item tool; an invalid id or kind is refused", test_file = "test/mail/tools.test.ts", keywords = ["mail_report", "instructions_to_agent"], waived = false },
+  { id = "VT-2", expects = "at REPORTED_MAX a new id is refused and a held id is still re-reported; no held id is evicted", test_file = "test/mail/tools.test.ts", keywords = ["REPORTED_MAX"], waived = false },
+  { id = "VT-3", expects = "the mail toolset's tools are exactly the six mail tools, none able to send off the machine", test_file = "test/toolsets.test.ts", keywords = ["mail_report", "mail_mailboxes"], waived = false },
+]
+specs        = []
+requirements = []
+
+# ---------------------------------------------------------------------------
+[[phase]]
+id        = "PHASE-07"
+name      = "Sender text from seen"
+objective = "The projection takes every sender-written text of a shown item from the classification's seen (DEC-094, design § Jev's window): subject, the six address lists, body text cut to the caller's max_bytes, attachment type and name joined to the read's part_id, blob_id and size by index; _omitted counts named in cut; cid, disposition, message_id, in_reply_to and references dropped, with their constants and cut names; READ_MAX_BYTES.max 16,384. Placed last among code phases: it is the one phase that needs screwtape's seen, which screwtape SL-005 is auditing."
+entrance_criteria = [
+  { id = "EN-1", text = "PHASE-05 completed; suite green." },
+  { id = "EN-2", text = "Re-read screwtape's README 'classify_state' at its current commit; if seen's shape moved since PHASE-01's transcription, update the fixture and SeenSchema first and record it in notes.md." },
+]
+exit_criteria = [
+  { id = "EX-1", text = "No shown projector reads subject, an address list, body text or attachment name/type from Summary or ReadData; the read supplies only the fields design § Jev's window lists as 'the read'." },
+  { id = "EX-2", text = "Body flags as design § Jev's window: is_truncated from seen's bodies or bodies_omitted, conversion_failed from seen, is_encoding_problem and truncated_by from the read, output_truncated when malebolge's max_bytes cut shortened seen's text." },
+  { id = "EX-3", text = "CUT_ORDER, MESSAGE_ID_MAX_ENTRIES and MESSAGE_ID_ENTRY_MAX_BYTES lose the dropped fields; no test pins a bound's value." },
+  { id = "EX-4", text = "just check green." },
+]
+verification = [
+  { id = "VT-1", expects = "a fake whose read and seen disagree (longer subject, extra address, longer body, renamed attachment) shows seen's text in every item tool, never the read's", test_file = "test/mail/tools.test.ts", keywords = ["shows seen's text, never the read's"], waived = false },
+  { id = "VT-2", expects = "a non-zero _omitted count names its field in cut; max_bytes cuts seen's body and sets output_truncated; attachments join by index; dropped fields absent", test_file = "test/mail/project.test.ts", keywords = ["_omitted", "joins attachments by index", "cuts seen's body to max_bytes"], waived = false },
+]
+specs        = []
+requirements = []
+
+# ---------------------------------------------------------------------------
+[[phase]]
+id        = "PHASE-08"
+name      = "Live check from a room mail conversation"
+objective = "The operator confirms the whole path in the deployed room (design § Verification, VH). Waits on satan IMP-060 (bridge, bind, variable), flakes IMP-055 (unit credential, LimitCORE=0) and a deployed screwtape with seen (screwtape SL-005 closed)."
+entrance_criteria = [
+  { id = "EN-1", text = "PHASE-07 completed; suite green." },
+  { id = "EN-2", text = "satan IMP-060 and flakes IMP-055 landed and deployed; screwtape SL-005 closed and deployed; malebolge-room restarted on this slice's build." },
+]
+exit_criteria = [
+  { id = "EX-1", text = "VH-1 passed, or each failure recorded in notes.md with a backlog item." },
+]
+verification = [
+  { id = "VH-1", expects = "in a room mail conversation: (1) mail_new shows jev on each item; (2) a self-sent, agent-directed mail is withheld and the agent names it with its reason; (3) mail_report logs to the journal and the message is withheld after; (4) with the bridge stopped, items are unclassified and withheld, the reason in the header" },
+]
+specs        = []
+requirements = []

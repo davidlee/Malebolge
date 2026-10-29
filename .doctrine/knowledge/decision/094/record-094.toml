@@ -1,0 +1,51 @@
+schema = "doctrine.knowledge"
+version = 1
+
+id = 94
+slug = "agent-text-from-seen"
+title = "The agent's sender-written text is taken from classify's seen window"
+record_kind = "decision"
+status = "accepted"
+created = "2026-10-29"
+updated = "2026-10-29"
+tags = []
+
+[facet]                         # every field typed; seeded empty (captured later)
+context = "Screwtape SL-005 (screwtape IMP-006; commits a54c839, 65879a9) landed seen on each classify line as the window text Jev's state was stripped from, schema mail-2: subject at most 512 bytes; six address lists of at most 10 entries each, name at most 128 bytes, an email over 254 bytes drops its entry, with *_omitted counts; at most 10 bodies sharing 16,384 bytes, each text, is_truncated, conversion_failed, with bodies_omitted; at most 20 attachments, type and name at most 128 bytes, with attachments_omitted; control characters and bidi overrides removed. DEC-077 expected seen.bodies as byte counts and had malebolge clamp every other field to a mirrored JEV_WINDOW table, which already disagrees with what landed (per-list entries, names, body count)."
+choice = "Refines DEC-077 (and DEC-048, DEC-050): every sender-written text a shown item carries (subject, address lists with display names, body text, attachment name and type) is taken from the cached classification's seen, never from the tool's read. Malebolge's own caps (subject 200 rendered bytes, the caller's max_bytes, each item's share) only shorten it. The read supplies only fields the server or the operator's clients set (id, thread_id, received_at, size, flags, keywords, mailbox_ids, sent_at, provenance, attachment part_id, blob_id and size, joined by index) and preview (named residue, IMP-024). Attachment disposition and cid are dropped. JEV_WINDOW and its pin go; the classify read keeps --max-bytes 16384. The cache holds each whole classification, seen included, at CLASSIFICATIONS_MAX 2000 (about 90 MB worst case). A withheld item shows no seen text; its sender_domains come from the read's from under malebolge's own bound."
+alternatives = ["Keep DEC-077's clamps and derive byte counts from seen.bodies[i].text: keeps a mirror of screwtape's bounds that already disagrees with them", "Cache only seen's lengths and clamp the read: a smaller cache, but keeps the mirror and adds index arithmetic", "Lower CLASSIFICATIONS_MAX to bound the cache's memory"]
+rationale = "The invariant holds by construction, with one source of sender text; a change to screwtape's bounds needs no malebolge change; seen is control-stripped, so the agent sees what Jev saw, not a raw prefix of it."
+consequences = ["ClassifySchema checks seen's shape, not its bounds", "mail_list and mail_thread take subject and from from seen, so every shown item needs its classification (already true: unclassified items are withheld)", "Display names show as Jev saw them, at most 128 bytes; DEC-050's 64-byte name cap goes", "The schema id (mail-2) passes through unchecked, as before (CON-001)", "Worst-case cache memory about 90 MB, accepted by the operator"]
+decided_by = "operator"
+decided_on = "2026-10-29"
+
+[evidence]                      # free-text citations (supports / contradicts / notes)
+supports    = []
+contradicts = []
+notes       = []
+
+[relationships]                 # verb-written edges (set by doctrine supersede)
+supersedes    = []   # record ids this one replaces (set by doctrine supersede)
+superseded_by = []   # set on superseded predecessor (verb-written)
+
+[[relation]]
+label = "references"
+role = "concerns"
+descriptor = "refines: agent text taken from seen, no mirrored bounds"
+target = "DEC-077"
+
+[[relation]]
+label = "references"
+role = "concerns"
+descriptor = "refines: invariant holds by construction from seen"
+target = "DEC-048"
+
+[[relation]]
+label = "references"
+role = "concerns"
+descriptor = "refines: cid and disposition dropped; display-name cap lifted"
+target = "DEC-050"
+
+[[relation]]
+label = "shapes"
+target = "SL-007"

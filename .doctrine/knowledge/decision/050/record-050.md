@@ -13,3 +13,5 @@ Refined 2026-10-29 by DEC-077 (operator): Jev's state gains every address list t
 
 
 SL-007 lock: attachment disposition is capped at 64 rendered bytes, as cid is.
+
+Refined 2026-10-29 by DEC-094 (operator): attachment cid and disposition are dropped, not capped; display names come from seen (screwtape bounds them at 128 bytes), so the 64-byte name cap goes.

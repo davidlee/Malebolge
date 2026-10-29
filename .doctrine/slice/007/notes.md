@@ -90,7 +90,7 @@ slips are left to red/green tests; the next review is of the plan.
 
 ## Harvest
 <!-- single-copy: updated in place each harvest; ids only, never restated content -->
-fresh-as-of: 2026-10-29 · locked (design run rev 59; slice at plan) · 6396a65
+fresh-as-of: 2026-10-29 · re-locked (design run rev 70, DEC-094); planned, 8 phases; slice ready · a4461f9 (SL-007 planning uncommitted)
 
 ### Produced
 - design.md drafted, reviewed (RV-020: pi first pass, GPT critical pass, pi verify-only; F-1..F-18 answered) and locked
@@ -100,6 +100,8 @@ fresh-as-of: 2026-10-29 · locked (design run rev 59; slice at plan) · 6396a65
 - slice-007.md scope reconciled; selectors match § Code impact (incl. src/untrusted-block.ts)
 - uncommitted: all SL-007 .doctrine/ work in malebolge, plus satan, flakes and screwtape items (operator has not asked to commit); no code changed, no gate run needed
 
+- design reopened and re-locked: screwtape SL-005 landed seen as the window text (mail-2); minted DEC-094 (agent sender text from seen; refines DEC-077, DEC-048, DEC-050); sec-1, sec-6..15 revised; RV-020 re-review waived by operator
+- plan.toml / plan.md authored; phase sheets PHASE-01..08 materialised
 ### Learned
 - mem.fact.malebolge.screwtape-classify-window — classify strips PII before its byte cut; growth up to 1.5x
 - mem.pattern.malebolge.own-the-window-upstream — have the upstream report what it saw rather than mirroring it
@@ -109,5 +111,7 @@ fresh-as-of: 2026-10-29 · locked (design run rev 59; slice at plan) · 6396a65
 ### Open
 - ASM-002 — gateway client socket serves Jev's path like the relay (first-phase VA)
 - ASM-003 — the satan launcher can wrap the daemon (satan IMP-060; fallback in DEC-059)
-- screwtape IMP-006 — window-dependent phases wait on it; until then a classify line without `seen` withholds all mail
-- inq-9 (run, non-durable) — verification procedure to apply at /plan; the design's § Verification carries it
+- screwtape SL-005 (carries IMP-006) — in audit; PHASE-07 (text from seen) and PHASE-08 follow its close
+- satan IMP-060, flakes IMP-055 — gate PHASE-08 (VH)
+- RV-026 — empty design-review pass opened by the reopen; disposition waived
+- inq-9 — applied in plan.toml (VT/VA-1 probe/VH-1)
