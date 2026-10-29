@@ -6,7 +6,7 @@ disposable phase sheet (`.doctrine/state/.../phase-NN.md`) that must survive
 
 ## Harvest
 <!-- single-copy: updated in place each harvest; ids only, never restated content -->
-fresh-as-of: 2026-10-30 · audit (RV-027; reconcile next) · b62ba72
+fresh-as-of: 2026-10-30 · reconcile (RV-027 concluded) · e3cf8ff
 
 ### Produced
 - PHASE-01 probes — ASM-004/006/007/008/009 validated, ASM-005 invalidated as EX-2 allows (c4430fc, 73a3263)
