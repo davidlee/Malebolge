@@ -24,7 +24,8 @@ import {
   type Tx,
   ToolResultEntry,
 } from "@earendil-works/pi-durable";
-import { isConversationKey, toolsetInit, topicCwd } from "../conversations.ts";
+import { isConversationKey, topicCwd, topicInit } from "../conversations.ts";
+import { UnknownModel } from "../models.ts";
 import { answer, refusal } from "../tool-results.ts";
 import {
   admitCaller,
@@ -167,7 +168,7 @@ function createStarted(call: Call, args: StartArgs, other: ToReap | undefined): 
     const { id: child } = await tx.createConversation({ ownership: { kind: "ownerless" } });
     const cwd = topicCwd(admitted.index, admitted.childTopic, deps.defaults);
     await configure(tx, child, { ...deps.defaults, cwd });
-    await toolsetInit(deps.profile, admitted.childTopic, {
+    await topicInit(deps.profile, admitted.childTopic, deps.catalog, deps.defaults.model, {
       startedBy: caller,
       require: (chosen) => {
         refuseOutsideTalkSet(
@@ -443,14 +444,15 @@ async function attemptFork(call: Call, fork: ForkArgs): Promise<ToolExecutionRes
 }
 
 /**
- * One call's refusal mapping: a `Refusal` becomes the `isError` result the model reads,
- * and anything else is a bug that keeps its stack. Shared by every thread tool.
+ * One call's refusal mapping: a `Refusal`, or a model the topic stores but the catalog
+ * cannot serve, becomes the `isError` result the model reads; anything else is a bug
+ * that keeps its stack. Shared by every thread tool (design sec-4, EX-8).
  */
 async function attempted(run: () => Promise<ToolExecutionResult>): Promise<ToolExecutionResult> {
   try {
     return await run();
   } catch (error) {
-    if (error instanceof Refusal) {
+    if (error instanceof Refusal || error instanceof UnknownModel) {
       return refusal(error.message);
     }
     throw error;

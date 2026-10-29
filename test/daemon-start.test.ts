@@ -8,8 +8,10 @@ import { defineExtension, defineTask, type Extension, Harness } from "@earendil-
 import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite/node";
 import { describe, expect, it, onTestFinished, vi } from "vitest";
 import { type Config, type Profile, resolveConfig } from "../src/config.ts";
+import { conversations } from "../src/conversations.ts";
 import { context } from "../src/context.ts";
 import { type DaemonEnv, daemonEnv } from "../src/daemon-env.ts";
+import { refOf } from "../src/models.ts";
 import { daemonExtensions } from "../src/daemon-extensions.ts";
 import { type DaemonHandle, startDaemon } from "../src/daemon-start.ts";
 import { acquireInstanceLock, InstanceLocked } from "../src/instance-lock.ts";
@@ -35,6 +37,7 @@ import {
   toolResults,
 } from "./harness-fixture.ts";
 import { fakeMailSource } from "./mail/mail-fixtures.ts";
+import { catalogOf, FLASH_REF } from "./model-fixture.ts";
 import {
   heldUntilCutOff,
   IDLE,
@@ -556,6 +559,40 @@ describe("startDaemon wakes", () => {
     w.config.wakes.topic = "room";
     await started(w);
     expect(createdHeartbeats(w)).toHaveLength(1);
+  });
+
+  // SL-010 PHASE-03 VT-5: an unknown stored model is the one refusal the start logs instead of failing.
+  it("VT-5: a wake topic's unknown model logs 'no heartbeat: unknown model' and the daemon serves", async () => {
+    const w = await roomWorld({ enabled: true });
+    await mkdir(dirname(w.config.storagePath), { recursive: true });
+    // Seed the wake topic's model with a catalog that has it; the daemon's catalog lacks it.
+    const seeded = await openSession(await openNodeSqliteStorage(w.config.storagePath), {
+      models: w.models,
+      registry: registryOf([defineExtension({ name: "threads" })]),
+      agent: { model: FAUX_MODEL, cwd: w.cwd },
+      profile: "room",
+      log: () => undefined,
+      env: nodeEnv,
+    });
+    try {
+      await conversations(
+        seeded,
+        { model: FAUX_MODEL, cwd: w.cwd },
+        "room",
+        catalogOf(refOf(FAUX_MODEL), FLASH_REF),
+      ).setTopic({ name: w.config.wakes.topic, model: FLASH_REF });
+    } finally {
+      await seeded.harness.close(context);
+    }
+
+    // The start succeeds: the daemon serves without a heartbeat rather than failing (DEC-083).
+    await (await started(w)).stop();
+
+    expect(w.log).toContain(
+      `wake: no heartbeat: unknown model ${FLASH_REF} in topic ${w.config.wakes.topic}`,
+    );
+    expect(createdHeartbeats(w)).toEqual([]);
+    expect(await wakesInStore(w, "room")).toEqual([]);
   });
 
   it("PHASE-05 EX-3: a room start sweeps the post row: a blocked post is reported and aborted", async () => {

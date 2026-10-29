@@ -14,14 +14,17 @@ import {
 import type { Profile } from "../config.ts";
 import type { ConversationDefaults } from "../conversations.ts";
 import { type LateBinding, lateBinding } from "../late-binding.ts";
+import type { ModelCatalog } from "../models.ts";
 import type { Log, SatanTools } from "../satan-tools.ts";
 import { type PostInput, type PostResult, type PostState, postTask } from "./task.ts";
 import { threadFork, threadPost, threadStart } from "./tools.ts";
 
 export interface ThreadDeps {
   profile: Profile;
-  /** Model and cwd a started thread takes; cwd yields to its topic's. */
+  /** Model and cwd a started thread takes; cwd and model yield to its topic's. */
   defaults: ConversationDefaults;
+  /** The catalog a topic's stored model is judged against (design sec-4). */
+  catalog: ModelCatalog;
   now(): number;
   log: Log;
   satan: Pick<SatanTools, "call">;

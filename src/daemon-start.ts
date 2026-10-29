@@ -19,7 +19,7 @@ import { daemonExtensions } from "./daemon-extensions.ts";
 import { acquireInstanceLock } from "./instance-lock.ts";
 import { mailExtension } from "./mail/extension.ts";
 import { screwtapeSource } from "./mail/screwtape.ts";
-import { loadGatewayModels, modelCatalog, type ModelRef, refOf } from "./models.ts";
+import { loadGatewayModels, modelCatalog, type ModelRef, refOf, UnknownModel } from "./models.ts";
 import { personaFiles, readPersona, requirePersonaFiles } from "./persona.ts";
 import { renderProjectContext } from "./project-context.ts";
 import { registryOf } from "./registry.ts";
@@ -73,6 +73,22 @@ const earlyWakeDeps = (
   };
 };
 
+/**
+ * `ensureHeartbeat`, except that an unknown model stored on the wake topic is logged
+ * instead of failing the start: the daemon serves without a heartbeat (DEC-083).
+ * Every other failure is still the start's.
+ */
+const ensureHeartbeatOrLog = async (deps: WakeDeps, task: WakeTask): Promise<void> => {
+  try {
+    await ensureHeartbeat(deps, task, context);
+  } catch (error) {
+    if (!(error instanceof UnknownModel)) {
+      throw error;
+    }
+    deps.log(`wake: no heartbeat: unknown model ${error.ref} in topic ${deps.settings.topic}`);
+  }
+};
+
 /** Room only (W10), after `resume()`: the start sweep of both rows, then exactly one heartbeat (W5). */
 const startRoomTasks = async (
   profile: Profile,
@@ -90,7 +106,7 @@ const startRoomTasks = async (
     deps().log,
     context,
   );
-  await ensureHeartbeat(deps(), task, context);
+  await ensureHeartbeatOrLog(deps(), task);
 };
 
 /** The session over the configured store, opened and resumed, on this daemon's profile. */
@@ -243,7 +259,7 @@ export async function startDaemon(config: Config, deps: StartDeps): Promise<Daem
   try {
     mkdirSync(dirname(config.daemonSocket), { recursive: true });
     wakes.bindEarly(earlyWakeDeps(config, satan, log, now));
-    threads.bindEarly({ profile: config.execution.profile, defaults, now, log, satan });
+    threads.bindEarly({ profile: config.execution.profile, defaults, catalog, now, log, satan });
     // Resolved in `beforeResume`, so a client's continuation runs after `resume()`.
     const conversationsReady = Promise.withResolvers<Conversations>();
     daemon = await serve({

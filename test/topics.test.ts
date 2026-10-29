@@ -8,7 +8,7 @@ import { join } from "node:path";
 import { type Harness, MemoryStorage } from "@earendil-works/pi-durable";
 import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite/node";
 import { expect, it } from "vitest";
-import { toolsetInit } from "../src/conversations.ts";
+import { topicInit } from "../src/conversations.ts";
 import { context } from "../src/context.ts";
 import {
   BACKFILL_PAGE,
@@ -33,6 +33,8 @@ import {
   createTaskOwned,
   countingCommits as countingCommitsOf,
   type FauxHarnessOptions,
+  FAUX_CATALOG,
+  FAUX_MODEL,
   forkConversation,
   indexOf,
   openFauxHarness,
@@ -74,7 +76,10 @@ it("indexes a created conversation, and root, in the default topic", async () =>
 
 it("files a conversation created with a topic under that topic", async () => {
   const test = await openIndexedHarness();
-  const created = await createConversation(test.harness, toolsetInit("room", "work"));
+  const created = await createConversation(
+    test.harness,
+    topicInit("room", "work", FAUX_CATALOG, FAUX_MODEL),
+  );
   expect((await indexOf(test.harness)).conversations[String(created.id)]).toEqual({
     topic: "work",
     toolset: "interactive",
@@ -83,7 +88,10 @@ it("files a conversation created with a topic under that topic", async () => {
 
 it("records a fork's parent's topic and its parent's id", async () => {
   const test = await openIndexedHarness();
-  const parent = await createConversation(test.harness, toolsetInit("room", "work"));
+  const parent = await createConversation(
+    test.harness,
+    topicInit("room", "work", FAUX_CATALOG, FAUX_MODEL),
+  );
   const forked = await forkConversation(test.harness, parent);
   expect((await indexOf(test.harness)).conversations[String(forked.id)]).toEqual({
     topic: "work",
@@ -96,7 +104,10 @@ it("the hook copies a fork's toolset from its parent, and fails the commit when 
   const test = await openIndexedHarness();
   // A topic whose toolset is not the profile default, so a default would be caught.
   await writeTopicRecord(test.harness, "inbox", { toolset: "mail" });
-  const parent = await createConversation(test.harness, toolsetInit("room", "inbox"));
+  const parent = await createConversation(
+    test.harness,
+    topicInit("room", "inbox", FAUX_CATALOG, FAUX_MODEL),
+  );
   const forked = await forkConversation(test.harness, parent);
   expect((await indexOf(test.harness)).conversations[String(forked.id)]).toEqual({
     topic: "inbox",
@@ -173,9 +184,15 @@ it("reads a store whose index was never written as the initial document", async 
 
 it("finds a topic's latest conversation and its ids newest first", async () => {
   const test = await openIndexedHarness();
-  const first = await createConversation(test.harness, toolsetInit("room", "work"));
-  await createConversation(test.harness, toolsetInit("room", "other"));
-  const last = await createConversation(test.harness, toolsetInit("room", "work"));
+  const first = await createConversation(
+    test.harness,
+    topicInit("room", "work", FAUX_CATALOG, FAUX_MODEL),
+  );
+  await createConversation(test.harness, topicInit("room", "other", FAUX_CATALOG, FAUX_MODEL));
+  const last = await createConversation(
+    test.harness,
+    topicInit("room", "work", FAUX_CATALOG, FAUX_MODEL),
+  );
   const index = await indexOf(test.harness);
   expect(latestIn(index, "work")).toBe(last.id);
   expect(idsIn(index, "work")).toEqual([last.id, first.id]);
@@ -365,7 +382,10 @@ it("merges the topic into an entry, keeping a key a later slice wrote", async ()
     };
     index.conversations[String(created.id)] = titled;
   }, context);
-  await test.harness.commit((tx) => toolsetInit("room", "work")(tx, created.id), context);
+  await test.harness.commit(
+    (tx) => topicInit("room", "work", FAUX_CATALOG, FAUX_MODEL)(tx, created.id),
+    context,
+  );
   expect((await indexOf(test.harness)).conversations[String(created.id)]).toEqual({
     topic: "work",
     title: "kept",

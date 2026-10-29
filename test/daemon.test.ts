@@ -23,10 +23,11 @@ import {
   conversations,
   isConversationKey,
   LIST_PAGE,
-  toolsetInit,
+  topicInit,
 } from "../src/conversations.ts";
 import { type Daemon, serve } from "../src/daemon.ts";
 import { isRecord, type JsonRecord } from "../src/json.ts";
+import { refOf } from "../src/models.ts";
 import { encodeLine } from "../src/ndjson.ts";
 import type { ConversationsMessage, TopicSummary, TopicsMessage } from "../src/protocol.ts";
 import { type Printable, toPrintable } from "../src/render.ts";
@@ -52,6 +53,7 @@ import {
   openTestHarness,
   type TestHarness,
 } from "./harness-fixture.ts";
+import { catalogOf as modelCatalogOf, FLASH_REF } from "./model-fixture.ts";
 
 /**
  * The event streams the daemon watches, so a test can read their `closed` promise,
@@ -857,6 +859,25 @@ describe("daemon", () => {
     expect(await cwdOf(second)).toBe("/B");
   });
 
+  // SL-010 PHASE-03 VT-6: a topic's stale model is one error frame, and nothing is created.
+  it("answers an attach --topic --new naming an unknown model with one error, creating nothing (VT-6)", async () => {
+    await start();
+    // The store's writer knows the ref; this daemon's catalog does not (design sec-4).
+    const seeded = conversations(
+      test,
+      DEFAULTS,
+      "host",
+      modelCatalogOf(refOf(FAUX_MODEL), FLASH_REF),
+    );
+    await seeded.setTopic({ name: "stale", model: FLASH_REF });
+    const before = await conversationIds();
+
+    expect((await replyTo({ type: "attach", topic: "stale", new: true }, isError)).message).toBe(
+      `unknown model ${FLASH_REF}`,
+    );
+    expect(await conversationIds()).toEqual(before);
+  });
+
   it.each([
     [
       { type: "attach", topic: "work", conversation: 1 },
@@ -898,7 +919,10 @@ describe("daemon", () => {
     await replyTo({ type: "topic", name: "many" }, isTopics);
     for (let made = 0; made < LIST_PAGE + 1; made += 1) {
       await test.harness.createConversation(
-        { ownership: { kind: "ownerless" }, init: toolsetInit("room", "many") },
+        {
+          ownership: { kind: "ownerless" },
+          init: topicInit("room", "many", FAUX_CATALOG, FAUX_MODEL),
+        },
         context,
       );
     }

@@ -24,7 +24,8 @@ import {
 import { describe, expect, it, vi } from "vitest";
 import { context } from "../src/context.ts";
 import { answer } from "../src/tool-results.ts";
-import { textOf, toolResults } from "./harness-fixture.ts";
+import { writeTopicRecord } from "../src/topics.ts";
+import { FAUX_MODEL, textOf, toolResults } from "./harness-fixture.ts";
 import {
   afterToolCall,
   answeredChild,
@@ -41,6 +42,7 @@ import {
   only,
   postedTurn,
   postTasks,
+  SECOND_REF,
   threadWorld,
 } from "./thread-fixture.ts";
 import { userText, WAIT } from "./wake-fixture.ts";
@@ -304,6 +306,22 @@ describe("thread_fork (PHASE-07 EX-3, VT-1, VT-2)", () => {
     expect(await conversationCount(session.harness)).toBe(before);
     expect(await postTasks(session.harness)).toEqual([]);
     expect(world.lines.filter((line) => line.startsWith("thread fork"))).toEqual([]);
+  });
+
+  // SL-010 PHASE-03 VT-4: a pin, not a change: the fork copies its parent's agent model.
+  it("thread_fork keeps its parent's model when the topic's model differs (VT-4)", async () => {
+    const base = await callerThread();
+    const { session, caller } = base;
+    // The caller was created before the topic wrote a model, so its own is the default.
+    await writeTopicRecord(session.harness, "room", { model: SECOND_REF });
+    expect((await caller.agent(context)).model).toEqual(FAUX_MODEL);
+
+    const forked = await conversationOf(
+      session.harness,
+      answeredChild(await attemptCall(base, "thread_fork", { intent: INTENT }, answering)),
+    );
+
+    expect((await forked.agent(context)).model).toEqual(FAUX_MODEL);
   });
 
   it("thread_fork is model-only, sequential and replay unsafe", async () => {

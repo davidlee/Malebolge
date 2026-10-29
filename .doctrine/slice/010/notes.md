@@ -38,6 +38,11 @@ wanted, is left to phase-plan as checks against code, not design questions:
 - PHASE-01 · shared fixture placed in new `test/model-fixture.ts` (EX-6 allows "beside" harness-fixture): `SLASHED_REF`, `FLASH_REF`, `IMAGE_REF`, `slashedModels()`, `catalogOf(...refs)` · model-only module avoids harness-fixture's conversation/daemon imports · decided (fixture)
 - PHASE-01 · UnknownModel message is `unknown model <ref>` for both refusals; an unparseable ref carries the parse error as `cause` · one wording satisfies EX-2 · decided
 - PHASE-02 · `FAUX_CATALOG = catalogOf(refOf(FAUX_MODEL))` exported from `test/harness-fixture.ts`; `test/conversations.test.ts` gains an `apiOf(session, defaults?, profile?)` helper over ~33 call sites · `conversations(...)` gained a 4th parameter; one shared catalog keeps callers to one added argument and a stray ref fails loudly · decided (fixture)
+- PHASE-03 · `ConversationDefaults` tightened to `AgentChange & { cwd: string; model: ModelRef }` · topicInit's `fallback` is the defaults' model; pi-durable types `model` optional/nullable, so tightening (as `cwd` already was) avoids a cast · decided (local correction; flag for audit)
+- PHASE-03 · `ModelSources.topic` widened to `topic?: string | undefined` · `exactOptionalPropertyTypes` refuses passing `record?.model`; no behaviour change · decided (local design correction; flag for audit)
+- PHASE-03 · EX-8 via widening `attempted` (Refusal | UnknownModel), not a rethrow in createStarted · the smaller of plan.md's two options; shared by all thread tools, only thread_start can raise it · decided
+- PHASE-03 · heartbeat catch extracted as `ensureHeartbeatOrLog` in src/daemon-start.ts · keeps startRoomTasks' shape; catches UnknownModel only · decided (adjacent refactor)
+- PHASE-03 · `test/thread-fixture.ts` gains `SECOND_MODEL`/`SECOND_REF` (faux/faux-2) and a world catalog holding both · a topic's model must differ observably from the world default for VT-3/VT-4 · decided (fixture)
 
 ## PHASE-01 run log
 
@@ -50,6 +55,13 @@ wanted, is left to phase-plan as checks against code, not design questions:
 - pi `implement` (deepseek-flash), 1 run, 54 requests, $0.06: VT-1..3 red-first (runtime assertion failures, not compile errors), then store/judge/frame/wiring; green. No misses of substance; the orchestrator collapsed redundant `apiOf(session, DEFAULTS, "host")` to `apiOf(session)`.
 - Negative controls (orchestrator): `model` dropped from `KEYS` → VT-1 red (2 tests); `catalog.require` skipped in `modelChange` → VT-2 red; control-char check skipped for `model` → VT-3 red (3 rows).
 - EX-4: `default` refusal tests untouched. Gate: `just check` 104 files / 3560 tests green.
+
+## PHASE-03 run log
+
+- EN-2 re-confirmed: ensureHeartbeat opens `{kind: "topic", new: false}` on the shared Conversations → openTopic → create(topicInit). EN-3: `UnknownModel` leaves `createConversation` with its class intact (VT-2 `rejects.toBeInstanceOf(UnknownModel)`); no wrapper.
+- pi `implement` (deepseek-flash), 2 runs on one session: 61 requests $0.08 (hit the request ceiling mid-edit), continuation 20 requests $0.02. VT-1/2/3/5/6 red-first for the right reasons (wrong model, resolved-not-rejected, missing refusal, missing log line, attach succeeded); VT-4 and the root pin green on first run (pins). No misses of substance; it updated more toolsetInit callers than briefed (topics, session, wake-tools tests).
+- Negative controls (orchestrator): heartbeat catch widened to every error → `VT-3 f` red; `attempted` without the UnknownModel arm → VT-3 refusal test red.
+- `VT-3 f` unchanged. Gate: `just check` 104 files / 3569 tests green.
 
 ## Harvest
 <!-- single-copy: updated in place each harvest; ids only, never restated content -->

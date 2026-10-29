@@ -24,7 +24,7 @@ import {
 } from "@earendil-works/pi-env";
 import { afterEach, describe, expect, it } from "vitest";
 import type { Execution, Profile } from "../src/config.ts";
-import { toolsetInit } from "../src/conversations.ts";
+import { topicInit } from "../src/conversations.ts";
 import { context } from "../src/context.ts";
 import {
   type DaemonEnv,
@@ -50,6 +50,7 @@ import {
   callThenAnswer,
   closing,
   createConversation,
+  FAUX_CATALOG,
   FAUX_MODEL,
   fauxModels,
   openTestHarness,
@@ -277,7 +278,10 @@ async function expectOwnConversations(
 ): Promise<void> {
   const test = await openTestHarness([CodingTools], undefined, env);
   closing(test.harness);
-  const second = await createConversation(test.harness, toolsetInit("room", topic));
+  const second = await createConversation(
+    test.harness,
+    topicInit("room", topic, FAUX_CATALOG, FAUX_MODEL),
+  );
   // Only root gets an agent from `openTestHarness`; the daemon's defaults do this in production.
   await second.configure({ model: FAUX_MODEL }, context);
 

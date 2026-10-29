@@ -7,7 +7,7 @@
 import type { ConversationId } from "@earendil-works/pi-durable";
 import { expect, it } from "vitest";
 import type { Profile } from "../src/config.ts";
-import { isConversationKey, toolsetInit } from "../src/conversations.ts";
+import { isConversationKey, topicInit } from "../src/conversations.ts";
 import {
   type ConversationContext,
   contextOf,
@@ -21,6 +21,8 @@ import { type IndexDoc, type IndexEntry, IndexDocument, type IndexReader } from 
 import {
   createConversation,
   createTaskOwned,
+  FAUX_CATALOG,
+  FAUX_MODEL,
   forkConversation,
   openIndexedHarness,
 } from "./harness-fixture.ts";
@@ -123,7 +125,10 @@ it("reads root's entry in the default topic", async () => {
 
 it("reads a fork's own id, its topic and its parent", async () => {
   const test = await openIndexedHarness();
-  const parent = await createConversation(test.harness, toolsetInit("room", "work"));
+  const parent = await createConversation(
+    test.harness,
+    topicInit("room", "work", FAUX_CATALOG, FAUX_MODEL),
+  );
   const forked = await forkConversation(test.harness, parent);
   expect(await contextOf(test.harness, forked.id)).toEqual({
     id: forked.id,

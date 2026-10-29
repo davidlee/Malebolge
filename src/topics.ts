@@ -134,8 +134,9 @@ export async function indexConversation(tx: Tx, record: ConversationRecord): Pro
 /**
  * Write what a create puts in `id`'s entry: its topic, its `startedBy` when a thread
  * tool started it, and the toolset `choose` picks from the topic's record — read here,
- * in the creating commit, never before it (design sec-3, sec-12). Returns the toolset
- * it wrote, for the selection.
+ * in the creating commit, never before it (design sec-3, sec-4, sec-12). Returns the
+ * toolset it wrote, for the selection, and the record it read, so the creating commit
+ * also takes the topic's model from that one read.
  */
 export async function writeCreated(
   tx: Tx,
@@ -143,15 +144,16 @@ export async function writeCreated(
   topic: string | undefined,
   choose: (record: TopicRecord | undefined) => DaemonToolset,
   startedBy?: ConversationId,
-): Promise<DaemonToolset> {
+): Promise<{ toolset: DaemonToolset; record: TopicRecord | undefined }> {
   const index = await tx.doc(IndexDocument);
-  const toolset = choose(topic === undefined ? undefined : storedTopic(index, topic));
+  const record = topic === undefined ? undefined : storedTopic(index, topic);
+  const toolset = choose(record);
   writeEntry(index, id, {
     topic: topic ?? DEFAULT_TOPIC,
     toolset,
     ...(startedBy === undefined ? {} : { startedBy }),
   });
-  return toolset;
+  return { toolset, record };
 }
 
 /**

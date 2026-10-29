@@ -14,6 +14,7 @@ import { FAMILY_CAP, GLOBAL_CAP } from "../src/threads/admission.ts";
 import type { Origin } from "../src/threads/origin.ts";
 import { THREADS_SECTION, threadBinding, threadsExtension } from "../src/threads/extension.ts";
 import { writeTopicRecord } from "../src/topics.ts";
+import { parseModel } from "../src/models.ts";
 import { tasksExtension, wakeBinding } from "../src/wake/extension.ts";
 import { bookmarksPart } from "./bookmarks/bookmark-fixtures.ts";
 import { createTaskOwned, systemPromptSections, textOf } from "./harness-fixture.ts";
@@ -38,6 +39,7 @@ import {
   type ThreadSession,
   type ThreadWorld,
   threadWorld,
+  SECOND_REF,
 } from "./thread-fixture.ts";
 import { entriesOf, userText, WAIT } from "./wake-fixture.ts";
 
@@ -47,6 +49,9 @@ const DESIGN_SECTION = [
   'A <post-failed> says a post of yours failed, and why. outcome="withdrawn": the recipient never read it. outcome="delivered-incomplete": the recipient read it but its turn did not complete; it may have acted on it.',
   "A <family-reaped> says an activity was stopped for fan-out: too many posts at once from one starting input. Its posts not yet read are withdrawn, and posts and thread starts from that activity are refused.",
 ].join("\n\n");
+
+/** A ref no world's catalog holds: the stale stored model a redeploy leaves behind. */
+const STALE_REF = "gateway/withdrawn";
 
 /** One scripted post: the world, its two conversations, the task it created and its result. */
 interface Posted {
@@ -313,6 +318,34 @@ describe("thread_start (PHASE-07c EX-2, VT-5, VT-6)", () => {
     );
 
     // The negative control: no child, no post task, no journal line.
+    expect(await conversationCount(session.harness)).toBe(before);
+    expect(await postTasks(session.harness)).toEqual([]);
+    expect(world.lines.filter((line) => line.startsWith("thread start"))).toEqual([]);
+  });
+
+  // SL-010 PHASE-03 VT-3: the topic's model reaches the started child, else the defaults'.
+  it("thread_start gives the child the topic's model (VT-3)", async () => {
+    const base = await callerThread();
+    const { session } = base;
+    await writeTopicRecord(session.harness, "research", { model: SECOND_REF });
+    const child = await conversationOf(
+      session.harness,
+      answeredChild(await attemptStart(base, "research")),
+    );
+    expect((await child.agent(context)).model).toEqual(parseModel(SECOND_REF));
+  });
+
+  it("thread_start with an unknown model on the topic is a refusal that creates nothing (VT-3)", async () => {
+    const base = await callerThread();
+    const { world, session } = base;
+    // A stored model no redeploy's catalog serves: the creating commit is refused (DEC-083).
+    await writeTopicRecord(session.harness, "stale", { model: STALE_REF });
+    const before = await conversationCount(session.harness);
+
+    const result = await attemptStart(base, "stale");
+
+    expect(result.isError).toBe(true);
+    expect(textOf(result)).toBe(`unknown model ${STALE_REF}`);
     expect(await conversationCount(session.harness)).toBe(before);
     expect(await postTasks(session.harness)).toEqual([]);
     expect(world.lines.filter((line) => line.startsWith("thread start"))).toEqual([]);

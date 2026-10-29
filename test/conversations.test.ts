@@ -27,10 +27,10 @@ import {
   conversations,
   isConversationKey,
   LIST_PAGE,
-  toolsetInit,
+  topicInit,
 } from "../src/conversations.ts";
 import { registryOf } from "../src/registry.ts";
-import { UnknownModel } from "../src/models.ts";
+import { parseModel, refOf, UnknownModel } from "../src/models.ts";
 import { openSession, type Session } from "../src/session.ts";
 import { threadsExtension } from "../src/threads/extension.ts";
 import {
@@ -459,7 +459,7 @@ describe("conversations", () => {
     expect(Object.hasOwn(unmarked, "marks")).toBe(false);
   });
 
-  it("toolsetInit with a started thread records startedBy", async () => {
+  it("topicInit with a started thread records startedBy", async () => {
     const session = await passive();
     const api = apiOf(session);
     await api.setTopic({ name: "work" });
@@ -467,7 +467,7 @@ describe("conversations", () => {
     const saw: DaemonToolset[] = [];
     const thread = await createConversation(
       session.harness,
-      toolsetInit("room", "work", {
+      topicInit("room", "work", FAUX_CATALOG, FAUX_MODEL, {
         startedBy: caller.id,
         require: (toolset) => {
           saw.push(toolset);
@@ -488,7 +488,7 @@ describe("conversations", () => {
     const listed = (await api.list({ kind: "all" })).ids;
     const refused = createConversation(
       session.harness,
-      toolsetInit("room", "mail", {
+      topicInit("room", "mail", FAUX_CATALOG, FAUX_MODEL, {
         startedBy: caller.id,
         require: (toolset) => {
           requireSameTalkSet("room", "interactive", toolset, "topic mail");
@@ -698,6 +698,89 @@ describe("conversations", () => {
     });
   });
 
+  // SL-010 PHASE-03 VT-1: a new conversation takes the topic's stored model, else the defaults'.
+  it("topicInit: a topic's model reaches both attach paths, and a topic without one keeps the default (VT-1)", async () => {
+    const session = await passive();
+    const api = conversations(
+      session,
+      DEFAULTS,
+      "host",
+      modelCatalogOf(refOf(FAUX_MODEL), FLASH_REF),
+    );
+    await api.setTopic({ name: "work", model: FLASH_REF });
+    await api.setTopic({ name: "bare" });
+
+    // An empty topic's first conversation, by attach and by --new, takes the stored model.
+    const attached = await api.open({ kind: "topic", name: "work", new: false });
+    expect((await attached.agent(context)).model).toEqual(parseModel(FLASH_REF));
+    const fresh = await api.open({ kind: "topic", name: "work", new: true });
+    expect((await fresh.agent(context)).model).toEqual(parseModel(FLASH_REF));
+    // A topic with no model, and a plain `new`, take the daemon's default.
+    const bare = await api.open({ kind: "topic", name: "bare", new: false });
+    expect((await bare.agent(context)).model).toEqual(DEFAULTS.model);
+    const plain = await api.open({ kind: "new" });
+    expect((await plain.agent(context)).model).toEqual(DEFAULTS.model);
+  });
+
+  it("topicInit keeps its model: a conversation is never reconfigured when the topic's model changes (VT-1)", async () => {
+    const session = await passive();
+    const api = conversations(
+      session,
+      DEFAULTS,
+      "host",
+      modelCatalogOf(refOf(FAUX_MODEL), FLASH_REF),
+    );
+    await api.setTopic({ name: "work", model: FLASH_REF });
+    const first = await api.open({ kind: "topic", name: "work", new: false });
+    await api.setTopic({ name: "work", model: refOf(FAUX_MODEL) });
+    // The topic's new model reaches only the next creation: this conversation keeps its own.
+    const reopened = await api.open({ kind: "topic", name: "work", new: false });
+    expect(reopened.id).toBe(first.id);
+    expect((await reopened.agent(context)).model).toEqual(parseModel(FLASH_REF));
+  });
+
+  it("root keeps the default model on every open (VT-1)", async () => {
+    const session = await passive();
+    const api = conversations(
+      session,
+      DEFAULTS,
+      "host",
+      modelCatalogOf(refOf(FAUX_MODEL), FLASH_REF),
+    );
+    expect((await (await api.open({ kind: "root" })).agent(context)).model).toEqual(DEFAULTS.model);
+    await api.setTopic({ name: "work", model: FLASH_REF });
+    await api.open({ kind: "topic", name: "work", new: true });
+    const root = await api.open({ kind: "root" });
+    expect(root.id).toBe(session.root.id);
+    expect((await root.agent(context)).model).toEqual(DEFAULTS.model);
+  });
+
+  // SL-010 PHASE-03 VT-2: a stale stored model refuses the creating commit; nothing is created.
+  it("an unknown model on attach creates nothing and refuses with UnknownModel (VT-2)", async () => {
+    const session = await passive();
+    const seeded = conversations(
+      session,
+      DEFAULTS,
+      "host",
+      modelCatalogOf(refOf(FAUX_MODEL), FLASH_REF),
+    );
+    await seeded.setTopic({ name: "stale", model: FLASH_REF });
+    // A daemon whose catalog lacks the topic's model, as a redeploy can leave it.
+    const stale = conversations(session, DEFAULTS, "host", modelCatalogOf(refOf(FAUX_MODEL)));
+    const listed = (await seeded.list({ kind: "all" })).ids;
+    const before = await indexOf(session.harness);
+
+    // EN-3: the refusal is the unknown-model error itself, not an error it was folded into.
+    await expect(stale.open({ kind: "topic", name: "stale", new: true })).rejects.toBeInstanceOf(
+      UnknownModel,
+    );
+    await expect(stale.open({ kind: "topic", name: "stale", new: true })).rejects.toThrow(
+      `unknown model ${FLASH_REF}`,
+    );
+    expect((await seeded.list({ kind: "all" })).ids).toEqual(listed);
+    expect(await indexOf(session.harness)).toEqual(before);
+  });
+
   it("lists one topic's ids newest first, leaving other topics out (EX-4)", async () => {
     const session = await passive();
     const api = apiOf(session);
@@ -889,14 +972,20 @@ describe("conversations", () => {
     // Commit 1 stages the topic; commit 2 is the create, which resolves the toolset in its tx.
     await writeTopicRecord(session.harness, "staged", { toolset: "mail" });
     const staged = await session.harness.createConversation(
-      { ownership: { kind: "ownerless" }, init: toolsetInit("room", "staged") },
+      {
+        ownership: { kind: "ownerless" },
+        init: topicInit("room", "staged", FAUX_CATALOG, FAUX_MODEL),
+      },
       context,
     );
     // A change between a pre-read and the create: the create's own read wins.
     const before = await readIndex(session.harness);
     await writeTopicRecord(session.harness, "staged", { toolset: "interactive" });
     const current = await session.harness.createConversation(
-      { ownership: { kind: "ownerless" }, init: toolsetInit("room", "staged") },
+      {
+        ownership: { kind: "ownerless" },
+        init: topicInit("room", "staged", FAUX_CATALOG, FAUX_MODEL),
+      },
       context,
     );
     const index = await readIndex(session.harness);

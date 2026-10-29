@@ -97,7 +97,7 @@ export function modelCatalog(models: Models): ModelCatalog {
 /** Where a new conversation's model may come from, highest precedence first. */
 export interface ModelSources {
   /** The topic's stored model, if it has one. */
-  topic?: string;
+  topic?: string | undefined;
   /** The daemon default. */
   fallback: ModelRef;
 }

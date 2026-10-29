@@ -30,7 +30,8 @@ import {
 } from "@earendil-works/pi-durable";
 import { expect, vi } from "vitest";
 import { context } from "../src/context.ts";
-import { isConversationKey, toolsetInit } from "../src/conversations.ts";
+import { isConversationKey, topicInit } from "../src/conversations.ts";
+import { refOf } from "../src/models.ts";
 import { isRecord, type JsonRecord } from "../src/json.ts";
 import { registryOf } from "../src/registry.ts";
 import type { Log, SatanTools } from "../src/satan-tools.ts";
@@ -50,6 +51,7 @@ import { type ThreadsDoc, threadsDoc, tombstone } from "../src/threads/tombstone
 import { type IndexEntry, IndexDocument, storedEntry } from "../src/topics.ts";
 import { selectionOf } from "../src/toolsets.ts";
 import { closing, FAUX_MODEL, nodeEnv, textOf, toolResults } from "./harness-fixture.ts";
+import { catalogOf } from "./model-fixture.ts";
 import {
   answer,
   entriesOf,
@@ -60,6 +62,14 @@ import {
   TYPING,
   WAIT,
 } from "./wake-fixture.ts";
+
+/** A second faux model, so a topic's model can differ from the world's defaults observably. */
+export const SECOND_MODEL = { provider: "faux", modelId: "faux-2" } as const;
+
+export const SECOND_REF = refOf(SECOND_MODEL);
+
+/** The catalog the world's thread tools judge a topic's stored model against. */
+const WORLD_CATALOG = catalogOf(refOf(FAUX_MODEL), SECOND_REF);
 
 /** A tool that always succeeds: VT-5's run that fails after a tool succeeded. */
 export const probeExtension: Extension = defineExtension({
@@ -117,6 +127,7 @@ export function threadWorld(): ThreadWorld {
   const threads: ThreadDeps = {
     profile: "room",
     defaults: { model: FAUX_MODEL, cwd: process.cwd() },
+    catalog: WORLD_CATALOG,
     now: () => Date.now(),
     log,
     satan,
@@ -128,7 +139,9 @@ export function threadWorld(): ThreadWorld {
   };
   const task = postTask(() => threads);
   const storage = new ReopenableMemory();
-  const faux = fauxProvider();
+  const faux = fauxProvider({
+    models: [{ id: FAUX_MODEL.modelId }, { id: SECOND_MODEL.modelId }],
+  });
   return {
     threads,
     task,
@@ -179,7 +192,7 @@ export const createRecipient = (
 /**
  * An indexed conversation on `interactive` in `topic`, ownerless and on the faux model,
  * selecting the extensions `names` (default: `threads`, so the model is offered
- * thread_post). `toolsetInit` writes the entry and the catalogue's list; the catalogue
+ * thread_post). `topicInit` writes the entry and the catalogue's list; the catalogue
  * gains `threads` only when a later phase lists it, so the selection is written again
  * in the same commit. This makes a caller; a recipient takes the same shape with no
  * extension of its own.
@@ -189,7 +202,7 @@ export function createIndexedThread(
   topic: string,
   names: readonly string[] = ["threads"],
 ): Promise<Conversation> {
-  const init = toolsetInit("room", topic);
+  const init = topicInit("room", topic, WORLD_CATALOG, FAUX_MODEL);
   return harness.createConversation(
     {
       ownership: { kind: "ownerless" },

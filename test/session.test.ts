@@ -23,7 +23,7 @@ import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite
 import { CodingTools } from "@earendil-works/pi-durable/tools";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Profile } from "../src/config.ts";
-import { toolsetInit } from "../src/conversations.ts";
+import { topicInit } from "../src/conversations.ts";
 import { context } from "../src/context.ts";
 import { registryOf } from "../src/registry.ts";
 import type { Log } from "../src/satan-tools.ts";
@@ -42,6 +42,7 @@ import {
   callThenAnswer,
   createConversation,
   createTaskOwned,
+  FAUX_CATALOG,
   FAUX_MODEL,
   fakeClock,
   fauxModels as scriptedModels,
@@ -517,7 +518,10 @@ describe("startup reconcile", () => {
   it("opens a store holding a fork with a toolset", async () => {
     const { path, dir } = await store();
     const raw = await rawStore(path);
-    const parent = await createConversation(raw.harness, toolsetInit("room", "work"));
+    const parent = await createConversation(
+      raw.harness,
+      topicInit("room", "work", FAUX_CATALOG, FAUX_MODEL),
+    );
     const forked = await forkConversation(raw.harness, parent);
     await raw.harness.close(context);
 

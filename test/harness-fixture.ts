@@ -30,7 +30,7 @@ import { NodeExecutionEnv } from "@earendil-works/pi-durable/env/node";
 import { onTestFinished } from "vitest";
 import type { Profile } from "../src/config.ts";
 import { context } from "../src/context.ts";
-import { conversations, toolsetInit } from "../src/conversations.ts";
+import { conversations, topicInit } from "../src/conversations.ts";
 import { refOf } from "../src/models.ts";
 import { type Daemon, serve } from "../src/daemon.ts";
 import { isRecord } from "../src/json.ts";
@@ -283,7 +283,7 @@ export function startThread(
   };
   return createConversation(
     harness,
-    toolsetInit(profile, topic, { startedBy: caller.id, require }),
+    topicInit(profile, topic, FAUX_CATALOG, FAUX_MODEL, { startedBy: caller.id, require }),
   );
 }
 

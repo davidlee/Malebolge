@@ -4,11 +4,12 @@
 // branded id from the runner's TEXT column); this module answers the daemon's,
 // from the attach frame.
 //
-// Invariants (design sec-1, sec-3): a non-root conversation's model and cwd are
-// the daemon's creation-time defaults, and its stored agent settings are never
-// rewritten; a conversation id names a conversation only inside this profile's
-// store; a topic's directory is read once, at creation, and written only into
-// that conversation (D1); no frame ever creates a topic implicitly (DEC-016);
+// Invariants (design sec-1, sec-3, sec-4): a non-root conversation's model and cwd
+// are its topic's, else the daemon's creation-time defaults, and its stored agent
+// settings are never rewritten; a conversation id names a conversation only inside
+// this profile's store; a topic's directory and model are read once, at creation,
+// and written only into that conversation (D1, DEC-083); no frame ever creates a
+// topic implicitly (DEC-016);
 // `cwd` is an opaque string handed to pi, confinement being the jail's (DEC-107,
 // CON-005).
 
@@ -23,7 +24,7 @@ import {
 } from "@earendil-works/pi-durable";
 import type { Profile } from "./config.ts";
 import { context } from "./context.ts";
-import type { ModelCatalog } from "./models.ts";
+import { creationModel, type ModelCatalog, type ModelRef } from "./models.ts";
 import { type AttachTarget, type ListQuery, type ThreadMark } from "./protocol.ts";
 import type { Session } from "./session.ts";
 import {
@@ -48,8 +49,8 @@ import {
   toolsetList,
 } from "./toolsets.ts";
 
-/** The daemon's creation defaults; `cwd` is required so the fallback is always a string. */
-export type ConversationDefaults = AgentChange & { cwd: string };
+/** The daemon's creation defaults; `cwd` and `model` are required, so neither fallback is a cast. */
+export type ConversationDefaults = AgentChange & { cwd: string; model: ModelRef };
 
 /** What a `topic` write names: the name, and the directory, toolset and model to set, leave, or clear. */
 export interface TopicWrite {
@@ -159,20 +160,22 @@ export interface StartedThread {
 }
 
 /**
- * The `init` every create passes (design sec-3): the topic's toolset, else the
- * profile's default, checked against `policy` and selected in the creating
- * commit — the entry it writes and the selection it configures are one read.
- * A `thread` makes it a thread_start's child: its `require` judges the toolset
- * chosen inside the commit, so a refusal throws there and nothing is created.
+ * The `init` every create passes (design sec-3, sec-4): the topic's toolset and model,
+ * else the profile's and the daemon's defaults, checked against `policy` and selected in
+ * the creating commit — the entry it writes and the model and selection it configures
+ * are one read. A `thread` makes it a thread_start's child: its `require` judges the
+ * toolset chosen inside the commit, so a refusal throws there and nothing is created.
  */
-export function toolsetInit(
+export function topicInit(
   profile: Profile,
   topic: string | undefined,
+  catalog: ModelCatalog,
+  fallback: ModelRef,
   thread?: StartedThread,
 ): ConversationInit {
   const policy = PROFILE_TOOLSETS[profile];
   return async (tx, conversationId) => {
-    const toolset = await writeCreated(
+    const { toolset, record } = await writeCreated(
       tx,
       conversationId,
       topic,
@@ -184,7 +187,11 @@ export function toolsetInit(
       },
       thread?.startedBy,
     );
-    await configure(tx, conversationId, { extensions: selectionOf(toolsetList(toolset, profile)) });
+    await configure(tx, conversationId, {
+      extensions: selectionOf(toolsetList(toolset, profile)),
+      // The creating commit's own read of the topic's model, else the default (DEC-083).
+      model: creationModel({ topic: record?.model, fallback }, catalog.require),
+    });
   };
 }
 
@@ -229,6 +236,7 @@ async function openTopic(
   profile: Profile,
   defaults: ConversationDefaults,
   target: Extract<AttachTarget, { kind: "topic" }>,
+  catalog: ModelCatalog,
 ): Promise<Conversation> {
   const index = await indexOfTopic(session, target.name);
   const latest = target.new ? undefined : latestIn(index, target.name);
@@ -239,7 +247,7 @@ async function openTopic(
     return resolveExisting(session, latest);
   }
   const cwd = topicCwd(index, target.name, defaults, target.cwd);
-  return create(session, defaults, cwd, toolsetInit(profile, target.name));
+  return create(session, defaults, cwd, topicInit(profile, target.name, catalog, defaults.model));
 }
 
 /** `run`, one call at a time: each starts once the one before it settles, failed or not. */
@@ -315,7 +323,7 @@ export function conversations(
   // not each find it empty. One daemon owns the store, so in-process order suffices.
   const openTopicSerially = serially(
     (target: Extract<AttachTarget, { kind: "topic" }>): Promise<Conversation> =>
-      openTopic(session, profile, defaults, target),
+      openTopic(session, profile, defaults, target, catalog),
   );
   return {
     root: session.root,
@@ -336,7 +344,7 @@ export function conversations(
             session,
             defaults,
             target.cwd ?? defaults.cwd,
-            toolsetInit(profile, undefined),
+            topicInit(profile, undefined, catalog, defaults.model),
           );
         case "topic":
           return openTopicSerially(target);
