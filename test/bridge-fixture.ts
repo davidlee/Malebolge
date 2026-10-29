@@ -10,10 +10,11 @@ import {
   type ConversationId,
   type Tx,
 } from "@earendil-works/pi-durable";
+import type { CallToolResult } from "@earendil-works/pi-mcp";
 import { onTestFinished } from "vitest";
 import { DAEMON_FRAMES, type DaemonFrame, type Posture, parseFrame } from "../pi-bridge/wire.ts";
-import { type PairingDoc, pairingDoc, pairingSnapshot } from "../src/bridge/pairing.ts";
 import { type BridgeHost, serveBridge } from "../src/bridge/listener.ts";
+import { type PairingDoc, pairingDoc, pairingSnapshot } from "../src/bridge/pairing.ts";
 import { context } from "../src/context.ts";
 import {
   type ConversationDefaults,
@@ -22,6 +23,8 @@ import {
   isConversationKey,
 } from "../src/conversations.ts";
 import { refOf } from "../src/models.ts";
+import type { PoolKey } from "../src/satan-pool.ts";
+import type { Log, SatanTools } from "../src/satan-tools.ts";
 import {
   type IndexEntry,
   idsIn,
@@ -31,7 +34,7 @@ import {
   type TopicRecord,
 } from "../src/topics.ts";
 import { type LineClient, lineClient, tempDir } from "./fixtures.ts";
-import { FAUX_MODEL, openIndexedHarness, type TestHarness } from "./harness-fixture.ts";
+import { FAUX_MODEL, fakeClock, openIndexedHarness, type TestHarness } from "./harness-fixture.ts";
 import { catalogOf, FLASH_REF } from "./model-fixture.ts";
 
 /** The daemon default model's ref: what a conversation takes when its topic names none. */
@@ -45,25 +48,52 @@ export const GHOST_REF = "gateway/ghost";
 
 const DEFAULTS: ConversationDefaults = { model: FAUX_MODEL, cwd: process.cwd() };
 
+/** One satan-mcp call the bridge made, as `notifyBestEffort` passes its port. */
+export interface BridgeSatanCall {
+  readonly key: PoolKey;
+  readonly tool: string;
+  readonly args: Record<string, unknown>;
+}
+
 /** The pieces a bridge listener serves over, before any socket exists. */
 export interface BridgeHostWorld {
   test: TestHarness;
   conversations: Conversations;
   host: BridgeHost;
+  /** Every satan-mcp call the bridge made, in order: the notify the F-4 path sends lands here. */
+  satanCalls: readonly BridgeSatanCall[];
+  /** Every line the bridge logged, in order. */
+  logLines: readonly string[];
 }
 
 /** A room session with its conversations and the host record `serveBridge` takes. */
 export async function bridgeHost(): Promise<BridgeHostWorld> {
   const test = await openIndexedHarness([]);
   const made = conversations(test, DEFAULTS, "room", BRIDGE_CATALOG);
+  // SL-009 PHASE-07: the bridge's three new host ports, each recording what it is handed.
+  const clock = fakeClock(1_790_000_000_000);
+  const satanCalls: BridgeSatanCall[] = [];
+  const logLines: string[] = [];
+  const log: Log = (text): void => {
+    logLines.push(text);
+  };
+  const satan: Pick<SatanTools, "call"> = {
+    call: (key, tool, args): Promise<CallToolResult> => {
+      satanCalls.push({ key, tool, args });
+      return Promise.resolve({ content: [{ type: "text", text: "sent" }] });
+    },
+  };
   const host: BridgeHost = {
     session: test,
     conversations: made,
     defaults: DEFAULTS,
     profile: "room",
     catalog: BRIDGE_CATALOG,
+    satan,
+    log,
+    now: clock.now,
   };
-  return { test, conversations: made, host };
+  return { test, conversations: made, host, satanCalls, logLines };
 }
 
 /** A fake pi: frames out, daemon frames in (each checked against the daemon vocabulary). */

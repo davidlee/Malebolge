@@ -228,16 +228,19 @@ describe("the first line (VT-3)", () => {
     await client.closed;
   });
 
-  it("answers post-once as not implemented yet, and closes", async () => {
+  it("answers post-once with accepted, no id, and closes (VT-6)", async () => {
     const world = await bridgeWorld();
+    const { conversation, token } = await world.pair();
+    // A note post-once asks the model nothing: the row's answer is all this test needs.
     const { client, reply } = await world.firstLine({
       type: "post-once",
-      conversation: "1",
-      token: "t",
-      kind: "turn",
+      conversation,
+      token,
+      kind: "note",
       text: "x",
     });
-    expect(reply).toEqual(refused("post-once is not implemented yet"));
+    expect(reply).toEqual({ type: "accepted" });
+    expect(reply).not.toHaveProperty("id");
     await client.closed;
   });
 });
@@ -257,18 +260,19 @@ describe("a bound connection (VT-3)", () => {
     await answersProbe(client);
   });
 
-  it.each([
-    ["post", { type: "post", id: "p1", kind: "turn", text: "hi" }, { id: "p1" }],
-    ["refill", { type: "refill" }, {}],
-  ])("answers %s as not implemented yet and stays open", async (type, frame, id) => {
+  it("answers a post with accepted and its id, and stays open (VT-6)", async () => {
     const world = await bridgeWorld();
     const { client } = await world.pair();
-    await client.send(frame);
-    expect(await client.next()).toEqual({
-      type: "refused",
-      ...id,
-      reason: `${type} is not implemented yet`,
-    });
+    // A note post asks the model nothing, so the next frame is the probe's.
+    await client.send({ type: "post", id: "p1", kind: "note", text: "hi" });
+    expect(await client.next()).toEqual({ type: "accepted", id: "p1" });
+    await answersProbe(client);
+  });
+
+  it("answers refill with no reply at all, the next frame being the probe's (VT-5)", async () => {
+    const world = await bridgeWorld();
+    const { client } = await world.pair();
+    await client.send({ type: "refill" });
     await answersProbe(client);
   });
 });

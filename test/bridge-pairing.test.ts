@@ -1,10 +1,17 @@
 // SL-009 PHASE-05 VT-4 (the pure pairing rules over plain values) and VT-1
-// (`pair` through the real listener: topic, toolset, model, token). Written red
-// first against .doctrine/state/slice/009/briefs/phase-05-contract.md.
+// (`pair` through the real listener: topic, toolset, model, token); PHASE-07 VT-5
+// adds the loop budget, refill, the operator hook and the spend's residual.
+// Written red first against .doctrine/state/slice/009/briefs/phase-05-contract.md
+// and .doctrine/state/slice/009/briefs/phase-07-contract.md.
 
 import { createHash } from "node:crypto";
-import { describe, expect, it } from "vitest";
+import { join } from "node:path";
+import { fauxAssistantMessage, fauxText } from "@earendil-works/pi-ai/providers/faux";
+import type { Conversation, ConversationId } from "@earendil-works/pi-durable";
+import { describe, expect, it, onTestFinished, vi } from "vitest";
 import { BRIDGE_BODY_MAX_BYTES, capHeadTail } from "../pi-bridge/wire.ts";
+import { operatorRefill, submitInbound } from "../src/bridge/inbound.ts";
+import type { BridgeHost } from "../src/bridge/listener.ts";
 import {
   ackEntry,
   admitTurn,
@@ -18,12 +25,27 @@ import {
   mintToken,
   openPairing,
   type PairingDoc,
+  pairingDoc,
+  pairingSnapshot,
   refill,
 } from "../src/bridge/pairing.ts";
+import { context } from "../src/context.ts";
+import { conversations, isConversationKey } from "../src/conversations.ts";
+import { serve } from "../src/daemon.ts";
 import { writeTopicRecord } from "../src/topics.ts";
-import { bridgeWorld, DEFAULT_REF, GHOST_REF } from "./bridge-fixture.ts";
+import { bridgeHost, bridgeWorld, DEFAULT_REF, GHOST_REF } from "./bridge-fixture.ts";
+import { lineClient, tempDir } from "./fixtures.ts";
+import {
+  createConversation,
+  FAUX_CATALOG,
+  FAUX_MODEL,
+  forkConversation,
+  NAME_RULE,
+  openIndexedHarness,
+  type TestHarness,
+} from "./harness-fixture.ts";
 import { FLASH_REF } from "./model-fixture.ts";
-import { forkConversation, NAME_RULE } from "./harness-fixture.ts";
+import { WAIT } from "./wake-fixture.ts";
 
 /** The document's initial value, as the contract spells it: no pairing. */
 const initialDoc = (): PairingDoc => ({
@@ -422,5 +444,171 @@ describe("the pairing document's scope (VT-4)", () => {
     const doc = await world.pairingOf(String(fork.id));
     expect(isBridged(doc)).toBe(false);
     expect(doc.tokenHash).toBe("");
+  });
+});
+
+/** A fresh ownerless conversation with a pairing opened on `token`, `spent` turns already spent. */
+async function bridgedConversation(test: TestHarness, spent = 0): Promise<Conversation> {
+  const conversation = await createConversation(test.harness);
+  await test.harness.commit(async (tx) => {
+    const doc = await pairingDoc(tx, conversation.id);
+    openPairing(doc, "delegate", "proj", "token");
+    for (let i = 0; i < spent; i++) {
+      admitTurn(doc);
+    }
+  }, context);
+  return conversation;
+}
+
+/** The conversation's committed budget, read in a commit. */
+const spentOf = (test: TestHarness, conversation: ConversationId): Promise<number> =>
+  test.harness.commit(async (tx) => (await pairingDoc(tx, conversation)).spent, context);
+
+/** A daemon frame as the identity decode hands it back. */
+const sameFrame = (value: unknown): unknown => value;
+
+/** A conversation key as the wire carries it, through a guard: pi-durable's ids are opaque. */
+const conversationIdOf = (conversation: string): ConversationId => {
+  const id = Number(conversation);
+  if (!isConversationKey(id)) {
+    throw new Error(`not a conversation id: ${conversation}`);
+  }
+  return id;
+};
+
+describe("the loop budget (VT-5)", () => {
+  it("refuses the 11th turn as budget exhausted, waiting on the operator, and lets notes through", async () => {
+    const world = await bridgeWorld();
+    world.test.faux.setResponses(
+      Array.from({ length: BRIDGE_TURN_BUDGET + 2 }, () => fauxAssistantMessage([fauxText("ok")])),
+    );
+    const { client, conversation } = await world.pair("delegate", "proj");
+
+    for (let i = 1; i <= BRIDGE_TURN_BUDGET; i++) {
+      await client.send({
+        type: "post",
+        id: `t${String(i)}`,
+        kind: "turn",
+        text: `turn ${String(i)}`,
+      });
+      expect(await client.next()).toEqual({ type: "accepted", id: `t${String(i)}` });
+    }
+    await client.send({ type: "post", id: "t11", kind: "turn", text: "one too many" });
+    expect(await client.next()).toEqual({
+      type: "refused",
+      id: "t11",
+      reason: "budget exhausted, waiting on the operator",
+    });
+    expect((await world.pairingOf(conversation)).spent).toBe(BRIDGE_TURN_BUDGET);
+
+    // A note is not a turn: the exhausted budget does not refuse it.
+    await client.send({ type: "post", id: "n1", kind: "note", text: "a note" });
+    expect(await client.next()).toEqual({ type: "accepted", id: "n1" });
+
+    // refill answers nothing; the next frame is the next post's own answer.
+    await client.send({ type: "refill" });
+    await client.send({ type: "post", id: "t12", kind: "turn", text: "after the refill" });
+    expect(await client.next()).toEqual({ type: "accepted", id: "t12" });
+    expect((await world.pairingOf(conversation)).spent).toBe(1);
+  });
+
+  it("operatorRefill restores the budget, and a plain conversation gains no pairing document", async () => {
+    const { test, host, conversations: made } = await bridgeHost();
+    const bridged = await bridgedConversation(test, BRIDGE_TURN_BUDGET);
+    expect(await spentOf(test, bridged.id)).toBe(BRIDGE_TURN_BUDGET);
+
+    await operatorRefill(Promise.resolve(host))(bridged.id);
+    expect(await spentOf(test, bridged.id)).toBe(0);
+
+    const plain = await made.open({ kind: "new" });
+    await operatorRefill(Promise.resolve(host))(plain.id);
+    expect(await pairingSnapshot(test.harness, plain.id)).toBeUndefined();
+  });
+
+  it("a submit that throws after the admit leaves the spend incremented (DEC-078)", async () => {
+    const { test, host } = await bridgeHost();
+    const bridged = await bridgedConversation(test);
+    const harness = new Proxy(test.harness, {
+      get(target, property, receiver): unknown {
+        if (property === "conversation") {
+          return (): Promise<never> => Promise.reject(new Error("the submit exploded"));
+        }
+        // The session's methods brand-check their receiver, so the unwrapped target has
+        // to be the one called; only `conversation` is overridden here.
+        const member: unknown = Reflect.get(target, property, receiver);
+        return typeof member === "function" ? member.bind(target) : member;
+      },
+    });
+    const failing: BridgeHost = { ...host, session: { ...host.session, harness } };
+
+    const check = await submitInbound({ host: failing, watches: new Map() }, bridged.id, {
+      kind: "turn",
+      text: "hello",
+      id: "e1",
+    });
+    expect(check).toEqual({ ok: false, reason: "the submit exploded" });
+    expect(await spentOf(test, bridged.id)).toBe(1);
+  });
+
+  it("a duplicate post spends nothing", async () => {
+    const world = await bridgeWorld();
+    world.test.faux.setResponses([fauxAssistantMessage([fauxText("ok")])]);
+    const { conversation } = await world.pair("delegate", "proj");
+    const inbound = { host: world.host, watches: new Map() };
+    const conversationId = conversationIdOf(conversation);
+
+    expect(
+      await submitInbound(inbound, conversationId, { kind: "turn", text: "hello", id: "dup" }),
+    ).toEqual({ ok: true });
+    expect(
+      await submitInbound(inbound, conversationId, { kind: "turn", text: "hello", id: "dup" }),
+    ).toEqual({ ok: true });
+    expect((await world.pairingOf(conversation)).spent).toBe(1);
+    // The one turn runs to its end; a second submit would have run a second time.
+    await vi.waitFor(async () => {
+      const record = await world.test.harness.commit(
+        (tx) => tx.submissionByRequest(conversationId, `bridge:${conversation}:dup`),
+        context,
+      );
+      expect(record?.status).toBe("done");
+    });
+    expect(world.test.faux.state.callCount).toBe(1);
+  });
+});
+
+describe("the daemon's operator hook (VT-5)", () => {
+  it("calls onOperatorInput once per input line, and not for an orient line", async () => {
+    const test = await openIndexedHarness([]);
+    test.faux.setResponses(Array.from({ length: 3 }, () => fauxAssistantMessage([fauxText("ok")])));
+    const { dir, cleanup } = await tempDir();
+    onTestFinished(cleanup);
+    const socketPath = join(dir, "daemon.sock");
+    const onOperatorInput = vi.fn(() => Promise.resolve());
+    const server = await serve({
+      socketPath,
+      conversations: Promise.resolve(
+        conversations(test, { model: FAUX_MODEL, cwd: process.cwd() }, "host", FAUX_CATALOG),
+      ),
+      beforeInput: () => Promise.resolve(),
+      orientation: () => Promise.resolve("fresh orientation"),
+      modelRefs: () => FAUX_CATALOG.refs(),
+      onOperatorInput,
+    });
+    onTestFinished(server.close);
+    const client = await lineClient(socketPath, sameFrame);
+    onTestFinished(client.close);
+
+    client.send({ type: "input", content: "hello" });
+    await vi.waitFor(() => {
+      expect(onOperatorInput).toHaveBeenCalledTimes(1);
+    }, WAIT);
+    expect(onOperatorInput).toHaveBeenCalledWith(test.root.id);
+
+    // An orient line submits daemon-built content: the operator did not type it.
+    client.send({ type: "orient" });
+    await vi.waitFor(() => {
+      expect(test.faux.state.callCount).toBe(2);
+    }, WAIT);
+    expect(onOperatorInput).toHaveBeenCalledTimes(1);
   });
 });

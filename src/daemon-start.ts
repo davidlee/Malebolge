@@ -5,17 +5,18 @@
 import { mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import type { Models } from "@earendil-works/pi-ai/models";
-import type { Extension, Registry } from "@earendil-works/pi-durable";
+import type { ConversationId, Extension, Registry } from "@earendil-works/pi-durable";
 import { NodeExecutionEnv } from "@earendil-works/pi-durable/env/node";
 import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite/node";
 import { backupSource, unconfiguredSource } from "./bookmarks/backup.ts";
 import { bookmarksExtension } from "./bookmarks/extension.ts";
 import { orientationOf } from "./boot-context.ts";
+import { operatorRefill } from "./bridge/inbound.ts";
 import { type BridgeHost, serveBridge } from "./bridge/listener.ts";
 import type { Config, Profile, ScrewtapePaths } from "./config.ts";
 import { context } from "./context.ts";
 import { type ConversationDefaults, type Conversations, conversations } from "./conversations.ts";
-import { type Daemon, serve, type ServeOptions } from "./daemon.ts";
+import { type Daemon, type ServeOptions, serve } from "./daemon.ts";
 import { type DaemonEnv, daemonEnv, requireGatewaySocket } from "./daemon-env.ts";
 import { daemonExtensions } from "./daemon-extensions.ts";
 import { acquireInstanceLock } from "./instance-lock.ts";
@@ -23,9 +24,9 @@ import { mailExtension } from "./mail/extension.ts";
 import { screwtapeSource } from "./mail/screwtape.ts";
 import {
   loadGatewayModels,
-  modelCatalog,
   type ModelCatalog,
   type ModelRef,
+  modelCatalog,
   refOf,
   UnknownModel,
 } from "./models.ts";
@@ -244,12 +245,14 @@ const serveOptionsOf = (
   satan: SatanTools,
   conversations: Promise<Conversations>,
   catalog: ModelCatalog,
+  onOperatorInput: ((conversation: ConversationId) => Promise<void>) | undefined,
 ): ServeOptions => ({
   socketPath: config.daemonSocket,
   conversations,
   beforeInput: satan.refresh,
   orientation: (conversation) => orientationOf(satan.call, conversation),
   modelRefs: catalog.refs,
+  ...(onOperatorInput === undefined ? {} : { onOperatorInput }),
 });
 
 /** What the bridge listener reads: the session's one harness and the daemon's own ports (SL-009 sec-2). */
@@ -259,12 +262,18 @@ const bridgeHostOf = (
   defaults: ConversationDefaults,
   config: Config,
   catalog: ModelCatalog,
+  satan: Pick<SatanTools, "call">,
+  log: Log,
+  now: () => number,
 ): BridgeHost => ({
   session,
   conversations,
   defaults,
   profile: config.execution.profile,
   catalog,
+  satan,
+  log,
+  now,
 });
 
 /**
@@ -292,6 +301,17 @@ const stopOf = (
     return stopping;
   };
 };
+
+/**
+ * The operator-refill hook: room only (the host profile's `bridgeHost` never resolves,
+ * so it must get no hook), where an operator's input in a bridged conversation
+ * refills its loop budget (SL-009 design sec-5).
+ */
+const operatorRefillOf = (
+  config: Config,
+  host: Promise<BridgeHost>,
+): ((conversation: ConversationId) => Promise<void>) | undefined =>
+  config.bridgeSocket === undefined ? undefined : operatorRefill(host);
 
 /**
  * Start the profile's daemon: lock, claim the socket, refresh SATAN's tools,
@@ -336,7 +356,12 @@ export async function startDaemon(config: Config, deps: StartDeps): Promise<Daem
     const conversationsReady = Promise.withResolvers<Conversations>();
     // The bridge listener's host, resolved beside it (SL-009 design sec-2).
     const bridgeHost = Promise.withResolvers<BridgeHost>();
-    daemon = await serve(serveOptionsOf(config, satan, conversationsReady.promise, catalog));
+    // Room only, where an operator's input in a bridged conversation refills its
+    // loop budget (sec-5).
+    const refill = operatorRefillOf(config, bridgeHost.promise);
+    daemon = await serve(
+      serveOptionsOf(config, satan, conversationsReady.promise, catalog, refill),
+    );
     // Room only: `config.bridgeSocket` exists on no other profile's Config.
     if (config.bridgeSocket !== undefined) {
       bridge = await serveBridge({ path: config.bridgeSocket, host: bridgeHost.promise });
@@ -355,7 +380,9 @@ export async function startDaemon(config: Config, deps: StartDeps): Promise<Daem
         wakes.bindLate({ harness: opened.harness, conversations: shared });
         threads.bindLate({ harness: opened.harness });
         conversationsReady.resolve(shared);
-        bridgeHost.resolve(bridgeHostOf(opened, shared, defaults, config, catalog));
+        bridgeHost.resolve(
+          bridgeHostOf(opened, shared, defaults, config, catalog, satan, log, now),
+        );
       },
     });
     await startRoomTasks(config.execution.profile, wakes.deps, threads.deps, session, task);

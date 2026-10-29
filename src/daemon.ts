@@ -8,7 +8,7 @@ import type { Socket } from "node:net";
 import type { AgentEventStream, Conversation, ConversationId } from "@earendil-works/pi-durable";
 import { answer, errorMessage, fail, write, writeError } from "./connection-reply.ts";
 import { context } from "./context.ts";
-import { type ConversationPage, type Conversations } from "./conversations.ts";
+import type { ConversationPage, Conversations } from "./conversations.ts";
 import { lineSplitter } from "./ndjson.ts";
 import {
   type AttachMessage,
@@ -37,6 +37,11 @@ export interface ServeOptions {
   orientation: (conversation: ConversationId) => Promise<string>;
   /** The catalogue's chat-model refs, for a `models` listing: the store is never asked. */
   modelRefs: () => string[];
+  /**
+   * Called after an operator's input is submitted; the bridge refills the
+   * conversation's budget (SL-009 design sec-5). Absent outside the room.
+   */
+  onOperatorInput?: (conversation: ConversationId) => Promise<void>;
 }
 
 /** One connection: its socket, the chain that orders its lines, and its one binding. */
@@ -47,6 +52,8 @@ interface Connection {
   orientation: (conversation: ConversationId) => Promise<string>;
   /** The catalogue's chat-model refs, for a `models` listing (SL-010 PHASE-06). */
   modelRefs: () => string[];
+  /** The daemon's one after-input hook: the bridge's refill, on the room profile only. */
+  onOperatorInput?: (conversation: ConversationId) => Promise<void>;
   /** The conversation the first line bound; `undefined` until then. */
   bound?: Conversation;
   /** The bound conversation's event stream, once acquired. */
@@ -86,6 +93,7 @@ async function act(
   switch (message.type) {
     case "input":
       await submitInput(state, conversation, message);
+      await state.onOperatorInput?.(conversation.id);
       return;
     case "abort":
       await conversation.abort(context);
@@ -339,6 +347,7 @@ function startConnection(options: ServeOptions, socket: Socket): void {
     beforeInput: options.beforeInput,
     orientation: options.orientation,
     modelRefs: options.modelRefs,
+    ...(options.onOperatorInput === undefined ? {} : { onOperatorInput: options.onOperatorInput }),
     ended: false,
     queue: Promise.resolve(),
   };

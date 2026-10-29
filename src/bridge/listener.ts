@@ -11,11 +11,12 @@ import type {
   ConversationId,
   ConversationInit,
   DocumentWatch,
+  SubmissionId,
 } from "@earendil-works/pi-durable";
 import {
   BOUND_FRAMES,
-  BRIDGE_LINE_MAX_BYTES,
   type BoundFrame,
+  BRIDGE_LINE_MAX_BYTES,
   FIRST_LINE_FRAMES,
   type FirstLineFrame,
   type PairedFrame,
@@ -38,10 +39,12 @@ import { messageOf } from "../message-of.ts";
 import type { ModelCatalog } from "../models.ts";
 import { boundedLineSplitter } from "../ndjson.ts";
 import { topicNameOf } from "../protocol.ts";
+import type { Log, SatanTools } from "../satan-tools.ts";
 import type { Session } from "../session.ts";
 import type { DaemonToolset } from "../toolsets.ts";
 import { isKnownTopic, readIndex } from "../topics.ts";
 import { servePrivateUnix, type UnixServer } from "../unix-socket.ts";
+import { refillBridged, submitInbound } from "./inbound.ts";
 import {
   ackEntry,
   type Check,
@@ -65,6 +68,12 @@ export interface BridgeHost {
   defaults: ConversationDefaults;
   profile: Profile;
   catalog: ModelCatalog;
+  /** The daemon's satan-mcp port: `notifyBestEffort`'s, for a notice that cannot be appended. */
+  satan: Pick<SatanTools, "call">;
+  /** The daemon's log: one line per failure the bridge swallows rather than refuses. */
+  log: Log;
+  /** The harness clock: a note's model timestamp. */
+  now: () => number;
 }
 
 export interface BridgeListenerOptions {
@@ -78,6 +87,12 @@ interface Listener {
   host: Promise<BridgeHost>;
   /** One binding per pairing (conversation id): the newest connection wins (DEC-065). */
   bindings: Map<ConversationId, Connection>;
+  /**
+   * One withdrawal watch per posted submission, for the listener's life: a resend on a
+   * newer connection joins the original's watch, so it never adds a second notice. Never
+   * pruned: the turn budget bounds it, and the listener outlives every connection.
+   */
+  watches: Map<SubmissionId, Promise<void>>;
 }
 
 /** One connection: its socket, the listener it belongs to, the pairing it bound, and its line chain. */
@@ -114,10 +129,6 @@ interface BoundTurn {
 /** The refusal `reason`, carrying `id` when the frame that earned it had one (post's own id). */
 const refused = (reason: string, id?: string): RefusedFrame =>
   id === undefined ? { type: "refused", reason } : { type: "refused", id, reason };
-
-/** A row a later phase fills: `<type> is not implemented yet`, with the frame's id where it has one. */
-const notImplemented = (type: string, id?: string): RefusedFrame =>
-  refused(`${type} is not implemented yet`, id);
 
 /** The one reply `pair` (with its token) and `resume` (without one) make. */
 const paired = (conversation: ConversationId, token?: string): PairedFrame =>
@@ -318,6 +329,56 @@ async function ackRow(turn: BoundTurn, frame: Extract<BoundFrame, { type: "ack" 
   }, context);
 }
 
+/**
+ * post: submit the message, then answer `accepted` with its id — or the refusal; the
+ * connection stays open. The notification of a withdrawal is detached from this line.
+ */
+async function postRow(
+  turn: BoundTurn,
+  frame: Extract<BoundFrame, { type: "post" }>,
+): Promise<void> {
+  const check = await submitInbound(
+    { host: turn.host, watches: turn.state.listener.watches },
+    turn.conversation,
+    { kind: frame.kind, text: frame.text, id: frame.id },
+  );
+  write(
+    turn.state,
+    check.ok ? { type: "accepted", id: frame.id } : refused(check.reason, frame.id),
+  );
+}
+
+/** refill: restore the loop budget; no reply on success (design sec-2). */
+async function refillRow(turn: BoundTurn): Promise<void> {
+  await refillBridged(turn.host, turn.conversation);
+}
+
+/**
+ * post-once: one message, its own first line, then closed. Nothing is bound, so the
+ * conversation is named by the frame, and its token is judged before its ended state.
+ */
+async function postOnceRow(
+  turn: FirstTurn,
+  frame: Extract<FirstLineFrame, { type: "post-once" }>,
+): Promise<void> {
+  const conversation = conversationKeyOf(frame.conversation);
+  if (conversation === undefined) {
+    finish(turn.state, refused("not a bridged conversation"));
+    return;
+  }
+  const check = await checkPairing(turn.host, conversation, frame.token);
+  if (!check.ok) {
+    finish(turn.state, refused(check.reason));
+    return;
+  }
+  const submitted = await submitInbound(
+    { host: turn.host, watches: turn.state.listener.watches },
+    conversation,
+    { kind: frame.kind, text: frame.text },
+  );
+  finish(turn.state, submitted.ok ? { type: "accepted" } : refused(submitted.reason));
+}
+
 /** end: commit `ended`, tell pi, close; the close drops the binding, and the conversation stays attachable. */
 async function endRow(turn: BoundTurn): Promise<void> {
   await turn.host.session.harness.commit(async (tx) => {
@@ -340,18 +401,6 @@ type BoundHandler<K extends BoundFrame["type"]> = (
   frame: Extract<BoundFrame, { type: K }>,
 ) => Promise<void>;
 
-/** A first-line row a later phase fills: the refusal, then the connection closes. */
-const notYet = (turn: FirstTurn, frame: FirstLineFrame): Promise<void> => {
-  finish(turn.state, notImplemented(frame.type));
-  return Promise.resolve();
-};
-
-/** A bound row a later phase fills: the refusal, and the connection stays open. */
-const unimplemented = (turn: BoundTurn, frame: BoundFrame): Promise<void> => {
-  write(turn.state, notImplemented(frame.type, frame.type === "post" ? frame.id : undefined));
-  return Promise.resolve();
-};
-
 /**
  * The first line's dispatch: a new first-line frame costs one parser case in
  * `pi-bridge/wire.ts` and one row here, and the mapped type makes a frame without
@@ -360,20 +409,18 @@ const unimplemented = (turn: BoundTurn, frame: BoundFrame): Promise<void> => {
 const BRIDGE_FIRST_LINE: { [K in FirstLineFrame["type"]]: FirstLineHandler<K> } = {
   pair: pairRow,
   resume: resumeRow,
-  // PHASE-07 fills one-shot posting; until then it answers and closes.
-  "post-once": notYet,
+  "post-once": postOnceRow,
 };
 
 /**
- * The bound connection's dispatch, separate from `src/daemon.ts`'s tables: ack
- * forgets one delivered entry and end ends the pairing; post and refill are
- * refused until their phase fills them. The mapped type keeps every frame of the
- * union represented.
+ * The bound connection's dispatch, separate from `src/daemon.ts`'s tables: post submits
+ * one inbound message, ack forgets one delivered entry, refill restores the loop budget
+ * and end ends the pairing. The mapped type keeps every frame of the union represented.
  */
 const BRIDGE_BOUND: { [K in BoundFrame["type"]]: BoundHandler<K> } = {
-  post: unimplemented,
+  post: postRow,
   ack: ackRow,
-  refill: unimplemented,
+  refill: refillRow,
   end: endRow,
 };
 
@@ -499,7 +546,7 @@ function startConnection(listener: Listener, socket: Socket): void {
  * a newer pair or resume supersedes the previous connection for it (DEC-065).
  */
 export function serveBridge(options: BridgeListenerOptions): Promise<UnixServer> {
-  const listener: Listener = { host: options.host, bindings: new Map() };
+  const listener: Listener = { host: options.host, bindings: new Map(), watches: new Map() };
   return servePrivateUnix(options.path, (socket) => {
     startConnection(listener, socket);
   });
