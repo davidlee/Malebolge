@@ -363,6 +363,13 @@ so P4 reduces to `nix run .#jailed-pi-bridge`. Removed PHASE-01's
   operator's behalf" bind no one.
 - 6 (partial): `echo x | malebolge-bridge send` → `accepted`, exit 0 (pi's
   report).
+- Daemon restart 09:02 (to load BRIDGE_ENVIRONMENT), unplanned preview of 10:
+  pi showed one error notice `malebolge bridge: connection closed; project
+  malebolge, pi session 01a18983-…, conversation 3949, topic
+  malebolge-bridge, socket …/bridge.sock`, then one `reconnected; …` notice.
+  The host attach client had to be relaunched (its socket closed).
+- 6: met. `send` → `accepted`, 0, no SATAN turn; `tee --turn` → `hi`, 0,
+  SATAN turn started (operator: "both pass").
 - 7 (partial): pi's write into `/workspace/malebolge` failed with EROFS.
 
 ## Autonomy log
