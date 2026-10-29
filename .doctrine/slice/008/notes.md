@@ -44,7 +44,7 @@ review belongs to the plan.
 - **Driver**: /super-orchestrator seat → `sub-orchestrator` charters (1–3 phases) → quotient pi workers. Main worktree. Halts before audit.
 - **Host gate**: `just check` from the session shell (just, biome, node on PATH; eslint/tsc/vitest via npx). Baseline 2026-10-29: 96 files / 3351 tests green.
 - **quotient forms**: `read` (repo read-only, network on) and `write` both run every gate recipe (`fmt-check`, `lint`, `typecheck`, full `vitest run`) green, failures identical to host (none). No form change needed. Absent in the sandbox: `nix`, `lz4`, `python3` — any step needing them runs on the host (sub-orchestrator), not in pi. `fmt-check` prints 4 benign biome warnings for broken `.quotient/` symlinks (exit 0).
-- **Known sandbox-only failures**: none.
+- **Known sandbox-only failures**: none in the suite. `npx biome` fails in pi (missing `@biomejs/cli-linux-x64` native binary); use the PATH `biome`, which `just fmt-check` / `just format` call.
 - **Operator ruling — PHASE-02 fixture** (2026-10-29, reply "Commit as is"): the 857-byte backup from the scratchpad profile (Mozilla defaults only: 4 default places under "Mozilla Firefox", empty roots; per-profile values are 5 random guids and the profile creation time) is committed unchanged. Seat-staged copies, outside the repo:
   - raw: `/tmp/claude-1000/-home-david-dev-malebolge/a8892a87-af84-4b6b-b861-883e908db592/scratchpad/fixture/scratchpad.jsonlz4` (source: `~/.config/mozilla/firefox/<scratchpad profile>/bookmarkbackups/bookmarks-2026-03-25_10_….jsonlz4`)
   - independent decode (2518 bytes): `…/scratchpad/fixture/scratchpad.json`, produced once by
