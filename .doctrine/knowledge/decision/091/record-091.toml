@@ -1,0 +1,35 @@
+schema = "doctrine.knowledge"
+version = 1
+
+id = 91
+slug = "emacs-one-bounded-client-call"
+title = "Emacs runs every client call, the topic-model write included, through one bounded malebolge--client (args)"
+record_kind = "decision"
+status = "accepted"
+created = "2026-10-29"
+updated = "2026-10-29"
+tags = []
+
+[facet]                         # every field typed; seeded empty (captured later)
+context = "DEC-089 gives Emacs one bounded subprocess call taking the listing flag (--list, --topics, --models). The model setter (malebolge-set-topic-model) runs --set-topic NAME --model REF, a two-argument write the SL-010 design ran unbounded, so a daemon that accepts and never answers hangs Emacs (SL-010 review round 1, M-8)."
+choice = "Refines DEC-089: the one bounded call is malebolge--client (args), taking any client argv, used for --list, --topics, --models and the --set-topic write, with the same timeout. A write that times out reports that its outcome is unknown and does not retry."
+alternatives = ["Keep the listing call flag-only and add a separate bounded write call: a second subprocess path DEC-089's rationale rules out"]
+rationale = "One subprocess path stays one; every call Emacs makes is bounded."
+consequences = ["DEC-089 is refined not superseded: its listing and chooser rules stand"]
+decided_by = "operator"
+decided_on = "2026-10-29"
+
+[evidence]                      # free-text citations (supports / contradicts / notes)
+supports    = []
+contradicts = []
+notes       = []
+
+[relationships]                 # verb-written edges (set by doctrine supersede)
+supersedes    = []   # record ids this one replaces (set by doctrine supersede)
+superseded_by = []   # set on superseded predecessor (verb-written)
+
+[[relation]]
+label = "references"
+role = "concerns"
+descriptor = "refines: widens the one bounded call to any argv"
+target = "DEC-089"

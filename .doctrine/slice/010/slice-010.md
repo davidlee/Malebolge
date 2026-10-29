@@ -48,8 +48,10 @@ Operator decisions, 2026-10-29 (this session):
    following `--toolset` and `--no-toolset` (DEC-017).
 5. **Emacs: set a topic's model.** A command that sets or clears a topic's
    model through the same CLI write, with topic names completed from
-   `--topics`.
-6. **Emacs chooser.** Each conversation line shows its topic and model.
+   `--topics`. Every Emacs client call, this write included, runs through one
+   bounded call (DEC-089, DEC-091).
+6. **Emacs chooser.** Each conversation line shows its topic and model
+   (root's names `default`).
    Choosing `new` asks for a topic, completed from `--topics`, and passes
    `--topic NAME --new` (IMP-018). Both reach the client through an additive
    per-id `summaries` key on the `list` reply (DEC-007, DEC-087).
@@ -57,9 +59,12 @@ Operator decisions, 2026-10-29 (this session):
    Emacs completion (DEC-088).
 8. **Started threads** take their topic's model (DEC-084, amending DEC-034).
    Model precedence and the unknown-model refusal live in one pure function,
-   built to change (DEC-083, DEC-085).
+   built to change (DEC-083, DEC-085). A stored model the catalog lacks refuses
+   creation in that topic; at start, a heartbeat that would be created in such
+   a wake topic is skipped and logged, and the daemon still serves.
 
-Design decisions: DEC-082..DEC-089; DEC-015 adopted (no model on `default`).
+Design decisions: DEC-082..DEC-089, DEC-091; DEC-015 adopted (no model on
+`default`).
 
 ## Non-Goals
 
@@ -78,11 +83,16 @@ Design decisions: DEC-082..DEC-089; DEC-015 adopted (no model on `default`).
 - `src/conversations.ts`: creation defaults, topic listing
 - `src/daemon.ts`, `src/daemon-start.ts`: the topic frame, catalog access at write time
 - `src/models.ts`: the catalog check, if `requireKnownModel` moves here
-- `src/attach-invocation.ts`, `src/attach-main.ts`, `src/attach.ts`: flags, output
+- `src/attach-invocation.ts`, `src/attach-main.ts`, `src/attach.ts`,
+  `src/request.ts`, `src/render.ts`: flags, requests, output
+- `src/threads/tools.ts`, `src/threads/extension.ts`: started-thread creation
 - `emacs/malebolge.el`: chooser, topic on `new`, topic-model command
 - Tests beside each
 
 ## Open questions (for design)
+
+All five are settled in design: OQ-1 DEC-083, OQ-2 DEC-015, OQ-3 DEC-084,
+OQ-4 DEC-088, OQ-5 DEC-087.
 
 - **OQ-1, a stored model the catalog has dropped.** The catalog can change
   between the topic write and a later creation (or a restart). Proposed:
@@ -109,7 +119,7 @@ Design decisions: DEC-082..DEC-089; DEC-015 adopted (no model on `default`).
   topic with no model carries the default. Existing conversations keep theirs
   after the topic changes. The `list` reply carries each id's topic.
 - VT (Emacs, ERT/smoke): the chooser shows topics, and `new` passes `--topic`.
-- VH: set a topic to `openai-david/gpt-6.1-terra` from Emacs, create a
+- VH: set a topic to `gateway/openai-david/gpt-6.1-terra` from Emacs, create a
   conversation in it from the chooser, and see it run on that model.
 
 ## Summary
@@ -130,3 +140,6 @@ chooser shows topics and creates conversations in a chosen topic.
 
 - CHR-004 (rename toolset to mode) would touch the same flags. Sequence it
   with this slice.
+
+- SL-009 sequencing: SL-010 lands first; SL-009 absorbs its creation seam and
+  listing changes (ISS-004).
