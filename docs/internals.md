@@ -245,20 +245,24 @@ check at start.
 
 **Operator rollout** (outside this repo):
 
-1. In `~/flakes`, set `MALEBOLGE_BOOKMARK_BACKUPS` for the malebolge daemon(s)
-   to the absolute path of Firefox's `bookmarkbackups` directory, e.g.
+1. The satan flake's launcher (`~/dev/satan/flake.nix`, `mkJailedMalebolge`)
+   takes an optional `bookmarkBackups` path: it sets
+   `MALEBOLGE_BOOKMARK_BACKUPS` to it inside the jail and binds exactly that
+   directory read-only — never the Firefox profile directory itself, which
+   holds history, `logins.json` and `key4.db`. The jail sets the daemon's
+   environment, so a systemd `Environment=` line would not reach it.
+2. In `~/flakes` (`features/satan/malebolge.nix`), pass `bookmarkBackups` the
+   absolute path of Firefox's `bookmarkbackups` directory, e.g.
    `/home/<user>/.config/mozilla/firefox/<profile>.default/bookmarkbackups`.
    The profile lives under `XDG_CONFIG_HOME` since a Home Manager update, and
    the path is configured, never discovered.
-2. In the satan flake (`~/dev/satan/flake.nix`, `mkJailedMalebolge`) add a
-   read-only bind of exactly that directory — never the Firefox profile
-   directory itself, which holds history, `logins.json` and `key4.db`.
-3. Rebuild and restart the daemon. Existing interactive conversations gain the
-   bookmark tools at that restart; startup logs each changed toolset list
-   (DEC-029(6)).
+3. `just home-switch` in `~/flakes`, then
+   `systemctl --user restart malebolge-room` (a switch never restarts it).
+   Existing interactive conversations gain the bookmark tools at that restart;
+   startup logs each changed toolset list (DEC-029(6)).
 4. Check: in an interactive conversation, ask for a bookmark. `bookmarks are
-   not configured` means step 1 did not reach the daemon; `unreadable` or
-   `no bookmark backup found` means the bind or the path is wrong.
+   not configured` means the path did not reach the launcher; `unreadable` or
+   `no bookmark backup found` means the path is wrong.
 
 ## Jail
 
