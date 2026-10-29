@@ -1,0 +1,33 @@
+schema = "doctrine.knowledge"
+version = 1
+
+id = 48
+slug = "the-mail-agent-never-sees-mail-text-jev-was-not-shown"
+title = "The mail agent never sees mail text Jev was not shown"
+record_kind = "decision"
+status = "accepted"
+created = "2026-10-29"
+updated = "2026-10-29"
+tags = []
+
+[facet]                         # every field typed; seeded empty (captured later)
+context = "Jev sees at most 16,384 bytes of body text shared across at most 10 bodies, a 512-byte subject, sender domains only, and at most 20 attachments (screwtape README classify_state). mail_read could return up to 32 KiB of body (READ_MAX_BYTES), all bodies, all attachment names and full display names. An attacker pads a message and puts the payload past Jev's window."
+choice = "Invariant: agent-visible mail text is a subset of what Jev was shown. Classify from an adapter read at a fixed --max-bytes 16384, one classify call per uncached batch, cache keyed by message id. Clamp the agent's view to Jev's window: READ_MAX_BYTES max 16384, at most the first 10 bodies, at most 20 attachments; anything beyond is cut and named in the item's cut list. One shared constant ties the windows; a test pins it. Fields Jev never sees or sees stripped (display names, URL paths, address local parts) are settled by inq-14."
+alternatives = ["Classify the tool's own read lines: classification varies with the caller's max_bytes and list/thread produce no read envelopes", "Show the agent classify_state output: exact, but PII stripping removes addresses, URL paths and long numbers", "Classify the tail in further synthetic read envelopes: forges screwtape's input format"]
+rationale = "Text classified only up to max_bytes loses if the agent can see more: attackers put the payload at the end. Clamping the agent to Jev's window is simple and checkable."
+consequences = ["DEC-026 bounds change at lock (READ_MAX_BYTES max)", "Very long mail is truncated for the agent; the operator reads the rest in Gnus", "Operator condition: mail tools fail loud if the calling context can reach the network (inq-15)"]
+decided_by = "operator"
+decided_on = "2026-10-29"
+
+[evidence]                      # free-text citations (supports / contradicts / notes)
+supports    = []
+contradicts = []
+notes       = []
+
+[relationships]                 # verb-written edges (set by doctrine supersede)
+supersedes    = []   # record ids this one replaces (set by doctrine supersede)
+superseded_by = []   # set on superseded predecessor (verb-written)
+
+[[relation]]
+label = "shapes"
+target = "SL-007"

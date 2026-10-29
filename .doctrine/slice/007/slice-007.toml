@@ -1,0 +1,49 @@
+id = 7
+slug = "classified-mail"
+title = "Classified mail: mail tools carry screwtape classify answers"
+status = "design"
+created = "2026-10-29"
+updated = "2026-10-29"
+tags = ["jev", "mail", "screwtape"]
+
+[relationships]
+needs = []                      # slice→work hard prerequisite
+after = []                      # slice→work soft sequence: { to, rank }
+
+[[selector]]
+selector = "src/mail/**"
+intent = "scope-relevant"
+
+[[selector]]
+selector = "test/mail/**"
+intent = "scope-relevant"
+
+[[relation]]
+label = "references"
+role = "originates_from"
+target = "IMP-022"
+
+[[relation]]
+label = "related"
+target = "RSK-002"
+
+[[relation]]
+label = "related"
+target = "SL-005"
+
+[[relation]]
+label = "related"
+target = "DEC-026"
+
+[[relation]]
+label = "related"
+target = "DEC-027"
+
+# STRUCTURAL relations are uniform `[[relation]]` rows, never a typed
+# `[relationships]` axis. Slices carry no typed STRUCTURAL
+# relation axes — the `[relationships]` table above holds only the dep/seq payload
+# (`needs`/`after`). Author a structural edge with the `doctrine link` verb
+# — it validates the (source, label) pair and resolves the target:
+#   doctrine link SL-NNN specs SPEC-NNN
+#   doctrine link SL-NNN governed_by ADR-NNN
+# `doctrine inspect SL-NNN` renders the inbound + outbound edges.

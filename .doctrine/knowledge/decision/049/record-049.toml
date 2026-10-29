@@ -1,0 +1,33 @@
+schema = "doctrine.knowledge"
+version = 1
+
+id = 49
+slug = "mail-tools-refuse-every-call-when-the-daemons-process-can-reach-the-network"
+title = "Mail tools refuse every call when the daemon's process can reach the network"
+record_kind = "decision"
+status = "accepted"
+created = "2026-10-29"
+updated = "2026-10-29"
+tags = []
+
+[facet]                         # every field typed; seeded empty (captured later)
+context = "Mail shows sender domains and URLs: exfiltration destinations. The mail agent's only tools are the five mail tools (mail toolset: mail-persona, conversation (prompt section only), mail); mail runs only on the room profile, whose satan jail is profile offline (--unshare-net). That posture rests on config in two repos with no runtime check."
+choice = "At daemon start the mail extension reads /sys/class/net once; anything other than lo means every mail tool call returns a fixed refusal naming the reason (malebolge: mail refused: this process can reach the network). A test pins that the mail toolset holds only non-egress tools. The same explicit-denial pattern applies to other mail preconditions (e.g. a missing Jev key, inq-4): tools stay installed and refuse each call with the reason, rather than being left uninstalled."
+alternatives = ["Build/test-time checks only (catalog guard, satan flake offline check): a misconfigured deployment runs silently", "Per-call outbound probe: slow, flaky, and itself an egress attempt"]
+rationale = "Fail loud where it matters; a process cannot leave its netns without privilege, so one check at start suffices. Explicit denial over silent absence."
+consequences = ["inq-4's 'no key -> mail not installed' becomes 'tools refuse each call with the reason'", "Provider- or gateway-side web tools are out of scope: the operator rules out ever giving the gateway egress"]
+decided_by = "operator"
+decided_on = "2026-10-29"
+
+[evidence]                      # free-text citations (supports / contradicts / notes)
+supports    = []
+contradicts = []
+notes       = []
+
+[relationships]                 # verb-written edges (set by doctrine supersede)
+supersedes    = []   # record ids this one replaces (set by doctrine supersede)
+superseded_by = []   # set on superseded predecessor (verb-written)
+
+[[relation]]
+label = "shapes"
+target = "SL-007"

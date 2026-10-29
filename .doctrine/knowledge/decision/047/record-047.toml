@@ -1,0 +1,33 @@
+schema = "doctrine.knowledge"
+version = 1
+
+id = 47
+slug = "mail-tools-that-return-mail-text-carry-classifications-via-a-classifyids-port-member"
+title = "Mail tools that return mail text carry classifications via a classify(ids) port member"
+record_kind = "decision"
+status = "accepted"
+created = "2026-10-29"
+updated = "2026-10-29"
+tags = []
+
+[facet]                         # every field typed; seeded empty (captured later)
+context = "SL-007 puts screwtape classify (Jev) answers in mail-mode conversations. Four tools return sender-written text: mail_new and mail_read (bodies), mail_list and mail_thread (subjects, previews). The quarantine pre-filter must cover every path mail text reaches the agent (framing audit gap G6)."
+choice = "mail_new, mail_read, mail_thread and mail_list carry classifications. MailSource gains one member, classify(ids), returning a result per id; readAfter and the other read members are unchanged. No new tool."
+alternatives = ["mail_new and mail_read only: list/thread previews unclassified, so the pre-filter must withhold all previews or leave them unfiltered", "readClassified wrapping each read: ties classification to each read's shape and max_bytes, breaking an id-only cache key"]
+rationale = "The safety objective applies wherever mail text appears. A separate member keeps read and classify decoupled so a cache can sit between them; classify prints its own envelope kind (research X-2), so it is not a readAfter swap. DEC-029's catalog is unchanged by this choice."
+consequences = ["DEC-026's port gains a member at lock", "inq-2 settles what classify reads", "inq-13 settles how the cache is populated"]
+decided_by = "operator"
+decided_on = "2026-10-29"
+
+[evidence]                      # free-text citations (supports / contradicts / notes)
+supports    = []
+contradicts = []
+notes       = []
+
+[relationships]                 # verb-written edges (set by doctrine supersede)
+supersedes    = []   # record ids this one replaces (set by doctrine supersede)
+superseded_by = []   # set on superseded predecessor (verb-written)
+
+[[relation]]
+label = "shapes"
+target = "SL-007"
