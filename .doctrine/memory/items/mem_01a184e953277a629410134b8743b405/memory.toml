@@ -1,0 +1,46 @@
+memory_uid = "mem_01a184e953277a629410134b8743b405"
+memory_key = "mem.fact.malebolge.vitest-coverage-concurrency"
+schema_version = 1
+memory_type = "fact"
+status = "active"
+title = "Concurrent vitest runs with coverage collide on coverage/.tmp"
+summary = "Two concurrent vitest runs with coverage collide on coverage/.tmp (ENOENT); run targeted tests with --coverage.enabled=false while another suite runs"
+created = "2026-10-28"
+updated = "2026-10-28"
+
+[scope]
+paths = ["vitest.config.ts"]
+globs = []
+commands = []
+tags = ["testing", "vitest"]
+workspace = "default"
+repo = "github.com/davidlee/Malebolge"
+repo_id_kind = "remote"
+repo_id_confidence = "high"
+
+[git]
+anchor_kind = "checkout_state"
+commit = ""
+tree = "0f4a9d4466051dfb02e565364119f44c7aafb8b8"
+ref_name = "refs/heads/main"
+checkout_state_id = "bea4e9920015162220598d2b2a1338e2e4014dbc6f17fcbc35aba2a6d237630f"
+base_commit = "5569843d81bc18efd1c6a29bbbc1fc76f5ab46b7"
+verified_sha = ""
+normalizer = "forget.checkout.v1"
+
+[review]
+verification_state = "unverified"
+reviewed = ""
+review_by = ""
+
+[trust]
+trust_level = "high"
+
+[ranking]
+severity = "medium"
+weight = 0
+
+[[source]]
+kind = "slice"
+ref = "SL-006"
+

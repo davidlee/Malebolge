@@ -231,23 +231,24 @@ Seat: /super-orchestrator (2026-10-29, operator asleep). Main worktree, no dispa
 
 ## Harvest
 <!-- single-copy: updated in place each harvest; ids only, never restated content -->
-fresh-as-of: 2026-10-29 · plan authored (not yet ready), pi review findings recorded · head 3efcd6c + this notes edit
+fresh-as-of: 2026-10-29 · audit (RV-018 concluded) · head 5569843 + audit fixes (uncommitted)
 
 ### Produced
-- RSK-002, RFC-003 (framing); `research/research.md`; EVD-002
-- DEC-031..DEC-046; amendments noted on DEC-034, DEC-035, DEC-036, DEC-040, DEC-042, DEC-044; DEC-015 refined
-- minted: CHR-004, IMP-019, IMP-020, IDE-003, IDE-004, RSK-003
-- `design.md` (13 sections, locked); RV-017 (design review, waived)
-- `plan.toml` / `plan.md` (8 phases), commit 3efcd6c; pi plan-review findings F1-F15 (§ Plan review pass)
+- PHASE-01..08 done — threads: start, fork, post, caps and reap, visibility (commits 415ee8b..cd6d53e); post-run 40461df (sender guidance), d7082b0 (Emacs reload)
+- RV-018 — reconciliation audit: 14 findings; fix-now F-11 (README `--list`), F-12 (IndexDocument guard recursive), F-13 (start/fork reap-other tests)
+- minted during the run: CHR-005 — wake notify body predates DEC-042
+- earlier: RSK-002, RFC-003, EVD-002, DEC-031..DEC-046, CHR-004, IMP-019, IMP-020, IDE-003, IDE-004, RSK-003; RV-017 (design review)
 
 ### Learned
 - EVD-002 — fork inside a tool call
-- `mem.fact.doctrine.design-section-order` — design.md orders sections by id as text; selector steps need an explicit discharge
+- `mem.fact.doctrine.design-section-order` — design.md orders sections by id as text
+- `mem.fact.malebolge.vitest-coverage-concurrency` — concurrent coverage runs collide
+- `mem.pattern.malebolge.source-scan-guards-recurse` — source-scan guards must recurse
 - `slice verify-vt` passes keyword-only on text already in the test file: titles must be genuinely new
 
 ### Open
-- plan review: pi F1-F15 undispositioned; then Sol (codex:ask) pass; then phases/ready
-- DEC-031 premise VT (PHASE-06), DEC-036 premise VTs (PHASE-04): first VTs of their phases
-- DEC-042 placement (PHASE-02 vs design's post phase): pi F14 contests it
+- RV-018 reconciliation brief — F-1..F-10 design and registry drift; DEC-040 amendment (F-8)
+- DEC-043 / IMP-020 — interrupted thread calls may duplicate
+- RSK-003 — a reaped family resumes through a wake
+- CHR-001 — no `just gate` recipe for `doctrine check gate`
 - RFC-003 OQ-1, OQ-2, OQ-4, OQ-7, OQ-8
-- doctrine tool: lexical sort of `sec-N` ids, no reorder verb; belongs in doctrine's backlog

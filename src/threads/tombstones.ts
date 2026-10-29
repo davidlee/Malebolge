@@ -16,7 +16,7 @@ export type ThreadsDoc = {
 /**
  * The tombstone document. Not exported: `threadsDoc` is the only accessor, so
  * nothing outside this module names the document (EX-1). Session scope, and one
- * checkpoint every 50 deltas, as `IndexDocument`.
+ * checkpoint every 50 deltas, as the topic index (`src/topics.ts`).
  */
 const ThreadsDocument = defineDoc<ThreadsDoc>({
   kind: "malebolge.threads",

@@ -2,7 +2,7 @@
 // posts per origin, and what admitting one more post does. Pure: every inspection is
 // a fake task built here, with no harness and no Tx.
 
-import type { ToolResultMessage } from "@earendil-works/pi-ai";
+import type { ToolCall, ToolResultMessage } from "@earendil-works/pi-ai";
 import {
   type FauxResponseFactory,
   fauxAssistantMessage,
@@ -23,6 +23,7 @@ import {
 import { describe, expect, it, vi } from "vitest";
 import { context } from "../src/context.ts";
 import { isRecord } from "../src/json.ts";
+import { DEFAULT_TOPIC } from "../src/protocol.ts";
 import { familiesOf, verdict } from "../src/threads/caps.ts";
 import { type Origin, originKey } from "../src/threads/origin.ts";
 import { afterReap, reapIn } from "../src/threads/reap.ts";
@@ -33,6 +34,7 @@ import {
   type PostState,
   postRequestId,
 } from "../src/threads/task.ts";
+import { readIndex } from "../src/topics.ts";
 import { WAKE_KIND } from "../src/wake/task.ts";
 import { textOf, toolResults } from "./harness-fixture.ts";
 import {
@@ -314,12 +316,12 @@ const transcriptOf = (request: Parameters<FauxResponseFactory>[0]): string =>
  * The shared faux queue's one answer, whatever order the conversations ask in: the
  * recipient's foreground run and any post turn are held (so every post's input stays
  * queued and its task live), a turn whose last message is a tool result or that carries
- * a `family-reaped` envelope answers plainly, and any other turn issues `count`
- * `thread_post` calls to `to` as one message. A later round's transcript already holds
+ * a `family-reaped` envelope answers plainly, and any other turn issues `calls` as one
+ * message. A later round's transcript already holds
  * an earlier round's tool result, so the check is on the newest message.
  */
 const round =
-  (to: ConversationId, count: number): FauxResponseFactory =>
+  (calls: readonly ToolCall[]): FauxResponseFactory =>
   (request, options, state, model) => {
     const transcript = transcriptOf(request);
     if (transcript.includes("foreground") || transcript.includes("<post from=")) {
@@ -328,13 +330,14 @@ const round =
     if (request.messages.at(-1)?.role === "toolResult" || transcript.includes("<family-reaped")) {
       return fauxAssistantMessage([fauxText("stopped")]);
     }
-    return fauxAssistantMessage(
-      Array.from({ length: count }, (_unused, index) =>
-        fauxToolCall("thread_post", { to, intent: INTENT }, { id: `call-${String(index + 1)}` }),
-      ),
-      { stopReason: "toolUse" },
-    );
+    return fauxAssistantMessage([...calls], { stopReason: "toolUse" });
   };
+
+/** `count` thread_post calls to `to`, as one message carries them. */
+const postCalls = (to: ConversationId, count: number): ToolCall[] =>
+  Array.from({ length: count }, (_unused, index) =>
+    fauxToolCall("thread_post", { to, intent: INTENT }, { id: `call-${String(index + 1)}` }),
+  );
 
 /** The reap's stage: a world, a caller indexed with the threads extension, and its recipient. */
 interface ReapStage {
@@ -358,9 +361,14 @@ function reapStage(): Promise<ReapStage> {
   return stageOver();
 }
 
-/** The scripted answers of a round of `count` calls: one factory, shared by every conversation. */
+/** The scripted answers of a round issuing `calls`: one factory, shared by every conversation. */
+const scriptCalls = (stage: ReapStage, calls: readonly ToolCall[]): void => {
+  stage.world.faux.setResponses(Array.from({ length: 12 }, () => round(calls)));
+};
+
+/** The scripted answers of a round of `count` thread_post calls to the recipient. */
 const scriptRound = (stage: ReapStage, count: number): void => {
-  stage.world.faux.setResponses(Array.from({ length: 12 }, () => round(stage.recipient.id, count)));
+  scriptCalls(stage, postCalls(stage.recipient.id, count));
 };
 
 /** Model turns a held run burns, one per reopen: each re-run of the placed turn is held again. */
@@ -798,6 +806,73 @@ function reapCommit(stage: ReapStage, origin: Origin, reason: string): Promise<b
     context,
   );
 }
+
+/**
+ * A start and a fork call: each creates a conversation and its first post in one commit.
+ * The stage's caller sits in topic `room`, which no record names, so the start names one.
+ */
+const CREATING_CALLS = [
+  [
+    "thread_start",
+    fauxToolCall("thread_start", { intent: INTENT, topic: DEFAULT_TOPIC }, { id: "call-1" }),
+  ],
+  ["thread_fork", fauxToolCall("thread_fork", { intent: INTENT }, { id: "call-1" })],
+] as const;
+
+/** The indexed conversations: a created child adds one, a rolled-back call none. */
+async function indexedCount(stage: ReapStage): Promise<number> {
+  return Object.keys((await readIndex(stage.session.harness)).conversations).length;
+}
+
+describe("thread_start and thread_fork under the global cap (design § Shared steps 4-5)", () => {
+  it.each(CREATING_CALLS)(
+    "%s at the global cap reaps the largest family in its creating commit",
+    async (_name, call) => {
+      const stage = await reapStage();
+      scriptCalls(stage, [call]);
+      await holdRecipient(stage);
+      const [old, middle, young] = await holdFamilies(stage);
+
+      expect(only(await runRound(stage)).isError).toBe(false);
+
+      // The call is admitted and the youngest tied family is reaped, as for a post.
+      const reaped = await reapedOrigins(stage.session.harness);
+      expect(Object.keys(reaped)).toEqual([originKey(young.origin)]);
+      expect(reaped[originKey(young.origin)]?.reason).toBe(GLOBAL_REASON);
+      for (const id of young.ids) {
+        expect(await postResult(stage.session.harness, id)).toEqual({ outcome: "reaped" });
+      }
+      const notice = only(await reapedNotices(stage.session.harness));
+      expect(notice.record.conversationId).toBe(young.origin.conversation);
+      expect(await statusesOf(stage, old)).toEqual(Array.from({ length: 4 }, () => "queued"));
+      expect(await statusesOf(stage, middle)).toEqual(Array.from({ length: 4 }, () => "queued"));
+    },
+  );
+
+  it.each(CREATING_CALLS)(
+    "%s whose creating commit throws after a reap-other verdict creates no conversation and reaps nobody",
+    async (_name, call) => {
+      const world = threadWorld();
+      const session = await world.open(failingPost(world));
+      const caller = await createIndexedThread(session.harness, "room");
+      const recipient = await createIndexedThread(session.harness, "research", []);
+      const stage: ReapStage = { world, session, caller, recipient };
+      scriptCalls(stage, [call]);
+      await holdRecipient(stage);
+      const families = await holdFamilies(stage);
+      const before = await indexedCount(stage);
+
+      expect(only(await runRound(stage)).isError).toBe(true);
+
+      expect(await indexedCount(stage)).toBe(before);
+      expect(await reapedOrigins(stage.session.harness)).toEqual({});
+      expect(await reapedNotices(stage.session.harness)).toEqual([]);
+      for (const family of families) {
+        expect(await statusesOf(stage, family)).toEqual(Array.from({ length: 4 }, () => "queued"));
+      }
+    },
+  );
+});
 
 describe("concurrent and crashed reaps", () => {
   it("two conversations of one family reaping at once create one tombstone and one notice", async () => {

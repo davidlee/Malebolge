@@ -139,7 +139,9 @@ node src/attach-main.ts --new              # a new one, in the daemon's cwd
 node src/attach-main.ts --new --cwd DIR    # a new one whose cwd is DIR
 ```
 
-`--list` prints ids only, one per line, on standard output, and exits 0. It
+`--list` prints one conversation per line on standard output, and exits 0.
+A line is the id, then for a thread a tab and how it began: `2484<TAB>started
+by 1` for one a conversation started, `2490<TAB>fork of 1` for a fork. It
 takes `--topic NAME` or `--here` to narrow it, and nothing else: `--list` with
 `--conversation`, `--new`, `--cwd` or `--emacs` is one usage line and exit 2,
 before any connection is made. A
@@ -151,7 +153,7 @@ attach client's ten seconds: a listing runs against a daemon already up.
 One page is **50 conversations**. When the store holds more, `--list` writes
 one line to standard error — `the listing was truncated: older conversations
 are not shown` — and the Emacs picker says the same in the minibuffer; standard
-output stays ids only, because it is the picker's candidate list. A cut page
+output stays the listing only, because it is the picker's candidate list. A cut page
 takes nothing away: an id you kept still attaches, and root is still reached by
 a plain attach or by `ROOT_CONVERSATION_ID`. The picker waits five seconds for
 the listing and then says so, rather than leaving the editor waiting silently.

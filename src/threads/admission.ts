@@ -14,7 +14,7 @@ import {
 import type { Profile } from "../config.ts";
 import { isRecord } from "../json.ts";
 import { type DaemonToolset, requireSameTalkSet } from "../toolsets.ts";
-import { type IndexDoc, IndexDocument, isKnownTopic, storedEntry } from "../topics.ts";
+import { type IndexDoc, isKnownTopic, readIndexDoc, storedEntry } from "../topics.ts";
 import { WAKE_KIND } from "../wake/task.ts";
 import { isEpisodeClass, isOrigin, type Origin } from "./origin.ts";
 import { POST_KIND } from "./task.ts";
@@ -120,7 +120,7 @@ export interface CallerAdmission extends PostAdmission {
  * turn has no input to take an origin from, is refused; so is a reaped origin.
  */
 export async function admitCaller(tx: Tx, caller: ConversationId): Promise<CallerAdmission> {
-  const index = await tx.doc(IndexDocument);
+  const index = await readIndexDoc(tx);
   const callerEntry = storedEntry(index, caller);
   if (callerEntry === undefined) {
     throw new Refusal("this conversation has no index entry");

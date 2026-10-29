@@ -309,7 +309,7 @@ it("merges the topic into an entry, keeping a key a later slice wrote", async ()
 
 it("keeps IndexDocument to src/topics.ts", () => {
   const dir = join(import.meta.dirname, "..", "src");
-  const naming = readdirSync(dir)
+  const naming = readdirSync(dir, { recursive: true, encoding: "utf8" })
     .filter((name) => name.endsWith(".ts") && name !== "topics.ts")
     .filter((name) => readFileSync(join(dir, name), "utf8").includes("IndexDocument"));
   expect(naming).toEqual([]);

@@ -1,0 +1,46 @@
+memory_uid = "mem_01a184e953447403a6f9f4ce074be716"
+memory_key = "mem.pattern.malebolge.source-scan-guards-recurse"
+schema_version = 1
+memory_type = "pattern"
+status = "active"
+title = "Source-scanning guard tests must read src/ recursively"
+summary = "A test that scans src/ for a forbidden name must read it recursively; a flat readdirSync missed src/threads/ and src/wake/"
+created = "2026-10-28"
+updated = "2026-10-28"
+
+[scope]
+paths = ["test/topics.test.ts", "test/structure.test.ts"]
+globs = []
+commands = []
+tags = ["testing", "structure"]
+workspace = "default"
+repo = "github.com/davidlee/Malebolge"
+repo_id_kind = "remote"
+repo_id_confidence = "high"
+
+[git]
+anchor_kind = "checkout_state"
+commit = ""
+tree = "0f4a9d4466051dfb02e565364119f44c7aafb8b8"
+ref_name = "refs/heads/main"
+checkout_state_id = "dd14c6f0166a6f198e049aa4b2d5b89e1c25800f2dfbf4b584e23d17d98e9eea"
+base_commit = "5569843d81bc18efd1c6a29bbbc1fc76f5ab46b7"
+verified_sha = ""
+normalizer = "forget.checkout.v1"
+
+[review]
+verification_state = "unverified"
+reviewed = ""
+review_by = ""
+
+[trust]
+trust_level = "high"
+
+[ranking]
+severity = "medium"
+weight = 0
+
+[[source]]
+kind = "review"
+ref = "RV-018"
+

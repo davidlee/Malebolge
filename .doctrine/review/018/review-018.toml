@@ -1,0 +1,448 @@
+id    = 18
+slug  = "reconciliation-review-of-sl-006"
+title = "reconciliation review of SL-006"
+# no status — a review's status is DERIVED from its findings, so
+# it is never stored (the storage rule forbids derived data in authored files).
+
+[review]
+facet     = "reconciliation"     # scope|design|plan|phase-plan|implementation|code-review|reconciliation
+raiser    = "auditor"
+responder = "implementer"
+rounds_base = 0
+contests_base = 0
+concluded = true
+
+[[review.turn]]
+act = "conclude"
+role = "raiser"
+note = """
+Conformance audit of SL-006 at 5569843 in the primary checkout, against design.md (locked), plan.toml PHASE-01..08, slice-006.md scope, DEC-031..DEC-046 and DEC-040's prompt-surface rule. Examined: `slice conformance 6` (22 undeclared, 0 undelivered); `slice verify-vt 6` (all VT pass); VH-1 record (operator, 2026-10-29); `just check` and `just ert` at HEAD and again after the audit's fixes (96 files / 3351 tests, lint 0, ERT 42/42); the threads module's import graph against the design's coupling rules; coverage of src/threads; every Autonomy-log item deferred to /audit or /reconcile; README and docs for the shipped operator surfaces. `doctrine check gate` is unconfigured (no `just gate`, CHR-001); `just check` stood in.
+"""
+
+[target]                   # the outbound `reviews` edge: RV-NNN ──reviews──▶ <ref>
+ref   = "SL-006"
+
+[[finding]]
+id = "F-1"
+status = "verified"
+severity = "minor"
+title = "Selector registry misses paths the slice legitimately touched"
+detail = """
+Expected: `doctrine slice conformance 6` reads clean for in-scope work.
+Observed: 22 undeclared, 0 undelivered. Undeclared source: src/task-support.ts (new), src/tool-results.ts (new), src/wake/task.ts, src/wake/tools.ts (helpers moved out). Undeclared tests: test/conversation-context, daemon-sections, daemon-start, daemon, harness-fixture.ts, late-binding (new), queue-premises (new), structure, task-sweep (new), wake-heartbeat, wake-task, wake-tools. Undeclared doctrine: .doctrine/slice/006/notes.md, DEC-031 and DEC-036 record.md (premise outcomes appended), CHR-005 (minted). All in scope; none is creep. The registry is what conformance reads (slice-006.toml), so the fix is `slice selector add`, mirrored in design § Code impact.
+"""
+disposition = "design-wrong"
+response = """
+Registry, not code. Brief § Per-slice: `doctrine slice selector add 6` design-target for the 4 undeclared src paths, the 12 undeclared test paths, `.doctrine/slice/006/**`, the DEC-031 and DEC-036 records and CHR-005; design § Code impact mirrors it (with F-2). Precedent: RV-016 F-6 (a blanket test/** design-target steals matches from the specific selectors; add specific paths).
+"""
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "design-wrong"
+response = """
+Registry, not code. Brief § Per-slice: `doctrine slice selector add 6` design-target for the 4 undeclared src paths, the 12 undeclared test paths, `.doctrine/slice/006/**`, the DEC-031 and DEC-036 records and CHR-005; design § Code impact mirrors it (with F-2). Precedent: RV-016 F-6 (a blanket test/** design-target steals matches from the specific selectors; add specific paths).
+"""
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+
+[[finding]]
+id = "F-2"
+status = "verified"
+severity = "minor"
+title = "Design § Code impact and § Components name a module layout the implementation split further"
+detail = """
+Expected (design § Code impact, § Components and boundaries): admission.ts holds Origin/originKey, familiesOf, verdict, caps and the reap; no new neutral modules besides late-binding.ts and task-sweep.ts; "Unchanged: src/wake/task.ts and src/wake/tools.ts".
+Observed: src/threads/origin.ts (Origin, originKey, isOrigin; breaks an admission<->tombstones cycle), src/threads/caps.ts (familiesOf, verdict), src/threads/reap.ts (reapIn, withdrawFamily, afterReap); admission.ts keeps the reads as admitCaller/admitPost/admitStart. New neutral src/task-support.ts (SATAN_CALL_DEADLINE_MS, scheduledKey, notifyBestEffort, reasonOf, moved from src/wake/task.ts) and src/tool-results.ts (answer/refusal, moved from src/wake/tools.ts); so wake/task.ts and wake/tools.ts changed (refactor only). topics.ts gains readIndexDoc(tx) (session.ts, conversations.ts use it). daemon-start's startWakes renamed startRoomTasks. Coupling rules hold: src/threads imports from src/wake only WAKE_KIND and EpisodeClass (admission.ts:18, origin.ts:7). Notes § Autonomy log PHASE-04..07.
+"""
+disposition = "design-wrong"
+response = """
+The split is sound: it breaks an import cycle (origin.ts), keeps admission to reads (caps.ts pure, reap.ts writes), and removes copies wake and threads would otherwise hold (task-support.ts, tool-results.ts). Coupling rules still hold. Reconcile design § Code impact and § Components (diagram, responsibilities, the "Unchanged" line) to the shipped layout.
+"""
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "design-wrong"
+response = """
+The split is sound: it breaks an import cycle (origin.ts), keeps admission to reads (caps.ts pure, reap.ts writes), and removes copies wake and threads would otherwise hold (task-support.ts, tool-results.ts). Coupling rules still hold. Reconcile design § Code impact and § Components (diagram, responsibilities, the "Unchanged" line) to the shipped layout.
+"""
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+
+[[finding]]
+id = "F-3"
+status = "verified"
+severity = "minor"
+title = "postRequestId is post:<id>: (delimiter-terminated); design says post:<id>"
+detail = """
+Expected (design § The satan.post task, input/entry/result; sequence diagram; § The reap step naming post:<familyTaskId>): postRequestId(44) = "post:44".
+Observed: src/threads/task.ts:84 returns `post:${id}:`. Deliberate (plan review S4): "post:44" is a prefix of "post:440", and SweptKind matches by prefix as wake's `wake:<id>:` does. PHASE-04 VT-8 pins the collision regression. Design text is wrong, not the code.
+"""
+disposition = "design-wrong"
+response = """
+Code is right (prefix collision, pinned by PHASE-04 VT-8). Reconcile design § The satan.post task (postRequestId), the delivery sequence diagram, and § The reap step text to `post:<id>:`.
+"""
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "design-wrong"
+response = """
+Code is right (prefix collision, pinned by PHASE-04 VT-8). Reconcile design § The satan.post task (postRequestId), the delivery sequence diagram, and § The reap step text to `post:<id>:`.
+"""
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+
+[[finding]]
+id = "F-4"
+status = "verified"
+severity = "nit"
+title = "SweptKind gains a journal noun the design's interface omits"
+detail = """
+Expected (design § Components, src/task-sweep.ts block): SweptKind { kind, requestPrefix, report }.
+Observed: SweptKind also has `noun` (the journal name, e.g. `wake N blocked ...`), needed to keep wake's existing journal lines byte-identical (plan F2; notes Autonomy log PHASE-01).
+"""
+disposition = "design-wrong"
+response = """
+Reconcile design § Components' SweptKind block: add `noun`.
+"""
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "design-wrong"
+response = """
+Reconcile design § Components' SweptKind block: add `noun`.
+"""
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+
+[[finding]]
+id = "F-5"
+status = "verified"
+severity = "nit"
+title = "requireSameTalkSet takes a target label; design signature has none"
+detail = """
+Expected (design § Talk sets and the catalog, line ~210): requireSameTalkSet(profile, caller, target).
+Observed: requireSameTalkSet(profile, caller, target, targetLabel) so refusals read `conversation 13` / `topic inbox` as the design's own refusal texts require (plan F13; notes Autonomy log PHASE-01).
+"""
+disposition = "design-wrong"
+response = """
+Reconcile design § Talk sets' requireSameTalkSet signature: add `targetLabel`.
+"""
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "design-wrong"
+response = """
+Reconcile design § Talk sets' requireSameTalkSet signature: add `targetLabel`.
+"""
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+
+[[finding]]
+id = "F-6"
+status = "verified"
+severity = "minor"
+title = "Admission refuses a reaped origin before target and talk-set checks; design orders talk set first"
+detail = """
+Expected (design § The thread tools, Shared steps): 1 read caller, 2 requireSameTalkSet on the target, 3 refuse a tombstoned origin, 4 verdict, 5 commit.
+Observed: admitCaller (src/threads/admission.ts:122-135) reads the caller, origin and tombstone first; target resolution and talk set follow in admitPost/admitStart. A reaped caller targeting an out-of-set conversation reads the reaped refusal, not the talk-set one. Either order refuses; the implemented one is simpler (one caller read shared by all three tools). Design text should state it.
+"""
+disposition = "design-wrong"
+response = """
+Implemented order is the better one (one caller read for all three tools; a reaped origin is refused cheaply, before resolving anything). Reconcile design § Shared steps: step order 1 caller + origin + tombstone, 2 target + talk set, 3 verdict, 4 commit; the in-commit re-read unchanged.
+"""
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "design-wrong"
+response = """
+Implemented order is the better one (one caller read for all three tools; a reaped origin is refused cheaply, before resolving anything). Reconcile design § Shared steps: step order 1 caller + origin + tombstone, 2 target + talk set, 3 verdict, 4 commit; the in-commit re-read unchanged.
+"""
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+
+[[finding]]
+id = "F-7"
+status = "verified"
+severity = "minor"
+title = "Texts the design left open are now fixed in code but not in the design"
+detail = """
+Expected: design § The thread tools / § The satan.post task / § Operator visibility name every refusal, notify title and journal line the operator or model reads.
+Observed (notes Autonomy log PHASE-04..07), texts settled in code with no design home: refusals `no conversation N`, `conversation N is not in a topic (a task's conversation)`, `this conversation has no index entry`; reap-own refusal `origin K was reaped for fan-out: <reason>; posts and thread starts from it are refused` (design gives only the reason-less form); notify titles `SATAN thread notice failed`, `SATAN post blocked`; blocked report lines `post N failed: blocked (<reason>) origin K` / `notice N to C failed: blocked (<reason>) origin K`; abort reasons `aborted`, `not admitted`, `aborted while placed`; index invariant `conversation N: fork of P, which has no toolset`; thread_fork description's `…` filled.
+"""
+disposition = "design-wrong"
+response = """
+Reconcile: add the settled texts to the design where each surface lives (§ The thread tools refusals; § Blocked post tasks and § Abort by the operator; § Operator visibility journal and notification; § A fork carries its parent's toolset for the invariant; § Tool descriptions for thread_fork). Code is the source; tests pin each text.
+"""
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "design-wrong"
+response = """
+Reconcile: add the settled texts to the design where each surface lives (§ The thread tools refusals; § Blocked post tasks and § Abort by the operator; § Operator visibility journal and notification; § A fork carries its parent's toolset for the invariant; § Tool descriptions for thread_fork). Code is the source; tests pin each text.
+"""
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+
+[[finding]]
+id = "F-8"
+status = "verified"
+severity = "minor"
+title = "Prompt surface carries user-directed sender advice the design's text and 'facts only' framing omit"
+detail = """
+Expected (design § Prompt surface: tool descriptions and THREADS_SECTION state facts only).
+Observed (commit 40461df, after VH-1): THREADS_SECTION paragraph 1 gains "a thread answers only by posting; ask for a thread_post reply, don't forbid tools"; thread_start and thread_fork descriptions gain "It answers only by thread_post to you; ask for that if you want a reply." Operator-directed after VH-1 showed a thread briefed "do not use tools" with no way to answer. Tests re-pinned (threads-tools, threads-fork). Design text and framing need updating.
+"""
+disposition = "design-wrong"
+response = """
+Operator-directed (VH-1, 2026-10-29). Reconcile design § Prompt surface: quote the new THREADS_SECTION paragraph and the two description sentences, and amend the framing from "facts only" to "facts, plus how a reply comes back". DEC-040 governs the prompt surface; a decision note on DEC-040 records the change (governance surface).
+"""
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "design-wrong"
+response = """
+Operator-directed (VH-1, 2026-10-29). Reconcile design § Prompt surface: quote the new THREADS_SECTION paragraph and the two description sentences, and amend the framing from "facts only" to "facts, plus how a reply comes back". DEC-040 governs the prompt surface; a decision note on DEC-040 records the change (governance surface).
+"""
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+
+[[finding]]
+id = "F-9"
+status = "verified"
+severity = "nit"
+title = "Transcript-line details settled in PHASE-08 differ from the design table"
+detail = """
+Expected (design § Operator visibility, Transcript lines; Emacs: only the post header is a speaker label).
+Observed: post-failed and family-reaped lines carry the header only; a post's body is intent then context, one per line; all share one inputLine (`[kind] header`, then body). Emacs: `[wake] scheduled by ...` is also a speaker label in malebolge-user-face so a wake's intent is not coloured as SATAN's turn; `malebolge--label-face` is a first-match loop; `malebolge--font-lock-keywords` is a defconst (d7082b0, reload fix).
+"""
+disposition = "design-wrong"
+response = """
+Reconcile design § Transcript lines and the Emacs paragraph of § Operator visibility to the shipped shapes and faces.
+"""
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "design-wrong"
+response = """
+Reconcile design § Transcript lines and the Emacs paragraph of § Operator visibility to the shipped shapes and faces.
+"""
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+
+[[finding]]
+id = "F-10"
+status = "verified"
+severity = "nit"
+title = "DEC-042's wake test rewrites landed in the premises phase, not 'the post phase' the design names"
+detail = """
+Expected (design § Verification, Existing tests affected, ~line 1068; early-test table 1060-1061): the behindFailure rewrites and premise tests (b)/(c) are in "the post phase".
+Observed: plan F14 ruling placed premises (b)/(c) and DEC-042 with its rewrites in PHASE-03, immediately before the post-task phase (test/queue-premises.test.ts; wake-wait VT-3g/h/i; wake-heartbeat). Same gate, same order relative to post code.
+"""
+disposition = "design-wrong"
+response = """
+Reconcile design § Verification (early-test table, Existing tests affected): "post phase" -> "the premises phase (PHASE-03), before the post task". Plan unchanged.
+"""
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "design-wrong"
+response = """
+Reconcile design § Verification (early-test table, Existing tests affected): "post phase" -> "the premises phase (PHASE-03), before the post task". Plan unchanged.
+"""
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+
+[[finding]]
+id = "F-11"
+status = "verified"
+severity = "minor"
+title = "README says --list prints ids only; list lines now carry thread marks"
+detail = """
+Expected: README describes the shipped --list output.
+Observed: README.md:142 "`--list` prints ids only, one per line" and :154 "standard output stays ids only, because it is the picker's candidate list". Since PHASE-08 (cd6d53e) a thread's line is `<id><TAB>started by N` or `<id><TAB>fork of N` (design § --list marks threads). Deferred to audit in notes (post-run / docs).
+"""
+disposition = "fix-now"
+response = """
+Fixed in the audit: README.md § --list now describes the marked lines (`<id><TAB>started by N` / `<id><TAB>fork of N`), and "stays ids only" reads "stays the listing only".
+"""
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+response = """
+Fixed in the audit: README.md § --list now describes the marked lines (`<id><TAB>started by N` / `<id><TAB>fork of N`), and "stays ids only" reads "stays the listing only".
+"""
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "just check green after the fix: 96 files / 3351 tests, lint 0 warnings; tools.ts 167/235 covered."
+
+[[finding]]
+id = "F-12"
+status = "verified"
+severity = "minor"
+title = "src/threads/admission.ts names IndexDocument; the ownership test misses subdirectories"
+detail = """
+Expected (design § Components: "src/topics.ts stays the index's only owner"; src/topics.ts:3 "nothing else names IndexDocument"; test/topics.test.ts:310 "keeps IndexDocument to src/topics.ts").
+Observed: src/threads/admission.ts:17,123 imports and reads `tx.doc(IndexDocument)` although topics.ts exports readIndexDoc(tx) for exactly this. The test uses a non-recursive readdirSync(src), so it never reads src/threads/ or src/wake/ and passes.
+"""
+disposition = "fix-now"
+response = """
+Fixed in the audit, red then green: test/topics.test.ts "keeps IndexDocument to src/topics.ts" now reads src recursively (red: threads/admission.ts, threads/tombstones.ts). admission.ts reads through readIndexDoc(tx); tombstones.ts's comment no longer names the document.
+"""
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+response = """
+Fixed in the audit, red then green: test/topics.test.ts "keeps IndexDocument to src/topics.ts" now reads src recursively (red: threads/admission.ts, threads/tombstones.ts). admission.ts reads through readIndexDoc(tx); tombstones.ts's comment no longer names the document.
+"""
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "just check green after the fix: 96 files / 3351 tests, lint 0 warnings; tools.ts 167/235 covered."
+
+[[finding]]
+id = "F-13"
+status = "verified"
+severity = "major"
+title = "thread_start and thread_fork never run their reap-other path under test"
+detail = """
+Expected (design § The thread tools, Shared steps 4-5; § Verification: "the global cap reaps the largest family"): every thread tool admits under the caps, and a reap-other verdict writes the tombstone and notice in the call's own creating commit.
+Observed: coverage at HEAD (`just check`): src/threads/tools.ts lines 167 and 235 (the `await reapIn(...)` inside thread_start's and thread_fork's creating commits) are never executed. All cap and reap tests in test/threads-caps.test.ts drive thread_post only. The shared `decided` path covers reap-own for all tools, but reap-other in start/fork (a reap written beside createConversation / forkConversation, and rolled back with it) has no test.
+"""
+disposition = "fix-now"
+response = """
+Fixed in the audit: test/threads-caps.test.ts gains, for thread_start and thread_fork each, "at the global cap reaps the largest family in its creating commit" and "whose creating commit throws after a reap-other verdict creates no conversation and reaps nobody". `round` now takes the tool calls (postCalls keeps the post rounds). Mutation check: replacing the reapIn in tools.ts's start and fork commits with `false` fails both new reap tests (and the two post ones); restored. No product change.
+"""
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+response = """
+Fixed in the audit: test/threads-caps.test.ts gains, for thread_start and thread_fork each, "at the global cap reaps the largest family in its creating commit" and "whose creating commit throws after a reap-other verdict creates no conversation and reaps nobody". `round` now takes the tool calls (postCalls keeps the post rounds). Mutation check: replacing the reapIn in tools.ts's start and fork commits with `false` fails both new reap tests (and the two post ones); restored. No product change.
+"""
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "just check green after the fix: 96 files / 3351 tests, lint 0 warnings; tools.ts 167/235 covered."
+
+[[finding]]
+id = "F-14"
+status = "verified"
+severity = "nit"
+title = "Defensive and race branches in the threads module are uncovered"
+detail = """
+Observed uncovered at HEAD: src/threads/task.ts 64 (isPostInput non-record), 295-296 (abort handler finds the post delivered), 333 (abort: submission not admitted), 383 (blocked report on a non-post input); src/threads/tools.ts 206, 210 (soleCall guards: not an assistant entry / no assistant message), 311 (reap-own commit finds the family already reaped by another conversation); src/threads/admission.ts 126 (caller without index entry). Notes deferred 295-296 and 311 to audit.
+"""
+disposition = "tolerated"
+response = """
+Rationale: each branch guards a state the slice's invariants exclude or a narrow race, and its consequence is pinned elsewhere. task.ts 64/383 and tools.ts 206/210 are type guards on records only this module writes; admission.ts 126 needs a caller with no index entry, which the hook makes impossible for an ownerless conversation and the extension never runs on a task-owned one. task.ts 295-296 and 333 need an operator abort racing a delivered or never-admitted submission; both commit a fixed state with no notice. tools.ts 311 maps reapIn's false (another conversation reaped first) to the reason-less refusal; reapIn's false return is pinned by "two conversations of one family reaping at once create one tombstone and one notice", and the refusal text by the in-commit refusal test. A seam to interleave them costs more than the two-line branches it would cover.
+"""
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "tolerated"
+response = """
+Rationale: each branch guards a state the slice's invariants exclude or a narrow race, and its consequence is pinned elsewhere. task.ts 64/383 and tools.ts 206/210 are type guards on records only this module writes; admission.ts 126 needs a caller with no index entry, which the hook makes impossible for an ownerless conversation and the extension never runs on a task-owned one. task.ts 295-296 and 333 need an operator abort racing a delivered or never-admitted submission; both commit a fixed state with no notice. tools.ts 311 maps reapIn's false (another conversation reaped first) to the reason-less refusal; reapIn's false return is pinned by "two conversations of one family reaping at once create one tombstone and one notice", and the refusal text by the in-commit refusal test. A seam to interleave them costs more than the two-line branches it would cover.
+"""
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+
+# Findings are append-only `[[finding]]` tables, added by `review raise`.
+# Empty here at creation — a fresh review is Active, awaiting the raiser.
