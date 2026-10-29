@@ -1,0 +1,33 @@
+schema = "doctrine.knowledge"
+version = 1
+
+id = 92
+slug = "a-bridge-topic-may-carry-a-model-pair-creates-its-conversation-through-topicinit"
+title = "A bridge topic may carry a model; pair creates its conversation through topicInit"
+record_kind = "decision"
+status = "accepted"
+created = "2026-10-29"
+updated = "2026-10-29"
+tags = []
+
+[facet]                         # every field typed; seeded empty (captured later)
+context = "SL-010 (DEC-083..086) gives every topic an optional model, applied at creation through topicInit; <project>-bridge topics match the topic name rule and appear in malebolge-set-topic-model's completion. ISS-004 M-15, M-18."
+choice = "Intended. pair creates the bridged conversation through topicInit, so a bridge topic's stored model, else the daemon default, becomes SATAN's model for that project. A stored model the catalog lacks refuses pair with refused {reason: unknown model <ref>} and nothing is created (DEC-083); the extension reports it like any other pair refusal."
+alternatives = ["Bridge topics carry no model: exclude them from set-topic-model and its completion"]
+rationale = "No code beyond the shared seam; a per-project SATAN model is a reasonable operator choice; exclusion would add a special case."
+consequences = ["SL-009 sec-3 pair step 2 names topicInit; sec-9 pins the unknown-model refusal"]
+decided_by = "user (accepted agent proposal, 2026-10-29)"
+decided_on = "2026-10-29"
+
+[evidence]                      # free-text citations (supports / contradicts / notes)
+supports    = []
+contradicts = []
+notes       = []
+
+[relationships]                 # verb-written edges (set by doctrine supersede)
+supersedes    = []   # record ids this one replaces (set by doctrine supersede)
+superseded_by = []   # set on superseded predecessor (verb-written)
+
+[[relation]]
+label = "shapes"
+target = "SL-009"

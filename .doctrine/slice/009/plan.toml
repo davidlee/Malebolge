@@ -1,0 +1,265 @@
+# Implementation plan for SL-009 — the authored, durable phase plan.
+#
+# This is the single source of each phase's objective, criteria, verification,
+# and links. Runtime status lives separately under .doctrine/state/ (phase
+# tracking) — never record progress here. Hand-edit freely: the tool reads this
+# file but does not rewrite it.
+schema  = "doctrine.plan.overview"
+version = 1
+slice   = "SL-009"
+
+# Canonical spec/requirement links — cite ids, never restate what they say. The
+# plan reader does not model these yet, so nothing downstream consumes them.
+[specs]
+primary       = []
+collaborators = []
+
+[requirements]
+targets      = []
+dependencies = []
+
+# One # ---------------------------------------------------------------------------
+[[phase]]
+id        = "PHASE-01"
+name      = "Real-pi probes: ASM-004..008 and the RV-021 probe routes"
+objective = "Settle the premises the pi side rests on before any bridge code is written, against real pi and a real pi jail, with a throwaway stub extension kept out of the shipped tree. Each probe's outcome validates or invalidates its ASM; an invalidated premise stops the slice at /consult (design revision), not a workaround. ASM-006 is daemon-side and becomes a standing premise test."
+entrance_criteria = [
+  { id = "EN-1", text = "Design SL-009 locked (run dr-01a185c0…, rev 55); RV-021 concluded; `just check` green on main." },
+  { id = "EN-2", text = "A real pi build (~/.local/src/pi) and a pi jail from ~/flakes/agents/jailed-agents.nix are runnable by the operator. SL-010 need not have landed: this phase touches no src/ code." },
+]
+exit_criteria = [
+  { id = "EX-1", text = "ASM-004 (narrowed by DEC-090 to the idle paths the extension uses: sendMessage with triggerTurn true and false while ctx.isIdle()): the custom entry and its details are in ctx.sessionManager entries when sendMessage returns, or at the latest by the consuming turn_end. Outcome recorded on ASM-004 (validated or invalidated)." },
+  { id = "EX-2", text = "ASM-005: notify-send run inside a pi jail shows a desktop notification, or fails; either outcome recorded on ASM-005. Failure is acceptable (the loud floor is ctx.ui.notify and stderr, DEC-073) and, if the operator wants the bus, becomes a CHR-007 item, not SL-009 work." },
+  { id = "EX-3", text = "ASM-007: a stub at the jail home's ~/.pi/agent/extensions/<stub>/index.ts with no node_modules imports typebox and registers a TypeBox-schema tool inside a pi jail. Outcome recorded on ASM-007." },
+  { id = "EX-4", text = "ASM-008 and RV-021 F-6 (probe): a createBashTool spawnHook sets a variable and prepends the stub's directory to PATH; a bash call in the jailed pi sees the variable and runs a bare executable from that directory from another cwd; the replaced bash tool keeps the built-in's behaviour. Outcome recorded on ASM-008." },
+  { id = "EX-5", text = "RV-021 F-1 (probe): in real pi, ctx.isIdle() is false in the window between a run's start and agent_start (e.g. delayed by a before_agent_start handler); a stub delivery in that window is held by the stub's buffer, not queued in pi; Esc then settle shows aborted=true. Recorded in notes.md § Probes with the pi commit probed." },
+  { id = "EX-6", text = "RV-021 F-9 (probe): with a retryable model error (forced via a fault-injecting provider or a gateway error), agent_end fires before agent_settled and pi continues; agent_settled fires once, last, with aborted false. Recorded in notes.md § Probes." },
+  { id = "EX-7", text = "DEC-090/DEC-079 abort probe (design sec-9 'abort probe'): busy delivery, Esc, settle against real pi with the stub's buffer-and-flush: the message appears once, as a note. Recorded in notes.md § Probes." },
+  { id = "EX-8", text = "ASM-006 as a standing premise test: an idle pi-durable conversation given a `write` with model content starts no run, and the next input's run sees the entry. ASM-006 updated from the result." },
+  { id = "EX-9", text = "No stub code under src/ or pi-bridge/; the stub lives in the scratchpad or notes and is described in notes.md § Probes well enough to rerun. Any invalidated ASM has stopped the slice at /consult." },
+]
+verification = [
+  { id = "VT-1", expects = "ASM-006: a write with model content on an idle conversation starts no run; the next input's run sees it", test_file = "test/queue-premises.test.ts", keywords = ["ASM-006", "write"], waived = false },
+  { id = "VA-1", text = "Agent runs the non-jail probes (EX-1, EX-5, EX-6, EX-7) against real pi, records each outcome with the pi commit in notes.md § Probes and on the ASM records via `doctrine knowledge`; RV-021 F-1 and F-9 probe evidence cited there." },
+  { id = "VH-1", text = "Operator runs the in-jail probes (EX-2 notify-send, EX-3 typebox stub, EX-4 spawnHook env and PATH; RV-021 F-6) in a real pi jail and reports each outcome." },
+]
+specs        = []
+requirements = []
+
+# ---------------------------------------------------------------------------
+[[phase]]
+id        = "PHASE-02"
+name      = "Daemon-side extractions on SL-010's seam: servePrivateUnix, connection-reply, endingOf, topicInit hook split"
+objective = "Behaviour-preserving moves the bridge reuses (design sec-1 reuse list, sec-8): servePrivateUnix beside serveUnix with runner control using it; answer/write/finish/fail to src/connection-reply.ts with answer generic over its reply; endingOf to src/submission-ending.ts; topicInit's thread? parameter split into optional require and startedBy; the src/conversations.ts header comment narrowed per DEC-093. No bridge behaviour."
+entrance_criteria = [
+  { id = "EN-1", text = "PHASE-01 completed with every ASM validated (or the design revised through /consult)." },
+  { id = "EN-2", text = "SL-010 implemented and on main: topicInit, ModelCatalog, ModelsMessage and Connection.modelRefs exist in src/ (its DEC-083..089). Re-grep each before starting; if any is renamed, reconcile design sec-3/sec-8 first." },
+]
+exit_criteria = [
+  { id = "EX-1", text = "src/unix-socket.ts exports servePrivateUnix: creates the socket's directory 0700, refuses a directory with another owner or a wider mode, serves through serveUnix, chmods the socket 0600. src/runner/control.ts uses it; its tests pass unchanged." },
+  { id = "EX-2", text = "src/connection-reply.ts holds answer (generic over its reply type; the daemon's union includes SL-010's ModelsMessage), write, finish, fail, moved from src/daemon.ts. Connection and Connection.modelRefs stay in src/daemon.ts. Daemon tests pass unchanged." },
+  { id = "EX-3", text = "src/submission-ending.ts exports endingOf; src/threads/task.ts imports it; thread tests pass unchanged." },
+  { id = "EX-4", text = "topicInit's last parameter becomes an optional {require?, startedBy?}; thread_start passes both; behaviour unchanged. The src/conversations.ts header says no attach frame creates a topic implicitly (DEC-016), citing DEC-093 for pair." },
+  { id = "EX-5", text = "`just check` green." },
+]
+verification = [
+  { id = "VT-1", expects = "servePrivateUnix refuses a directory owned by another uid or with group/other bits, and leaves the socket 0600", test_file = "test/unix-socket.test.ts", keywords = ["servePrivateUnix", "0o700", "0o600"], waived = false },
+  { id = "VT-2", expects = "topicInit with only require refuses a mismatched toolset inside the creating commit and creates nothing; with neither, creates as before", test_file = "test/conversations.test.ts", keywords = ["topicInit", "require"], waived = false },
+  { id = "VA-1", text = "`git diff` of test/daemon.test.ts, test/threads-*.test.ts and test/runner/ shows only import-path changes (EX-2, EX-3)." },
+]
+specs        = []
+requirements = []
+
+# ---------------------------------------------------------------------------
+[[phase]]
+id        = "PHASE-03"
+name      = "pi-bridge/ in the gate; the wire module; the socket path rule"
+objective = "Bring pi-bridge/ under typecheck, lint, format and coverage, with the structure rule that it imports nothing from src/; author pi-bridge/wire.ts (frame types, pure parser, bridgeSocketPath, capHeadTail, capUtf8 moved from src/truncate.ts and re-exported there) and the daemon's path rule (config bridgeSocket, bridge variant of inProfileDir). Design sec-2, sec-4 'Framing and caps', sec-8; RV-021 F-7."
+entrance_criteria = [
+  { id = "EN-1", text = "PHASE-02 completed." },
+]
+exit_criteria = [
+  { id = "EX-1", text = "tsconfig.json includes pi-bridge; vitest coverage includes pi-bridge/**/*.ts; eslint and biome cover pi-bridge/; @earendil-works/pi-coding-agent is a dev dependency only (types and tests; the jail loads pi's own, ASM-007)." },
+  { id = "EX-2", text = "test/structure.test.ts rejects a pi-bridge/ module importing from src/, with a negative case; src/bridge/ may import pi-bridge/wire.ts." },
+  { id = "EX-3", text = "pi-bridge/wire.ts: frame unions for the three first lines, the four bound client frames and the daemon frames (paired, accepted, refused, deliver) per design sec-2's tables; a pure parser refusing an unknown type, a missing or ill-typed key, and an attach verb, each as `refused {reason}` text; BRIDGE_BODY_MAX_BYTES (32 KiB), a line cap above it, BRIDGE_POST_WAIT_MS." },
+  { id = "EX-4", text = "capHeadTail(text, maxBytes) keeps head and tail on character boundaries and inserts `[… <n> bytes cut …]`; capUtf8 lives beside it and src/truncate.ts re-exports it so daemon callers are unchanged." },
+  { id = "EX-5", text = "bridgeSocketPath(env): MALEBOLGE_BRIDGE_SOCKET, else $XDG_RUNTIME_DIR/satan/durable/room/bridge/bridge.sock. The room Config carries bridgeSocket from it; the host Config has none; inProfileDir's bridge variant requires grandparent = profile and parent = bridge." },
+  { id = "EX-6", text = "`just check` green, coverage including pi-bridge/." },
+]
+verification = [
+  { id = "VT-1", expects = "parser: each frame round-trips; unknown type, wrong key type and an attach verb are refused with reason text", test_file = "test/pi-bridge-wire.test.ts", keywords = ["parseFrame", "refused", "attach"], waived = false },
+  { id = "VT-2", expects = "capHeadTail keeps head and tail, never splits a code point, states the cut", test_file = "test/pi-bridge-wire.test.ts", keywords = ["capHeadTail", "bytes cut"], waived = false },
+  { id = "VT-3", expects = "bridge path rule: env override, XDG default, profile/bridge directory check; host config has no bridge socket", test_file = "test/config.test.ts", keywords = ["bridgeSocket", "MALEBOLGE_BRIDGE_SOCKET"], waived = false },
+  { id = "VT-4", expects = "structure rule rejects pi-bridge importing src/", test_file = "test/structure.test.ts", keywords = ["pi-bridge/"], waived = false },
+]
+specs        = []
+requirements = []
+
+# ---------------------------------------------------------------------------
+[[phase]]
+id        = "PHASE-04"
+name      = "Bridge mode and wake reach"
+objective = "The `bridge` toolset, its persona case and the wake talk-set check (design sec-6; DEC-071, DEC-076). The bridge extension itself is registered later; this phase lands the catalog with the `bridge` entry pointing at the extension name PHASE-06 registers."
+entrance_criteria = [
+  { id = "EN-1", text = "PHASE-03 completed." },
+]
+exit_criteria = [
+  { id = "EX-1", text = "Toolset gains \"bridge\"; CATALOG.bridge is interactive's list without threads, with bridge before SATAN; PROFILE_TOOLSETS.room.allowed gains bridge, host does not; TALK_SETS gives it no set." },
+  { id = "EX-2", text = "src/persona.ts: bridge shares interactive's case; requirePersonaFiles covers it with no new corpus file." },
+  { id = "EX-3", text = "wakeSchedule: a target other than the caller requires requireSameTalkSet over both stored toolsets; a throw becomes the tool's refusal naming the target topic; self-wake skips it; a caller or target with no index entry is refused. WakeDeps gains profile through EarlyWakeDeps, bound in daemon-start. src/wake/ imports nothing from src/threads/." },
+  { id = "EX-4", text = "`just check` green." },
+]
+verification = [
+  { id = "VT-1", expects = "bridge catalog lacks threads, has bridge before SATAN; not allowed on host; in no talk set", test_file = "test/toolsets.test.ts", keywords = ["bridge", "TALK_SETS"], waived = false },
+  { id = "VT-2", expects = "wake reach: bridge → other refused, self-wake allowed, interactive → mail refused, missing index entry refused", test_file = "test/wake-tools.test.ts", keywords = ["requireSameTalkSet", "self-wake", "bridge"], waived = false },
+]
+specs        = []
+requirements = []
+
+# ---------------------------------------------------------------------------
+[[phase]]
+id        = "PHASE-05"
+name      = "Pairing: the document, its pure rules, the listener's pair / resume / end"
+objective = "src/bridge/pairing.ts (PairingDoc and pure rules checkToken, appendOutbox, ackEntry, admitTurn, refill) and src/bridge/listener.ts serving bridge.sock through servePrivateUnix in the room profile, with BRIDGE_FIRST_LINE and BRIDGE_BOUND tables, pair through setTopic then topicInit (DEC-065, DEC-092, DEC-093), resume, end, newest-connection-wins, and refusal of every unnamed frame. Messages flow in PHASE-06/07: BRIDGE_BOUND is a mapped type, so its post, ack and refill rows exist here and refuse until their phase fills them. test/bridge-fixture.ts is born here."
+entrance_criteria = [
+  { id = "EN-1", text = "PHASE-04 completed." },
+]
+exit_criteria = [
+  { id = "EX-1", text = "PairingDoc per design sec-3 (tokenHash, posture, project, ended, nextSeq, outbox, spent), conversation scope, kind malebolge.bridge, unexported token, one accessor pairingDoc(tx), modelled on src/threads/tombstones.ts. Pure rules hold every policy; tests exercise them without a socket." },
+  { id = "EX-2", text = "pair {posture, project}: project validated against the topic rule as <project>-bridge; setTopic({name, toolset: \"bridge\"}) in its own commit if absent (no directory, no model; DEC-093); then topicInit with require = toolset is bridge and no startedBy, writing the pairing document in the creating commit's init. A topic with another toolset is refused and nothing is created. The topic's model, else the daemon default, is the conversation's (DEC-092); a stored model the catalog lacks answers `refused {reason: \"unknown model <ref>\"}` and creates nothing (SL-010 DEC-083). Token: 32 random bytes base64url, sent once, stored as its sha256." },
+  { id = "EX-3", text = "resume {conversation, token}: constant-time hash compare; `pairing ended` and `bad token` refused with distinct reasons; `not a bridged conversation` for a conversation without a document. A valid pair or resume supersedes the pairing's previous connection with `refused {reason: \"superseded by a newer connection\"}` and closes it (DEC-065)." },
+  { id = "EX-4", text = "end sets ended and closes; later frames for the pairing are refused `pairing ended`; the conversation stays attachable." },
+  { id = "EX-5", text = "Any frame not in the tables, and any attach verb, is refused on bridge.sock. The listener starts only in the room profile (daemon-start), directory 0700 owner-checked, socket 0600." },
+  { id = "EX-6", text = "test/bridge-fixture.ts: a fake pi client over the real listener and a literal ModelCatalog stub passed to conversations(…) and topicInit (ISS-004 item 4)." },
+  { id = "EX-7", text = "`just check` green." },
+]
+verification = [
+  { id = "VT-1", expects = "pair creates C in <project>-bridge with toolset bridge; an absent topic is created with no model and C takes the daemon default; a topic model is applied; an unknown stored model is refused, nothing created; another toolset refused, nothing created; invalid project refused", test_file = "test/bridge-pairing.test.ts", keywords = ["-bridge", "unknown model", "toolset"], waived = false },
+  { id = "VT-2", expects = "resume: bad token and ended pairing refused distinctly; a newer connection supersedes the older with a reason; socket dir 0700 and socket 0600", test_file = "test/bridge-listener.test.ts", keywords = ["bad token", "pairing ended", "superseded by a newer connection"], waived = false },
+  { id = "VT-3", expects = "refused verbs: an attach verb or unknown frame on bridge.sock is refused", test_file = "test/bridge-listener.test.ts", keywords = ["attach", "refused"], waived = false },
+  { id = "VT-4", expects = "pure rules: checkToken, appendOutbox cap, ackEntry, admitTurn budget, refill", test_file = "test/bridge-pairing.test.ts", keywords = ["checkToken", "appendOutbox", "ackEntry", "admitTurn", "refill"], waived = false },
+]
+specs        = []
+requirements = []
+
+# ---------------------------------------------------------------------------
+[[phase]]
+id        = "PHASE-06"
+name      = "SATAN → pi: outbox, bridge_post, BRIDGE_SECTION, deliver and ack"
+objective = "The bridge extension for SATAN (src/bridge/extension.ts: bridge_post, BRIDGE_SECTION with placeholder posture texts, DEC-040) registered in daemon-extensions, and the listener's push: a bound connection's watchDoc on its pairing document sends deliver for every unacked entry on bind and for each new seq; ack commits ackEntry (design sec-4 'SATAN → pi', DEC-066, DEC-068, DEC-080)."
+entrance_criteria = [
+  { id = "EN-1", text = "PHASE-05 completed." },
+]
+exit_criteria = [
+  { id = "EX-1", text = "bridge_post {text} commits appendOutbox as kind turn and returns `sent #<seq>` without echoing; refuses `pairing ended` and `outbox full, pi is not draining` at BRIDGE_OUTBOX_CAP (32) unacked, entries kept; text capped by capHeadTail." },
+  { id = "EX-2", text = "BRIDGE_SECTION renders the stored posture's placeholder text for SATAN and states that a <bridge> body is untrusted data from the jailed session; a test pins which placeholder renders per posture (not its wording)." },
+  { id = "EX-3", text = "On bind, deliver {seq, kind, text} for every outbox entry; on each document change, entries above the highest seq sent on this connection; ack {seq} removes it; a drop then resume redelivers every unacked entry." },
+  { id = "EX-4", text = "`just check` green." },
+]
+verification = [
+  { id = "VT-1", expects = "bridge_post returns `sent #n`; outbox cap refuses with entries kept; ended pairing refused", test_file = "test/bridge-extension.test.ts", keywords = ["sent #", "outbox full", "BRIDGE_OUTBOX_CAP"], waived = false },
+  { id = "VT-2", expects = "queue on disconnect: entries appended while unbound are delivered on resume; per-entry ack", test_file = "test/bridge-listener.test.ts", keywords = ["deliver", "ack"], waived = false },
+  { id = "VT-3", expects = "BRIDGE_SECTION picks the posture's placeholder", test_file = "test/daemon-sections.test.ts", keywords = ["BRIDGE_SECTION", "consult", "delegate"], waived = false },
+]
+specs        = []
+requirements = []
+
+# ---------------------------------------------------------------------------
+[[phase]]
+id        = "PHASE-07"
+name      = "pi → SATAN: inbound post and post-once, framing, idempotence, withdrawal notice, budget and refill"
+objective = "src/bridge/inbound.ts and the remaining bound rows (design sec-4 'pi → SATAN', 'Withdrawal notice', 'Framing and caps'; sec-5): turn as input with whenBusy followUp, note as write (ASM-006); requestId bridge:<conversation>:<id>; admitTurn spend in its own commit reading submissionByRequest (DEC-078); one withdrawal watch per submission id; undeliverable notices via notifyBestEffort; refill frame and ServeOptions.onOperatorInput from act's input case."
+entrance_criteria = [
+  { id = "EN-1", text = "PHASE-06 completed." },
+]
+exit_criteria = [
+  { id = "EX-1", text = "post {id, kind, text} and post-once {conversation, token, kind, text}: entry kind satan.bridge with data {kind, project}; body framed `<bridge from=\"pi\" project=\"…\" kind=\"…\">…</bridge>` with values and body through escapeXml (or src/untrusted-block.ts's wrapper where it fits, DEC-054, same envelope text); capped by capHeadTail again daemon-side. accepted {id} means queued. post-once answers once and closes, with no requestId." },
+  { id = "EX-2", text = "Budget (DEC-070, DEC-078): a turn-kind post or post-once runs admitTurn in its own commit before the submit; that commit reads tx.submissionByRequest and a duplicate spends nothing and answers accepted again; notes skip it; the 11th turn is refused `budget exhausted, waiting on the operator`. refill {} sets spent to 0; ServeOptions.onOperatorInput(conversation), called from act's input case after a successful submit (not from submitInput, so orient does not refill), refills a bridged conversation." },
+  { id = "EX-3", text = "RV-021 F-2 (demonstrate): one in-process withdrawal watch per submission id for the pairing's life; a duplicate post joins it; lost ack, resend, then abort yields one submitted input and one notice." },
+  { id = "EX-4", text = "Withdrawal notice: a withdrawn or delivered-incomplete ending appends outbox note `bridge message <id> not delivered: <ending> (<reason>)`; a delivered one appends nothing; a failed wait is logged once. RV-021 F-4 (demonstrate): with the outbox full or the pairing ended at settlement, the notice is logged and sent once through notifyBestEffort with the message id and reason; the outbox is unchanged; no notice about a notice." },
+  { id = "EX-5", text = "`just check` green." },
+]
+verification = [
+  { id = "VT-1", expects = "idempotence: a resent post with the same id is accepted once, submits once, spends once", test_file = "test/bridge-inbound.test.ts", keywords = ["submissionByRequest", "bridge:"], waived = false },
+  { id = "VT-2", expects = "RV-021 F-2: lost ack, resend, abort → one input, one notice", test_file = "test/bridge-inbound.test.ts", keywords = ["F-2", "not delivered: withdrawn"], waived = false },
+  { id = "VT-3", expects = "RV-021 F-4: full outbox and ended pairing at settlement → logged and notified, outbox unchanged", test_file = "test/bridge-inbound.test.ts", keywords = ["F-4", "notifyBestEffort"], waived = false },
+  { id = "VT-4", expects = "framing: attribute and body escaping; truncation states the cut", test_file = "test/bridge-inbound.test.ts", keywords = ["<bridge from=", "escapeXml"], waived = false },
+  { id = "VT-5", expects = "loop bound: 11th turn refused; notes pass; refill frame and operator input restore; orient does not refill; a failed submit after the spend leaves spent incremented", test_file = "test/bridge-pairing.test.ts", keywords = ["budget exhausted", "onOperatorInput", "orient"], waived = false },
+  { id = "VT-6", expects = "turn and note each take DEC-069's path into SATAN: turn starts or queues a turn, note waits", test_file = "test/bridge-inbound.test.ts", keywords = ["followUp", "note"], waived = false },
+]
+specs        = []
+requirements = []
+
+# ---------------------------------------------------------------------------
+[[phase]]
+id        = "PHASE-08"
+name      = "pi side: the pure state machine step and the idle-only buffer"
+objective = "pi-bridge/state.ts: step(state, event) → {state, effects} exactly as design sec-7's table, with settlePending and the DEC-090 delivery buffer and flush, tested as the table. No I/O; effects are data the shell performs in PHASE-09."
+entrance_criteria = [
+  { id = "EN-1", text = "PHASE-07 completed (or PHASE-03 at least: this phase depends only on pi-bridge/wire.ts; it may run in parallel with PHASE-04..07)." },
+  { id = "EN-2", text = "PHASE-01's F-1/F-9 probe outcomes match the table's event assumptions (isIdle false before agent_start; agent_settled final and carries aborted)." },
+]
+exit_criteria = [
+  { id = "EX-1", text = "Every row of design sec-7's table is a test case named for its state and event, including pairing vs resuming, outage and the retry timer, interactive input refill only while bound." },
+  { id = "EX-2", text = "Idle-only delivery (DEC-090): inject when isIdle and not running, else buffer in seq order; not-aborted settle flushes notes up to the first buffered turn, then that turn with triggerTurn true; aborted settle flushes everything with triggerTurn false; a seq already in the session or buffer is skipped and, if in the session, re-acked. RV-021 F-9: an agent_end before settle (retryable error) flushes nothing. RV-021 F-1: a delivery with isIdle false before agent_start is buffered; an abort in that gap flushes it as a note." },
+  { id = "EX-3", text = "RV-021 F-10: busy note, idle, reload (session_shutdown then session_start), resume, redelivery, next run: the note is in context once." },
+  { id = "EX-4", text = "RV-021 F-5: session_start with a pairing entry from another session id (fork, clone) → unpaired with an info notice, never end for the parent." },
+  { id = "EX-5", text = "RV-021 F-11: a failed, refused or timed-out fresh pair → unpaired, loud, no resume; after a deadline the notice names a possible conversation in <project>-bridge." },
+  { id = "EX-6", text = "RV-021 F-12: superseded → unpaired in memory only, no marker, no automatic resume, notified." },
+  { id = "EX-7", text = "RV-021 F-13: settlePending on end, terminal refusal, supersede and session_shutdown completes each pending post once (outcome unknown if sent, refused if not); a pending post is resent only to the same pairing, never after a re-pair." },
+  { id = "EX-8", text = "`just check` green." },
+]
+verification = [
+  { id = "VT-1", expects = "step tested as the design sec-7 table", test_file = "test/pi-bridge-state.test.ts", keywords = ["step(", "settlePending", "resuming", "outage"], waived = false },
+  { id = "VT-2", expects = "idle-only inject, busy gap, aborted flush, retryable agent_end (RV-021 F-1, F-9)", test_file = "test/pi-bridge-state.test.ts", keywords = ["isIdle", "agent_settled", "aborted", "agent_end"], waived = false },
+  { id = "VT-3", expects = "RV-021 F-10 reload dedupe; F-5 fork; F-11 fresh pair failure; F-12 superseded; F-13 pending posts", test_file = "test/pi-bridge-state.test.ts", keywords = ["F-5", "F-10", "F-11", "F-12", "F-13"], waived = false },
+]
+specs        = []
+requirements = []
+
+# ---------------------------------------------------------------------------
+[[phase]]
+id        = "PHASE-09"
+name      = "pi side: the extension shell and malebolge-bridge send / tee"
+objective = "pi-bridge/index.ts performs step's effects (frames, appendEntry, notify, setStatus, spawn-hook env and PATH, timers, close), registers bridge_post and /bridge pair|end, renders the pi posture placeholder in before_agent_start; pi-bridge/malebolge-bridge implements send [--turn] and tee over post-once (design sec-7; DEC-073, DEC-075). Tested against a fake daemon and a fake pi API."
+entrance_criteria = [
+  { id = "EN-1", text = "PHASE-08 completed; PHASE-05..07 completed (the fake daemon mirrors the real listener's frames; an end-to-end test may use the real listener)." },
+]
+exit_criteria = [
+  { id = "EX-1", text = "RV-021 F-3 (demonstrate): every request frame (pair, resume, post, post-once) has a client reply deadline of BRIDGE_POST_WAIT_MS; against a fake daemon that reads and never replies, bridge_post answers outcome unknown, post-once exits 3, pair/resume report the outage and close the socket. No heartbeat." },
+  { id = "EX-2", text = "bridge_post returns `sent` or the refusal reason; not bound → refused at once with outageText(ends); a drop before reply resends the same id on the same pairing's next bind." },
+  { id = "EX-3", text = "Loud failure (DEC-073): the first failure of an outage raises ctx.ui.notify(…, \"error\") and best-effort notify-send, naming project, pi session id and, as known, conversation, topic and socket path; retries show in setStatus only; recovery notifies once; a refused resume is not retried. One outageText(ends) serves extension and command." },
+  { id = "EX-4", text = "Spawn hook (ASM-008): MALEBOLGE_BRIDGE_CONVERSATION and MALEBOLGE_BRIDGE_TOKEN set while paired and cleared after; the extension directory prepended to PATH. RV-021 F-6 (probe, test half): bare `malebolge-bridge send` resolves from another cwd under the hook." },
+  { id = "EX-5", text = "malebolge-bridge: executable, node shebang; send prints only the ack; tee copies stdin to stdout; exit 0 accepted, 2 refused (reason on stderr), 3 outcome unknown, 1 connect failure (outageText line, best-effort notify-send); oversized stdin truncated head-and-tail, not refused." },
+  { id = "EX-6", text = "pi's posture placeholder renders in before_agent_start; a test pins which, not its wording." },
+  { id = "EX-7", text = "`just check` green." },
+]
+verification = [
+  { id = "VT-1", expects = "RV-021 F-3: fake daemon withholds replies → post outcome unknown, post-once exit 3, bind outage reported", test_file = "test/pi-bridge-shell.test.ts", keywords = ["F-3", "BRIDGE_POST_WAIT_MS", "outcome unknown"], waived = false },
+  { id = "VT-2", expects = "loud failure: first failed connect notifies once, recovery once, refused resume not retried", test_file = "test/pi-bridge-shell.test.ts", keywords = ["outageText", "notify"], waived = false },
+  { id = "VT-3", expects = "one-shot: exit statuses 0/1/2/3; tee passes stdin through; oversized stdin truncated", test_file = "test/pi-bridge-command.test.ts", keywords = ["post-once", "tee", "exit"], waived = false },
+  { id = "VT-4", expects = "RV-021 F-6: spawn hook env while paired, and PATH resolves bare malebolge-bridge from another cwd", test_file = "test/pi-bridge-shell.test.ts", keywords = ["F-6", "spawnHook", "PATH", "MALEBOLGE_BRIDGE_TOKEN"], waived = false },
+  { id = "VT-5", expects = "both directions end to end over the real listener with the fake pi API: turn and note each way; pi's bridge_post returns `sent`; a redelivered seq already in the session is skipped and re-acked", test_file = "test/pi-bridge-shell.test.ts", keywords = ["sent", "deliver", "re-ack"], waived = false },
+]
+specs        = []
+requirements = []
+
+# ---------------------------------------------------------------------------
+[[phase]]
+id        = "PHASE-10"
+name      = "Docs, deployment contract, and the real-jail exchange"
+objective = "docs/internals.md and README.md describe bridge mode, the socket, env vars and the four-clause deployment contract (DEC-074); then the operator runs the bridge end to end in a real pi jail. CHR-007 (~/flakes) is another session's; where it has not landed, the operator mounts the four clauses by hand for this check."
+entrance_criteria = [
+  { id = "EN-1", text = "PHASE-09 completed; the room daemon redeployed with this slice." },
+]
+exit_criteria = [
+  { id = "EX-1", text = "docs/internals.md states the deployment contract's four clauses, the socket path rule, MALEBOLGE_BRIDGE_* variables, bridge mode's reach and the budget; README.md says how to pair from a jailed pi." },
+  { id = "EX-2", text = "Posture texts remain placeholders keyed by posture (DEC-040); a backlog item or the satan-corpus session's record names the authoring follow-up." },
+]
+verification = [
+  { id = "VH-1", text = "Operator: a jailed pi in a real project pairs with a conversation; each posture (delegate, consult) completes one exchange both ways; a read-only project mount refuses a write; a connect failure notifies the operator." },
+  { id = "VH-2", text = "Operator, RV-021 F-6 (probe, deployment half): `malebolge-bridge send` and `tee` work as bare commands from pi's bash in the real jail." },
+  { id = "VA-1", text = "Agent or operator, RV-021 F-1/F-10 (probe, real extension): busy delivery, Esc, settle shows the message once as a note; busy note, idle, /reload, next run: the note is in context once. Recorded in notes.md." },
+]
+specs        = []
+requirements = []

@@ -40,6 +40,8 @@ does. Scope: `slice-009.md`. Evidence: `research/research.md` (X1–X8).
 | DEC-079 | a turn dropped by an abort joins the next turn as a note (refines DEC-069) |
 | DEC-080 | outbox entries carry `kind` (refines DEC-066) |
 | DEC-090 | pi is handed bridge messages only while idle (refines DEC-066, DEC-069, DEC-079) |
+| DEC-092 | a bridge topic may carry a model; `pair` creates through `topicInit` (SL-010) |
+| DEC-093 | `pair` creates its `<project>-bridge` topic explicitly; DEC-016's rule governs attach |
 
 Reuse, named once here and cited by section below: `serveUnix` and the
 private-socket helper `servePrivateUnix` extracted beside it from
@@ -49,7 +51,7 @@ private-socket helper `servePrivateUnix` extracted beside it from
 `src/connection-reply.ts` (`answer`, now generic over its reply type;
 `write`, `finish`, `fail`), `capHeadTail` and the socket path rule
 `bridgeSocketPath` in `pi-bridge/wire.ts`,
-`toolsetInit` (`src/conversations.ts`), `requireSameTalkSet`
+`topicInit` (`src/conversations.ts`, SL-010), `requireSameTalkSet`
 (`src/toolsets.ts`), `endingOf` (`src/threads/task.ts`), `escapeXml`
 (`src/xml.ts`), `capUtf8` (`src/truncate.ts`), `defineDoc` and `watchDoc`
 (pi-durable).
@@ -148,10 +150,17 @@ The daemon validates `project` against the topic rule (`src/protocol.ts`) as
 
 1. `setTopic({name, toolset: "bridge"})` if the topic is absent (its own
    commit; a crash after it leaves an empty bridge topic, which the next pair
-   reuses);
-2. creates the conversation through `toolsetInit` with a `require` that the
-   chosen toolset is `bridge` and no `startedBy`, so a topic of that name with
-   another toolset is refused and nothing is created;
+   reuses). This is `pair`'s explicit act, not an implicit creation: DEC-016's
+   rule governs `attach` (DEC-093). The topic is written with no directory and
+   no model;
+2. creates the conversation through SL-010's `topicInit` with a `require`
+   that the chosen toolset is `bridge` and no `startedBy`, so a topic of that
+   name with another toolset is refused and nothing is created. The topic's
+   stored model, else the daemon default, becomes the conversation's model
+   (DEC-092); a stored model the catalog lacks throws `UnknownModel` in the
+   creating commit, nothing is created (SL-010's DEC-083), and `pair` answers
+   `refused {reason: "unknown model <ref>"}` (the thrown message), which the
+   extension's refusal row reports;
 3. writes the pairing document in that creating commit's `init`.
 
 The token is 32 random bytes, base64url, sent once in `paired` and stored
@@ -468,11 +477,11 @@ runs before sending; the daemon caps again).
 | `src/config.ts` | `bridgeSocket` delegates to `bridgeSocketPath`; bridge variant of `inProfileDir` (“Bridge listener and wire”) |
 | `src/unix-socket.ts` | `servePrivateUnix`: private-dir check and socket chmod (“Bridge listener and wire”) |
 | `src/runner/control.ts` | uses `servePrivateUnix`; no behaviour change |
-| `src/connection-reply.ts` | new: `answer` (generic), `write`, `finish`, `fail`, moved from `src/daemon.ts` (“Bridge listener and wire”) |
-| `src/conversations.ts` | `toolsetInit`'s hook split into optional `require` and `startedBy` (“Pairing and the pairing document”) |
+| `src/connection-reply.ts` | new: `answer` (generic, its daemon reply union including SL-010's `ModelsMessage`), `write`, `finish`, `fail`, moved from `src/daemon.ts`; `Connection.modelRefs` stays in `src/daemon.ts` (“Bridge listener and wire”) |
+| `src/conversations.ts` | `topicInit`'s last parameter (`thread?`) becomes optional `require` and `startedBy`; `pair` uses `writeCreated`'s topic record through `topicInit`; the header comment's “no frame ever creates a topic implicitly” narrowed to attach, citing DEC-093 (“Pairing and the pairing document”) |
 | `src/daemon.ts` | connection helpers moved out; `ServeOptions.onOperatorInput` from `act`'s input case (“Loop budget”) |
 | `src/daemon-start.ts`, `src/daemon-extensions.ts` | start the bridge listener (room), register the extension |
-| `test/bridge-*.test.ts`, `test/bridge-fixture.ts` | new: fake pi client, listener, pairing, inbound, outbox, budget (flat, as `threads-*`) |
+| `test/bridge-*.test.ts`, `test/bridge-fixture.ts` | new: fake pi client, listener, pairing, inbound, outbox, budget (flat, as `threads-*`); the fixture passes a literal `ModelCatalog` stub to `conversations(…)` and `topicInit` |
 | `test/pi-bridge-*.test.ts` | new: extension against a fake daemon and a fake pi API |
 | `test/toolsets.test.ts`, `test/wake-tools.test.ts`, `test/config.test.ts`, `test/daemon-sections.test.ts` | membership, wake reach, path rule, pinned section |
 | `test/structure.test.ts` | new rule: `pi-bridge/` imports nothing from `src/`; the wake/threads seam is already enforced |
@@ -489,7 +498,7 @@ Maps the slice's verification intent. VT by test, VH by human.
 
 | intent | criterion | where |
 |---|---|---|
-| pairing | VT: pair creates C in `<project>-bridge` with toolset bridge; topic with another toolset refused, nothing created; invalid project refused; re-pair from a paired session ends the old pairing; posture survives a pi restart | `test/bridge-pairing.test.ts`, `test/pi-bridge-*.test.ts` |
+| pairing | VT: pair creates C in `<project>-bridge` with toolset bridge; an absent topic is created with no model and C takes the daemon default; a topic model is applied to C; a stored model the catalog lacks is refused `unknown model…`, nothing created; topic with another toolset refused, nothing created; invalid project refused; re-pair from a paired session ends the old pairing; posture survives a pi restart | `test/bridge-pairing.test.ts`, `test/pi-bridge-*.test.ts` |
 | resume | VT: bad token and ended pairing refused with distinct reasons; newer connection supersedes older with a reason; socket dir 0700 with owner checked, socket 0600 | `test/bridge-listener.test.ts` |
 | both directions | VT: turn and note each way take DEC-069's path; SATAN `bridge_post` returns `sent #n`, pi returns `sent` (DEC-068) | `test/bridge-*.test.ts`, `test/pi-bridge-*.test.ts` |
 | queue on disconnect | VT: entries appended while unbound are delivered on resume; per-entry ack; a redelivered seq already in pi's session is skipped and re-acked | `test/bridge-listener.test.ts`, `test/pi-bridge-*.test.ts` |

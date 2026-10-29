@@ -1,0 +1,33 @@
+schema = "doctrine.knowledge"
+version = 1
+
+id = 93
+slug = "pair-creates-its-project-bridge-topic-explicitly-dec-016s-no-implicit-creation-rule-governs-attach"
+title = "pair creates its <project>-bridge topic explicitly; DEC-016's no-implicit-creation rule governs attach"
+record_kind = "decision"
+status = "accepted"
+created = "2026-10-29"
+updated = "2026-10-29"
+tags = []
+
+[facet]                         # every field typed; seeded empty (captured later)
+context = "DEC-016's choice refuses an unknown topic on attach and never creates it implicitly; src/conversations.ts:11 overstates this as 'no frame ever creates a topic implicitly'. SL-009's pair (bridge.sock) creates <project>-bridge when absent. After SL-010 a topic record decides a model, so the creation is load-bearing. ISS-004 M-19."
+choice = "pair names its project, and creating the <project>-bridge topic (toolset bridge, no directory, no model) is part of what pair does: explicit, not implicit. DEC-016's rule stays for attach and the durable.sock frames. The comment at src/conversations.ts:11 is corrected to say so. A created bridge topic carries no model, so its conversations take the daemon default until the operator sets one."
+alternatives = ["pair refuses an absent topic; the operator runs --set-topic <project>-bridge --toolset bridge per project first"]
+rationale = "A jailed pi cannot create the topic itself, so the alternative adds a manual host step per project for no safety gain: pair already validates the name and requires toolset bridge."
+consequences = ["Refines DEC-016's scope; does not supersede it", "SL-009 sec-3 and sec-8 cite this decision"]
+decided_by = "user (accepted agent proposal, 2026-10-29)"
+decided_on = "2026-10-29"
+
+[evidence]                      # free-text citations (supports / contradicts / notes)
+supports    = []
+contradicts = []
+notes       = []
+
+[relationships]                 # verb-written edges (set by doctrine supersede)
+supersedes    = []   # record ids this one replaces (set by doctrine supersede)
+superseded_by = []   # set on superseded predecessor (verb-written)
+
+[[relation]]
+label = "shapes"
+target = "SL-009"

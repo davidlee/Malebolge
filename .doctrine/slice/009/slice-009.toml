@@ -1,7 +1,7 @@
 id = 9
 slug = "session-bridge"
 title = "Session bridge: a jailed pi session and a malebolge conversation exchange messages"
-status = "design"
+status = "plan"
 created = "2026-10-29"
 updated = "2026-10-29"
 tags = ["bridge", "jail", "pi", "threads"]
@@ -128,7 +128,7 @@ intent = "design-target"
 
 [[selector]]
 selector = "README.md"
-intent = "design-target"
+intent = "scope-relevant"
 
 [[selector]]
 selector = "src/persona.ts"
@@ -144,7 +144,7 @@ intent = "design-target"
 
 [[selector]]
 selector = "src/runner/control.ts"
-intent = "design-target"
+intent = "scope-relevant"
 
 [[selector]]
 selector = "src/connection-reply.ts"
@@ -156,23 +156,23 @@ intent = "design-target"
 
 [[selector]]
 selector = "tsconfig.json"
-intent = "design-target"
+intent = "scope-relevant"
 
 [[selector]]
 selector = "vitest.config.ts"
-intent = "design-target"
+intent = "scope-relevant"
 
 [[selector]]
 selector = "package.json"
-intent = "design-target"
+intent = "scope-relevant"
 
 [[selector]]
 selector = "eslint.config.js"
-intent = "design-target"
+intent = "scope-relevant"
 
 [[selector]]
 selector = "biome.json"
-intent = "design-target"
+intent = "scope-relevant"
 
 [[selector]]
 selector = "test/pi-bridge-state.test.ts"
