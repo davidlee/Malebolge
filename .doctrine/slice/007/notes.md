@@ -122,6 +122,7 @@ slips are left to red/green tests; the next review is of the plan.
 - PHASE-04 · `mailRefusal` and `MailRefusalFacts` in `src/mail/extension.ts`; `MAIL_ERROR_PREFIX`, `MAIL_DESCRIPTION_SUFFIX` exported from tools.ts so tests assert via the constants (DEC-061) · design names no home for the constants · decided
 - PHASE-04 · no Opus framing review: MAIL_SECTION checked verbatim against design § Framing by script; untrusted line, prefix path (one `errorResult`) and suffix read by me against the design; diff small · cost not earned · decided
 - PHASE-04 · host gate: fmt-check, typecheck green; lint fails only in SL-009's untracked `pi-bridge/posture.ts`, `pi-bridge/shell.ts`; vitest 4029/4029 · green for SL-007 · decided
+- seat · `mailPart` reads `/sys/class/net`; satan's room jail (`~/dev/satan/flake.nix`, `--unshare-net`) shows no explicit `/sys` bind, and the jail.nix source was not checked. If the jail lacks sysfs, mail refuses "cannot list network interfaces" (fails closed). Must hold for PHASE-08; raise with satan IMP-060's session · escalated (open for the operator, non-blocking)
 
 ## Pi runs
 
