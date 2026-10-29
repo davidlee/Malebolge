@@ -57,3 +57,11 @@ review belongs to the plan.
 
 ## Autonomy log
 <!-- one line per envelope decision: phase · what · why · tier (decided / deferred / escalated) -->
+- PHASE-01 · `src/mail/project.ts` import of `cutRendered` repointed to `../untrusted-block.ts` (file not named in the plan) · no re-exports from mail, one home per symbol · decided
+- PHASE-01 · `Clamp<N extends string = string>`; mail's `HeaderFacts.clamps` takes the default, tools use `Clamp<MailBound>` · keeps mail tests' `Clamp[]` compiling unchanged (EX-5) · decided
+- PHASE-01 · `renderResult` kept as mail's one-line use of `renderBlock("mail-data", …)`; failure text now `mail-data result is over N bytes` · EX-3; no test pins the old text · decided
+- PHASE-01 · `src/mail/extension.ts` MAIL_SECTION prose still names `<mail-data untrusted="true">` · it is the prompt rule describing the block, not a copy of the wrapper (EX-3 read as wrapper text); design keeps MAIL_SECTION in mail · decided
+- PHASE-01 · `MAIL_MAX_BYTES` renamed inside three `it(...)` titles in test/mail/render.test.ts · titles are not assertions; the rename is EX-5's · decided
+
+## Review passes
+- PHASE-01 · pi `implement` (deepseek-flash), 2 runs in one session: T1 red ($0.020), T2+T3 green/refactor ($0.044). Clean: followed spec, flagged the extra project.ts edit itself. Miss: none; noted `npx biome` broken in sandbox, used PATH biome. Gateway restart window: probe answered, no runs lost.

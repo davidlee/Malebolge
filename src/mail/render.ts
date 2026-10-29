@@ -1,25 +1,27 @@
-// Mail rendering: the one measure, the one cut, the fill, the header and the page.
+// Mail rendering: the fill, the header and the page.
 //
 // Every size here is a rendered size: the UTF-8 length of JSON.stringify plus
 // the `<`, `>`, `&` escapes. Nothing is measured on raw text (EX-2), so an
-// item's line is measured exactly as it is sent.
+// item's line is measured exactly as it is sent. The measure, the cut and the
+// wrapper belong to the shared untrusted block (SL-008 design sec-4).
 
+import type { Clamp } from "../ranges.ts";
+import {
+  assertWithin,
+  clampsLine,
+  count,
+  cutRendered,
+  dataLine,
+  fitWhole,
+  HEADER_MAX_BYTES,
+  ITEMS_MAX_BYTES,
+  renderBlock,
+} from "../untrusted-block.ts";
 import type { CutName, ProjectedItem, ProjectedMailbox } from "./project.ts";
 import { isCanonicalCursor } from "./source.ts";
 
-/** The whole result, header and wrapper included (pi's DEFAULT_MAX_BYTES). */
-export const MAIL_MAX_BYTES = 50 * 1024;
-/** Room kept for the header and the block's fixed wrapper. */
-export const HEADER_RESERVE = 2 * 1024;
-/** What the wrapper's fixed text and newlines are charged, below HEADER_RESERVE. */
-export const WRAPPER_BYTES = 64;
-/** The header's own room. */
-export const HEADER_MAX_BYTES = HEADER_RESERVE - WRAPPER_BYTES;
-/** What the items (and the newlines between them) share. */
-export const ITEMS_MAX_BYTES = MAIL_MAX_BYTES - HEADER_RESERVE;
-
-const OPEN_TAG = '<mail-data untrusted="true">';
-const CLOSE_TAG = "</mail-data>";
+/** The mail block's tag, as `<mail-data untrusted="true">`. */
+const MAIL_TAG = "mail-data";
 const BODY_KEY_BYTES = 8; // `,"body":`
 const KNOWN_GAPS =
   "known gaps: late arrivals with an older received_at are not returned; filters do not reopen passed positions";
@@ -27,49 +29,6 @@ const KNOWN_GAPS =
 /** Each item's room: the items' 48 KiB less the newlines between them, divided equally. */
 export function shareOf(limit: number): number {
   return Math.floor((ITEMS_MAX_BYTES - (limit - 1)) / limit);
-}
-
-/** `value` as one data line: JSON, with every `<`, `>` and `&` escaped. */
-export function dataLine(value: unknown): string {
-  return JSON.stringify(value)
-    .replaceAll("<", "\\u003c")
-    .replaceAll(">", "\\u003e")
-    .replaceAll("&", "\\u0026");
-}
-
-/** The bytes `value` takes on the line: the one size measure in the mail tools. */
-export function renderedLength(value: unknown): number {
-  return Buffer.byteLength(dataLine(value), "utf8");
-}
-
-/** The longest code-point prefix of `chars` whose rendering, with `suffix`, fits. */
-function longestFittingPrefix(chars: readonly string[], maxBytes: number, suffix: string): string {
-  let low = 0;
-  let high = chars.length;
-  while (low < high) {
-    const middle = Math.ceil((low + high) / 2);
-    if (renderedLength(chars.slice(0, middle).join("") + suffix) <= maxBytes) {
-      low = middle;
-    } else {
-      high = middle - 1;
-    }
-  }
-  return chars.slice(0, low).join("") + suffix;
-}
-
-/**
- * `text` when it fits `maxBytes` rendered; otherwise its longest code-point
- * prefix plus `suffix` that does. Never splits a surrogate pair.
- */
-export function cutRendered(
-  text: string,
-  maxBytes: number,
-  suffix = "",
-): { text: string; cut: boolean } {
-  if (renderedLength(text) <= maxBytes) {
-    return { text, cut: false };
-  }
-  return { text: longestFittingPrefix(Array.from(text), maxBytes, suffix), cut: true };
 }
 
 // ---------------------------------------------------------------- the fill
@@ -205,34 +164,9 @@ export function fitItem(
   return { line, cut: draft.cuts };
 }
 
-/** Mailboxes whole, in order, while they fit the items' room. */
-export function fitMailboxes(mailboxes: readonly ProjectedMailbox[]): {
-  lines: string[];
-  shown: number;
-  of: number;
-} {
-  const lines: string[] = [];
-  let used = 0;
-  for (const mailbox of mailboxes) {
-    const line = dataLine(mailbox);
-    const cost = lines.length === 0 ? Buffer.byteLength(line) : Buffer.byteLength(line) + 1;
-    if (used + cost > ITEMS_MAX_BYTES) {
-      break;
-    }
-    lines.push(line);
-    used += cost;
-  }
-  return { lines, shown: lines.length, of: mailboxes.length };
-}
-
 // -------------------------------------------------------------- the header
 
 export type MailTool = "mail_new" | "mail_read" | "mail_thread" | "mail_list" | "mail_mailboxes";
-
-export interface Clamp {
-  readonly name: "limit" | "max_bytes" | "offset";
-  readonly to: number;
-}
 
 export interface HeaderFacts {
   readonly tool: MailTool;
@@ -245,19 +179,6 @@ export interface HeaderFacts {
   readonly thread?: { readonly total: number; readonly truncated: boolean };
   readonly shown?: { readonly shown: number; readonly of: number };
   readonly knownGaps?: boolean;
-}
-
-function count(value: number, what: string): number {
-  if (!Number.isSafeInteger(value) || value < 0) {
-    throw new Error(`mail header: ${what} is not a count`);
-  }
-  return value;
-}
-
-function assertWithin(text: string, maxBytes: number, what: string): void {
-  if (Buffer.byteLength(text, "utf8") > maxBytes) {
-    throw new Error(`${what} is over ${String(maxBytes)} bytes`);
-  }
 }
 
 function itemsLine(facts: HeaderFacts): string {
@@ -275,12 +196,6 @@ function nextLine(next: string): string {
     throw new Error("mail header: next is not a canonical cursor");
   }
   return `next: ${dataLine(next)}`;
-}
-
-function clampsLine(clamps: readonly Clamp[]): string {
-  return clamps
-    .map((clamp) => `${clamp.name} clamped to ${String(count(clamp.to, "clamp"))}`)
-    .join("; ");
 }
 
 function threadLine(thread: { readonly total: number; readonly truncated: boolean }): string {
@@ -325,10 +240,7 @@ export function renderHeader(facts: HeaderFacts): string {
 
 /** The header, then the untrusted block: one data line per item, nothing else. */
 export function renderResult(header: string, lines: readonly string[]): string {
-  const body = lines.map((line) => `${line}\n`).join("");
-  const result = `${header}\n${OPEN_TAG}\n${body}${CLOSE_TAG}`;
-  assertWithin(result, MAIL_MAX_BYTES, "mail result");
-  return result;
+  return renderBlock(MAIL_TAG, header, lines);
 }
 
 /** One page: every item on its line within `shareOf(limit)`, counted into the header. */
@@ -350,7 +262,7 @@ export function renderPage(
 
 /** The mailboxes page: the ones that fit, and `shown N of M` in the header. */
 export function renderMailboxes(mailboxes: readonly ProjectedMailbox[]): string {
-  const { lines, shown, of } = fitMailboxes(mailboxes);
+  const { lines, shown, of } = fitWhole(mailboxes);
   const header = renderHeader({
     tool: "mail_mailboxes",
     items: shown,

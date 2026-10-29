@@ -6,6 +6,7 @@ import type { Context } from "@earendil-works/chord/context";
 import { Type, type TSchema } from "@earendil-works/pi-ai";
 import { defineTool, type ToolRegistration } from "@earendil-works/pi-durable";
 import { isRecord, type JsonRecord } from "../json.ts";
+import { bounded, type Clamp, type Range, report } from "../ranges.ts";
 import {
   projectListItem,
   projectMailbox,
@@ -13,7 +14,7 @@ import {
   projectRead,
   projectThreadItem,
 } from "./project.ts";
-import { type Clamp, renderMailboxes, renderPage } from "./render.ts";
+import { renderMailboxes, renderPage } from "./render.ts";
 import {
   isCanonicalCursor,
   isJmapId,
@@ -26,12 +27,6 @@ import {
 } from "./source.ts";
 
 // ------------------------------------------------------- ranges and clamps
-
-export interface Range {
-  readonly min: number;
-  readonly max: number;
-  readonly default: number;
-}
 
 export const NEW_LIMIT: Range = { min: 1, max: 20, default: 10 };
 export const NEW_MAX_BYTES: Range = { min: 512, max: 8192, default: 4096 };
@@ -52,37 +47,17 @@ export const FROM_MAX_BYTES = 256;
 export const OVERSIZE_AT_LIMIT_1 =
   "screwtape output over 4 MiB at limit 1: the next message cannot be read";
 
-type BoundedName = Clamp["name"];
-
-/** One entry per name, holding its final value: the header names a bound once. */
-function report(clamps: Clamp[], name: BoundedName, to: number): void {
-  const seen = clamps.findIndex((clamp) => clamp.name === name);
-  if (seen === -1) {
-    clamps.push({ name, to });
-  } else {
-    clamps[seen] = { name, to };
-  }
-}
-
-/** The value clamped into `range`; an omitted or non-integer one takes the default. */
-function bounded(raw: unknown, range: Range, name: BoundedName, clamps: Clamp[]): number {
-  const asked = typeof raw === "number" && Number.isInteger(raw) ? raw : range.default;
-  const value = Math.min(Math.max(asked, range.min), range.max);
-  if (value !== asked) {
-    report(clamps, name, value);
-  }
-  return value;
-}
+type MailBound = "limit" | "max_bytes" | "offset";
 
 interface NewBounds {
   readonly limit: number;
   readonly maxBytes: number;
-  readonly clamps: Clamp[];
+  readonly clamps: Clamp<MailBound>[];
 }
 
 /** mail_new's two bounds, the joint one applied to the already-clamped limit. */
 function newBounds(args: JsonRecord): NewBounds {
-  const clamps: Clamp[] = [];
+  const clamps: Clamp<MailBound>[] = [];
   const limit = bounded(args["limit"], NEW_LIMIT, "limit", clamps);
   const asked = bounded(args["max_bytes"], NEW_MAX_BYTES, "max_bytes", clamps);
   const maxBytes = Math.min(asked, Math.floor(NEW_JOINT_BYTES / limit));
@@ -344,7 +319,7 @@ async function newText(deps: MailDeps, args: JsonRecord, context: Context): Prom
 }
 
 async function readText(deps: MailDeps, args: JsonRecord, context: Context): Promise<string> {
-  const clamps: Clamp[] = [];
+  const clamps: Clamp<MailBound>[] = [];
   const id = idOf("mail_read", "id", args["id"]);
   const maxBytes = bounded(args["max_bytes"], READ_MAX_BYTES, "max_bytes", clamps);
   const read = await deps.source.read({ id, maxBytes, signal: context.abortSignal });
@@ -352,7 +327,7 @@ async function readText(deps: MailDeps, args: JsonRecord, context: Context): Pro
 }
 
 async function threadText(deps: MailDeps, args: JsonRecord, context: Context): Promise<string> {
-  const clamps: Clamp[] = [];
+  const clamps: Clamp<MailBound>[] = [];
   const id = idOf("mail_thread", "id", args["id"]);
   const limit = bounded(args["limit"], THREAD_LIMIT, "limit", clamps);
   const thread = await deps.source.thread({ id, limit, signal: context.abortSignal });
@@ -365,7 +340,7 @@ async function threadText(deps: MailDeps, args: JsonRecord, context: Context): P
 }
 
 async function listText(deps: MailDeps, args: JsonRecord, context: Context): Promise<string> {
-  const clamps: Clamp[] = [];
+  const clamps: Clamp<MailBound>[] = [];
   const limit = bounded(args["limit"], LIST_LIMIT, "limit", clamps);
   const offset = bounded(args["offset"], LIST_OFFSET, "offset", clamps);
   const page = await deps.source.list({

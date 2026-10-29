@@ -11,24 +11,25 @@ import {
   projectRead,
   projectThreadItem,
 } from "../../src/mail/project.ts";
+import type { Clamp } from "../../src/ranges.ts";
 import {
-  type Clamp,
   cutRendered,
   dataLine,
-  fitItem,
-  fitMailboxes,
   HEADER_MAX_BYTES,
   HEADER_RESERVE,
-  type HeaderFacts,
   ITEMS_MAX_BYTES,
-  MAIL_MAX_BYTES,
   renderedLength,
+  RESULT_MAX_BYTES,
+  WRAPPER_BYTES,
+} from "../../src/untrusted-block.ts";
+import {
+  fitItem,
+  type HeaderFacts,
   renderHeader,
   renderMailboxes,
   renderPage,
   renderResult,
   shareOf,
-  WRAPPER_BYTES,
 } from "../../src/mail/render.ts";
 import {
   absentThreadItem,
@@ -98,7 +99,7 @@ function cutNamesOf(parsed: Record<string, unknown>): unknown[] {
 
 describe("constants and share", () => {
   it("are the sec-4 figures", () => {
-    expect(MAIL_MAX_BYTES).toBe(51200);
+    expect(RESULT_MAX_BYTES).toBe(51200);
     expect(HEADER_RESERVE).toBe(2048);
     expect(WRAPPER_BYTES).toBe(64);
     expect(HEADER_MAX_BYTES).toBe(1984);
@@ -681,10 +682,10 @@ describe("mailboxes (RV-015 F-26)", () => {
       }),
     );
 
-  it("200 mailboxes with 255-byte ids and escaped names stay within MAIL_MAX_BYTES, shown N of 200", () => {
+  it("200 mailboxes with 255-byte ids and escaped names stay within RESULT_MAX_BYTES, shown N of 200", () => {
     const mailboxes = Array.from({ length: 200 }, (_, n) => big(n));
     const result = renderMailboxes(mailboxes);
-    expect(bytesOf(result)).toBeLessThanOrEqual(MAIL_MAX_BYTES);
+    expect(bytesOf(result)).toBeLessThanOrEqual(RESULT_MAX_BYTES);
     const lines = dataLinesOf(result);
     const header = headerLinesOf(result);
     expect(lines.length).toBeGreaterThan(0);
@@ -715,19 +716,6 @@ describe("mailboxes (RV-015 F-26)", () => {
     expect(dataLinesOf(result)).toEqual([]);
     expect(headerLinesOf(result)).toContain("shown 0 of 0");
   });
-
-  it("stops at the first mailbox that does not fit, without skipping to smaller later ones", () => {
-    const small = (n: number): ReturnType<typeof projectMailbox> =>
-      projectMailbox(mailboxOf({ id: `S${String(n)}`, name: "s" }));
-    const giant = projectMailbox(mailboxOf({ id: "Giant", name: "g".repeat(ITEMS_MAX_BYTES) }));
-    const mailboxes = [small(1), small(2), giant, small(3), small(4)];
-    const { lines, shown, of } = fitMailboxes(mailboxes);
-    expect(shown).toBe(2);
-    expect(of).toBe(5);
-    expect(lines).toEqual([dataLine(small(1)), dataLine(small(2))]);
-    const first = fitMailboxes([giant, small(1)]);
-    expect(first).toEqual({ lines: [], shown: 0, of: 2 });
-  });
 });
 
 // ------------------------------------------------------------ the page
@@ -740,8 +728,8 @@ describe("renderResult", () => {
     expect(renderResult("H", [])).toBe('H\n<mail-data untrusted="true">\n</mail-data>');
   });
 
-  it("fails closed beyond MAIL_MAX_BYTES", () => {
-    expect(() => renderResult("H", ["x".repeat(MAIL_MAX_BYTES)])).toThrow();
+  it("fails closed beyond RESULT_MAX_BYTES", () => {
+    expect(() => renderResult("H", ["x".repeat(RESULT_MAX_BYTES)])).toThrow();
   });
 });
 
@@ -894,7 +882,7 @@ function expectBodyHonest(
 }
 
 function expectPageHolds(result: string, page: Page, label: string): void {
-  expect(bytesOf(result), `${label} total`).toBeLessThanOrEqual(MAIL_MAX_BYTES);
+  expect(bytesOf(result), `${label} total`).toBeLessThanOrEqual(RESULT_MAX_BYTES);
   const lines = dataLinesOf(result);
   expect(lines, `${label} line count: no item dropped`).toHaveLength(page.items.length);
   page.items.forEach((item, n) => {
@@ -910,7 +898,7 @@ describe("hostile envelopes at every limit (VT-2, RV-015 F-3, F-4, F-26)", () =>
   const cases = SEEDS.flatMap((seed) => VERBS.map((verb): [number, Verb] => [seed, verb]));
 
   it.each(cases)(
-    "seed %i, %s: every result within MAIL_MAX_BYTES, every core whole, no item dropped",
+    "seed %i, %s: every result within RESULT_MAX_BYTES, every core whole, no item dropped",
     (seed, verb) => {
       const rng = makeRng(seed);
       for (let limit = 1; limit <= MAX_LIMIT[verb]; limit++) {

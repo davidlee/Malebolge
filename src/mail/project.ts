@@ -5,7 +5,7 @@
 // ever shortens are `subject` and `message_id`, because a core field cannot be
 // left out; everything else is shown whole or named in `cut`.
 
-import { cutRendered } from "./render.ts";
+import { cutRendered } from "../untrusted-block.ts";
 import {
   isRfc3339,
   type Address,

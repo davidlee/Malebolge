@@ -42,6 +42,10 @@ const THREADS_WAKE_READS = ["wake/task.ts"];
 /** The only modules outside threads/ that may import it (entry kind and data shape only). */
 const THREADS_READERS = ["daemon-extensions.ts", "daemon-start.ts", "render.ts"];
 
+/** Bookmarks must not reach into mail (SL-008 design sec-6): the families never mix. */
+const BOOKMARKS_DIR = "bookmarks/";
+const MAIL_DIR = "mail/";
+
 /** Source text by path relative to src/. */
 type Sources = Readonly<Record<string, string>>;
 
@@ -78,6 +82,11 @@ function seamAllows(file: string, target: string): boolean {
   return file.startsWith(THREADS_DIR) ? THREADS_WAKE_READS.includes(target) : file !== TASK_SWEEP;
 }
 
+/** Whether `file` may import `target` across the bookmarks/mail line (both src/-relative). */
+function familyAllows(file: string, target: string): boolean {
+  return !(file.startsWith(BOOKMARKS_DIR) && target.startsWith(MAIL_DIR));
+}
+
 /** `roots`, or a sibling tier in `tiers`: what a module of a confined tier may import. */
 const within =
   (tiers: readonly Tier[], roots: readonly string[]) =>
@@ -102,7 +111,8 @@ function violations(sources: Sources): string[] {
           (target) =>
             !ALLOWS[tierOf(file)](target, file) ||
             (target === ROOM_DOOR && !ROOM_DOOR_READERS.includes(file)) ||
-            !seamAllows(file, target),
+            !seamAllows(file, target) ||
+            !familyAllows(file, target),
         )
         .map((target) => `${file} -> ${target}`),
     )
@@ -216,6 +226,15 @@ describe("violations: the allowlist checker", () => {
     for (const reader of ["daemon-extensions.ts", "daemon-start.ts", "render.ts"]) {
       expect(rejects(reader, 'import { threadKind } from "./threads/extension.ts";')).toEqual([]);
     }
+  });
+
+  it("rejects a bookmarks module importing a mail module", () => {
+    expect(rejects("bookmarks/render.ts", 'import { dataLine } from "../mail/render.ts";')).toEqual(
+      ["bookmarks/render.ts -> mail/render.ts"],
+    );
+    expect(
+      rejects("bookmarks/render.ts", 'import { dataLine } from "../untrusted-block.ts";'),
+    ).toEqual([]);
   });
 
   it("accepts the runner importing room/, a listed root module and packages", () => {
