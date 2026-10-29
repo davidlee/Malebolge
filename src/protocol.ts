@@ -53,10 +53,11 @@ export interface AttachMessage {
   target: AttachTarget;
 }
 
-/** The daemon's reply to a successful attach: which conversation this is. */
+/** The daemon's reply to a successful attach: which conversation this is, and its summary when indexed. */
 export interface AttachedMessage {
   type: "attached";
   conversation: number;
+  summary?: ConversationSummary;
 }
 
 /** What a `list` frame asks for: everything, one topic's ids, the topics themselves, or the catalogue's refs. */

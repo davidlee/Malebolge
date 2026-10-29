@@ -215,6 +215,18 @@ describe("renderer", () => {
     );
   });
 
+  it("names the attached conversation's topic and model, when the daemon says them", () => {
+    expect(
+      renderAll([
+        { type: "attached", conversation: 3, summary: { topic: "work", model: "faux/faux-2" } },
+        { type: "attached", conversation: 4, summary: { topic: "work" } },
+      ]),
+    ).toBe(
+      "[attached to conversation 3: topic work, model faux/faux-2]\n" +
+        "[attached to conversation 4: topic work]\n",
+    );
+  });
+
   // SL-010 PHASE-05 VT-3: a line is `id<TAB>topic<TAB>model[<TAB>mark]`, in both presents.
   it("renders a conversations frame as id, topic and model per line, in both presentations", () => {
     const frame = {

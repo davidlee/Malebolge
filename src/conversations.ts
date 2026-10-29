@@ -83,6 +83,8 @@ export interface Conversations {
    * value, never a wire reply (design sec-4, EX-8).
    */
   list(query: PageQuery): Promise<ConversationPage>;
+  /** `conversation`'s topic and model as a listing shows them; none for an id the index does not know. */
+  summaryOf(conversation: Conversation): Promise<ConversationSummary | undefined>;
   /** Every topic, `default` first, then by name (design sec-4, EX-8). */
   topics(): Promise<readonly NamedTopic[]>;
   /** Create one topic, set its directory, or leave it unchanged; the record written. */
@@ -414,6 +416,13 @@ export function conversations(
         case "topic":
           return topicPage(session, query.name);
       }
+    },
+    summaryOf: async ({ id }): Promise<ConversationSummary | undefined> => {
+      const summaries = await session.harness.commit(
+        async (tx) => summariesOf(tx, await readIndexDoc(tx), [id]),
+        context,
+      );
+      return summaries[String(id)];
     },
     topics: async () => topicsOf(await readIndex(session.harness)),
     setTopic: (topic) =>

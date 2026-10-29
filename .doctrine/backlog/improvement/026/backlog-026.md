@@ -19,6 +19,10 @@ folded in as a duplicate).
 2. **Connect status names only the id.** After `new` in a topic,
    `[status] Connected …` gives the conversation id, not its topic or model.
    The list reply already carries per-id `{topic, model}` (SL-010 PHASE-05).
+   **Done 2026-10-29:** the `attached` frame gains an optional `summary`
+   (`Conversations.summaryOf`, the listing's own `summariesOf`), rendered
+   `[status] attached to conversation N: topic T, model M`. Additive on the
+   wire (DEC-007); an unindexed conversation carries none.
 3. **`Topic:` defaults to `default` on a bare RET** (`malebolge--new-target`,
    SL-010 PHASE-07). The operator's first attempt landed in 2672/default
    unnoticed — compounded by 2.

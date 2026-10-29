@@ -862,6 +862,14 @@ describe("daemon", () => {
     });
   });
 
+  // IMP-026 #2: the attach reply names what the list reply would, so the client can say it.
+  it("names the bound conversation's topic and model in the attached reply", async () => {
+    await start();
+    await replyTo({ type: "topic", name: "work" }, isTopics);
+    const { attached } = await attachTo({ type: "attach", topic: "work" });
+    expect(attached.summary).toEqual({ topic: "work", model: refOf(FAUX_MODEL) });
+  });
+
   it("binds a topic's latest conversation, creating only with `new` or in an empty topic (EX-3)", async () => {
     await start();
     await replyTo({ type: "topic", name: "work", cwd: "/A" }, isTopics);
@@ -1272,6 +1280,7 @@ describe("daemon", () => {
       },
       watch: (conversation) => api.watch(conversation),
       list: (query) => api.list(query),
+      summaryOf: (conversation) => api.summaryOf(conversation),
       topics: () => api.topics(),
       setTopic: (topic) => api.setTopic(topic),
     };

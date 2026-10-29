@@ -113,6 +113,8 @@ async function bind(
   conversation: Conversation,
   ack: boolean,
 ): Promise<boolean> {
+  // Read before the watch: nothing awaits between binding and streaming.
+  const summary = ack ? await conversations.summaryOf(conversation) : undefined;
   let stream: AgentEventStream;
   try {
     stream = await conversations.watch(conversation);
@@ -129,7 +131,9 @@ async function bind(
   }
   state.bound = conversation;
   if (ack) {
-    write(state, { type: "attached", conversation: conversation.id });
+    // `exactOptionalPropertyTypes`: an unindexed conversation's reply has no summary key.
+    const attached = { type: "attached", conversation: conversation.id } as const;
+    write(state, summary === undefined ? attached : { ...attached, summary });
   }
   write(state, stream.snapshot);
   stream.start((events) => {

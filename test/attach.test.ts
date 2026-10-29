@@ -9,6 +9,7 @@ import type { Daemon } from "../src/daemon.ts";
 import type { AttachTarget } from "../src/protocol.ts";
 import { type ConnectWait, serveUnix } from "../src/unix-socket.ts";
 import { encodeLine } from "../src/ndjson.ts";
+import { refOf } from "../src/models.ts";
 import {
   type FakeDaemon,
   collect,
@@ -19,7 +20,7 @@ import {
   staleSocket,
   tempDir,
 } from "./fixtures.ts";
-import { openTestHarness, serveTest, type TestHarness } from "./harness-fixture.ts";
+import { FAUX_MODEL, openTestHarness, serveTest, type TestHarness } from "./harness-fixture.ts";
 
 describe("commandOf", () => {
   it.each([
@@ -302,6 +303,10 @@ describe("attach", () => {
   let daemon: Daemon;
   let path: string;
 
+  /** The notice an attach to root prints: the default topic, on the harness's model. */
+  const rootAttached = (): string =>
+    `[attached to conversation ${String(test.root.id)}: topic default, model ${refOf(FAUX_MODEL)}]\n`;
+
   beforeEach(async () => {
     const tmp = await tempDir();
     cleanup = tmp.cleanup;
@@ -347,7 +352,7 @@ describe("attach", () => {
 
   it("ends when the daemon goes away", async () => {
     const s = session(path);
-    await s.until(`[attached to conversation ${String(test.root.id)}]\n`);
+    await s.until(rootAttached());
     await daemon.close();
     await s.done;
     expect(s.printed()).toContain("[detached]");
@@ -372,9 +377,7 @@ describe("attach", () => {
       await s.until("[connected]\n");
       s.input.write("go\n");
       await s.until(`${answer}\n`);
-      expect(s.printed()).toBe(
-        `[connected]\n[attached to conversation ${String(test.root.id)}]\n${answer}\n`,
-      );
+      expect(s.printed()).toBe(`[connected]\n${rootAttached()}${answer}\n`);
       s.input.end();
       await s.done;
     });
@@ -384,9 +387,7 @@ describe("attach", () => {
       await new Promise((resolve) => setTimeout(resolve, 150));
       const s = session(path);
       await s.until(`${answer}\n`);
-      expect(s.printed()).toBe(
-        `[connected]\n[attached to conversation ${String(test.root.id)}]\n» go\n${answer}\n`,
-      );
+      expect(s.printed()).toBe(`[connected]\n${rootAttached()}» go\n${answer}\n`);
       s.input.end();
       await s.done;
     });

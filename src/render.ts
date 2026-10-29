@@ -320,6 +320,12 @@ const markText = (mark: ThreadMark): string =>
 const summaryFields = (summary: ConversationSummary | undefined): string =>
   `${summary?.topic ?? ""}\t${summary?.model ?? ""}`;
 
+/** `: topic T, model M` after an attached notice; the model only when one is stored. */
+const summaryClause = (summary: ConversationSummary | undefined): string =>
+  summary === undefined
+    ? ""
+    : `: topic ${summary.topic}${summary.model === undefined ? "" : `, model ${summary.model}`}`;
+
 /**
  * One listing line: `id<TAB>topic<TAB>model`, and the thread mark after another tab
  * when the id has one. A reply without summaries still prints both empty fields.
@@ -357,7 +363,11 @@ function notices(p: PresentationTable, interrupt: (out: string) => string): Noti
     task_failed: (event) => interrupt(p.notice(`${event.kind} failed: ${event.message}`)),
     error: (event) => interrupt(p.notice(`error: ${event.message}`)),
     attached: (event) =>
-      interrupt(p.notice(`attached to conversation ${String(event.conversation)}`)),
+      interrupt(
+        p.notice(
+          `attached to conversation ${String(event.conversation)}${summaryClause(event.summary)}`,
+        ),
+      ),
     // `id<TAB>topic<TAB>model`, then `\tmark` when the id is a thread: same text in both presents.
     conversations: (event) =>
       event.conversations
