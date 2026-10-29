@@ -5,8 +5,8 @@ id = 5
 slug = "a-failing-model-turn-is-silent-no-transcript-error-no-daemon-log"
 title = "A failing model turn is silent: no transcript error, no daemon log"
 kind = "issue"
-status = "open"
-resolution = ""                 # seeded empty so `backlog edit` sets it in place
+status = "closed"
+resolution = "duplicate"
 created = "2026-10-29"
 updated = "2026-10-29"
 tags = []
@@ -20,3 +20,7 @@ tags = []
 needs    = []                   # item→item hard prerequisite
 after    = []                   # item→item soft sequence: { to, rank? }
 triggers = []                   # watched source globs: { globs, note? }
+
+[[relation]]
+label = "related"
+target = "IMP-026"

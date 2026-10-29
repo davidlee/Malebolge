@@ -3,7 +3,7 @@ version = 1
 
 id = 26
 slug = "transcript-connect-status-names-only-the-id-not-the-conversations-topic-and-model"
-title = "Transcript connect status names only the id, not the conversation's topic and model"
+title = "Rough edges from the SL-010 topic-model hand-run"
 kind = "improvement"
 status = "open"
 resolution = ""                 # seeded empty so `backlog edit` sets it in place
