@@ -389,6 +389,9 @@ so P4 reduces to `nix run .#jailed-pi-bridge`. Removed PHASE-01's
   entities as the characters they stand for, and its printf check tested its
   output, not its context. The stale-process hypothesis was also false: the
   daemon started 00:55 Oct 30, after dd6ae25 (Oct 29 23:33).
+- 8 (VA-1, RV-021 F-1): met. Operator: a SATAN `bridge_post` arrived during
+  a long pi run; after Esc the message showed once, as a note, with no new
+  turn ("pass").
 
 ## Autonomy log
 
