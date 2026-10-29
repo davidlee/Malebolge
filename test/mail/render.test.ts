@@ -4,13 +4,18 @@
 import { describe, expect, it } from "vitest";
 import {
   CUT_ORDER,
+  JEV_MAX_BYTES,
+  jevField,
   type ProjectedItem,
   projectListItem,
   projectMailbox,
   projectNew,
   projectRead,
   projectThreadItem,
+  projectWithheld,
 } from "../../src/mail/project.ts";
+import { type PolicyQuestion, WITHHOLD_POLICY } from "../../src/mail/policy.ts";
+import type { Classification, ClassifyOutcome, Unclassified } from "../../src/mail/source.ts";
 import type { Clamp } from "../../src/ranges.ts";
 import {
   cutRendered,
@@ -38,6 +43,8 @@ import {
   addressOf,
   bodyPartOf,
   bytesOf,
+  classificationOf,
+  jevAnswersOf,
   CLOSE_TAG,
   dataLinesOf,
   headerLinesOf,
@@ -64,6 +71,9 @@ import {
 
 const KNOWN_GAPS =
   "known gaps: late arrivals with an older received_at are not returned; filters do not reopen passed positions";
+
+/** Cut names a shown mail_new item never names: neither is its fill here, and jev never cuts. */
+const NOT_CUT_HERE: readonly string[] = ["message_id", "size", "jev", "sender_domains"];
 
 type PageFacts = Omit<HeaderFacts, "items" | "withCuts">;
 
@@ -96,6 +106,10 @@ function cutNamesOf(parsed: Record<string, unknown>): unknown[] {
   const cut = parsed["cut"];
   return Array.isArray(cut) ? cut : [];
 }
+
+// ------------------------------------------------------------- PHASE-05
+/** The entry type `projectThreadItem` takes (the interface adds the classification). */
+type EntryArg = Parameters<typeof projectThreadItem>[0];
 
 // ------------------------------------------------------------ measurement
 
@@ -193,6 +207,7 @@ describe("escaping (VT-1)", () => {
         keywords: [CLOSER],
         bodies: [bodyPartOf({ text: body })],
       }),
+      classificationOf("Msg1"),
     );
     const result = renderPage({ tool: "mail_read", clamps: [] }, [item], 1);
     const lines = dataLinesOf(result);
@@ -358,6 +373,7 @@ describe("a body of 4096 > at limit 10 (RV-015 F-3, F-4, F-25)", () => {
       to: [addressOf(2), addressOf(3)],
       bodies: [bodyPartOf({ text: BODY })],
     }),
+    classificationOf("Msg1"),
   );
   const { line, cut } = fitItem(item, share);
   const parsed = parseLine(line);
@@ -400,6 +416,7 @@ describe("a long to list and a long references list (RV-015 F-28)", () => {
       keywords: ["$seen"],
       attachments: [],
     }),
+    classificationOf("Msg1"),
   );
   const { line, cut } = fitItem(item, share);
   const parsed = parseLine(line);
@@ -423,6 +440,105 @@ describe("a long to list and a long references list (RV-015 F-28)", () => {
   });
 });
 
+// ------------------------------------------------------------ the jev field
+
+describe("jevField (SL-007 sec-16)", () => {
+  const outcomeOf = (answers: Classification["answers"]): ClassifyOutcome => ({
+    id: "Msg1",
+    classified: classificationOf("Msg1", answers),
+  });
+  const jevOf = (answers: Classification["answers"]): Record<string, unknown> =>
+    jevField(outcomeOf(answers)).value;
+  const UNCLASSIFIED: readonly Extract<ClassifyOutcome, { unclassified: Unclassified }>[] = [
+    { id: "Msg1", unclassified: "too_large" },
+    { id: "Msg1", unclassified: "unavailable" },
+    { id: "Msg1", unclassified: "failed" },
+  ];
+
+  it("renders a choice as [label, confidence], a noul as its probability and a score as [level, confidence], rounded to 2 dp", () => {
+    expect(
+      jevOf({
+        primary_purpose: { choice: "promotion", confidence: 0.8249 },
+        security_related: { noul: 0.1234 },
+        claimed_time_pressure: { score: 2.3456, confidence: 0.5678 },
+      }),
+    ).toEqual({
+      primary_purpose: ["promotion", 0.82],
+      security_related: 0.12,
+      claimed_time_pressure: [2.35, 0.57],
+    });
+  });
+
+  it("keeps the answers' own key order", () => {
+    const value = jevOf({
+      zzz_last: { noul: 0.5 },
+      aaa_first: { noul: 0.25 },
+      mmm_middle: { noul: 0.75 },
+    });
+    expect(Object.keys(value)).toEqual(["zzz_last", "aaa_first", "mmm_middle"]);
+  });
+
+  it("renders probabilities, model and schema never", () => {
+    const item = projectListItem(summaryOf(), classificationOf("Msg1"));
+    const line = fitItem(item, shareOf(40)).line;
+    for (const absent of [
+      "probabilities",
+      '\"model\":',
+      '\"schema\":',
+      '\"seen\":',
+      "Subject of Msg1",
+    ]) {
+      expect(line).not.toContain(absent);
+    }
+    expect(parseLine(line)["jev"]).toEqual(
+      jevField({ id: "Msg1", classified: classificationOf("Msg1") }).value,
+    );
+  });
+
+  it.each(UNCLASSIFIED)(
+    "renders an unclassified outcome ($unclassified) as {unclassified: reason}, cuts nothing",
+    (outcome) => {
+      expect(jevField(outcome)).toEqual({
+        value: { unclassified: outcome.unclassified },
+        cut: false,
+      });
+    },
+  );
+
+  it("a jev of exactly JEV_MAX_BYTES is whole and not cut", () => {
+    const answers = jevAnswersOf(JEV_MAX_BYTES);
+    const field = jevField(outcomeOf(answers));
+    expect(renderedLength(field.value)).toBe(JEV_MAX_BYTES);
+    expect(field.cut).toBe(false);
+    expect(Object.keys(field.value)).toEqual(Object.keys(answers));
+  });
+
+  it("a jev over JEV_MAX_BYTES keeps a prefix of whole answers, in order, and cuts", () => {
+    const answers = jevAnswersOf(JEV_MAX_BYTES + 100);
+    const all = Object.keys(answers);
+    const field = jevField(outcomeOf(answers));
+    const kept = Object.keys(field.value);
+    expect(field.cut).toBe(true);
+    expect(kept.length).toBeGreaterThan(0);
+    expect(kept.length).toBeLessThan(all.length);
+    expect(kept).toEqual(all.slice(0, kept.length));
+    expect(renderedLength(field.value)).toBeLessThanOrEqual(JEV_MAX_BYTES);
+  });
+
+  it("is the core field right after has_attachment in every shown item", () => {
+    for (const item of [
+      projectListItem(summaryOf(), classificationOf("Msg1")),
+      projectThreadItem(inStoreThreadItem(), classificationOf("Msg1")),
+      projectNew(readOf(), classificationOf("Msg1")),
+      projectRead(readOf(), classificationOf("Msg1")),
+    ]) {
+      const keys = item.core.map(([key]) => key);
+      const at = keys.indexOf("has_attachment");
+      expect(keys.slice(at, at + 2)).toEqual(["has_attachment", "jev"]);
+    }
+  });
+});
+
 // ------------------------------------------------------------ largest cores
 
 describe("the largest cores fit their share (RV-015 F-25, F-39)", () => {
@@ -431,8 +547,11 @@ describe("the largest cores fit their share (RV-015 F-25, F-39)", () => {
     renderedBytes({ ...coreOf(item), cut });
 
   it.each([
-    ["mail_list", projectListItem(maxSummary("list"), true)],
-    ["mail_thread", projectThreadItem({ ...maxSummary("thr"), in_store: true })],
+    ["mail_list", projectListItem(maxSummary("list"), classificationOf("Msg1"), true)],
+    [
+      "mail_thread",
+      projectThreadItem({ ...maxSummary("thr"), in_store: true }, classificationOf("Msg1")),
+    ],
   ])(
     "%s at limit 40: a summary core with every flag, 255-byte ids and every fill left out",
     (_tool, item) => {
@@ -446,21 +565,77 @@ describe("the largest cores fit their share (RV-015 F-25, F-39)", () => {
     },
   );
 
+  it("a maximal list item with jev fits shareOf(40)", () => {
+    const summary = maxSummary("jev-list");
+    const item = projectListItem(
+      summary,
+      classificationOf(summary.id, jevAnswersOf(JEV_MAX_BYTES)),
+    );
+    const { line, cut } = fitItem(item, shareOf(40));
+    expect(Buffer.byteLength(line)).toBeLessThanOrEqual(shareOf(40));
+    expectCoreWhole(parseLine(line), item);
+    expect(cut).not.toContain("jev");
+    expect(renderedLength(coreOf(item)["jev"])).toBe(JEV_MAX_BYTES);
+    expect(parseLine(line)["jev"]).toEqual(coreOf(item)["jev"]);
+  });
+
+  it("a maximal withheld item fits shareOf(40)", () => {
+    const summary = maxSummary("jev-withheld");
+    const [row] = WITHHOLD_POLICY;
+    const item = projectWithheld(
+      summary,
+      { id: summary.id, classified: classificationOf(summary.id, jevAnswersOf(JEV_MAX_BYTES)) },
+      { reason: "hostile", detail: row.question, score: 0.99 },
+      { inStore: true, heldBack: true },
+    );
+    const { line } = fitItem(item, shareOf(40));
+    const parsed = parseLine(line);
+    expect(Buffer.byteLength(line)).toBeLessThanOrEqual(shareOf(40));
+    expectCoreWhole(parsed, item);
+    for (const [key] of item.core) {
+      expect(Object.keys(parsed)).toContain(key);
+    }
+    expect(parsed["jev"]).toEqual(coreOf(item)["jev"]);
+    expect(parsed["held_back"]).toBe(true);
+    expect(parsed["in_store"]).toBe(true);
+  });
+
+  it("a maximal thread item with jev fits shareOf(40)", () => {
+    const entry: EntryArg = { ...maxSummary("jev-thr"), in_store: true };
+    const item = projectThreadItem(entry, classificationOf(entry.id, jevAnswersOf(JEV_MAX_BYTES)));
+    const { line, cut } = fitItem(item, shareOf(40));
+    expect(Buffer.byteLength(line)).toBeLessThanOrEqual(shareOf(40));
+    expectCoreWhole(parseLine(line), item);
+    expect(cut).not.toContain("jev");
+    expect(renderedLength(coreOf(item)["jev"])).toBe(JEV_MAX_BYTES);
+  });
+
+  it("an item whose jev is cut names jev in cut, after subject when both", () => {
+    const summary = summaryOf({ subject: "s".repeat(300) });
+    const item = projectListItem(
+      summary,
+      classificationOf(summary.id, jevAnswersOf(JEV_MAX_BYTES + 100)),
+    );
+    expect(item.cut).toEqual(["subject", "jev"]);
+    expect(coreOf(item)["cut"]).toEqual(["subject", "jev"]);
+  });
+
   it("mail_new at limit 20: the core with every body flag and held_back, other fields left out", () => {
-    const item = projectNew(maxRead("new"), true);
+    const item = projectNew(maxRead("new"), classificationOf("Msg1"), true);
     const { line, cut } = fitItem(item, shareOf(20));
     const parsed = parseLine(line);
     expect(Buffer.byteLength(line)).toBeLessThanOrEqual(shareOf(20));
     expectCoreWhole(parsed, item);
     expect(parsed["held_back"]).toBe(true);
     expect(parsed["output_truncated"]).toBe(true);
-    expect(cut).toEqual(CUT_ORDER.filter((name) => name !== "message_id" && name !== "size"));
+    expect(cut).toEqual(CUT_ORDER.filter((name) => !NOT_CUT_HERE.includes(name)));
     expect(parsed["size"]).toBe(5120);
-    expect(coreWithCut(item, CUT_ORDER)).toBeLessThanOrEqual(1280);
+    // The core with `jev` still leaves the body and the fill at least 1 KiB of the share.
+    expect(coreWithCut(item, CUT_ORDER)).toBeLessThanOrEqual(shareOf(20) - 1024);
   });
 
   it("mail_read: the core with every flag and 5 long message ids renders within 3 KiB", () => {
-    const item = projectRead(maxRead("read"));
+    const item = projectRead(maxRead("read"), classificationOf("Msg1"));
     const core = coreOf(item);
     expect(core["is_truncated"]).toBe(true);
     expect(core["is_encoding_problem"]).toBe(true);
@@ -484,7 +659,7 @@ describe("received_at (RV-015 F-42)", () => {
     });
     const result = renderPage(
       { tool: "mail_list", clamps: [] },
-      data.items.map((s) => projectListItem(s)),
+      data.items.map((s) => projectListItem(s, classificationOf("Msg1"))),
       1,
     );
     const [line] = dataLinesOf(result);
@@ -502,7 +677,11 @@ describe("fields outside the projection (RV-015 F-39)", () => {
       ...readOf({ provenance: { account_id: "acct9", email_state: "secret-state" } }),
       x_future_field: "FUTURE",
     });
-    const result = renderPage({ tool: "mail_read", clamps: [] }, [projectRead(noisy)], 1);
+    const result = renderPage(
+      { tool: "mail_read", clamps: [] },
+      [projectRead(noisy, classificationOf("Msg1"))],
+      1,
+    );
     for (const stray of [
       "x_future_field",
       "FUTURE",
@@ -660,6 +839,7 @@ describe("renderHeader", () => {
       expect(() => renderHeader({ ...base, items: bad })).toThrow();
       expect(() => renderHeader({ ...base, withCuts: bad })).toThrow();
       expect(() => renderHeader({ ...base, heldBack: bad })).toThrow();
+      expect(() => renderHeader({ ...base, withheld: bad })).toThrow();
       expect(() => renderHeader({ ...base, clamps: [{ name: "limit", to: bad }] })).toThrow();
       expect(() => renderHeader({ ...base, thread: { total: bad, truncated: false } })).toThrow();
       expect(() => renderHeader({ ...base, shown: { shown: bad, of: 1 } })).toThrow();
@@ -670,6 +850,41 @@ describe("renderHeader", () => {
   it("accepts zero and the largest safe integer", () => {
     expect(() => renderHeader({ ...base, items: 0, heldBack: 0 })).not.toThrow();
     expect(() => renderHeader({ ...base, items: Number.MAX_SAFE_INTEGER })).not.toThrow();
+  });
+
+  it("says nothing of withheld when it is zero or absent", () => {
+    expect(renderHeader(base)).not.toContain("withheld");
+    expect(renderHeader({ ...base, withheld: 0 })).not.toContain("withheld");
+  });
+
+  it("ends the items line with `, N withheld` when N > 0, after `, N held back`", () => {
+    expect(renderHeader({ ...base, withheld: 2 }).split("\n")[0]).toBe(
+      "mail_new: 1 items, 0 with cuts, 2 withheld",
+    );
+    expect(renderHeader({ ...base, heldBack: 1, withheld: 2 }).split("\n")[0]).toBe(
+      "mail_new: 1 items, 0 with cuts, 1 held back, 2 withheld",
+    );
+  });
+
+  it("names each missing question once, right after the items line, in table order", () => {
+    const [first, second] = WITHHOLD_POLICY;
+    const header = renderHeader({
+      ...base,
+      missingQuestions: [second.question, first.question, second.question, first.question],
+    });
+    expect(header.split("\n")).toEqual([
+      "mail_new: 1 items, 0 with cuts",
+      `missing question: ${first.question}`,
+      `missing question: ${second.question}`,
+    ]);
+  });
+
+  it("fails closed on a missing question the policy table does not name", () => {
+    const missingQuestions: readonly PolicyQuestion[] = [
+      // @ts-expect-error the header is trusted text: a name the policy table does not hold fails closed
+      "not_a_policy_question",
+    ];
+    expect(() => renderHeader({ ...base, missingQuestions })).toThrow();
   });
 });
 
@@ -743,8 +958,8 @@ describe("renderPage", () => {
 
   it("throws when there are more items than the limit", () => {
     const items = [
-      projectListItem(summaryOf({ id: "A" })),
-      projectListItem(summaryOf({ id: "B" })),
+      projectListItem(summaryOf({ id: "A" }), classificationOf("Msg1")),
+      projectListItem(summaryOf({ id: "B" }), classificationOf("Msg1")),
     ];
     expect(() => renderPage({ tool: "mail_list", clamps: [] }, items, 1)).toThrow();
     expect(() => renderPage({ tool: "mail_list", clamps: [] }, items, 2)).not.toThrow();
@@ -752,9 +967,9 @@ describe("renderPage", () => {
 
   it("counts items and items with cuts into the header, and renders one line per item", () => {
     const items = [
-      projectListItem(summaryOf({ id: "A", subject: long })),
-      projectListItem(summaryOf({ id: "B" })),
-      projectListItem(summaryOf({ id: "C", subject: long })),
+      projectListItem(summaryOf({ id: "A", subject: long }), classificationOf("Msg1")),
+      projectListItem(summaryOf({ id: "B" }), classificationOf("Msg1")),
+      projectListItem(summaryOf({ id: "C", subject: long }), classificationOf("Msg1")),
     ];
     const result = renderPage(
       { tool: "mail_list", clamps: [{ name: "limit", to: 40 }] },
@@ -768,8 +983,8 @@ describe("renderPage", () => {
 
   it("renders a thread entry not in the store as exactly its id and in_store: false", () => {
     const items = [
-      projectThreadItem(absentThreadItem("MsgOut")),
-      projectThreadItem(inStoreThreadItem()),
+      projectThreadItem(absentThreadItem("MsgOut"), undefined),
+      projectThreadItem(inStoreThreadItem(), classificationOf("Msg1")),
     ];
     const result = renderPage(
       { tool: "mail_thread", clamps: [], thread: { total: 5, truncated: true } },
@@ -786,7 +1001,7 @@ describe("renderPage", () => {
   it("passes held back through as a count in the header and held_back: true on the line", () => {
     const result = renderPage(
       { tool: "mail_new", clamps: [], heldBack: 1, next: "", caughtUp: true },
-      [projectNew(readOf({ id: "Future" }), true)],
+      [projectNew(readOf({ id: "Future" }), classificationOf("Msg1"), true)],
       10,
     );
     expect(headerLinesOf(result)[0]).toBe("mail_new: 1 items, 0 with cuts, 1 held back");
@@ -820,7 +1035,7 @@ function hostilePage(verb: Verb, rng: Rng, limit: number): Page {
       const summaries = indexes.map((n) => randomSummary(rng, sizeOf(rng, n), `i${String(n)}`));
       const data = mustCheck("list", { offset: 0, limit, items: summaries });
       return {
-        items: data.items.map((s) => projectListItem(s, rng.chance(0.2))),
+        items: data.items.map((s) => projectListItem(s, classificationOf("Msg1"), rng.chance(0.2))),
         facts: { tool: "mail_list", clamps: [] },
       };
     }
@@ -833,7 +1048,9 @@ function hostilePage(verb: Verb, rng: Rng, limit: number): Page {
         items: entries,
       });
       return {
-        items: data.items.map((entry) => projectThreadItem(entry)),
+        items: data.items.map((entry) =>
+          projectThreadItem(entry, entry.in_store ? classificationOf(entry.id) : undefined),
+        ),
         facts: { tool: "mail_thread", clamps: [], thread: { total: limit, truncated: false } },
       };
     }
@@ -843,7 +1060,9 @@ function hostilePage(verb: Verb, rng: Rng, limit: number): Page {
         mustCheck("read", randomRead(rng, sizeOf(rng, n), `i${String(n)}`)),
       );
       const items = reads.map((r) =>
-        verb === "new" ? projectNew(r, rng.chance(0.2)) : projectRead(r),
+        verb === "new"
+          ? projectNew(r, classificationOf("Msg1"), rng.chance(0.2))
+          : projectRead(r, classificationOf("Msg1")),
       );
       const facts: PageFacts =
         verb === "new"

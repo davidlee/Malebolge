@@ -1,0 +1,22 @@
+schema = "doctrine.backlog"
+version = 1
+
+id = 28
+slug = "mail-new-at-its-defaults-now-reports-a-max-bytes-clamp-joint-clamp-minus-jev-max-bytes-is-below-the"
+title = "mail_new at its defaults now reports a max_bytes clamp (joint clamp minus JEV_MAX_BYTES is below the 4096 default)"
+kind = "improvement"
+status = "open"
+resolution = ""                 # seeded empty so `backlog edit` sets it in place
+created = "2026-10-29"
+updated = "2026-10-29"
+tags = []
+
+# outbound-only. Cross-kind structural edges (e.g. references with a role
+# — `originates_from` for backlog→slice provenance — governed_by, related, drift) are
+# uniform `[[relation]]` rows — author them with
+# `doctrine link ITEM-NNN <label> <target>`; `doctrine inspect ITEM-NNN` renders
+# them. The dep/seq axes below stay typed (they carry per-edge payloads).
+[relationships]
+needs    = []                   # item→item hard prerequisite
+after    = []                   # item→item soft sequence: { to, rank? }
+triggers = []                   # watched source globs: { globs, note? }

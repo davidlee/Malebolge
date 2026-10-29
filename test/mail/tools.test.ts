@@ -7,19 +7,34 @@ import { type ToolExecutionApi, type ToolRegistration } from "@earendil-works/pi
 import { describe, expect, it } from "vitest";
 import { context } from "../../src/context.ts";
 import { isRecord } from "../../src/json.ts";
+import { classificationCache } from "../../src/mail/classifications.ts";
 import { mailRefusal } from "../../src/mail/extension.ts";
-import { MailSourceError, type ReadData } from "../../src/mail/source.ts";
+import { type ReportKind, type Withheld, WITHHOLD_POLICY } from "../../src/mail/policy.ts";
+import { JEV_MAX_BYTES } from "../../src/mail/project.ts";
+import { shareOf } from "../../src/mail/render.ts";
+import {
+  type Address,
+  type Classification,
+  MailSourceError,
+  type ReadData,
+} from "../../src/mail/source.ts";
 import {
   type MailDeps,
   MAIL_DESCRIPTION_SUFFIX,
   MAIL_ERROR_PREFIX,
   mailTools,
+  NEW_JOINT_BYTES,
+  NEW_MAX_BYTES,
   OVERSIZE_AT_LIMIT_1,
 } from "../../src/mail/tools.ts";
 import {
   absentThreadItem,
   addressesOf,
+  attachmentOf,
   bodyPartOf,
+  bytesOf,
+  classificationOf,
+  classifyAll,
   dataLinesOf,
   type FakeMailSource,
   type FakeReplies,
@@ -31,6 +46,7 @@ import {
   OPEN_TAG,
   parseLine,
   readOf,
+  type RecordedCall,
   summaryOf,
 } from "./mail-fixtures.ts";
 
@@ -78,20 +94,98 @@ async function run(
   return { text: first.text, isError: result.isError === true };
 }
 
+function idsOfReadAfter(replies: FakeReplies): string[] {
+  const page = replies.readAfter;
+  return Array.isArray(page) ? page.map((read) => read.id) : [];
+}
+
+function idsOfRead(replies: FakeReplies): string[] {
+  const read = replies.read;
+  return read === undefined || read instanceof Error ? [] : [read.id];
+}
+
+function idsOfThread(replies: FakeReplies): string[] {
+  const thread = replies.thread;
+  if (thread === undefined || thread instanceof Error) {
+    return [];
+  }
+  return thread.items.flatMap((item) => (item.in_store ? [item.id] : []));
+}
+
+function idsOfList(replies: FakeReplies): string[] {
+  const list = replies.list;
+  if (list === undefined || list instanceof Error) {
+    return [];
+  }
+  return list.items.map((item) => item.id);
+}
+
+/** The ids the tool's read reaches for these replies: the page's, in-store only for a thread. */
+function itemIdsOf(name: ToolName, replies: FakeReplies): string[] {
+  switch (name) {
+    case "mail_new":
+      return idsOfReadAfter(replies);
+    case "mail_read":
+      return idsOfRead(replies);
+    case "mail_thread":
+      return idsOfThread(replies);
+    case "mail_list":
+      return idsOfList(replies);
+    case "mail_mailboxes":
+      return [];
+  }
+}
+
+/** `replies` with a benign classification for every id the tool's read reaches (SL-007 PHASE-05). */
+function withClassify(name: ToolName, replies: FakeReplies): FakeReplies {
+  const classify = replies.classify;
+  if (classify !== undefined) {
+    return replies;
+  }
+  return { ...replies, classify: classifyAll(itemIdsOf(name, replies)) };
+}
+
+/** mail_new's joint bound at `limit`, built from the exported constants and never typed. */
+const jointBound = (limit: number): number => Math.floor(NEW_JOINT_BYTES / limit) - JEV_MAX_BYTES;
+
 /** Run one tool over a fake answering `replies`; returns the outcome and the fake. */
 async function runWith(
   replies: FakeReplies,
   name: ToolName,
   args: Record<string, unknown>,
+  deps: Partial<MailDeps> = {},
 ): Promise<{ outcome: Outcome; source: FakeMailSource }> {
-  const source = fakeMailSource(replies);
-  return { outcome: await run(source, name, args), source };
+  const source = fakeMailSource(withClassify(name, replies));
+  return { outcome: await run(source, name, args, context, deps), source };
 }
 
-/** The query of the only recorded call, without its signal. */
+/** Every call that is not a classify: the tool's one read. */
+function readCallsOf(source: FakeMailSource): RecordedCall[] {
+  return source.calls.filter((call) => call.verb !== "classify");
+}
+
+/** The classify calls: at most one per tool call (SL-007 PHASE-05, § One tool call). */
+function classifyCallsOf(source: FakeMailSource): RecordedCall[] {
+  return source.calls.filter((call) => call.verb === "classify");
+}
+
+/** The query of the only read call, without its signal: one read, and at most one classify. */
 function onlyQuery(source: FakeMailSource): object | undefined {
-  expect(source.calls).toHaveLength(1);
-  return source.calls[0]?.query;
+  const reads = readCallsOf(source);
+  expect(reads).toHaveLength(1);
+  expect(classifyCallsOf(source).length).toBeLessThanOrEqual(1);
+  return reads[0]?.query;
+}
+
+/** The one classify call, when there is one, and its ids exactly: none only for an empty page. */
+function expectClassified(source: FakeMailSource, ids: readonly string[]): void {
+  const calls = classifyCallsOf(source);
+  expect(calls.length).toBeLessThanOrEqual(1);
+  if (calls.length === 0) {
+    expect(ids).toEqual([]);
+    return;
+  }
+  expect(calls[0]?.query).toMatchObject({ ids });
 }
 
 // ----------------------------------------------------------------- readers
@@ -113,6 +207,9 @@ function heldBackCount(text: string): number | undefined {
   const match = /, (\d+) held back$/.exec(headerLinesOf(text)[0] ?? "");
   return match?.[1] === undefined ? undefined : Number(match[1]);
 }
+
+/** The items line, the header's first: `mail_list: 3 items, 0 with cuts, 1 withheld`. */
+const itemsLineOf = (text: string): string => headerLinesOf(text)[0] ?? "";
 
 /** The header's clamps line (`limit clamped to 20; max_bytes clamped to 2048`). */
 const clampsOf = (text: string): string | undefined =>
@@ -195,7 +292,8 @@ describe("VT-1 mail tools refuse bad input before any port call", () => {
       const { source } = await runWith({ read: readOf() }, "mail_read", {
         id: `${"a".repeat(250)}_-b9`,
       });
-      expect(source.calls.map(({ verb }) => verb)).toEqual(["read"]);
+      expect(readCallsOf(source).map(({ verb }) => verb)).toEqual(["read"]);
+      expect(classifyCallsOf(source).length).toBeLessThanOrEqual(1);
       expect(onlyQuery(source)).toMatchObject({ id: `${"a".repeat(250)}_-b9` });
     });
   });
@@ -307,7 +405,7 @@ describe("VT-1 mail tools refuse bad input before any port call", () => {
       expect(onlyQuery(bare.source)).toStrictEqual({
         after: "",
         limit: 10,
-        maxBytes: 4096,
+        maxBytes: jointBound(10),
         filters: {},
       });
       const full = await runWith({ readAfter: [] }, "mail_new", {
@@ -366,17 +464,19 @@ describe("VT-1 mail tools refuse bad input before any port call", () => {
         ["mail_list", {}],
         ["mail_mailboxes", {}],
       ];
+      const replies: FakeReplies = {
+        readAfter: [],
+        read: readOf(),
+        ...threadReply(),
+        ...listReply(),
+        mailboxes: { items: [] },
+      };
       for (const [name, args] of runs) {
-        const source = fakeMailSource({
-          readAfter: [],
-          read: readOf(),
-          ...threadReply(),
-          ...listReply(),
-          mailboxes: { items: [] },
-        });
+        const source = fakeMailSource(withClassify(name, replies));
         await run(source, name, args, ctx);
-        expect(source.calls).toHaveLength(1);
-        expect(source.calls[0]?.signal).toBe(controller.signal);
+        expect(readCallsOf(source)).toHaveLength(1);
+        expect(classifyCallsOf(source).length).toBeLessThanOrEqual(1);
+        expect(readCallsOf(source)[0]?.signal).toBe(controller.signal);
       }
     });
   });
@@ -401,9 +501,9 @@ describe("VT-1 mail tools refuse bad input before any port call", () => {
         "mail_new limit above 20",
         {
           tool: "mail_new",
-          args: { after: "", limit: 21, max_bytes: 2048 },
+          args: { after: "", limit: 21, max_bytes: jointBound(20) },
           header: "limit clamped to 20",
-          query: NEW_OF(20, 2048),
+          query: NEW_OF(20, jointBound(20)),
         },
       ],
       [
@@ -434,21 +534,21 @@ describe("VT-1 mail tools refuse bad input before any port call", () => {
         },
       ],
       [
-        "mail_new joint clamp: limit 10 lowers max_bytes 8192 to 4096",
+        "mail_new joint clamp: limit 10 lowers max_bytes 8192 to the joint bound",
         {
           tool: "mail_new",
           args: { after: "", limit: 10, max_bytes: 8192 },
-          header: "max_bytes clamped to 4096",
-          query: NEW_OF(10, 4096),
+          header: `max_bytes clamped to ${String(jointBound(10))}`,
+          query: NEW_OF(10, jointBound(10)),
         },
       ],
       [
-        "mail_new joint clamp at limit 20 lowers the DEFAULT max_bytes to 2048, reported",
+        "mail_new joint clamp at limit 20 lowers the DEFAULT max_bytes to the joint bound, reported",
         {
           tool: "mail_new",
           args: { after: "", limit: 20 },
-          header: "max_bytes clamped to 2048",
-          query: NEW_OF(20, 2048),
+          header: `max_bytes clamped to ${String(jointBound(20))}`,
+          query: NEW_OF(20, jointBound(20)),
         },
       ],
       [
@@ -456,8 +556,8 @@ describe("VT-1 mail tools refuse bad input before any port call", () => {
         {
           tool: "mail_new",
           args: { after: "", limit: 100, max_bytes: 8000 },
-          header: "limit clamped to 20; max_bytes clamped to 2048",
-          query: NEW_OF(20, 2048),
+          header: `limit clamped to 20; max_bytes clamped to ${String(jointBound(20))}`,
+          query: NEW_OF(20, jointBound(20)),
         },
       ],
       [
@@ -557,16 +657,20 @@ describe("VT-1 mail tools refuse bad input before any port call", () => {
     });
 
     it.each([
-      ["mail_new at the defaults, limit 10 and max_bytes 4096", "mail_new", { after: "" }],
       [
-        "mail_new at limit 20 and max_bytes 2048",
+        "mail_new at limit 10 and the joint bound",
         "mail_new",
-        { after: "", limit: 20, max_bytes: 2048 },
+        { after: "", limit: 10, max_bytes: jointBound(10) },
       ],
       [
-        "mail_new at limit 5 and max_bytes 8192",
+        "mail_new at limit 20 and the joint bound",
         "mail_new",
-        { after: "", limit: 5, max_bytes: 8192 },
+        { after: "", limit: 20, max_bytes: jointBound(20) },
+      ],
+      [
+        "mail_new at limit 5 and the joint bound",
+        "mail_new",
+        { after: "", limit: 5, max_bytes: jointBound(5) },
       ],
       [
         "mail_new at the bounds limit 1 and max_bytes 512",
@@ -998,6 +1102,7 @@ describe("VT-3 shape, replay and descriptions", () => {
       "is_seen",
       "is_flagged",
       "has_attachment",
+      "jev",
     ];
     const BODY_FLAGS = [
       "is_truncated",
@@ -1156,4 +1261,513 @@ describe("VT-1 mailRefusal refuses every tool before any argument check", () => 
       expect(outcome.text.split(MAIL_ERROR_PREFIX)).toHaveLength(2);
     }
   });
+});
+
+// ========================================= PHASE-05: the item tools screen their page
+
+// The four tools whose read reaches items; mail_mailboxes has no items to screen.
+type ItemTool = "mail_new" | "mail_read" | "mail_thread" | "mail_list";
+
+const ITEM_TOOLS = ["mail_new", "mail_read", "mail_thread", "mail_list"] as const;
+
+const SCREENED_ID = "Msg1";
+const SCREENED_AT = at(PAST);
+/** Two domains, one uppercase and one repeated: `sender_domains` lowercases and dedupes. */
+const SCREENED_FROM: Address[] = [
+  { name: "Ada", email: "Ada@Example.com" },
+  { name: null, email: "bob@example.org" },
+  { name: "Ada again", email: "second@example.com" },
+];
+const SCREENED_DOMAINS = ["example.com", "example.org"];
+/** The policy's question names, read from the table and never typed (CON-001). */
+const POLICY_QUESTIONS = WITHHOLD_POLICY.map((row) => row.question);
+const [FIRST_ROW] = WITHHOLD_POLICY;
+
+/** The one item the screening tests screen: a plain read, three senders, a body, an attachment and a size. */
+function screenedRead(overrides: Partial<ReadData> = {}): ReadData {
+  return readOf({
+    id: SCREENED_ID,
+    thread_id: "Thr1",
+    received_at: SCREENED_AT,
+    cursor: `${String(Date.parse(SCREENED_AT))}:${SCREENED_ID}`,
+    from: SCREENED_FROM,
+    attachments: [attachmentOf()],
+    ...overrides,
+  });
+}
+
+/** The arguments `tool` needs to reach its page. */
+function itemArgs(tool: ItemTool): Record<string, unknown> {
+  switch (tool) {
+    case "mail_new":
+      return { after: "" };
+    case "mail_read":
+      return { id: SCREENED_ID };
+    case "mail_thread":
+      return { id: "Thr1" };
+    case "mail_list":
+      return {};
+  }
+}
+
+/** What `tool` reads for one `item`: its one-message page. */
+function itemReplies(tool: ItemTool, item: ReadData = screenedRead()): FakeReplies {
+  switch (tool) {
+    case "mail_new":
+      return { readAfter: [item] };
+    case "mail_read":
+      return { read: item };
+    case "mail_thread":
+      return {
+        thread: { id: "Thr1", total: 1, truncated: false, items: [inStoreThreadItem(item)] },
+      };
+    case "mail_list":
+      return { list: { limit: 20, offset: 0, items: [item] } };
+  }
+}
+
+/** The rendered `jev` object of an item. */
+function jevOf(item: Record<string, unknown>): Record<string, unknown> {
+  const jev = item["jev"];
+  if (!isRecord(jev)) {
+    throw new Error("the item has no jev object");
+  }
+  return jev;
+}
+
+/** The contract answers, with `question` replaced by `answer` (or dropped when it is undefined). */
+function answersFor(
+  id: string,
+  question: string,
+  answer: Classification["answers"][string] | undefined,
+): Classification["answers"] {
+  const kept = Object.entries(classificationOf(id).answers).filter(([name]) => name !== question);
+  const base: Classification["answers"] = Object.fromEntries(kept);
+  return answer === undefined ? base : { ...base, [question]: answer };
+}
+
+/** A number as the rendered `jev` rounds it: 2 dp. */
+const rounded = (value: number): number => Math.round(value * 100) / 100;
+
+interface Screening {
+  /** The classify reply: a map of id to answer, or an Error; a map that omits an id answers `failed`. */
+  readonly classify: NonNullable<FakeReplies["classify"]>;
+  readonly reported?: Map<string, ReportKind>;
+}
+
+/** The one item `tool` renders when its page is screened by `screening`, and its raw data line. */
+async function screenedOutput(
+  tool: ItemTool,
+  screening: Screening,
+  item: ReadData = screenedRead(),
+): Promise<{ item: Record<string, unknown>; line: string }> {
+  const { outcome } = await runWith(
+    { ...itemReplies(tool, item), classify: screening.classify },
+    tool,
+    itemArgs(tool),
+    screening.reported === undefined ? {} : { reported: screening.reported },
+  );
+  expect(outcome.isError).toBe(false);
+  const lines = dataLinesOf(outcome.text);
+  expect(lines).toHaveLength(1);
+  const [line] = lines;
+  if (line === undefined) {
+    throw new Error(`${tool}: no item`);
+  }
+  return { item: parseLine(line), line };
+}
+
+/** The one item `tool` renders when its page is screened by `screening`. */
+async function screenedItem(
+  tool: ItemTool,
+  screening: Screening,
+  item: ReadData = screenedRead(),
+): Promise<Record<string, unknown>> {
+  return (await screenedOutput(tool, screening, item)).item;
+}
+
+interface HoldCase {
+  readonly label: string;
+  readonly screening: Screening;
+  readonly withheld: Withheld;
+}
+
+/** Hostile answers at each policy row's bound: withheld exactly there. */
+function hostileCases(): HoldCase[] {
+  return WITHHOLD_POLICY.map((row) => ({
+    label: `hostile: ${row.question} at exactly its bound`,
+    screening: {
+      classify: {
+        [SCREENED_ID]: classificationOf(
+          SCREENED_ID,
+          answersFor(SCREENED_ID, row.question, { noul: row.atLeast }),
+        ),
+      },
+    },
+    withheld: { reason: "hostile", detail: row.question, score: rounded(row.atLeast) },
+  }));
+}
+
+/** Each withholding reason as a scripted page: the classify reply (and report) that must produce it. */
+const HOLD_CASES: readonly HoldCase[] = [
+  {
+    label: "reported",
+    screening: {
+      classify: classifyAll([SCREENED_ID]),
+      reported: new Map<string, ReportKind>([[SCREENED_ID, "phishing"]]),
+    },
+    withheld: { reason: "reported", detail: "phishing" },
+  },
+  {
+    label: "unclassified: unavailable",
+    screening: { classify: { [SCREENED_ID]: "unavailable" } },
+    withheld: { reason: "unclassified", detail: "unavailable" },
+  },
+  {
+    label: "unclassified: failed (the classify reply omits the id)",
+    screening: { classify: {} },
+    withheld: { reason: "unclassified", detail: "failed" },
+  },
+  {
+    label: `missing_question: ${FIRST_ROW.question} absent`,
+    screening: {
+      classify: {
+        [SCREENED_ID]: classificationOf(
+          SCREENED_ID,
+          answersFor(SCREENED_ID, FIRST_ROW.question, undefined),
+        ),
+      },
+    },
+    withheld: { reason: "missing_question", detail: FIRST_ROW.question },
+  },
+  {
+    label: `missing_question: ${FIRST_ROW.question} under a choice shape (counts as missing)`,
+    screening: {
+      classify: {
+        [SCREENED_ID]: classificationOf(
+          SCREENED_ID,
+          answersFor(SCREENED_ID, FIRST_ROW.question, { choice: "a label", confidence: 0.9 }),
+        ),
+      },
+    },
+    withheld: { reason: "missing_question", detail: FIRST_ROW.question },
+  },
+  ...hostileCases(),
+];
+
+/** 40 addresses whose domains are each 200 bytes, distinct within one item's list. */
+function longDomainAddresses(item: number): Address[] {
+  return Array.from({ length: 40 }, (_, n) => ({
+    name: `Person ${String(n)}`,
+    email: `person${String(n)}@${String(n).padStart(2, "0")}${String(item).padStart(
+      2,
+      "0",
+    )}${"d".repeat(196)}`,
+  }));
+}
+
+/** Every sender-written string of a screened read: subject, preview, bodies, names, local parts, file names. */
+function senderTextOf(read: ReadData): string[] {
+  return [
+    read.subject,
+    read.preview,
+    ...read.bodies.map((part) => part.text),
+    ...read.from.flatMap((address) => [
+      address.name,
+      address.email.slice(0, address.email.lastIndexOf("@")),
+    ]),
+    ...read.attachments.map((attachment) => attachment.name),
+  ].filter((text): text is string => typeof text === "string" && text !== "");
+}
+
+/** The withheld item's exact key set: its core, and each fill key its own `cut` does not name. */
+function expectWithheldKeys(item: Record<string, unknown>, tool: ItemTool): void {
+  const cut = item["cut"];
+  const cutNames: unknown[] = Array.isArray(cut) ? cut : [];
+  const coreKeys = [
+    "id",
+    "thread_id",
+    "received_at",
+    ...(tool === "mail_new" || tool === "mail_read" ? ["size"] : []),
+    "is_seen",
+    "is_flagged",
+    "has_attachment",
+    "jev",
+    "withheld",
+    ...(tool === "mail_thread" ? ["in_store"] : []),
+    "cut",
+  ];
+  const keptFill = ["sender_domains", "mailbox_ids"].filter((key) => !cutNames.includes(key));
+  expect(Object.keys(item).sort()).toEqual([...coreKeys, ...keptFill].sort());
+}
+
+/** A rendered line that carries none of the screened read's sender text. */
+function expectNoSenderText(line: string): void {
+  const senderText = senderTextOf(screenedRead());
+  expect(senderText.length).toBeGreaterThan(0);
+  for (const text of senderText) {
+    expect(line).not.toContain(text);
+  }
+}
+
+describe("VT-2 projectWithheld withholds the sender's text, keeping sender_domains (SL-007 PHASE-05)", () => {
+  const MATRIX = ITEM_TOOLS.flatMap((tool) => HOLD_CASES.map((hold) => ({ tool, ...hold })));
+
+  it.each(MATRIX)("$tool: $label", async ({ tool, screening, withheld }) => {
+    const { item, line } = await screenedOutput(tool, screening);
+    expect(item["withheld"]).toEqual(withheld);
+    expect(item["sender_domains"]).toEqual(SCREENED_DOMAINS);
+    expect(item).toHaveProperty("jev");
+    for (const key of ["subject", "preview", "body", "from", "to", "attachments"]) {
+      expect(item).not.toHaveProperty(key);
+    }
+    if (tool === "mail_read" || tool === "mail_new") {
+      expect(item["size"]).toBe(screenedRead().size);
+    } else {
+      expect(item).not.toHaveProperty("size");
+    }
+    // A withheld thread entry keeps its in_store flag, as a shown one does.
+    expect(item["in_store"]).toBe(tool === "mail_thread" ? true : undefined);
+    // The whole key set: the core, and the fill only where fitItem kept it.
+    expectWithheldKeys(item, tool);
+    // The raw line carries no sender text: not a subject, name, local part, body or file name.
+    expectNoSenderText(line);
+  });
+
+  it.each(ITEM_TOOLS)("%s classifies the page's ids and no others", async (tool) => {
+    const item = screenedRead();
+    const replies: FakeReplies =
+      tool === "mail_thread"
+        ? {
+            thread: {
+              id: "Thr1",
+              total: 2,
+              truncated: false,
+              items: [inStoreThreadItem(item), absentThreadItem("Gone1")],
+            },
+          }
+        : itemReplies(tool, item);
+    const { outcome, source } = await runWith(
+      { ...replies, classify: classifyAll([SCREENED_ID]) },
+      tool,
+      itemArgs(tool),
+    );
+    expect(outcome.isError).toBe(false);
+    expectClassified(source, [SCREENED_ID]);
+  });
+
+  it.each(WITHHOLD_POLICY)("$question: one step below its bound is shown", async (row) => {
+    const below = rounded(row.atLeast - 0.01);
+    const item = await screenedItem("mail_list", {
+      classify: {
+        [SCREENED_ID]: classificationOf(
+          SCREENED_ID,
+          answersFor(SCREENED_ID, row.question, { noul: below }),
+        ),
+      },
+    });
+    expect(item["withheld"]).toBeUndefined();
+    expect(item).toHaveProperty("subject");
+    expect(jevOf(item)[row.question]).toBe(below);
+  });
+
+  it("mail_list at limit 40 with 40 withheld items of long domains keeps every line within its share", async () => {
+    const items = Array.from({ length: 40 }, (_, n) =>
+      summaryOf({ id: `M${String(n)}`, from: longDomainAddresses(n) }),
+    );
+    const { outcome } = await runWith(
+      {
+        list: { limit: 40, offset: 0, items },
+        classify: classifyAll(items.map((item) => item.id)),
+      },
+      "mail_list",
+      { limit: 40 },
+      {
+        reported: new Map<string, ReportKind>(
+          items.map((item): [string, ReportKind] => [item.id, "phishing"]),
+        ),
+      },
+    );
+    expect(outcome.isError).toBe(false);
+    const lines = dataLinesOf(outcome.text);
+    expect(lines).toHaveLength(40);
+    for (const line of lines) {
+      expect(bytesOf(line)).toBeLessThanOrEqual(shareOf(40));
+    }
+    for (const item of lines.map(parseLine)) {
+      expect(item["withheld"]).toEqual({ reason: "reported", detail: "phishing" });
+      expect(item["cut"]).toContain("sender_domains");
+      expect(item).not.toHaveProperty("sender_domains");
+    }
+  });
+});
+
+describe('VT-3 "missing question:" lines, the withheld count, and the one classify call', () => {
+  const UNKNOWN_QUESTION = "zz_not_a_policy_question";
+
+  it("an unknown extra question renders in jev and the item is shown", async () => {
+    expect(POLICY_QUESTIONS).not.toContain(UNKNOWN_QUESTION);
+    const answers = {
+      ...classificationOf(SCREENED_ID).answers,
+      [UNKNOWN_QUESTION]: { noul: 0.99 },
+    };
+    const item = await screenedItem("mail_list", {
+      classify: { [SCREENED_ID]: classificationOf(SCREENED_ID, answers) },
+    });
+    expect(item["withheld"]).toBeUndefined();
+    expect(jevOf(item)[UNKNOWN_QUESTION]).toBe(0.99);
+    expect(item).toHaveProperty("subject");
+  });
+
+  it("a missing policy question adds one missing question: line, once for two items", async () => {
+    const ids = ["M0", "M1"];
+    const classify = Object.fromEntries(
+      ids.map((id): [string, Classification] => [
+        id,
+        classificationOf(id, answersFor(id, FIRST_ROW.question, undefined)),
+      ]),
+    );
+    const { outcome } = await runWith(
+      { list: { limit: 20, offset: 0, items: ids.map((id) => summaryOf({ id })) }, classify },
+      "mail_list",
+      {},
+    );
+    const line = `missing question: ${FIRST_ROW.question}`;
+    expect(headerLinesOf(outcome.text).filter((header) => header === line)).toHaveLength(1);
+    for (const item of itemsOf(outcome.text)) {
+      expect(item["withheld"]).toEqual({ reason: "missing_question", detail: FIRST_ROW.question });
+    }
+  });
+
+  it("a classify reply that omits one id's item withholds that item as failed, the other shown with jev", async () => {
+    const ids = ["M0", "M1"];
+    const shownId = "M1";
+    const { outcome } = await runWith(
+      {
+        list: { limit: 20, offset: 0, items: ids.map((id) => summaryOf({ id })) },
+        classify: { [shownId]: classificationOf(shownId) },
+      },
+      "mail_list",
+      {},
+    );
+    expect(outcome.isError).toBe(false);
+    const items = itemsOf(outcome.text);
+    expect(items).toHaveLength(2);
+    const [omitted, shown] = items;
+    if (omitted === undefined || shown === undefined) {
+      throw new Error("mail_list: two items expected");
+    }
+    expect(omitted["id"]).toBe("M0");
+    expect(omitted["withheld"]).toEqual({ reason: "unclassified", detail: "failed" });
+    expect(jevOf(omitted)).toEqual({ unclassified: "failed" });
+    expect(shown["id"]).toBe(shownId);
+    expect(shown["withheld"]).toBeUndefined();
+    expect(Object.keys(jevOf(shown))).toEqual(Object.keys(classificationOf(shownId).answers));
+    expect(shown).toHaveProperty("subject");
+    expect(itemsLineOf(outcome.text).endsWith(", 1 withheld")).toBe(true);
+  });
+
+  it("the items line ends with , N withheld when items are withheld and says nothing when none is", async () => {
+    const ids = ["M0", "M1", "M2"];
+    const replies: FakeReplies = {
+      list: { limit: 20, offset: 0, items: ids.map((id) => summaryOf({ id })) },
+      classify: classifyAll(ids),
+    };
+    const held = await runWith(
+      replies,
+      "mail_list",
+      {},
+      {
+        reported: new Map<string, ReportKind>([["M0", "phishing"]]),
+      },
+    );
+    expect(itemsLineOf(held.outcome.text).endsWith(", 1 withheld")).toBe(true);
+    const clear = await runWith(replies, "mail_list", {});
+    expect(itemsLineOf(clear.outcome.text)).not.toContain("withheld");
+  });
+
+  it("mail_new: a held-back withheld item keeps held_back, and next and caught_up do not change", async () => {
+    const page = [arrival(0, PAST), arrival(1, AHEAD)];
+    const replies: FakeReplies = {
+      readAfter: page,
+      classify: classifyAll(page.map((read) => read.id)),
+    };
+    const shown = await runWith(replies, "mail_new", { after: "", limit: 2 });
+    const held = await runWith(
+      replies,
+      "mail_new",
+      { after: "", limit: 2 },
+      {
+        reported: new Map<string, ReportKind>([["M1", "phishing"]]),
+      },
+    );
+    expect(nextOf(held.outcome.text)).toBe(nextOf(shown.outcome.text));
+    expect(caughtUpOf(held.outcome.text)).toBe(caughtUpOf(shown.outcome.text));
+    const items = itemsOf(held.outcome.text);
+    expect(items).toHaveLength(2);
+    expect(items[1]?.["held_back"]).toBe(true);
+    expect(items[1]?.["withheld"]).toEqual({ reason: "reported", detail: "phishing" });
+    expect(itemsOf(shown.outcome.text)[1]?.["withheld"]).toBeUndefined();
+  });
+
+  it("mail_thread: an in_store: false entry is not classified and renders as before", async () => {
+    const items = [inStoreThreadItem({ id: "M0" }), absentThreadItem("Gone1")];
+    const { outcome, source } = await runWith(
+      { thread: { id: "Thr1", total: 2, truncated: false, items }, classify: classifyAll(["M0"]) },
+      "mail_thread",
+      { id: "Thr1", limit: 2 },
+    );
+    expectClassified(source, ["M0"]);
+    expect(itemsOf(outcome.text)[1]).toEqual({ id: "Gone1", in_store: false });
+  });
+
+  it("a page whose ids are all cached makes no classify call on the second call", async () => {
+    const cache = classificationCache();
+    const ids = ["M0", "M1"];
+    const source = fakeMailSource({
+      list: { limit: 20, offset: 0, items: ids.map((id) => summaryOf({ id })) },
+      classify: classifyAll(ids),
+    });
+    const first = await run(source, "mail_list", {}, context, { cache });
+    const second = await run(source, "mail_list", {}, context, { cache });
+    const classifyCalls = classifyCallsOf(source);
+    expect(classifyCalls).toHaveLength(1);
+    expect(classifyCalls[0]?.query).toMatchObject({ ids });
+    expect(itemsOf(first.text)).toHaveLength(2);
+    expect(itemsOf(second.text)).toHaveLength(2);
+  });
+
+  it("the classify call receives the tool's abort signal", async () => {
+    const controller = new AbortController();
+    const ids = ["M0"];
+    const source = fakeMailSource({
+      list: { limit: 20, offset: 0, items: ids.map((id) => summaryOf({ id })) },
+      classify: classifyAll(ids),
+    });
+    await run(source, "mail_list", {}, withAbortSignal(controller.signal, context));
+    const classifyCalls = classifyCallsOf(source);
+    expect(classifyCalls).toHaveLength(1);
+    expect(classifyCalls[0]?.signal).toBe(controller.signal);
+  });
+});
+
+describe("VT-4 mail_new's joint clamp deducts JEV_MAX_BYTES from NEW_JOINT_BYTES", () => {
+  it.each([20, 5])(
+    "at limit %i the port receives the joint bound and the header reports max_bytes",
+    async (limit) => {
+      const expected = jointBound(limit);
+      expect(expected).toBeLessThan(NEW_MAX_BYTES.max);
+      expect(expected).toBeGreaterThanOrEqual(NEW_MAX_BYTES.min);
+      const { outcome, source } = await runWith({ readAfter: [] }, "mail_new", {
+        after: "",
+        limit,
+        max_bytes: NEW_MAX_BYTES.max,
+      });
+      expect(outcome.isError).toBe(false);
+      expect(onlyQuery(source)).toMatchObject({ limit, maxBytes: expected });
+      const clamps = clampsOf(outcome.text);
+      expect(clamps).toContain("max_bytes");
+      expect(clamps).toContain(String(expected));
+    },
+  );
 });

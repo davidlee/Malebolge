@@ -1,6 +1,9 @@
-// The five mail tools (design sec-4): bounds clamped, inputs refused before any
-// port call, the cursor computed from the validated envelopes, and one text
-// result each. No I/O here: the MailSource and "now" are injected.
+// The five mail tools (design § One tool call): bounds clamped, inputs refused
+// before any port call, the cursor computed from the validated envelopes, each
+// item's classification and withholding resolved once, and one text result each.
+// No I/O here: all six members of MailDeps (the MailSource, "now", the
+// classification cache, the reports, the log and the refusal) are injected, so the
+// tools stay pure and the four item tools screen their page the same way.
 
 import type { Context } from "@earendil-works/chord/context";
 import { Type, type TSchema } from "@earendil-works/pi-ai";
@@ -11,17 +14,22 @@ import {
 } from "@earendil-works/pi-durable";
 import { isRecord, type JsonRecord } from "../json.ts";
 import { bounded, type Clamp, type Range, report } from "../ranges.ts";
-import type { ClassificationCache } from "./classifications.ts";
-import type { ReportKind } from "./policy.ts";
+import { classificationsOf, type ClassificationCache } from "./classifications.ts";
+import { type PolicyQuestion, type ReportKind, type Withheld, withholding } from "./policy.ts";
 import {
+  JEV_MAX_BYTES,
+  type ProjectedItem,
   projectListItem,
   projectMailbox,
   projectNew,
   projectRead,
   projectThreadItem,
+  projectWithheld,
 } from "./project.ts";
 import { renderMailboxes, renderPage } from "./render.ts";
 import {
+  type Classification,
+  type ClassifyOutcome,
   isCanonicalCursor,
   isJmapId,
   isUtcDate,
@@ -30,6 +38,8 @@ import {
   MailSourceError,
   type ReadAfterQuery,
   type ReadData,
+  type Summary,
+  type ThreadItem,
 } from "./source.ts";
 
 // ------------------------------------------------------- ranges and clamps
@@ -55,6 +65,9 @@ export const OVERSIZE_AT_LIMIT_1 =
 
 type MailBound = "limit" | "max_bytes" | "offset";
 
+/** The summary-shaped branch of a thread entry: the only one a tool screens. */
+type InStoreEntry = Extract<ThreadItem, { in_store: true }>;
+
 interface NewBounds {
   readonly limit: number;
   readonly maxBytes: number;
@@ -66,7 +79,9 @@ function newBounds(args: JsonRecord): NewBounds {
   const clamps: Clamp<MailBound>[] = [];
   const limit = bounded(args["limit"], NEW_LIMIT, "limit", clamps);
   const asked = bounded(args["max_bytes"], NEW_MAX_BYTES, "max_bytes", clamps);
-  const maxBytes = Math.min(asked, Math.floor(NEW_JOINT_BYTES / limit));
+  // The joint clamp deducts `JEV_MAX_BYTES`, so `jev` never takes the body's room
+  // (design § Rendering).
+  const maxBytes = Math.min(asked, Math.floor(NEW_JOINT_BYTES / limit) - JEV_MAX_BYTES);
   if (maxBytes !== asked) {
     report(clamps, "max_bytes", maxBytes);
   }
@@ -237,8 +252,7 @@ const LIST_PARAMETERS = Type.Object({
   from: Type.Optional(Type.String({ description: "Only messages from this sender" })),
 });
 
-const NEW_DESCRIPTION =
-  'Read new mail in arrival order, from a cursor. Pass after "" to start (with since, a date YYYY-MM-DD, to skip mail before midnight UTC that day), then pass the header\'s next back as after. caught_up: true means nothing more is waiting now. A message dated more than 10 minutes ahead is shown with held_back: true and not passed; it returns on later calls. limit 1-20 (default 10); max_bytes 512-8192 (default 4096, at most 40960 / limit) bounds each body. Filters: mailbox (an id from mail_mailboxes), unread, from. If a call fails as over 4 MiB, retry with limit 1.';
+const NEW_DESCRIPTION = `Read new mail in arrival order, from a cursor. Pass after "" to start (with since, a date YYYY-MM-DD, to skip mail before midnight UTC that day), then pass the header's next back as after. caught_up: true means nothing more is waiting now. A message dated more than 10 minutes ahead is shown with held_back: true and not passed; it returns on later calls. limit 1-20 (default 10); max_bytes 512-8192 (default 4096, at most ${String(NEW_JOINT_BYTES)} / limit - ${String(JEV_MAX_BYTES)}) bounds each body. Filters: mailbox (an id from mail_mailboxes), unread, from. If a call fails as over 4 MiB, retry with limit 1.`;
 
 const READ_DESCRIPTION =
   "Read one message by id: its headers, attachments list and body. max_bytes 1024-32768 (default 16384) bounds the body.";
@@ -301,6 +315,77 @@ function mailTool(deps: MailDeps, spec: MailToolSpec): ToolRegistration {
   });
 }
 
+/** One item's classification and withholding, in item order (design § One tool call). */
+interface ScreenedItem<T> {
+  readonly item: T;
+  readonly outcome: ClassifyOutcome;
+  readonly withheld: Withheld | undefined;
+}
+
+/**
+ * Each item's classification and withholding, in item order: one read of the
+ * cache, then at most one classify call for the ids it does not answer (design
+ * § One tool call). An id the classify reply omits is `failed`.
+ */
+async function screened<T extends { id: string }>(
+  deps: MailDeps,
+  items: readonly T[],
+  signal: AbortSignal | undefined,
+): Promise<ScreenedItem<T>[]> {
+  const outcomes = await classificationsOf(
+    deps.source,
+    deps.cache,
+    items.map((item) => item.id),
+    signal,
+  );
+  return items.map((item) => {
+    const outcome: ClassifyOutcome = outcomes.get(item.id) ?? {
+      id: item.id,
+      unclassified: "failed",
+    };
+    return { item, outcome, withheld: withholding(outcome, deps.reported.get(item.id)) };
+  });
+}
+
+/** The header's screening facts: how many items are withheld, and the questions they missed. */
+function screenedFacts(items: readonly ScreenedItem<{ id: string }>[]): {
+  withheld: number;
+  missingQuestions: PolicyQuestion[];
+} {
+  const missingQuestions: PolicyQuestion[] = [];
+  let withheld = 0;
+  for (const { withheld: reason } of items) {
+    if (reason === undefined) {
+      continue;
+    }
+    withheld += 1;
+    if (reason.reason === "missing_question") {
+      missingQuestions.push(reason.detail);
+    }
+  }
+  return { withheld, missingQuestions };
+}
+
+/**
+ * One screened item as its tool renders it: a withheld item keeps none of the
+ * sender's text, a shown one goes to the tool's projector with its classification.
+ * `flags` are the held-back, in-store and size facts the shown projector would
+ * write, kept on both shapes.
+ */
+function itemOf<T extends Summary>(
+  { item, outcome, withheld }: ScreenedItem<T>,
+  shown: (item: T, classified: Classification, heldBack: boolean) => ProjectedItem,
+  flags: { heldBack?: boolean; inStore?: boolean; size?: number } = {},
+): ProjectedItem {
+  if (withheld !== undefined) {
+    return projectWithheld(item, outcome, withheld, flags);
+  }
+  if (!("classified" in outcome)) {
+    throw new Error("mail: a shown item has no classification");
+  }
+  return shown(item, outcome.classified, flags.heldBack === true);
+}
+
 /** readAfter, with the one failure that reading at limit 1 cannot get past. */
 async function readAfter(
   source: MailSource,
@@ -332,18 +417,27 @@ async function newText(deps: MailDeps, args: JsonRecord, context: Context): Prom
     query.since = since;
   }
   const page = await readAfter(deps.source, query, limit);
+  // The cursor rule runs on the read page, before screening: withholding never
+  // changes `next` or `caught_up` (design § One tool call).
   const position = pagePosition(page, after, limit, deps.now());
   const heldBack = position.heldBack.filter((held) => held).length;
+  const screen = await screened(deps, page, context.abortSignal);
   return renderPage(
     {
       tool: "mail_new",
       heldBack,
+      ...screenedFacts(screen),
       next: position.next,
       caughtUp: position.caughtUp,
       clamps,
       knownGaps: true,
     },
-    page.map((read, index) => projectNew(read, position.heldBack[index] === true)),
+    screen.map((entry, index) =>
+      itemOf(entry, projectNew, {
+        heldBack: position.heldBack[index] === true,
+        size: entry.item.size,
+      }),
+    ),
     limit,
   );
 }
@@ -353,7 +447,12 @@ async function readText(deps: MailDeps, args: JsonRecord, context: Context): Pro
   const id = idOf("mail_read", "id", args["id"]);
   const maxBytes = bounded(args["max_bytes"], READ_MAX_BYTES, "max_bytes", clamps);
   const read = await deps.source.read({ id, maxBytes, signal: context.abortSignal });
-  return renderPage({ tool: "mail_read", clamps }, [projectRead(read)], 1);
+  const screen = await screened(deps, [read], context.abortSignal);
+  return renderPage(
+    { tool: "mail_read", ...screenedFacts(screen), clamps },
+    screen.map((entry) => itemOf(entry, projectRead, { size: entry.item.size })),
+    1,
+  );
 }
 
 async function threadText(deps: MailDeps, args: JsonRecord, context: Context): Promise<string> {
@@ -362,9 +461,27 @@ async function threadText(deps: MailDeps, args: JsonRecord, context: Context): P
   const limit = bounded(args["limit"], THREAD_LIMIT, "limit", clamps);
   const thread = await deps.source.thread({ id, limit, signal: context.abortSignal });
   const { total, truncated } = thread;
+  // An entry not in the store carries no text: it is not classified, and it renders
+  // as it always has (design § One tool call). An in-store entry is a summary.
+  const screen = await screened(
+    deps,
+    thread.items.filter((entry): entry is InStoreEntry => entry.in_store),
+    context.abortSignal,
+  );
+  const screenedById = new Map(screen.map((entry) => [entry.item.id, entry]));
+  const items = thread.items.map((entry) => {
+    if (!entry.in_store) {
+      return projectThreadItem(entry, undefined);
+    }
+    const one = screenedById.get(entry.id);
+    if (one === undefined) {
+      throw new Error("mail_thread: an in-store entry was not screened");
+    }
+    return itemOf(one, projectThreadItem, { inStore: true });
+  });
   return renderPage(
-    { tool: "mail_thread", clamps, thread: { total, truncated } },
-    thread.items.map((item) => projectThreadItem(item)),
+    { tool: "mail_thread", ...screenedFacts(screen), clamps, thread: { total, truncated } },
+    items,
     limit,
   );
 }
@@ -379,9 +496,10 @@ async function listText(deps: MailDeps, args: JsonRecord, context: Context): Pro
     filters: filtersOf("mail_list", args),
     signal: context.abortSignal,
   });
+  const screen = await screened(deps, page.items, context.abortSignal);
   return renderPage(
-    { tool: "mail_list", clamps },
-    page.items.map((item) => projectListItem(item)),
+    { tool: "mail_list", ...screenedFacts(screen), clamps },
+    screen.map((entry) => itemOf(entry, projectListItem)),
     limit,
   );
 }

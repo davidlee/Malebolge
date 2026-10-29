@@ -18,6 +18,7 @@ import {
   renderBlock,
 } from "../untrusted-block.ts";
 import type { CutName, ProjectedItem, ProjectedMailbox } from "./project.ts";
+import { type PolicyQuestion, WITHHOLD_POLICY } from "./policy.ts";
 import { isCanonicalCursor } from "./source.ts";
 
 /** The mail block's tag, as `<mail-data untrusted="true">` (design § Framing item 1). */
@@ -173,6 +174,10 @@ export interface HeaderFacts {
   readonly items: number;
   readonly withCuts: number;
   readonly heldBack?: number;
+  /** The items whose sender-written text the pre-filter withheld (design § The pre-filter). */
+  readonly withheld?: number;
+  /** The policy questions withheld items were missing, names of the policy table only. */
+  readonly missingQuestions?: readonly PolicyQuestion[];
   readonly next?: string;
   readonly caughtUp?: boolean;
   readonly clamps: readonly Clamp[];
@@ -182,13 +187,36 @@ export interface HeaderFacts {
 }
 
 function itemsLine(facts: HeaderFacts): string {
-  const head = `${facts.tool}: ${String(count(facts.items, "items"))} items, ${String(
+  let line = `${facts.tool}: ${String(count(facts.items, "items"))} items, ${String(
     count(facts.withCuts, "with cuts"),
   )} with cuts`;
-  if (facts.heldBack === undefined) {
-    return head;
+  if (facts.heldBack !== undefined) {
+    line = `${line}, ${String(count(facts.heldBack, "held back"))} held back`;
   }
-  return `${head}, ${String(count(facts.heldBack, "held back"))} held back`;
+  if (facts.withheld !== undefined) {
+    const withheld = count(facts.withheld, "withheld");
+    if (withheld > 0) {
+      line = `${line}, ${String(withheld)} withheld`;
+    }
+  }
+  return line;
+}
+
+/**
+ * One line per distinct missing policy question, in the table's order. A name the
+ * table does not hold fails closed: the header is trusted text (design § The pre-filter).
+ */
+function missingQuestionLines(names: readonly PolicyQuestion[]): string[] {
+  const known: readonly string[] = WITHHOLD_POLICY.map((row) => row.question);
+  for (const name of names) {
+    if (!known.includes(name)) {
+      throw new Error("mail header: a missing question is not in the policy table");
+    }
+  }
+  const wanted: readonly PolicyQuestion[] = names;
+  return WITHHOLD_POLICY.filter((row) => wanted.includes(row.question)).map(
+    (row) => `missing question: ${row.question}`,
+  );
 }
 
 function nextLine(next: string): string {
@@ -212,7 +240,7 @@ function shownLine(shown: { readonly shown: number; readonly of: number }): stri
  * untrusted text.
  */
 export function renderHeader(facts: HeaderFacts): string {
-  const lines = [itemsLine(facts)];
+  const lines = [itemsLine(facts), ...missingQuestionLines(facts.missingQuestions ?? [])];
   if (facts.next !== undefined) {
     lines.push(nextLine(facts.next));
   }

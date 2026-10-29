@@ -656,3 +656,60 @@ export function fakeMailSource(replies: FakeReplies = {}): FakeMailSource {
     },
   };
 }
+
+// ------------------------------------------- classifications (SL-007 PHASE-05)
+
+/**
+ * The contract classification with `id` (and so its cursor) replaced and the
+ * answers as given, validated: the one way a test builds a `Classification`.
+ */
+export function classificationOf(id: string, answers?: Classification["answers"]): Classification {
+  const data = loadData("classify", "contract/classify.json");
+  return mustCheck("classify", {
+    ...data,
+    id,
+    cursor: `1793120280000:${id}`,
+    answers: answers ?? data.answers,
+  });
+}
+
+/** Benign classifications for `ids`: the contract answers, each policy noul below its threshold. */
+export function classifyAll(ids: readonly string[]): Record<string, Classification> {
+  return Object.fromEntries(ids.map((id) => [id, classificationOf(id)]));
+}
+
+/** Noul answers rendered as they are: `{q0: 0.5, q1: 0.5, ...}`. */
+function noulValue(answers: Readonly<Record<string, { noul: number }>>): Record<string, number> {
+  return Object.fromEntries(Object.entries(answers).map(([key, answer]) => [key, answer.noul]));
+}
+
+/**
+ * Noul answers whose rendered `jev` value is exactly `bytes`: `q0`, `q1`, ... in
+ * order, the last key's name grown one byte at a time. No policy question's name.
+ */
+export function jevAnswersOf(bytes: number): Classification["answers"] {
+  const grown: Record<string, { noul: number }> = {};
+  for (
+    let n = 0;
+    renderedBytes(noulValue({ ...grown, [`q${String(n)}`]: { noul: 0.5 } })) <= bytes;
+    n++
+  ) {
+    grown[`q${String(n)}`] = { noul: 0.5 };
+  }
+  const last = Object.keys(grown).at(-1);
+  if (last === undefined) {
+    throw new Error(`jevAnswersOf: ${String(bytes)} bytes is too small for one answer`);
+  }
+  // One more byte in the last key's name is exactly one more rendered byte.
+  const short = bytes - renderedBytes(noulValue(grown));
+  const answers: Record<string, { noul: number }> = Object.fromEntries(
+    Object.entries(grown).map(([key, answer]) => [
+      key === last ? `${key}${"x".repeat(short)}` : key,
+      answer,
+    ]),
+  );
+  if (renderedBytes(noulValue(answers)) !== bytes) {
+    throw new Error(`jevAnswersOf: no answer set renders to ${String(bytes)} bytes`);
+  }
+  return answers;
+}
