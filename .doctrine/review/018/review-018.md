@@ -149,3 +149,50 @@ surface; F-8 amends it), `doctrine review show RV-018 -f 13` (the major).
   VH-1 the operator directed that the threads section and start/fork
   descriptions say a thread answers only by `thread_post`, and that a sender
   ask for that reply; "facts only" now admits this one line of how-to.
+
+## Reconciliation Outcome
+
+Operator agreed the edit set ("agreed", 2026-10-29).
+
+### Direct edits applied
+- Selector registry (F-1): 21 design-target selectors added
+  (`slice selector add 6`). `README.md` was added and then removed: its F-11
+  fix landed in the audit commit (d8c5c16), which is no recorded phase
+  delta, so the selector read undelivered. `slice conformance 6`: 0
+  undeclared, 0 undelivered, 58 conformant.
+- design.md § Components, § Code impact (F-2): `origin.ts`, `caps.ts`,
+  `reap.ts`, `task-support.ts`, `tool-results.ts` in the diagram,
+  responsibilities and table; admission.ts as reads; `readIndexDoc`;
+  `startRoomTasks`; wake/task.ts and wake/tools.ts no longer "Unchanged";
+  the `Origin` block names origin.ts.
+- design.md § The satan.post task, flows diagram, § The reap (F-3):
+  `post:<id>:` with the prefix-collision reason.
+- design.md § Components, `SweptKind` (F-4): `noun`; `TaskId`,
+  `BlockedReason` types as shipped.
+- design.md § Talk sets (F-5): `targetLabel`.
+- design.md § Shared steps (F-6): four steps, caller + origin + tombstone
+  first. Code comments citing the old step numbers (src/threads/tools.ts,
+  admission.ts) renumbered to match; comments only.
+- design.md (F-7): post refusals, the reap-own refusal with its reason,
+  blocked report lines and titles, abort reasons, the fork-parent invariant
+  text, notification titles.
+- design.md § Prompt surface (F-8): shipped THREADS_SECTION paragraph and
+  start/fork descriptions; framing "facts, and how a reply comes back".
+- design.md § Transcript lines, Emacs (F-9): header-only failure/reap lines;
+  body intent then context; shared `inputLine`; `[wake]` speaker label;
+  defconst keywords; first-match label lookup. The brief named
+  `malebolge-user-face` for `[wake]`; the shipped face is
+  `malebolge-wake-face` (IMP-021, 52dcfbf), and the design records that.
+- design.md § Verification (F-10): premises (b)/(c) and DEC-042's rewrites
+  in the premises phase (PHASE-03), before the post task.
+
+### Governance
+- DEC-040 (F-8): amendment note appended to its record body, as its r1
+  amendment was. A decision record is not a REV target; no REV opened.
+
+### Withdrawn / tolerated
+- F-14: tolerated; rationale in its disposition.
+- F-11..F-13: fixed in the audit (d8c5c16).
+
+`just check` green after the edits: 96 files / 3351 tests, lint 0 warnings.
+Reconcile pass complete — handoff to /close.

@@ -271,7 +271,7 @@ function createForked(call: Call, args: ForkArgs, other: ToReap | undefined): Pr
 
 /**
  * The creating commit of an `admit` or `reap-other` call (design § The thread tools,
- * shared steps step 5): admission again, which re-reads the tombstone before any table
+ * shared steps step 4): admission again, which re-reads the tombstone before any table
  * write and refuses if the origin was reaped meanwhile; then, for `reap-other`, the
  * reap's writes in this same commit, so a call whose creation fails reaps nobody; then
  * the post itself.
@@ -299,7 +299,7 @@ function createAdmitted(call: Call, args: PostArgs, other: ToReap | undefined): 
 }
 
 /**
- * The `reap-own` branch (design § The thread tools, shared steps step 4): the reap's
+ * The `reap-own` branch (design § The thread tools, shared steps step 3): the reap's
  * writes alone, in one commit, then the withdrawals and the notice, and a refusal. When
  * the commit wrote nothing another conversation reaped the family first: the refusal
  * says only that the origin is reaped.
@@ -351,7 +351,7 @@ async function postInto(
 }
 
 /**
- * The shared steps of any thread call (design § The thread tools, shared steps 1-4):
+ * The shared steps of any thread call (design § The thread tools, shared steps 1-3):
  * the call's admission in one commit, then the count the verdict reads. Not
  * thread_post-specific: each tool passes the admission it runs.
  */

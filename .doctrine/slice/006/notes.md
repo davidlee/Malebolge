@@ -231,11 +231,12 @@ Seat: /super-orchestrator (2026-10-29, operator asleep). Main worktree, no dispa
 
 ## Harvest
 <!-- single-copy: updated in place each harvest; ids only, never restated content -->
-fresh-as-of: 2026-10-29 · audit (RV-018 concluded) · head 5569843 + audit fixes (uncommitted)
+fresh-as-of: 2026-10-29 · close · head 4560aa2 + reconcile edits
 
 ### Produced
 - PHASE-01..08 done — threads: start, fork, post, caps and reap, visibility (commits 415ee8b..cd6d53e); post-run 40461df (sender guidance), d7082b0 (Emacs reload)
 - RV-018 — reconciliation audit: 14 findings; fix-now F-11 (README `--list`), F-12 (IndexDocument guard recursive), F-13 (start/fork reap-other tests)
+- reconcile: design.md F-1..F-10, selector registry, DEC-040 amendment; RV-018 § Reconciliation Outcome
 - minted during the run: CHR-005 — wake notify body predates DEC-042
 - earlier: RSK-002, RFC-003, EVD-002, DEC-031..DEC-046, CHR-004, IMP-019, IMP-020, IDE-003, IDE-004, RSK-003; RV-017 (design review)
 
@@ -247,7 +248,7 @@ fresh-as-of: 2026-10-29 · audit (RV-018 concluded) · head 5569843 + audit fixe
 - `slice verify-vt` passes keyword-only on text already in the test file: titles must be genuinely new
 
 ### Open
-- RV-018 reconciliation brief — F-1..F-10 design and registry drift; DEC-040 amendment (F-8)
+- IMP-017 — task-owned branch stays open (IDE-002); SL-006 delivered only the fork branch
 - DEC-043 / IMP-020 — interrupted thread calls may duplicate
 - RSK-003 — a reaped family resumes through a wake
 - CHR-001 — no `just gate` recipe for `doctrine check gate`

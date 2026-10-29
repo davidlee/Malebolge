@@ -1,9 +1,9 @@
 id = 6
 slug = "threads"
 title = "Threads: start, fork and post among interactive conversations"
-status = "reconcile"
+status = "done"
 created = "2026-10-28"
-updated = "2026-10-28"
+updated = "2026-10-29"
 tags = ["malebolge", "conversations", "threads", "topics"]
 
 [relationships]
@@ -109,6 +109,111 @@ intent = "design-target"
 [[selector]]
 selector = "src/task-sweep.ts"
 intent = "design-target"
+
+[[selector]]
+selector = "src/task-support.ts"
+intent = "design-target"
+note = "RV-018 F-1: in-scope paths the run touched"
+
+[[selector]]
+selector = "src/tool-results.ts"
+intent = "design-target"
+note = "RV-018 F-1: in-scope paths the run touched"
+
+[[selector]]
+selector = "src/wake/task.ts"
+intent = "design-target"
+note = "RV-018 F-1: in-scope paths the run touched"
+
+[[selector]]
+selector = "src/wake/tools.ts"
+intent = "design-target"
+note = "RV-018 F-1: in-scope paths the run touched"
+
+[[selector]]
+selector = "test/conversation-context.test.ts"
+intent = "design-target"
+note = "RV-018 F-1: in-scope paths the run touched"
+
+[[selector]]
+selector = "test/daemon-sections.test.ts"
+intent = "design-target"
+note = "RV-018 F-1: in-scope paths the run touched"
+
+[[selector]]
+selector = "test/daemon-start.test.ts"
+intent = "design-target"
+note = "RV-018 F-1: in-scope paths the run touched"
+
+[[selector]]
+selector = "test/daemon.test.ts"
+intent = "design-target"
+note = "RV-018 F-1: in-scope paths the run touched"
+
+[[selector]]
+selector = "test/harness-fixture.ts"
+intent = "design-target"
+note = "RV-018 F-1: in-scope paths the run touched"
+
+[[selector]]
+selector = "test/late-binding.test.ts"
+intent = "design-target"
+note = "RV-018 F-1: in-scope paths the run touched"
+
+[[selector]]
+selector = "test/queue-premises.test.ts"
+intent = "design-target"
+note = "RV-018 F-1: in-scope paths the run touched"
+
+[[selector]]
+selector = "test/structure.test.ts"
+intent = "design-target"
+note = "RV-018 F-1: in-scope paths the run touched"
+
+[[selector]]
+selector = "test/task-sweep.test.ts"
+intent = "design-target"
+note = "RV-018 F-1: in-scope paths the run touched"
+
+[[selector]]
+selector = "test/wake-heartbeat.test.ts"
+intent = "design-target"
+note = "RV-018 F-1: in-scope paths the run touched"
+
+[[selector]]
+selector = "test/wake-task.test.ts"
+intent = "design-target"
+note = "RV-018 F-1: in-scope paths the run touched"
+
+[[selector]]
+selector = "test/wake-tools.test.ts"
+intent = "design-target"
+note = "RV-018 F-1: in-scope paths the run touched"
+
+[[selector]]
+selector = ".doctrine/slice/006/**"
+intent = "design-target"
+note = "RV-018 F-1: in-scope paths the run touched"
+
+[[selector]]
+selector = ".doctrine/knowledge/decision/031/**"
+intent = "design-target"
+note = "RV-018 F-1: in-scope paths the run touched"
+
+[[selector]]
+selector = ".doctrine/knowledge/decision/036/**"
+intent = "design-target"
+note = "RV-018 F-1: in-scope paths the run touched"
+
+[[selector]]
+selector = ".doctrine/backlog/chore/005*"
+intent = "design-target"
+note = "RV-018 F-1: in-scope paths the run touched"
+
+[[selector]]
+selector = ".doctrine/backlog/chore/005/**"
+intent = "design-target"
+note = "RV-018 F-1: in-scope paths the run touched"
 
 [[relation]]
 label = "related"

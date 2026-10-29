@@ -114,7 +114,7 @@ export interface CallerAdmission extends PostAdmission {
 }
 
 /**
- * The caller's half of every admission (design § The thread tools, shared steps 1 and 3):
+ * The caller's half of every admission (design § The thread tools, shared step 1):
  * the index and the caller's entry in it, its turn's origin, and its tombstone. Every
  * read, so the caller's one commit may follow. A caller that no topic indexes, or whose
  * turn has no input to take an origin from, is refused; so is a reaped origin.

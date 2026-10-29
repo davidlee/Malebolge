@@ -70,10 +70,15 @@ flowchart LR
   subgraph threads["src/threads/ (new)"]
     ext["extension.ts<br/>threads extension, ThreadDeps,<br/>threads prompt section"]
     tools["tools.ts<br/>thread_start, thread_fork, thread_post"]
-    admit["admission.ts<br/>talk-set check, origin read,<br/>caps, reap"]
+    admit["admission.ts<br/>admitCaller, admitPost, admitStart;<br/>origin read, cap constants"]
+    caps["caps.ts<br/>familiesOf, verdict (pure)"]
+    reap["reap.ts<br/>reapIn, withdrawFamily, afterReap"]
+    origin["origin.ts<br/>Origin, originKey, isOrigin"]
     post["task.ts<br/>satan.post task, envelopes, notices"]
     tomb["tombstones.ts<br/>ThreadsDocument (reaped origins)"]
   end
+  support["src/task-support.ts<br/>scheduledKey, notifyBestEffort, reasonOf"]
+  results["src/tool-results.ts<br/>answer, refusal"]
   toolsets["src/toolsets.ts<br/>TALK_SETS, requireSameTalkSet,<br/>catalog + ROOM_ONLY"]
   topics["src/topics.ts<br/>IndexEntry.startedBy, hook copies<br/>fork toolset, latestIn skips threads"]
   convs["src/conversations.ts<br/>toolsetInit (thread option),<br/>list marks"]
@@ -86,13 +91,22 @@ flowchart LR
   pi[("pi-durable<br/>Tx, tasks, submissions, inspect")]
 
   tools --> admit
+  tools --> caps
+  tools --> reap
   tools --> post
   tools --> convs
-  tools --> topics
+  tools --> results
+  caps --> admit
   admit --> toolsets
+  admit --> topics
   admit --> tomb
-  admit --> post
+  admit --> origin
+  reap --> tomb
+  reap --> post
+  reap --> support
   post --> tomb
+  post --> support
+  tomb --> origin
   ext --> tools
   ext --> post
   dext --> ext
@@ -110,16 +124,29 @@ Responsibilities:
 
 - `src/threads/tools.ts` parses arguments, gathers what the call needs about
   its caller, and composes one creating commit per call. It owns no policy.
-- `src/threads/admission.ts` owns every refusal and the caps: talk set,
-  origin, tombstone, family and global counts, and the reap. Its pure parts
-  (counting, choosing the family to reap) take plain data and are tested
-  without a harness.
+- `src/threads/admission.ts` owns the admission reads and their refusals:
+  `admitCaller` (the caller's entry, origin and tombstone), `admitPost` and
+  `admitStart` (the target or topic, and the talk set), and the cap
+  constants. Every one is a read, so the caller's one commit may follow.
+- `src/threads/caps.ts` counts and decides: `familiesOf` and `verdict`, pure,
+  taking plain data and tested without a harness.
+- `src/threads/reap.ts` writes the reap: `reapIn` (tombstone and notice task,
+  inside a given commit), `withdrawFamily`, and `afterReap` (withdraw,
+  journal, notify).
+- `src/threads/origin.ts` holds `Origin`, `originKey` and `isOrigin`, read by
+  admission, tombstones and the task alike; a module of its own breaks the
+  import cycle admission and tombstones would otherwise form.
 - `src/threads/task.ts` owns the `satan.post` task: delivery, outcome, the
   envelopes the model reads, and the notices. It knows nothing of the tools.
 - `src/threads/tombstones.ts` owns the one new persistent record. Nothing
   else names `ThreadsDocument`, as `topics.ts` is the index's only owner.
 - `src/topics.ts` stays the index's only owner; threads reach the index
-  through its functions.
+  through its functions, `readIndexDoc(tx)` for a read.
+- `src/task-support.ts` (`SATAN_CALL_DEADLINE_MS`, `scheduledKey`,
+  `notifyBestEffort`, `reasonOf`) and `src/tool-results.ts` (`answer`,
+  `refusal`) are neutral helpers moved out of `src/wake/task.ts` and
+  `src/wake/tools.ts`, so wake and threads share them without importing each
+  other.
 
 Coupling rules:
 
@@ -129,7 +156,7 @@ Coupling rules:
   and posts deliberately do not share delivery code (DEC-035; reconciling
   them is IMP-019). Two small exceptions read wake's constants, not its
   behaviour: `WAKE_KIND` and the `EpisodeClass` type, which an origin
-  records.
+  records (read by `admission.ts` and `origin.ts`).
 - Nothing outside `src/threads/` imports the threads module except
   `daemon-extensions.ts`, `daemon-start.ts` and `render.ts` (entry kind and
   data shape only).
@@ -143,9 +170,11 @@ Coupling rules:
 // src/task-sweep.ts
 export interface SweptKind {
   kind: string;                                  // "satan.wake", "satan.post"
-  requestPrefix: (taskId: number) => string;     // whose queued inputs to withdraw
+  /** The journal's name for a task of this kind: `wake 7 blocked (...)`; keeps wake's lines byte-identical. */
+  noun: string;
+  requestPrefix: (taskId: TaskId) => string;     // whose queued inputs to withdraw
   /** The kind's own failure report for a blocked task (journal, best-effort notify). */
-  report: (task: TaskInspection, reason: string, ctx: Context) => Promise<void>;
+  report: (task: TaskInspection, reason: BlockedReason, ctx: Context) => Promise<void>;
 }
 /** At start, for each blocked task of a listed kind: withdraw its queued inputs, report, abort it. */
 export function sweepBlockedTasks(
@@ -205,12 +234,14 @@ export const TALK_SETS: Readonly<Record<Profile, Partial<Record<DaemonToolset, T
 
 /**
  * The talk set `caller` and `target` share on `profile`, refusing when either
- * has none or they differ. Start, fork and post call it alike.
+ * has none or they differ. Start, fork and post call it alike; `targetLabel`
+ * names the target in the refusal (`conversation 13`, `topic inbox`).
  */
 export function requireSameTalkSet(
   profile: Profile,
   caller: DaemonToolset,
   target: DaemonToolset,
+  targetLabel: string,
 ): TalkSet;
 ```
 
@@ -280,7 +311,8 @@ export const isThread = (entry: StoredEntry): boolean =>
 
 The `conversationCreated` hook, `indexConversation`, already writes a fork's
 `topic` and `parent`. It now also copies the parent entry's `toolset`, and
-throws when the parent has no entry or no toolset. A throw fails the forking
+throws when the parent has no entry or no toolset (`conversation 13: fork of
+12, which has no toolset`). A throw fails the forking
 commit, so a fork without a toolset is never written. Every entry has a
 toolset after the startup commit, and forks happen only through a tool after
 startup, so the throw guards an invariant breach rather than a case.
@@ -355,7 +387,7 @@ daemon-wide (DEC-036).
 ### The origin
 
 ```ts
-// src/threads/admission.ts
+// src/threads/origin.ts
 export interface Origin {
   /** The conversation whose input opened the cascade. */
   conversation: ConversationId;
@@ -485,22 +517,28 @@ reply is a `thread_post` back to the post's `from`.
 
 ### Shared steps
 
-Every call runs the same admission before its commit:
+Every call runs the same admission before its commit. Step 1 is one read
+all three tools share (`admitCaller`), so a reaped origin is refused cheaply,
+before anything else is resolved:
 
-1. Read the caller: its index entry (toolset, topic) and its origin
-   (§ Origins).
-2. Resolve and check the target's talk set with `requireSameTalkSet`.
-3. Refuse when the origin is tombstoned: `origin 12/340 was reaped for
-   fan-out; posts and thread starts from it are refused`.
-4. Count and decide (`verdict`). `reap-own`: commit the reap (§ Reaping,
-   step 1) alone, and refuse. That commit also re-reads the tombstone first,
-   and writes nothing if another conversation reaped the family meanwhile.
-5. Otherwise commit the call's writes. For `reap-other`, the reap's writes
+1. Read the caller: its index entry (toolset, topic), its origin
+   (§ Origins) and its tombstone. Refuse a caller with no entry (`this
+   conversation has no index entry`) and a tombstoned origin: `origin 12/340
+   was reaped for fan-out; posts and thread starts from it are refused`.
+2. Resolve the target (`admitPost`, `admitStart`) and check its talk set with
+   `requireSameTalkSet`.
+3. Count and decide (`verdict`). `reap-own`: commit the reap (§ Reaping,
+   step 1) alone, and refuse with the reason: `origin 12/340 was reaped for
+   fan-out: 5 active (cap 4); posts and thread starts from it are refused`.
+   That commit also re-reads the tombstone first, and writes nothing if
+   another conversation reaped the family meanwhile; the refusal then has no
+   reason, as in step 1.
+4. Otherwise commit the call's writes. For `reap-other`, the reap's writes
    (tombstone and notice task) go in this same commit, so a call whose
    creation fails reaps nobody. The commit first re-reads the caller's
    tombstone (`ThreadsDocument`, read before any table write) and refuses if
-   it is now set: another conversation reaped the family between steps 3 and
-   5. Step 3 stays as the cheap early refusal. Then run the reap's withdrawal
+   it is now set: another conversation reaped the family between steps 1 and
+   4. Step 1 stays as the cheap early refusal. Then run the reap's withdrawal
    step, if any, and journal (§ Visibility).
 
 ### The flows
@@ -529,7 +567,7 @@ sequenceDiagram
       T->>S: createTask(satan.post, owned by 13)
     end
     T-->>M: {conversation, topic} or {post, to}
-    P->>R: submit input (requestId post:<task>, whenBusy followUp)
+    P->>R: submit input (requestId post:<task>:, whenBusy followUp)
     R-->>P: settles: done, or unanswered
   end
 ```
@@ -583,7 +621,8 @@ result saying it is the fork of 12, in place of pi-durable's synthetic
 `dist/harness/context.js:217-243`). Its first post brings the purpose. The
 parent's own call result is `{conversation: child, topic}`.
 
-**thread_post** refuses unless `to` exists, is indexed (ownerless), is not
+**thread_post** refuses unless `to` exists (`no conversation 13`), is
+indexed (`conversation 13 is not in a topic (a task's conversation)`), is not
 the caller (`a conversation cannot post to itself`) and shares the caller's
 talk set. There is no presence gate. Its commit is the one `createTask`.
 
@@ -631,8 +670,12 @@ export type PostInput =
 export type PostState = { phase: "deliver" };
 export interface PostResult { outcome: "delivered" | "withdrawn" | "delivered-incomplete" | "reaped" }
 
-/** pi-durable dedupes it per conversation, so a re-run re-submits the same input. */
-export const postRequestId = (taskId: number): string => `post:${String(taskId)}`;
+/**
+ * pi-durable dedupes it per conversation, so a re-run re-submits the same input.
+ * Delimiter-terminated, as wake's `wake:<id>:`: the sweep and the reap match
+ * request ids by prefix, and `post:44` would also match post 440's input.
+ */
+export const postRequestId = (taskId: number): string => `post:${String(taskId)}:`;
 ```
 
 The entry the input is placed as has kind `satan.post`; its data is the
@@ -732,13 +775,21 @@ blocked `post` is reported to the operator by a journal line and a
 best-effort `notify_send`, as a failed notice is: that is the `satan.post`
 row's `report`. One sweep serves both kinds.
 
+The report's journal line and notify title:
+
+| task | journal line | notify title |
+|---|---|---|
+| a post | `post 44 failed: blocked (<reason>) origin 12/340` | `SATAN post blocked` |
+| a notice | `notice 47 to 12 failed: blocked (<reason>) origin 12/340` | `SATAN thread notice failed` |
+
 ### Abort by the operator
 
 The abort handler withdraws the task's input if still queued, and maps the
-answer of `abortSubmission`: `aborted` or `not_found` is `withdrawn`;
-`already_placed` is `delivered-incomplete`; `settled` reads the record as in
-step 5. A `post` then sends its `post-failed` notice as above. The handler
-settles the task `aborted`.
+answer of `abortSubmission`, each with its reason: `aborted` is `withdrawn`
+(`aborted`); `not_found`, or no submission yet, is `withdrawn` (`not
+admitted`); `already_placed` is `delivered-incomplete` (`aborted while
+placed`); `settled` reads the record as in step 5. A `post` then sends its
+`post-failed` notice as above. The handler settles the task `aborted`.
 
 ### A failed run continues (DEC-042)
 
@@ -834,7 +885,7 @@ stateDiagram-v2
    tools, shared steps).
 2. **Withdraw.** One `harness.inspect` gives the family's live post tasks
    and the queued submissions; each queued one whose request id is
-   `post:<familyTaskId>` is withdrawn with `harness.abortSubmission(id, ctx,
+   `post:<familyTaskId>:` is withdrawn with `harness.abortSubmission(id, ctx,
    to)`, one at a time. Each withdrawal removes exactly that input; it never
    uses `Conversation.abort`, which would withdraw every queued input of the
    recipient, including a co-resident loop's. The withdrawn tasks see their
@@ -907,9 +958,11 @@ notice 47 to 12 failed: target unreachable origin 12/340
 
 ### Notification
 
-A best-effort `notify_send` on a reap only, titled `SATAN threads reaped`,
-body as the journal line. A notify that fails changes nothing. Routine
-starts and posts never notify.
+A best-effort `notify_send` on a reap, titled `SATAN threads reaped`, body
+as the journal line. The other notifications are failures the operator must
+see because no notice can carry them: a notice that fails, or a blocked task
+(`SATAN thread notice failed`, `SATAN post blocked`; § Blocked post tasks).
+A notify that fails changes nothing. Routine starts and posts never notify.
 
 ### --list marks threads
 
@@ -950,22 +1003,27 @@ snapshot path and the live `message_end` path of `src/render.ts`:
 
 | entry | rendered |
 |---|---|
-| `satan.post`, letter `post` | `[thread] post from 12 (research)`, then the intent and, if given, the context |
-| `satan.post`, letter `post-failed` | `[thread] post 44 to 13 failed (delivered-incomplete): unanswered (model_error)` |
-| `satan.post`, letter `family-reaped` | `[thread] family 12/340 reaped: 5 active (cap 4)` |
+| `satan.post`, letter `post` | `[thread] post from 12 (research)`, then the intent and, if given, the context, one per line |
+| `satan.post`, letter `post-failed` | `[thread] post 44 to 13 failed (delivered-incomplete): unanswered (model_error)`, header only |
+| `satan.post`, letter `family-reaped` | `[thread] family 12/340 reaped: 5 active (cap 4)`, header only |
 | `satan.wake` | `[wake] scheduled by 12 (seclude)`, then the intent |
 | any other user-role entry | the operator's turn, as today |
 
 `PresentationTable` gains one `input(kind, header, body)` rendering per
-presentation. Unlike the operator's own typing, a post or wake is printed
+presentation; both presentations use the same `inputLine` (`[kind] header`,
+then the body's lines). Unlike the operator's own typing, a post or wake is printed
 live even where the terminal echoes typing, since no client typed it. Thread
 tool calls stay `[tool]` lines.
 
 The Emacs client gains `malebolge-thread-face` for `[thread]` lines and
 `malebolge-reap-face` (inheriting `warning`) for `[thread] family … reaped`
-lines: one font-lock rule each. `[thread] post from …` is also a speaker
-label, so a post's body lines take the thread face rather than the previous
-speaker's.
+lines: one font-lock rule each, in `malebolge--font-lock-keywords`, a
+`defconst` (so a reload picks up changed rules). `[thread] post from …` and
+`[wake] scheduled by …` are also speaker labels, so a post's or wake's body
+lines take the label's face rather than the previous speaker's: the thread
+face for a post, and `malebolge-wake-face` (inheriting the thread face;
+IMP-021) for a wake, so a wake's intent is not coloured as SATAN's turn.
+`malebolge--label-face` returns the first label that matches.
 
 <!-- doctrine:section sec-6 -->
 ## Prompt surface
@@ -977,16 +1035,21 @@ SL-006 changes no corpus file.
 
 ### Tool descriptions
 
-Each states what the tool does, its arguments' meaning (§ The thread tools)
-and the refusals a model can cause:
+Each states what the tool does, its arguments' meaning (§ The thread tools),
+the refusals a model can cause, and, for start and fork, how a reply comes
+back:
 
 - `thread_start`: "Start a new conversation in a topic (default: this one's)
   and send it a first post. intent: why it exists, about a sentence;
   context: optional material. Refused for an unknown topic, outside this
-  conversation's talk set, or over the post caps. Returns its id and topic."
+  conversation's talk set, or over the post caps. It answers only by
+  thread_post to you; ask for that if you want a reply. Returns its id and
+  topic."
 - `thread_fork`: "Fork this conversation as it stands, history included, and
-  send the fork a first post. Must be the only tool call in its message. …
-  Returns the fork's id and topic."
+  send the fork a first post. intent: why it exists, about a sentence;
+  context: optional material. Must be the only tool call in its message.
+  Refused over the post caps. It answers only by thread_post to you; ask for
+  that if you want a reply. Returns the fork's id and topic."
 - `thread_post`: "Post to another conversation by id; it starts or queues a
   turn there. Reply to a post by posting to its from. At most 4 active posts
   per activity and 12 in all; crossing a cap stops the activity. Returns the
@@ -995,13 +1058,17 @@ and the refusals a model can cause:
 ### The `threads` section
 
 One section of the `threads` extension, tagged, its text a constant in
-`src/threads/extension.ts` pinned by test. It states facts only:
+`src/threads/extension.ts` pinned by test. It states facts, and how a reply
+comes back (DEC-040, as amended after VH-1):
 
 ```text
 A <post> comes from another of your own conversations, a peer thread, not
 from the operator. Its from is the conversation that sent it; reply with
 thread_post to that id. A fork's thread_fork result names the conversation
-it was forked from; its purpose arrives as its first post.
+it was forked from; its purpose arrives as its first post. A thread answers
+you only by posting to you: what it says in its own turn stays in its own
+transcript. When you want an answer, ask for a reply with thread_post, and
+do not forbid it tools.
 
 A <post-failed> says a post of yours failed, and why. outcome="withdrawn":
 the recipient never read it. outcome="delivered-incomplete": the recipient
@@ -1012,7 +1079,9 @@ at once from one starting input. Its posts not yet read are withdrawn, and
 posts and thread starts from that activity are refused.
 ```
 
-What it deliberately leaves out: whether to trust a peer thread, how to
+The reply sentences were added after VH-1, which showed a thread briefed "do
+not use tools" with no way to answer. What it deliberately leaves out:
+whether to trust a peer thread, how to
 divide work, how to word replies. That is SATAN's conduct, written as
 persona prose (DEC-040); SATAN may add a threads passage to
 `interactive.txt` through its patch lane after this lands.
@@ -1057,16 +1126,16 @@ returns to the operator with the fallback named here.
 | premise | test (phase) | fallback |
 |---|---|---|
 | (a) A tool can append a `ToolResultEntry` for its own call id to a fork child, and the child's context shows it in place of the synthetic result (DEC-031). | `a fork's child sees the written fork result, not 'Tool result unavailable'` (fork phase) | The fork's first post carries `fork_of` and a note (§ The satan.post task); the synthetic result stays. |
-| (b) Queued follow-ups are placed one per run, so one run has one origin (DEC-036). | `two posts queued behind a busy recipient are placed in two runs` (post phase) | None in design: a failure undermines the origin rule and goes back to the operator. |
-| (c) Withdrawing one queued post leaves a sibling input queued (DEC-036). | `withdrawing one queued post leaves the other queued input in place` (post phase) | None in design: a failure means a reap could harm a co-resident loop, and goes back to the operator. |
+| (b) Queued follow-ups are placed one per run, so one run has one origin (DEC-036). | `two posts queued behind a busy recipient are placed in two runs` (premises phase, PHASE-03, before the post task) | None in design: a failure undermines the origin rule and goes back to the operator. |
+| (c) Withdrawing one queued post leaves a sibling input queued (DEC-036). | `withdrawing one queued post leaves the other queued input in place` (premises phase, PHASE-03, before the post task) | None in design: a failure means a reap could harm a co-resident loop, and goes back to the operator. |
 
 ### Existing tests affected
 
 - `test/wake-wait.test.ts`: the `behindFailure` recipe and VT-1, VT-2 and
   VT-3 pin `afterFailedRun: "keep"` (the wake's input stays queued behind a
   failed run until the bound withdraws it). With DEC-042 a failed run
-  continues with the queued input, so those cases are rewritten in the post
-  phase to the new behaviour: the queued wake input is placed in the next
+  continues with the queued input, so those cases are rewritten in the
+  premises phase (PHASE-03), before the post task, to the new behaviour: the queued wake input is placed in the next
   run. Cases that need an input stuck in the queue get it from a held run
   rather than a failed one.
 - `test/session.test.ts` `refuses a fork, names it, …`: becomes a refusal of
@@ -1146,7 +1215,13 @@ coloured.
 |---|---|
 | `src/threads/extension.ts` (new) | `ThreadDeps`, the `threads` extension, `THREADS_SECTION`. |
 | `src/threads/tools.ts` (new) | `thread_start`, `thread_fork`, `thread_post`: sequential, replay `unsafe`; `thread_fork` `callers: ["model"]`. |
-| `src/threads/admission.ts` (new) | `Origin`, `originKey`, the caller's origin read, `familiesOf`, `verdict`, `FAMILY_CAP`, `GLOBAL_CAP`, the reap. |
+| `src/threads/admission.ts` (new) | `admitCaller`, `admitPost`, `admitStart`: the admission reads and refusals; the caller's origin read; `FAMILY_CAP`, `GLOBAL_CAP`. |
+| `src/threads/origin.ts` (new) | `Origin`, `originKey`, `isOrigin`. |
+| `src/threads/caps.ts` (new) | `familiesOf`, `verdict`. |
+| `src/threads/reap.ts` (new) | `reapIn`, `withdrawFamily`, `afterReap`: the reap's writes, withdrawal and report. |
+| `src/task-support.ts` (new) | `SATAN_CALL_DEADLINE_MS`, `scheduledKey`, `notifyBestEffort`, `reasonOf`, moved from `src/wake/task.ts`. |
+| `src/tool-results.ts` (new) | `answer`, `refusal`, moved from `src/wake/tools.ts`. |
+| `src/wake/task.ts`, `src/wake/tools.ts` | The helpers above move out; behaviour unchanged. |
 | `src/threads/task.ts` (new) | `satan.post` v1: `POST_KIND`, `PostInput`, `PostState`, `PostResult`, `postRequestId`, `postTask(deps)` (the definition, as `wakeTask`), `createPostTask(tx, task, input)` (owned by `input.to`, background, as `createWakeTask`); delivery, outcomes, envelopes, notices, abort handler; the `satan.post` `SweptKind` row. |
 | `src/threads/tombstones.ts` (new) | `ThreadsDocument`, `isReaped`, `tombstone`. |
 | `src/late-binding.ts` (new) | `lateBinding<Early, Late>`, generalised from `wakeBinding`. |
@@ -1154,19 +1229,21 @@ coloured.
 | `src/task-sweep.ts` (new) | `SweptKind`, `sweepBlockedTasks`: the start sweep, moved out of `src/wake/sweep.ts`, over a per-kind table. |
 | `src/wake/sweep.ts` | Shrinks to wake's `SweptKind` row: its wake-specific part (no report for the heartbeat or an abort already requested; otherwise `reportFailure`). |
 | `src/toolsets.ts` | `TalkSet`, `TALK_SETS`, `requireSameTalkSet`; `threads` in the interactive list and in `ROOM_ONLY`. |
-| `src/topics.ts` | `IndexEntry.startedBy`; `isThread`, `markOf`; the hook copies a fork's toolset and throws without one; `writeCreated` writes `startedBy`; `latestIn` skips threads. |
+| `src/topics.ts` | `IndexEntry.startedBy`; `isThread`, `markOf`, `readIndexDoc`; the hook copies a fork's toolset and throws without one; `writeCreated` writes `startedBy`; `latestIn` skips threads. |
 | `src/conversations.ts` | `toolsetInit` takes the optional `StartedThread`; the cwd lookup extracted for reuse; list pages carry marks. |
 | `src/session.ts` | `refuseUnsupported` narrows to a fork without a toolset; `DAEMON_SETTINGS` passed to `Harness.open`. |
 | `src/daemon-extensions.ts` | `DaemonParts.threads`; the `threads` builder. |
-| `src/daemon-start.ts` | Build and bind `ThreadDeps` (early and late, beside the wakes'); pass the wake and post rows to `sweepBlockedTasks` at room start. |
+| `src/daemon-start.ts` | Build and bind `ThreadDeps` (early and late, beside the wakes'); `startWakes` becomes `startRoomTasks`, which passes the wake and post rows to `sweepBlockedTasks` at room start. |
 | `src/protocol.ts` | `ThreadMark`; optional `marks` on `ConversationsMessage`. |
 | `src/daemon.ts` | Pass a list page's marks into the reply. |
 | `src/render.ts` | Input entries rendered by kind (`[thread]`, `[wake]`) in snapshot and live paths; marked list lines. |
-| `emacs/malebolge.el` | `malebolge-thread-face`, `malebolge-reap-face` and their rules; the post header as a speaker label; the picker parses marked lines. |
+| `emacs/malebolge.el` | `malebolge-thread-face`, `malebolge-reap-face` and their rules; the post and wake headers as speaker labels; the picker parses marked lines. |
 | `test/thread-fixture.ts` (new), `test/threads-*.test.ts` (new) | § Verification. |
+| `test/late-binding.test.ts`, `test/queue-premises.test.ts`, `test/task-sweep.test.ts` (new) | `lateBinding`; premises (b) and (c); the shared sweep. |
 | `test/wake-wait.test.ts`, `test/session.test.ts`, `test/toolsets.test.ts`, `test/conversations.test.ts`, `test/topics.test.ts`, `test/render.test.ts`, `test/malebolge-ert.el` | Updated as § Verification lists. |
+| `test/wake-*.test.ts`, `test/daemon*.test.ts`, `test/conversation-context.test.ts`, `test/structure.test.ts`, `test/harness-fixture.ts` | Follow the moved helpers, `startRoomTasks`, `DAEMON_SETTINGS` and the threads catalog entry. |
 
-Unchanged: `src/wake/task.ts` and `src/wake/tools.ts` (wake's delivery and
-scheduling; only wake's rendering changes), `src/conversation-context.ts`,
-SATAN's corpus, the runner and its harness.
+Unchanged: wake's delivery and scheduling (only its rendering changes, and
+its helpers move out), `src/conversation-context.ts`, SATAN's corpus, the
+runner and its harness.
 
