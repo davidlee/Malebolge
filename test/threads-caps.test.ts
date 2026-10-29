@@ -24,6 +24,7 @@ import { describe, expect, it, vi } from "vitest";
 import { context } from "../src/context.ts";
 import { isRecord } from "../src/json.ts";
 import { DEFAULT_TOPIC } from "../src/protocol.ts";
+import { FAMILY_CAP, GLOBAL_CAP } from "../src/threads/admission.ts";
 import { familiesOf, verdict } from "../src/threads/caps.ts";
 import { type Origin, originKey } from "../src/threads/origin.ts";
 import { afterReap, reapIn } from "../src/threads/reap.ts";
@@ -87,6 +88,20 @@ const taskIdOf = (n: number): TaskId<JsonValue> => idOf(n, isTaskId, "task id");
 /** The conversation every fake task belongs to, and the one a post is sent to. */
 const CONVERSATION = conversationIdOf(1);
 const RECIPIENT = conversationIdOf(2);
+
+/** K and N: every scenario is sized from the caps, so tuning them needs no test edit. */
+const K = FAMILY_CAP;
+const N = GLOBAL_CAP;
+
+/** The reason a family-cap reap names: the caller's post over K. */
+const CAP_REASON = `${String(K + 1)} active (cap ${String(K)})`;
+
+/** The reason a global-cap reap names: the caller's post over N. */
+const GLOBAL_REASON = `${String(N + 1)} active daemon-wide (cap ${String(N)}); largest family`;
+
+/** Three families' sizes at N exactly, the two youngest tied at the top: the tie the global cap breaks. */
+const TIED_TOP = Math.ceil(N / 3);
+const TIED = [N - 2 * TIED_TOP, TIED_TOP, TIED_TOP] as const;
 
 /** A human origin at `entry`: pi-durable mints entry ids from one sequence, so a higher entry is younger. */
 const human = (entry: number): Origin => ({ conversation: CONVERSATION, entry, kind: "human" });
@@ -157,11 +172,23 @@ const postInspection = (
       : { kind: "running" },
 });
 
+/** `count` ids running from `first`. */
+const idsFrom = (first: number, count: number): number[] =>
+  Array.from({ length: count }, (_unused, offset) => first + offset);
+
 /** `count` live posts of `origin`, ids running from `first`. */
 const posts = (first: number, origin: Origin, count: number): TaskInspection[] =>
-  Array.from({ length: count }, (_unused, offset) =>
-    postInspection(taskIdOf(first + offset), origin),
+  idsFrom(first, count).map((id) => postInspection(taskIdOf(id), origin));
+
+/** `total` split into sizes of at most `max`, largest first. */
+const sizesOf = (total: number, max: number): number[] =>
+  Array.from({ length: Math.ceil(total / max) }, (_unused, index) =>
+    Math.min(max, total - index * max),
   );
+
+/** One family per size, each with its own origin (entries from 100) and ids (from 100, 200…). */
+const othersOf = (sizes: readonly number[]): TaskInspection[] =>
+  sizes.flatMap((size, index) => posts(100 * (index + 1), human(100 + index), size));
 
 describe("familiesOf and verdict (PHASE-06 EX-4, VT-3)", () => {
   it("a blocked post task is not counted", () => {
@@ -203,43 +230,37 @@ describe("familiesOf and verdict (PHASE-06 EX-4, VT-3)", () => {
     const alone = familiesOf([postInspection(taskIdOf(1), caller)], NOTHING_REAPED);
     expect(verdict(alone, caller)).toEqual({ kind: "admit" });
 
-    // The caller's family at K exactly: 4 active is not over the family cap.
-    const atFamilyCap = familiesOf(
-      [...posts(1, caller, 3), ...posts(10, human(10), 1)],
-      NOTHING_REAPED,
-    );
+    // The caller's family at K exactly: K - 1 live plus the post being admitted.
+    const atFamilyCap = familiesOf([...posts(1, caller, K - 1), ...othersOf([1])], NOTHING_REAPED);
     expect(verdict(atFamilyCap, caller)).toEqual({ kind: "admit" });
 
-    // The daemon at N exactly: 4 + 4 + 3 elsewhere plus the caller's first post make 12.
-    const atGlobalCap = familiesOf(
-      [...posts(1, human(10), 4), ...posts(10, human(20), 4), ...posts(20, human(30), 3)],
-      NOTHING_REAPED,
-    );
+    // The daemon at N exactly: N - 1 elsewhere plus the caller's first post.
+    const atGlobalCap = familiesOf(othersOf(sizesOf(N - 1, K)), NOTHING_REAPED);
     expect(verdict(atGlobalCap, caller)).toEqual({ kind: "admit" });
   });
 
-  it("the fifth post of one origin reaps its own family", () => {
+  it("the post over K reaps its own family", () => {
     const caller = human(40);
-    const families = familiesOf(posts(1, caller, 4), NOTHING_REAPED);
+    const families = familiesOf(posts(1, caller, K), NOTHING_REAPED);
 
-    // Four are live already; the post being admitted is the fifth.
-    expect(families.get(originKey(caller))?.active).toBe(4);
-    expect(verdict(families, caller)).toEqual({ kind: "reap-own", reason: "5 active (cap 4)" });
+    // K are live already; the post being admitted is one over.
+    expect(families.get(originKey(caller))?.active).toBe(K);
+    expect(verdict(families, caller)).toEqual({ kind: "reap-own", reason: CAP_REASON });
   });
 
   it("the global cap reaps the largest other family and admits the call", () => {
     const caller = human(40);
     const largest = human(30);
     const families = familiesOf(
-      [...posts(1, largest, 5), ...posts(10, human(10), 4), ...posts(20, human(20), 3)],
+      [...posts(1, largest, K), ...othersOf(sizesOf(N - K, K - 1))],
       NOTHING_REAPED,
     );
 
-    // 5 + 4 + 3 live, plus the caller's post: 13 over a cap of 12.
+    // N live, the largest at K, plus the caller's post: one over N.
     expect(verdict(families, caller)).toEqual({
       kind: "reap-other",
-      family: { origin: largest, active: 5, taskIds: [1, 2, 3, 4, 5] },
-      reason: "13 active daemon-wide (cap 12); largest family",
+      family: { origin: largest, active: K, taskIds: idsFrom(1, K) },
+      reason: GLOBAL_REASON,
     });
   });
 
@@ -247,62 +268,53 @@ describe("familiesOf and verdict (PHASE-06 EX-4, VT-3)", () => {
     const caller = human(40);
     const youngest = human(30);
     const families = familiesOf(
-      [...posts(1, human(10), 4), ...posts(10, human(20), 4), ...posts(20, youngest, 4)],
+      [
+        ...posts(1, human(10), TIED[0]),
+        ...posts(100, human(20), TIED[1]),
+        ...posts(200, youngest, TIED[2]),
+      ],
       NOTHING_REAPED,
     );
 
-    // Three families of 4: the highest entry id (30) is the one reaped.
+    // The top two tied: the highest entry id (30) is the one reaped.
     expect(verdict(families, caller)).toEqual({
       kind: "reap-other",
-      family: { origin: youngest, active: 4, taskIds: [20, 21, 22, 23] },
-      reason: "13 active daemon-wide (cap 12); largest family",
+      family: { origin: youngest, active: TIED[2], taskIds: idsFrom(200, TIED[2]) },
+      reason: GLOBAL_REASON,
     });
   });
 
   it("the global cap reaps the caller's family when it is the largest", () => {
     const caller = human(40);
     const families = familiesOf(
-      [
-        ...posts(1, caller, 3),
-        ...posts(10, human(10), 3),
-        ...posts(20, human(20), 3),
-        ...posts(30, human(30), 3),
-      ],
+      [...posts(1, caller, K - 1), ...othersOf(sizesOf(N - K + 1, K - 1))],
       NOTHING_REAPED,
     );
 
-    // The caller's family counts as 4, the largest: 4 + 3 + 3 + 3 = 13.
-    expect(verdict(families, caller)).toEqual({
-      kind: "reap-own",
-      reason: "13 active daemon-wide (cap 12); largest family",
-    });
+    // The caller's family counts as K, every other under it, and the total is one over N.
+    expect(verdict(families, caller)).toEqual({ kind: "reap-own", reason: GLOBAL_REASON });
   });
 
   it("a reaped family is never chosen again", () => {
     const caller = human(40);
     const largest = human(30);
-    const next = human(20);
-    const rest = human(10);
-    const tasks = [...posts(1, largest, 5), ...posts(10, next, 4), ...posts(20, rest, 3)];
+    const tasks = [...posts(1, largest, K), ...othersOf(sizesOf(N - K, K - 1))];
 
     expect(verdict(familiesOf(tasks, NOTHING_REAPED), caller)).toEqual({
       kind: "reap-other",
-      family: { origin: largest, active: 5, taskIds: [1, 2, 3, 4, 5] },
-      reason: "13 active daemon-wide (cap 12); largest family",
+      family: { origin: largest, active: K, taskIds: idsFrom(1, K) },
+      reason: GLOBAL_REASON,
     });
 
     // Once its tombstone stands, its live tasks no longer count and it cannot be picked.
     const reaped = (key: string): boolean => key === originKey(largest);
     const after = familiesOf(tasks, reaped);
-    expect([...after.keys()].sort()).toEqual([originKey(next), originKey(rest)].sort());
+    expect(after.has(originKey(largest))).toBe(false);
     expect(verdict(after, caller)).toEqual({ kind: "admit" });
   });
 });
 
 const INTENT = "Summarise the failing test runs";
-
-/** The reason a family-cap reap names: the caller's fifth post. */
-const CAP_REASON = "5 active (cap 4)";
 
 /** The refusal a crossing call reads. */
 const reapRefusal = (origin: Origin, reason = CAP_REASON): string =>
@@ -430,14 +442,14 @@ const letterOf = (entry: EntryRecord): unknown => dataOf(entry)["letter"];
 describe("the reap (PHASE-06 EX-5..EX-7)", () => {
   it("one message issuing more thread calls than K admits K and the crossing call reaps the family", async () => {
     const stage = await reapStage();
-    scriptRound(stage, 5);
+    scriptRound(stage, K + 1);
     await holdRecipient(stage);
     const results = await runRound(stage);
 
-    // The first four calls are admitted: one round, so each counts the previous call's post.
-    const admitted = results.slice(0, 4);
+    // The first K calls are admitted: one round, so each counts the previous call's post.
+    const admitted = results.slice(0, K);
     const ids = admitted.map(postIdOf);
-    expect(new Set(ids).size).toBe(4);
+    expect(new Set(ids).size).toBe(K);
     for (const result of admitted) {
       expect(JSON.parse(textOf(result))).toEqual({
         post: postIdOf(result),
@@ -445,13 +457,13 @@ describe("the reap (PHASE-06 EX-5..EX-7)", () => {
       });
     }
 
-    // The fifth crosses K and is refused, naming the cap and the origin.
+    // The next crosses K and is refused, naming the cap and the origin.
     const origin = await originOfCaller(stage.caller);
-    const crossing = only(results.slice(4));
+    const crossing = only(results.slice(K));
     expect(crossing.isError).toBe(true);
     expect(textOf(crossing)).toBe(reapRefusal(origin));
 
-    // The tombstone stands, and the four posts are the only post tasks the round created.
+    // The tombstone stands, and the K posts are the only post tasks the round created.
     const reaped = await reapedOrigins(stage.session.harness);
     expect(Object.keys(reaped)).toEqual([originKey(origin)]);
     expect(reaped[originKey(origin)]?.reason).toBe(CAP_REASON);
@@ -467,16 +479,16 @@ describe("the reap (PHASE-06 EX-5..EX-7)", () => {
       (entry) => letterOf(entry) === "post-failed",
     );
     expect(notices).toEqual([]);
-    // No fifth post task exists: every post still live is one this round created.
+    // No crossing post task exists: every post still live is one this round created.
     const live = (await postTasks(stage.session.harness)).filter(
       (task) => inputOf(task)["letter"] === "post",
     );
     expect(live).toEqual([]);
   });
 
-  it("a family over 4 is reaped and its originator told, while a co-resident loop is untouched", async () => {
+  it("a family over K is reaped and its originator told, while a co-resident loop is untouched", async () => {
     const stage = await reapStage();
-    scriptRound(stage, 5);
+    scriptRound(stage, K + 1);
     await holdRecipient(stage);
 
     // Another origin's post, queued at the same recipient before the round: a co-resident loop.
@@ -514,21 +526,20 @@ describe("the reap (PHASE-06 EX-5..EX-7)", () => {
 
   it("the reap journals the withdrawn count and notifies the operator, SATAN threads reaped", async () => {
     const stage = await reapStage();
-    scriptRound(stage, 5);
+    scriptRound(stage, K + 1);
     await holdRecipient(stage);
     const results = await runRound(stage);
 
     const origin = await originOfCaller(stage.caller);
-    const line = `family ${originKey(origin)} reaped: ${CAP_REASON}; withdrew 4`;
-    expect(line).toContain("reaped: 5 active (cap 4); withdrew");
+    const line = `family ${originKey(origin)} reaped: ${CAP_REASON}; withdrew ${String(K)}`;
     await vi.waitFor(() => {
       expect(stage.world.lines).toContain(line);
     }, WAIT);
 
-    // Four post lines, then the reap's line: withdrawal found every family input queued.
+    // K post lines, then the reap's line: withdrawal found every family input queued.
     const postLines = stage.world.lines.filter((entry) => entry.startsWith("post "));
-    expect(postLines).toHaveLength(4);
-    const ids = results.slice(0, 4).map(postIdOf);
+    expect(postLines).toHaveLength(K);
+    const ids = results.slice(0, K).map(postIdOf);
     for (const id of ids) {
       expect(postLines.some((entry) => entry.startsWith(`post ${String(id)} `))).toBe(true);
     }
@@ -541,13 +552,13 @@ describe("the reap (PHASE-06 EX-5..EX-7)", () => {
     expect(notifications[0]?.args["body"]).toBe(line);
   });
 
-  it("a fourth post alone is admitted, writes no tombstone and notifies nobody", async () => {
+  it("K posts alone are admitted, write no tombstone and notify nobody", async () => {
     const stage = await reapStage();
-    scriptRound(stage, 4);
+    scriptRound(stage, K);
     await holdRecipient(stage);
     const results = await runRound(stage);
 
-    expect(results).toHaveLength(4);
+    expect(results).toHaveLength(K);
     for (const result of results) {
       expect(result.isError).toBe(false);
       expect(JSON.parse(textOf(result))).toEqual({
@@ -560,7 +571,7 @@ describe("the reap (PHASE-06 EX-5..EX-7)", () => {
     expect(await reapedOrigins(stage.session.harness)).toEqual({});
     expect(await familyReaped(stage.caller)).toEqual([]);
     expect(notifyCalls(stage.world)).toEqual([]);
-    expect(stage.world.lines).toHaveLength(4);
+    expect(stage.world.lines).toHaveLength(K);
     expect(stage.world.lines.every((entry) => entry.startsWith("post "))).toBe(true);
   });
 });
@@ -571,11 +582,11 @@ interface HeldFamily {
   readonly ids: readonly TaskId<PostResult>[];
 }
 
-/** Four hand-created posts from origin `entry` on the recipient, queued behind its held run. */
-async function holdFamily(stage: ReapStage, entry: number): Promise<HeldFamily> {
+/** `count` hand-created posts from origin `entry` on the recipient, queued behind its held run. */
+async function holdFamily(stage: ReapStage, entry: number, count: number): Promise<HeldFamily> {
   const origin: Origin = { conversation: stage.recipient.id, entry, kind: "human" };
   const ids: TaskId<PostResult>[] = [];
-  for (let index = 0; index < 4; index += 1) {
+  for (let index = 0; index < count; index += 1) {
     const id = await createPost(stage.session, stage.world.task, {
       letter: "post",
       to: stage.recipient.id,
@@ -590,18 +601,18 @@ async function holdFamily(stage: ReapStage, entry: number): Promise<HeldFamily> 
   return { origin, ids };
 }
 
-/** Three other origins holding four live posts each: the daemon at N exactly, two of them tied at the top. */
+/** Three other origins sized `TIED`: the daemon at N exactly, the two youngest tied at the top. */
 async function holdFamilies(
   stage: ReapStage,
 ): Promise<readonly [old: HeldFamily, middle: HeldFamily, young: HeldFamily]> {
-  const old = await holdFamily(stage, 100);
-  const middle = await holdFamily(stage, 200);
-  const young = await holdFamily(stage, 300);
+  const old = await holdFamily(stage, 100, TIED[0]);
+  const middle = await holdFamily(stage, 200, TIED[1]);
+  const young = await holdFamily(stage, 300, TIED[2]);
   return [old, middle, young];
 }
 
-/** The reason a global-cap reap names: the caller's post making 13 daemon-wide. */
-const GLOBAL_REASON = "13 active daemon-wide (cap 12); largest family";
+/** What `statusesOf` reads for a family whose every input still waits. */
+const allQueued = (family: HeldFamily): string[] => family.ids.map(() => "queued");
 
 /** The refusal a reaped origin's post reads when another conversation reaped the family first. */
 const NO_REASON_REFUSAL = (origin: Origin): string =>
@@ -649,15 +660,15 @@ describe("the global cap and in-commit refusals (PHASE-06 VT-6, VT-7)", () => {
     const stage = await reapStage();
     scriptRound(stage, 1);
     await holdRecipient(stage);
-    // Three other origins hold 4 live posts each: 12 active, the cap exactly, the top two tied.
+    // Three other origins hold N live posts between them, the cap exactly, the top two tied.
     const [old, middle, young] = await holdFamilies(stage);
-    expect(await statusesOf(stage, old)).toEqual(Array.from({ length: 4 }, () => "queued"));
-    expect(await statusesOf(stage, middle)).toEqual(Array.from({ length: 4 }, () => "queued"));
-    expect(await statusesOf(stage, young)).toEqual(Array.from({ length: 4 }, () => "queued"));
+    expect(await statusesOf(stage, old)).toEqual(allQueued(old));
+    expect(await statusesOf(stage, middle)).toEqual(allQueued(middle));
+    expect(await statusesOf(stage, young)).toEqual(allQueued(young));
 
     const result = only(await runRound(stage));
 
-    // The caller's post makes 13: it is admitted, and the youngest tied family is reaped.
+    // The caller's post makes N + 1: it is admitted, and the youngest tied family is reaped.
     expect(result.isError).toBe(false);
     const post = postIdOf(result);
     expect(JSON.parse(textOf(result))).toEqual({ post, to: stage.recipient.id });
@@ -665,7 +676,7 @@ describe("the global cap and in-commit refusals (PHASE-06 VT-6, VT-7)", () => {
     expect(Object.keys(reaped)).toEqual([originKey(young.origin)]);
     expect(reaped[originKey(young.origin)]?.reason).toBe(GLOBAL_REASON);
 
-    // Its four queued inputs are withdrawn and settle reaped, with no post-failed notice.
+    // Its queued inputs are withdrawn and settle reaped, with no post-failed notice.
     for (const id of young.ids) {
       expect(await postResult(stage.session.harness, id)).toEqual({ outcome: "reaped" });
     }
@@ -679,11 +690,11 @@ describe("the global cap and in-commit refusals (PHASE-06 VT-6, VT-7)", () => {
     // The other families are untouched: still queued, no tombstone.
     expect(reaped[originKey(old.origin)]).toBeUndefined();
     expect(reaped[originKey(middle.origin)]).toBeUndefined();
-    expect(await statusesOf(stage, old)).toEqual(Array.from({ length: 4 }, () => "queued"));
-    expect(await statusesOf(stage, middle)).toEqual(Array.from({ length: 4 }, () => "queued"));
+    expect(await statusesOf(stage, old)).toEqual(allQueued(old));
+    expect(await statusesOf(stage, middle)).toEqual(allQueued(middle));
 
     // The journal: the caller's post line, then the reap's line after it.
-    const line = `family ${originKey(young.origin)} reaped: ${GLOBAL_REASON}; withdrew 4`;
+    const line = `family ${originKey(young.origin)} reaped: ${GLOBAL_REASON}; withdrew ${String(young.ids.length)}`;
     const postLine = stage.world.lines.findIndex((entry) => entry.startsWith("post "));
     expect(postLine).toBeGreaterThanOrEqual(0);
     expect(stage.world.lines.indexOf(line)).toBeGreaterThan(postLine);
@@ -710,9 +721,9 @@ describe("the global cap and in-commit refusals (PHASE-06 VT-6, VT-7)", () => {
       originKey(young.origin),
     ]);
     expect(await reapedNotices(stage.session.harness)).toHaveLength(1);
-    // Nothing else was withdrawn: both surviving families still hold their four queued inputs.
-    expect(await statusesOf(stage, old)).toEqual(Array.from({ length: 4 }, () => "queued"));
-    expect(await statusesOf(stage, middle)).toEqual(Array.from({ length: 4 }, () => "queued"));
+    // Nothing else was withdrawn: both surviving families still hold their queued inputs.
+    expect(await statusesOf(stage, old)).toEqual(allQueued(old));
+    expect(await statusesOf(stage, middle)).toEqual(allQueued(middle));
   });
 
   it("a call whose creating commit throws after a reap-other verdict leaves no tombstone and no notice", async () => {
@@ -736,9 +747,9 @@ describe("the global cap and in-commit refusals (PHASE-06 VT-6, VT-7)", () => {
     // The reap's writes went with the commit: no tombstone, no notice task.
     expect(await reapedOrigins(session.harness)).toEqual({});
     expect(await reapedNotices(session.harness)).toEqual([]);
-    // The other family's four inputs still wait, and nothing was journalled or notified.
+    // Every family's inputs still wait, and nothing was journalled or notified.
     for (const family of families) {
-      expect(await statusesOf(stage, family)).toEqual(Array.from({ length: 4 }, () => "queued"));
+      expect(await statusesOf(stage, family)).toEqual(allQueued(family));
     }
     expect(world.lines.filter((entry) => entry.startsWith("family "))).toEqual([]);
     expect(notifyCalls(world)).toEqual([]);
@@ -844,8 +855,8 @@ describe("thread_start and thread_fork under the global cap (design § Shared st
       }
       const notice = only(await reapedNotices(stage.session.harness));
       expect(notice.record.conversationId).toBe(young.origin.conversation);
-      expect(await statusesOf(stage, old)).toEqual(Array.from({ length: 4 }, () => "queued"));
-      expect(await statusesOf(stage, middle)).toEqual(Array.from({ length: 4 }, () => "queued"));
+      expect(await statusesOf(stage, old)).toEqual(allQueued(old));
+      expect(await statusesOf(stage, middle)).toEqual(allQueued(middle));
     },
   );
 
@@ -868,7 +879,7 @@ describe("thread_start and thread_fork under the global cap (design § Shared st
       expect(await reapedOrigins(stage.session.harness)).toEqual({});
       expect(await reapedNotices(stage.session.harness)).toEqual([]);
       for (const family of families) {
-        expect(await statusesOf(stage, family)).toEqual(Array.from({ length: 4 }, () => "queued"));
+        expect(await statusesOf(stage, family)).toEqual(allQueued(family));
       }
     },
   );
@@ -937,7 +948,7 @@ describe("concurrent and crashed reaps", () => {
   it("a crash after the reap commit and before any withdrawal delivers no queued family post after restart", async () => {
     const stage = await reapStage();
     await holdConversation(stage.world, stage.recipient);
-    const family = await holdFamily(stage, 100);
+    const family = await holdFamily(stage, 100, K);
     // A co-resident loop of another origin, queued at the same recipient.
     const other: Origin = { conversation: stage.session.root.id, entry: 1, kind: "human" };
     const neighbour = await createPost(stage.session, stage.world.task, {

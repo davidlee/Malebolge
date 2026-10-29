@@ -19,3 +19,7 @@ Noted 2026-10-29 (design d1 review, pi F-7): a post is active until the recipien
 
 ## Premise outcome (SL-006 PHASE-03, 2026-10-29)
 Premises (b) and (c) HOLD on pi-durable 1.4.0, pinned by test/queue-premises.test.ts: two follow-ups queued behind a held run are placed in two runs (3 model calls; the run answering post:44: does not see post:45:); abortSubmission of one queued post answers aborted and leaves its sibling queued, then placed. (b) rests on pi-durable's followUpMode default one-at-a-time, now pinned explicitly by DAEMON_SETTINGS (DEC-042).
+
+
+
+Amended 2026-10-30 (operator: "agree", to raising the caps): K = 8 and N = 16, from 4 and 12. Evidence: origin 2738/3037 was reaped at 5 active with two child threads — two starts, one nudge, two replies queued behind the root's running turn. Every post counts until its recipient's turn ends, both directions, so a family of width w holds about 2–3w active posts and K = 4 admitted only two quiet children. K = 8 admits three children with replies, or two with nudges; a spawn loop still crosses it within a turn. N = 16 stays above one full family plus co-resident loops. Counting and reaping are unchanged; not counting replies to the root was rejected, as a looping child could then fill the root's queue with nothing to stop it.

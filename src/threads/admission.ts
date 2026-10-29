@@ -21,10 +21,10 @@ import { POST_KIND } from "./task.ts";
 import { isReaped, reapedRefusal, threadsDoc } from "./tombstones.ts";
 
 /** K: active posts per origin (DEC-036). */
-export const FAMILY_CAP = 4;
+export const FAMILY_CAP = 8;
 
 /** N: active posts daemon-wide (DEC-036). */
-export const GLOBAL_CAP = 12;
+export const GLOBAL_CAP = 16;
 
 /** A call refused with a text the model reads. */
 export class Refusal extends Error {}

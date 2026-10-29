@@ -7,7 +7,7 @@ title = "Posts carry their origin; a family over its cap, or the largest family 
 record_kind = "decision"
 status = "accepted"
 created = "2026-10-28"
-updated = "2026-10-28"
+updated = "2026-10-29"
 tags = []
 
 [facet]                         # every field typed; seeded empty (captured later)
