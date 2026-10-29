@@ -315,7 +315,9 @@ pi's own `bridge_post {text}` tool (a turn) or `malebolge-bridge` (a note
 unless `--turn`). The daemon frames each as
 `<bridge from="pi" project="…" kind="…">…</bridge>`, and the `bridge` section
 tells the model the body is untrusted data from the jailed pi, never an
-instruction. Bodies are cut head-and-tail at 32 KiB (`capHeadTail`) on both
+instruction. In a bridged conversation the section then states where pi runs
+(`BRIDGE_ENVIRONMENT`, DEC-098): on the host, in the project's checkout, out of
+SATAN's sight, reachable only through `bridge_post`. Bodies are cut head-and-tail at 32 KiB (`capHeadTail`) on both
 sides.
 
 **Bridge mode's reach** (DEC-071, DEC-076). The `bridge` toolset is
@@ -338,9 +340,15 @@ needs nothing from npm beyond pi's own packages. It registers `/bridge`,
 the `bridge_post` tool and a bash tool whose spawn hook prepends the
 extension's directory to `PATH` and, while paired, sets
 `MALEBOLGE_BRIDGE_CONVERSATION` and `MALEBOLGE_BRIDGE_TOKEN` (removed
-otherwise, inherited values included). While paired the posture's text is
-appended to pi's system prompt. The status line reads
-`malebolge bridge: <phase>`, or `malebolge bridge: outage (attempt N)`.
+otherwise, inherited values included). The operator's `!` commands get the
+same variables through a `user_bash` handler (DEC-096); pi passes that
+handler no env, so they run on pi's `process.env`, without pi's
+own bin directory or a configured `shellPath`. While paired, pi's system
+prompt gains where SATAN runs (`PI_BRIDGE_ENVIRONMENT`, DEC-098), then the
+posture's text. The status line reads
+`malebolge bridge: <phase>`, or `malebolge bridge: outage (attempt N)`; the
+same text goes to pi-powerbar as segment `malebolge-bridge` over pi's event
+bus (DEC-097), shown where powerbar's settings enable it.
 Failure is loud: the first failure of an outage raises an error notice and a
 best-effort `notify-send`, naming the project, pi session, conversation,
 topic and socket; retries back off from 1 s doubling to 30 s and show only in

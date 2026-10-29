@@ -327,9 +327,9 @@ const stopOf = (
 };
 
 /**
- * The operator-refill hook: room only (the host profile's `bridgeHost` never resolves,
- * so it must get no hook), where an operator's input in a bridged conversation
- * refills its loop budget (SL-009 design sec-5).
+ * The operator-refill hook: room only, the one profile that serves a bridge, where an
+ * operator's input in a bridged conversation refills its loop budget (SL-009 design
+ * sec-5). The host gets none, so its inputs skip a pairing read.
  */
 const operatorRefillOf = (
   config: Config,

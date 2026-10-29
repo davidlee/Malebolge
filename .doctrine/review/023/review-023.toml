@@ -8,6 +8,16 @@ title = "design review of SL-009"
 facet     = "design"     # scope|design|plan|phase-plan|implementation|code-review|reconciliation
 raiser    = "raiser"
 responder = "responder"
+rounds_base = 0
+contests_base = 0
+concluded = true
+
+[[review.turn]]
+act = "conclude"
+role = "raiser"
+note = """
+Concluded at SL-009 audit (RV-027 F-13). This ledger was opened as the design run's review pass when the design was revised for SL-010 (654d026: DEC-092 pair creates through topicInit, DEC-093 DEC-016's no-implicit-creation rule governs attach). No findings were raised on it and its brief was never filled; the run locked at revision 56 with no sections outstanding review. Implementation then exercised both decisions (PHASE-02 topicInit hooks, PHASE-05 pair; RV-027 audits the result). Nothing further is reviewed here.
+"""
 
 [target]                   # the outbound `reviews` edge: RV-NNN ──reviews──▶ <ref>
 ref   = "SL-009"

@@ -1,7 +1,7 @@
 id = 9
 slug = "session-bridge"
 title = "Session bridge: a jailed pi session and a malebolge conversation exchange messages"
-status = "started"
+status = "reconcile"
 created = "2026-10-29"
 updated = "2026-10-29"
 tags = ["bridge", "jail", "pi", "threads"]

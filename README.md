@@ -434,13 +434,18 @@ the basename of pi's working directory. Attach to it to watch or join in:
 node src/attach-main.ts --topic <project>-bridge   # its latest conversation
 ```
 
-pi's status line shows `malebolge bridge: bound`. SATAN posts to pi with
+pi's status line shows `malebolge bridge: bound` (under pi-powerbar, enable
+its `malebolge-bridge` segment). SATAN posts to pi with
 `bridge_post`, which starts a turn in pi when it is idle; pi's model answers
-with its own `bridge_post`, and pi's bash can send output as a note:
+with its own `bridge_post`, and pi's bash, or your own `!` command, can send
+output as a note:
 
 ```sh
 make test 2>&1 | malebolge-bridge tee   # a note; with --turn, a SATAN turn
 ```
+
+Each side is told that the other runs elsewhere and cannot see its files, so
+send content, not paths or commit ids.
 
 pi may start 10 SATAN turns before the operator types, in the conversation or
 in pi; past that it is refused `budget exhausted, waiting on the operator`.

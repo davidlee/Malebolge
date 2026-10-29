@@ -1,0 +1,471 @@
+id    = 27
+slug  = "sl-009-reconciliation-audit-session-bridge-conformance"
+title = "SL-009 reconciliation audit: session bridge (conformance)"
+# no status — a review's status is DERIVED from its findings, so
+# it is never stored (the storage rule forbids derived data in authored files).
+
+[review]
+facet     = "reconciliation"     # scope|design|plan|phase-plan|implementation|code-review|reconciliation
+raiser    = "raiser"
+responder = "responder"
+rounds_base = 0
+contests_base = 0
+concluded = true
+
+[[review.turn]]
+act = "conclude"
+role = "raiser"
+note = """
+Conformance audit of SL-009 at b62ba72, primary checkout. Examined: slice conformance (undeclared/undelivered split by commit), design.md sec-1..9 against the code for every 'flag for audit' line in notes § Autonomy log and for DEC-095..098, sec-9 verification rows against PHASE-01/PHASE-10 probe evidence, docs coverage, and open SL-009 ledgers. just check green before and after the fix-now edits (115 files / 4170 tests). F-10's premise probed and disproved. No blockers; the brief covers the per-slice edits; no governance REV.
+"""
+
+[target]                   # the outbound `reviews` edge: RV-NNN ──reviews──▶ <ref>
+ref   = "SL-009"
+
+[[finding]]
+id = "F-1"
+status = "verified"
+severity = "major"
+title = "design sec-7 should state DEC-095/096/097; it lacks the outage end row, the user_bash env and the powerbar segment"
+detail = """
+Expected: design.md sec-7 (the pi side) describes the shipped behaviour, including operator rulings made during the run.
+Observed: three accepted decisions change sec-7 and are not in it:
+- DEC-095: outage | /bridge end -> settlePending, close, unpaired marker, env cleared, info `ended locally`, no frame; pairing/resuming stay busy (d5ff906, pi-bridge/state.ts). sec-7's table has no row.
+- DEC-096: `shell.pi.on("user_bash", ...)` returns local bash operations with bridgeEnv over process.env (pi-bridge/shell.ts:492, 0c86fb8). sec-7 "Bash env" names only the spawn hook.
+- DEC-097: status also emitted as `powerbar:update` / `powerbar:register-segment` on pi's event bus (pi-bridge/shell.ts:366-408). sec-7's status effect does not mention it.
+Each DEC's consequences field says "fold in at /reconcile".
+"""
+disposition = "design-wrong"
+response = """
+Code follows three accepted operator decisions; design sec-7 lags. Reconcile edits design.md sec-7 directly: add the outage | /bridge end row (DEC-095), the user_bash registration in "Bash env" (DEC-096, with its process.env consequence), and the powerbar emit beside the status effect (DEC-097). Brief: Per-slice F-1.
+"""
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "design-wrong"
+response = """
+Code follows three accepted operator decisions; design sec-7 lags. Reconcile edits design.md sec-7 directly: add the outage | /bridge end row (DEC-095), the user_bash registration in "Bash env" (DEC-096, with its process.env consequence), and the powerbar emit beside the status effect (DEC-097). Brief: Per-slice F-1.
+"""
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "observation confirmed; remediation in the reconciliation brief or accepted on record"
+
+[[finding]]
+id = "F-2"
+status = "verified"
+severity = "major"
+title = "design sec-3 should state DEC-098's environment framing; section contents name only untrusted framing and posture"
+detail = """
+Expected: sec-3 "Posture" / BRIDGE_SECTION contents match what each side renders.
+Observed: f34d381 adds BRIDGE_ENVIRONMENT (src/bridge/extension.ts:34) to SATAN's bridge section, between the untrusted framing and the posture text, for bridged conversations; and PI_BRIDGE_ENVIRONMENT (pi-bridge/posture.ts:12) before pi's posture text (posture.ts:23). sec-3 says BRIDGE_SECTION renders "the posture's corpus text" only. DEC-098 (accepted) consequences: "design sec-3 section contents change (fold in at /reconcile)".
+"""
+disposition = "design-wrong"
+response = """
+DEC-098 is accepted; code is right. Reconcile edits design.md sec-3 "Posture" (and sec-4/sec-7 where the sections are listed): SATAN's bridge section = untrusted framing, then BRIDGE_ENVIRONMENT when bridged, then posture text; pi's system prompt = PI_BRIDGE_ENVIRONMENT, then posture text. Brief: Per-slice F-2.
+"""
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "design-wrong"
+response = """
+DEC-098 is accepted; code is right. Reconcile edits design.md sec-3 "Posture" (and sec-4/sec-7 where the sections are listed): SATAN's bridge section = untrusted framing, then BRIDGE_ENVIRONMENT when bridged, then posture text; pi's system prompt = PI_BRIDGE_ENVIRONMENT, then posture text. Brief: Per-slice F-2.
+"""
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "observation confirmed; remediation in the reconciliation brief or accepted on record"
+
+[[finding]]
+id = "F-3"
+status = "verified"
+severity = "minor"
+title = "design sec-7 table should match state.ts's PHASE-08 clarifications; six behaviours are unstated or contradicted"
+detail = """
+Expected: sec-7's table is the transition function (it says "its test is the same table").
+Observed (autonomy log PHASE-08 (a)-(f), pi-bridge/state.ts):
+(a) a `persisted` event (shell reports an injected entry is in the session) drives the ack; injected-not-persisted is skipped without re-ack.
+(b) connections carry a generation `conn`; stale frames, closes and deadlines are ignored; reply deadlines are effects fed back as events.
+(c) posts are accepted only while bound, so settlePending always completes `outcome unknown`; sec-7's "refused with the reason if not sent" is unreachable.
+(d) superseded by DEC-095 for outage; pairing/resuming `/bridge end` refused busy (no row).
+(e) a drop while `end` is awaited = end unanswered (unpaired, marker, loud, no re-pair).
+(f) `refused pairing ended` answering an `end` is an info `ended`, not a loud refusal.
+None changes scope; all are local design decisions flagged for audit.
+"""
+disposition = "design-wrong"
+response = """
+Each clarification is a local design decision that the tests pin (PHASE-08 negative controls killed all 17 mutants). The design table is the spec of step(); reconcile edits sec-7 to carry (a)-(f), dropping the unreachable "refused if not sent" clause from settlePending and folding (d) into DEC-095's row. Brief: Per-slice F-3.
+"""
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "design-wrong"
+response = """
+Each clarification is a local design decision that the tests pin (PHASE-08 negative controls killed all 17 mutants). The design table is the spec of step(); reconcile edits sec-7 to carry (a)-(f), dropping the unreachable "refused if not sent" clause from settlePending and folding (d) into DEC-095's row. Brief: Per-slice F-3.
+"""
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "observation confirmed; remediation in the reconciliation brief or accepted on record"
+
+[[finding]]
+id = "F-4"
+status = "verified"
+severity = "minor"
+title = "design sec-2/3/7/8 should name values and names chosen in implementation; the design leaves them open or names others"
+detail = """
+Expected: values the code fixes and other modules rely on are stated in the design.
+Observed (autonomy log; grep at b62ba72):
+- BRIDGE_POST_WAIT_MS = 30_000; BRIDGE_LINE_MAX_BYTES = 6 x BRIDGE_BODY_MAX_BYTES + 4096 (pi-bridge/wire.ts:9-15); parser refuses unknown keys.
+- malebolge-bridge exits 2 also for a local refusal (no MALEBOLGE_BRIDGE_* vars, bad args); sec-7 lists 0-3 by daemon outcome only. `send` prints `accepted`; `tee` prints no ack.
+- sec-3 "one accessor pairingDoc(tx)": code has pairingDoc, pairingSnapshot (read-only, 1ed42f6, so a refused resume writes nothing) and watchPairing (src/bridge/pairing.ts:75-93).
+- bridge section key is untagged (a tagged section collides with the untrusted envelope's own tag).
+- names not in the design: CreationHooks (replaces StartedThread), PrivateDirectoryRefused, Replying {socket, ended}; refusal texts for wake reach and other-toolset pair.
+"""
+disposition = "design-wrong"
+response = """
+Values and names are fixed in code and pinned by tests (test/pi-bridge-wire.test.ts, test/pi-bridge-command.test.ts, test/bridge-pairing.test.ts). Reconcile states them in design.md: sec-2 (BRIDGE_POST_WAIT_MS 30 s, line cap 6 x body + 4 KiB and why, strict unknown keys, untagged section key), sec-3 (pairingDoc + pairingSnapshot + watchPairing), sec-7 (exit 2 also for a local refusal; send prints `accepted`, tee no ack). Brief: Per-slice F-4.
+"""
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "design-wrong"
+response = """
+Values and names are fixed in code and pinned by tests (test/pi-bridge-wire.test.ts, test/pi-bridge-command.test.ts, test/bridge-pairing.test.ts). Reconcile states them in design.md: sec-2 (BRIDGE_POST_WAIT_MS 30 s, line cap 6 x body + 4 KiB and why, strict unknown keys, untagged section key), sec-3 (pairingDoc + pairingSnapshot + watchPairing), sec-7 (exit 2 also for a local refusal; send prints `accepted`, tee no ack). Brief: Per-slice F-4.
+"""
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "observation confirmed; remediation in the reconciliation brief or accepted on record"
+
+[[finding]]
+id = "F-5"
+status = "verified"
+severity = "minor"
+title = "selector registry should declare every path SL-009 commits changed; 15 are undeclared"
+detail = """
+Expected: every path a SL-009 commit changed matches a design-target selector (slice-009.toml), mirrored in design sec-8.
+Observed: of conformance's 100 undeclared paths, these were changed by SL-009 commits (git log --grep SL-009 c48afd9..HEAD, .doctrine/ excluded):
+flake.nix (bdccd93: runner npmDepsHash, pi-bridge in fileset/installPhase); README.md; package.json; biome.json; tsconfig.json; vitest.config.ts; src/runner/control.ts; test/pi-bridge-fake-daemon.ts; test/pi-bridge-fake-pi.ts; test/conversations.test.ts; test/daemon-start.test.ts; test/persona.test.ts; test/queue-premises.test.ts; test/unix-socket.test.ts; test/wake-fixture.ts.
+Several are named in sec-8 (tsconfig, vitest, package.json, biome, README, src/runner/control.ts) but registered only scope-relevant; flake.nix and the test fakes/tests are absent from sec-8 too. sec-8 also omits pi-bridge/{notices,connection,posture,shell,command}.ts (conformant via pi-bridge/**, prose only).
+"""
+disposition = "design-wrong"
+response = """
+The work was in scope (sec-8 names most of these paths); the registry under-declares. Load-bearing change: `doctrine slice selector add 009` design-target for each listed path (flake.nix, README.md, package.json, biome.json, tsconfig.json, vitest.config.ts, src/runner/control.ts, test/pi-bridge-fake-daemon.ts, test/pi-bridge-fake-pi.ts, test/conversations.test.ts, test/daemon-start.test.ts, test/persona.test.ts, test/queue-premises.test.ts, test/unix-socket.test.ts, test/wake-fixture.ts); sec-8 mirrors it, adding flake.nix and the pi-bridge modules. Brief: Per-slice F-5.
+"""
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "design-wrong"
+response = """
+The work was in scope (sec-8 names most of these paths); the registry under-declares. Load-bearing change: `doctrine slice selector add 009` design-target for each listed path (flake.nix, README.md, package.json, biome.json, tsconfig.json, vitest.config.ts, src/runner/control.ts, test/pi-bridge-fake-daemon.ts, test/pi-bridge-fake-pi.ts, test/conversations.test.ts, test/daemon-start.test.ts, test/persona.test.ts, test/queue-premises.test.ts, test/unix-socket.test.ts, test/wake-fixture.ts); sec-8 mirrors it, adding flake.nix and the pi-bridge modules. Brief: Per-slice F-5.
+"""
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "observation confirmed; remediation in the reconciliation brief or accepted on record"
+
+[[finding]]
+id = "F-6"
+status = "verified"
+severity = "minor"
+title = "selector registry should not carry exact selectors shadowed by a glob; two read as undelivered"
+detail = """
+Expected: undelivered lists only declared-but-unbuilt work.
+Observed: undelivered = test/pi-bridge-state.test.ts, test/pi-bridge-wire.test.ts. Both files exist and both appear in conformant, attributed to `test/pi-bridge-*.test.ts`. The exact-path selectors are redundant with the glob and receive no credit.
+"""
+disposition = "design-wrong"
+response = """
+Redundant registry rows. `doctrine slice selector rm 009` for test/pi-bridge-state.test.ts and test/pi-bridge-wire.test.ts; the glob covers both. sec-9's citations stay. Brief: Per-slice F-6.
+"""
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "design-wrong"
+response = """
+Redundant registry rows. `doctrine slice selector rm 009` for test/pi-bridge-state.test.ts and test/pi-bridge-wire.test.ts; the glob covers both. sec-9's citations stay. Brief: Per-slice F-6.
+"""
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "observation confirmed; remediation in the reconciliation brief or accepted on record"
+
+[[finding]]
+id = "F-7"
+status = "verified"
+severity = "minor"
+title = "conformance undeclared cell should hold only SL-009 work; ~85 paths come from other slices' commits inside recorded ranges"
+detail = """
+Expected: recorded phase ranges cover SL-009 commits only.
+Observed: phases were recorded as --start/--end ranges on main while SL-007, SL-010, SL-008 and unscoped commits (threads DEC-036 4cd8c4e/f7589e2, IMP-026 5540321/718a48f/4391f98) landed between ours. The undeclared cell therefore carries src/mail/*, src/models.ts, src/topics.ts, src/threads/{admission,caps,tools}.ts, src/untrusted-block.ts, src/protocol.ts and their tests, plus other slices' .doctrine records. Notes § Harvest and the PHASE-09/10 log lines already flag this for PHASE-09/10; it applies to earlier phases too (SL-010 paths).
+"""
+disposition = "tolerated"
+response = """
+The registry records one contiguous range per phase; SL-009's phases ran on main beside SL-007, SL-008 and SL-010, so no range can exclude their interleaved commits, and record-delta --commit fits only single-commit phases. This audit split the cell by commit (git log --grep SL-009): SL-009's own undeclared paths are F-5; the rest belong to other slices and are audited by their RVs (RV-024 SL-008, RV-025 SL-010; SL-007 in progress). Rationale accepted: the residual is noise in a mechanical lead, not undeclared work.
+"""
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "tolerated"
+response = """
+The registry records one contiguous range per phase; SL-009's phases ran on main beside SL-007, SL-008 and SL-010, so no range can exclude their interleaved commits, and record-delta --commit fits only single-commit phases. This audit split the cell by commit (git log --grep SL-009): SL-009's own undeclared paths are F-5; the rest belong to other slices and are audited by their RVs (RV-024 SL-008, RV-025 SL-010; SL-007 in progress). Rationale accepted: the residual is noise in a mechanical lead, not undeclared work.
+"""
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "observation confirmed; remediation in the reconciliation brief or accepted on record"
+
+[[finding]]
+id = "F-8"
+status = "verified"
+severity = "minor"
+title = "design sec-9 real-jail row should match ASM-005; it expects a stopped daemon to notify the desktop"
+detail = """
+Expected: sec-9's VH "real jail" row states what the jail can do.
+Observed: sec-9 reads "a stopped daemon notifies the desktop". ASM-005 is invalidated (no D-Bus in the jail; PHASE-01 VH-1), and PHASE-10's VH Result records the connect-failure notice reaching the operator only inside pi (notes § Probes, Result). sec-7 already says notify-send is best-effort (ASM-005); sec-9 contradicts it. IMP-025 tracks a filtered D-Bus proxy.
+"""
+disposition = "design-wrong"
+response = """
+ASM-005 was invalidated in PHASE-01 and DEC-073 accepts it; sec-9's row predates that. Reconcile edits design.md sec-9 "real jail": a stopped daemon notifies inside pi; desktop notify-send is best-effort and fails in the jail (ASM-005; IMP-025). Brief: Per-slice F-8.
+"""
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "design-wrong"
+response = """
+ASM-005 was invalidated in PHASE-01 and DEC-073 accepts it; sec-9's row predates that. Reconcile edits design.md sec-9 "real jail": a stopped daemon notifies inside pi; desktop notify-send is best-effort and fails in the jail (ASM-005; IMP-025). Brief: Per-slice F-8.
+"""
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "observation confirmed; remediation in the reconciliation brief or accepted on record"
+
+[[finding]]
+id = "F-9"
+status = "verified"
+severity = "minor"
+title = "docs should describe DEC-096/097/098; internals.md and README omit ! env, powerbar segment and environment framing"
+detail = """
+Expected: docs/internals.md § Bridge and README "Pairing a jailed pi" describe the shipped extension (sec-8: docs carry bridge mode, socket, env vars).
+Observed: 0df3e9e wrote the docs before the PHASE-10 VH fixes. grep at b62ba72 finds no mention of user_bash / `!` commands getting the bridge env, the powerbar segment (and that it shows only where enabled in powerbar's settings), or BRIDGE_ENVIRONMENT / PI_BRIDGE_ENVIRONMENT. DEC-095 (outage end) is documented (internals.md:306, README.md:428). Handover lists this as a reconcile/doc delta.
+"""
+disposition = "fix-now"
+response = """
+Fixed in this unit (uncommitted, lands with the audit commit): docs/internals.md § Bridge gains BRIDGE_ENVIRONMENT in the Messages paragraph, and the user_bash env (with its process.env consequence), PI_BRIDGE_ENVIRONMENT and the powerbar segment in "The pi side"; README "Pairing a jailed pi" gains the powerbar note, `!` commands and the environment line. Claims checked against pi-bridge/shell.ts:47,366-408,480-492, pi-bridge/posture.ts:12-23, src/bridge/extension.ts:34.
+"""
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+response = """
+Fixed in this unit (uncommitted, lands with the audit commit): docs/internals.md § Bridge gains BRIDGE_ENVIRONMENT in the Messages paragraph, and the user_bash env (with its process.env consequence), PI_BRIDGE_ENVIRONMENT and the powerbar segment in "The pi side"; README "Pairing a jailed pi" gains the powerbar note, `!` commands and the environment line. Claims checked against pi-bridge/shell.ts:47,366-408,480-492, pi-bridge/posture.ts:12-23, src/bridge/extension.ts:34.
+"""
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "fix checked; just check green after it (115 files / 4170 tests)"
+
+[[finding]]
+id = "F-10"
+status = "withdrawn"
+severity = "minor"
+title = "the host profile should get no operator-refill hook under test; operatorRefillOf's host path is untested"
+detail = """
+Expected: a rule whose violation hangs every input has a test.
+Observed: src/daemon-start.ts:334 operatorRefillOf returns undefined unless config.bridgeSocket is set. The PHASE-07 pi worker first wired the hook unconditionally; on the host profile `bridgeHost` never resolves, so each operator input would await forever. The fix is in, but no test pins it (autonomy log PHASE-07; test/bridge-pairing.test.ts:580 covers only the room path). A regression would pass the gate.
+"""
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "withdraw"
+role = "raiser"
+note = """
+Raised in error. Its premise (from the PHASE-07 autonomy log and the docstring at src/daemon-start.ts:330) is that the host's bridgeHost never resolves, so an unguarded hook would hang host input. bridgeHost.resolve(...) runs unconditionally in beforeResume (src/daemon-start.ts:408; same at dd6ae25). Probe: with operatorRefillOf made unconditional, a host daemon served two inputs on one connection (run_end twice); refillBridged returns early for an unbridged conversation. The guard is not load-bearing; its comment is wrong. Re-raised as F-14.
+"""
+
+[[finding]]
+id = "F-11"
+status = "verified"
+severity = "nit"
+title = "surviving mutants should be killed or accepted on record; three survive"
+detail = """
+Expected: negative controls kill each guarded behaviour, or the survivor is consciously accepted.
+Observed (autonomy log PHASE-06, PHASE-07):
+- listener close handler's watch.stop() and deliver's state.ended guard: 0 fail singly and together. finish ends the socket and write checks socket.writable, so neither shows on the wire; the unstopped watch is a leak, not a wrong frame.
+- inbound whenBusy steer vs followUp: 0 fail; one-step faux runs make the two indistinguishable.
+The orchestrator accepted these as defence in depth, flagged for audit.
+"""
+disposition = "tolerated"
+response = """
+Accepted on record. watch.stop()/state.ended: finish ends the socket and write checks socket.writable, so a missing guard cannot emit a wrong frame; the cost is a watch that outlives a closed connection until the process stops, bounded by connections. whenBusy steer vs followUp: both deliver the message once while busy; the difference is when it enters (mid-run vs after), and a test that tells them apart needs a multi-step faux run for little behavioural value. Revisit if a leak shows in a long-running room.
+"""
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "tolerated"
+response = """
+Accepted on record. watch.stop()/state.ended: finish ends the socket and write checks socket.writable, so a missing guard cannot emit a wrong frame; the cost is a watch that outlives a closed connection until the process stops, bounded by connections. whenBusy steer vs followUp: both deliver the message once while busy; the difference is when it enters (mid-run vs after), and a test that tells them apart needs a multi-step faux run for little behavioural value. Revisit if a leak shows in a long-running room.
+"""
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "observation confirmed; remediation in the reconciliation brief or accepted on record"
+
+[[finding]]
+id = "F-12"
+status = "verified"
+severity = "nit"
+title = "pi's ! commands should keep pi's shell setup; DEC-096 runs them on process.env and the default shell"
+detail = """
+Expected: an operator `!` command behaves as without the bridge, plus the bridge env.
+Observed: DEC-096's user_bash handler builds env from process.env (pi passes none), so `!` commands lose pi's own bin dir and a configured shellPath; pi's bash tool is unchanged. Recorded as DEC-096's consequence; operator decided in the VH run.
+"""
+disposition = "tolerated"
+response = """
+Operator decision (DEC-096, 2026-10-30, consequence recorded in the DEC). pi's user_bash event passes no env and no shell config, so the handler cannot recover them without reaching into pi internals. The bridge env is what `!` needs for send/tee; pi's bash tool keeps its full setup. Now documented (F-9).
+"""
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "tolerated"
+response = """
+Operator decision (DEC-096, 2026-10-30, consequence recorded in the DEC). pi's user_bash event passes no env and no shell config, so the handler cannot recover them without reaching into pi internals. The bridge env is what `!` needs for send/tee; pi's bash tool keeps its full setup. Now documented (F-9).
+"""
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "observation confirmed; remediation in the reconciliation brief or accepted on record"
+
+[[finding]]
+id = "F-13"
+status = "verified"
+severity = "nit"
+title = "design ledgers on SL-009 should be terminal; RV-023 is open with no findings"
+detail = """
+Expected: once the design locked, every design-facet RV on SL-009 is done.
+Observed: `review list`: RV-021 done (83 rounds, 14 findings verified); RV-023 "design review of SL-009" active · await=raiser, 0 findings, brief unfilled. Opened by 654d026 (design revised for SL-010, DEC-092/093) — the revision's review pass left an empty ledger unconcluded.
+"""
+disposition = "fix-now"
+response = """
+Fixed: RV-023 concluded as raiser with a basis stating it was opened by the SL-010 revision (654d026), held no findings, and the run locked at revision 56. `review status RV-023`: done · await=none.
+"""
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+response = """
+Fixed: RV-023 concluded as raiser with a basis stating it was opened by the SL-010 revision (654d026), held no findings, and the run locked at revision 56. `review status RV-023`: done · await=none.
+"""
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "fix checked; just check green after it (115 files / 4170 tests)"
+
+[[finding]]
+id = "F-14"
+status = "verified"
+severity = "nit"
+title = "operatorRefillOf's comment should state why the hook is room only; it claims the host's bridgeHost never resolves"
+detail = """
+Expected: the comment at src/daemon-start.ts:330-332 states a true reason for the room-only hook.
+Observed: it says "the host profile's `bridgeHost` never resolves, so it must get no hook". bridgeHost.resolve runs in beforeResume for every profile (src/daemon-start.ts:408). Probe (reverted): the hook wired unconditionally, a host daemon still serves a second input on the same connection; refillBridged reads a snapshot and returns for an unbridged conversation. True reason: only the room serves a bridge, so the host skips a per-input pairing read. The PHASE-07 autonomy log line repeats the false premise.
+"""
+disposition = "fix-now"
+response = """
+Fixed: src/daemon-start.ts:329-333 comment now says room only because only the room serves a bridge, and the host skips a pairing read. No behaviour change. The PHASE-07 autonomy log line is history (notes); this ledger records the correction.
+"""
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+response = """
+Fixed: src/daemon-start.ts:329-333 comment now says room only because only the room serves a bridge, and the host skips a pairing read. No behaviour change. The PHASE-07 autonomy log line is history (notes); this ledger records the correction.
+"""
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "fix checked; just check green after it (115 files / 4170 tests)"
+
+# Findings are append-only `[[finding]]` tables, added by `review raise`.
+# Empty here at creation — a fresh review is Active, awaiting the raiser.
