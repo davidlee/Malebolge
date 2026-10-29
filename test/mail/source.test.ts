@@ -1,6 +1,7 @@
 // EX-1: the v1 contract schemas and the one canonical-cursor check.
 
 import { describe, expect, it } from "vitest";
+import { isRecord } from "../../src/json.ts";
 import {
   checkData,
   isCanonicalCursor,
@@ -15,6 +16,8 @@ import {
   type MailKind,
   setAt,
   withExtraFields,
+  FUTURE_FIELD,
+  withoutKey,
 } from "./mail-fixtures.ts";
 
 const ALL_FIXTURES = [...fixtureFiles("real"), ...fixtureFiles("contract")];
@@ -23,26 +26,66 @@ function isMailKind(kind: unknown): kind is MailKind {
   return typeof kind === "string" && Object.keys(KIND_SCHEMAS).includes(kind);
 }
 
-/** Every envelope of every fixture, as [file, kind, data]. */
+/** Every envelope of every fixture, as [file, kind, data]; an unknown kind is its own test's failure. */
 function allData(): [string, MailKind, unknown][] {
   return ALL_FIXTURES.flatMap((file) =>
-    loadEnvelopes(file).map((envelope): [string, MailKind, unknown] => {
+    loadEnvelopes(file).flatMap((envelope): [string, MailKind, unknown][] => {
       if (envelope.version !== 1 || !isMailKind(envelope.kind)) {
-        throw new Error(`${file}: not a v1 envelope of a known kind`);
+        return [];
       }
-      return [file, envelope.kind, envelope.data];
+      return [[file, envelope.kind, envelope.data]];
     }),
   );
 }
 
+/** The keys of `data`'s `seen`, or none when it has none: only a well-formed fixture has any. */
+function seenKeys(data: unknown): string[] {
+  if (!isRecord(data) || !isRecord(data["seen"])) {
+    return [];
+  }
+  return Object.keys(data["seen"]);
+}
+
+/**
+ * withExtraFields, except that in a classify `answers` map a new key is a new
+ * question, so the future entry there takes a known answer shape.
+ */
+function withFutureFields(data: unknown): unknown {
+  const extended = withExtraFields(data);
+  if (isRecord(extended) && isRecord(extended["answers"])) {
+    return setAt(extended, ["answers", FUTURE_FIELD], { noul: 0.5, [FUTURE_FIELD]: "future" });
+  }
+  return extended;
+}
+
 describe("fixtures", () => {
   it("cover every verb in both directories", () => {
+    const expected = {
+      real: ["list", "mailboxes", "read", "thread"],
+      contract: ["list", "mailboxes", "read", "thread", "classify"],
+    };
     for (const dir of ["real", "contract"] as const) {
       const kinds = new Set(
         fixtureFiles(dir).flatMap((file) => loadEnvelopes(file).map((e) => e.kind)),
       );
-      expect([...kinds].sort()).toEqual(["list", "mailboxes", "read", "thread"]);
+      expect([...kinds].sort()).toEqual([...expected[dir]].sort());
     }
+  });
+
+  it("hold only v1 envelopes of a known kind", () => {
+    for (const file of ALL_FIXTURES) {
+      for (const envelope of loadEnvelopes(file)) {
+        if (envelope.version !== 1 || !isMailKind(envelope.kind)) {
+          throw new Error(`${file}: not a v1 envelope of a known kind`);
+        }
+      }
+    }
+  });
+
+  it("classify.json passes checkData, with and without an extra field at every level", () => {
+    const [envelope] = loadEnvelopes("contract/classify.json");
+    expect(checkData("classify", envelope?.data)).toBeDefined();
+    expect(checkData("classify", withFutureFields(envelope?.data))).toBeDefined();
   });
 
   it("include an empty read --after page", () => {
@@ -56,7 +99,7 @@ describe("fixtures", () => {
   it.each(allData())(
     "%s: %s data passes checkData with an extra field at every level",
     (_file, kind, data) => {
-      expect(checkData(kind, withExtraFields(data))).toBeDefined();
+      expect(checkData(kind, withFutureFields(data))).toBeDefined();
     },
   );
 });
@@ -66,6 +109,37 @@ describe("checkData rejects", () => {
   const [, , list] = allData().find(([file]) => file === "contract/list-after.json") ?? [];
   const [, , thread] = allData().find(([file]) => file === "contract/thread.json") ?? [];
   const [, , mailboxes] = allData().find(([file]) => file === "contract/mailboxes.json") ?? [];
+  const [classifyEnvelope] = loadEnvelopes("contract/classify.json");
+  const classify = classifyEnvelope?.data;
+
+  it("an answer of no known shape", () => {
+    expect(
+      checkData("classify", setAt(classify, ["answers", "primary_purpose"], {})),
+    ).toBeUndefined();
+    expect(
+      checkData("classify", setAt(classify, ["answers", "primary_purpose"], { label: "x" })),
+    ).toBeUndefined();
+  });
+
+  it("a probability outside [0, 1]", () => {
+    expect(
+      checkData("classify", setAt(classify, ["answers", "security_related", "noul"], 1.5)),
+    ).toBeUndefined();
+    expect(
+      checkData("classify", setAt(classify, ["answers", "security_related", "noul"], -0.1)),
+    ).toBeUndefined();
+    expect(
+      checkData("classify", setAt(classify, ["answers", "primary_purpose", "confidence"], 2)),
+    ).toBeUndefined();
+  });
+
+  it("a seen missing a field", () => {
+    const keys = seenKeys(classify);
+    expect(keys.length).toBeGreaterThan(0);
+    for (const key of keys) {
+      expect(checkData("classify", withoutKey(classify, ["seen", key]))).toBeUndefined();
+    }
+  });
 
   const badIds = ["", "a b", "a:b", "-a\n", "é", idOf(256, "Long")];
 

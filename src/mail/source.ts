@@ -180,12 +180,65 @@ export const MailboxesSchema = Type.Object({
 });
 export type MailboxesData = Static<typeof MailboxesSchema>;
 
+const Probability = Type.Number({ minimum: 0, maximum: 1 });
+const Count = Type.Integer({ minimum: 0 });
+
+// F-39: a probabilities object is allowed as an extra field and never copied.
+const ChoiceAnswer = Type.Object({ choice: Type.String(), confidence: Probability });
+const NoulAnswer = Type.Object({ noul: Probability });
+const ScoreAnswer = Type.Object({ score: Type.Number({ minimum: 0 }), confidence: Probability });
+
+/** One question's answer; an answer of no known shape is a contract violation. */
+const AnswerSchema = Type.Union([ChoiceAnswer, NoulAnswer, ScoreAnswer]);
+
+const SeenAddress = Type.Object({ name: NullableString, email: Type.String() });
+const SeenBody = Type.Object({
+  text: Type.String(),
+  is_truncated: Type.Boolean(),
+  conversion_failed: Type.Boolean(),
+});
+const SeenAttachment = Type.Object({ type: Type.String(), name: NullableString });
+
+/** The window Jev's state was stripped from (screwtape `classify_state`); shape only, never its bounds. */
+const SeenSchema = Type.Object({
+  subject: NullableString,
+  from: Type.Array(SeenAddress),
+  from_omitted: Count,
+  sender: Type.Array(SeenAddress),
+  sender_omitted: Count,
+  reply_to: Type.Array(SeenAddress),
+  reply_to_omitted: Count,
+  to: Type.Array(SeenAddress),
+  to_omitted: Count,
+  cc: Type.Array(SeenAddress),
+  cc_omitted: Count,
+  bcc: Type.Array(SeenAddress),
+  bcc_omitted: Count,
+  bodies: Type.Array(SeenBody),
+  bodies_omitted: Count,
+  attachments: Type.Array(SeenAttachment),
+  attachments_omitted: Count,
+});
+
+/** One id's Jev classification: `schema` is passed through, never compared; questions are the operator's. */
+export const ClassifySchema = Type.Object({
+  id: Id,
+  cursor: Cursor,
+  schema: Type.String(),
+  model: Type.String(),
+  seen: SeenSchema,
+  answers: Type.Record(Type.String(), AnswerSchema),
+});
+export type Classification = Static<typeof ClassifySchema>;
+export type Seen = Classification["seen"];
+
 /** The data schema of each envelope kind the contract defines. */
 export const KIND_SCHEMAS = {
   mailboxes: MailboxesSchema,
   list: ListSchema,
   read: ReadSchema,
   thread: ThreadSchema,
+  classify: ClassifySchema,
 };
 
 export type MailKind = keyof typeof KIND_SCHEMAS;
@@ -241,6 +294,19 @@ export interface ThreadQuery {
   signal?: AbortSignal | undefined;
 }
 
+export interface ClassifyQuery {
+  ids: readonly string[];
+  signal?: AbortSignal | undefined;
+}
+
+/** Why an item carries no classification (DEC-056); `too_large` only from screwtape's `jev_context`. */
+export type Unclassified = "too_large" | "unavailable" | "failed";
+
+/** One id's outcome: answers, or the fixed reason there are none. */
+export type ClassifyOutcome =
+  | { readonly id: string; readonly classified: Classification }
+  | { readonly id: string; readonly unclassified: Unclassified };
+
 /** The mail tools' port (DEC-026): queries carry validated, clamped values. */
 export interface MailSource {
   mailboxes(signal?: AbortSignal): Promise<MailboxesData>;
@@ -248,6 +314,8 @@ export interface MailSource {
   read(query: ReadQuery): Promise<ReadData>;
   readAfter(query: ReadAfterQuery): Promise<ReadData[]>;
   thread(query: ThreadQuery): Promise<ThreadData>;
+  /** One outcome per id, in ids order. Never throws for a classify failure. */
+  classify(query: ClassifyQuery): Promise<ClassifyOutcome[]>;
 }
 
 /** Why a MailSource call failed. */

@@ -570,8 +570,13 @@ function projectEnvelope(envelope: Envelope): number {
   }
 }
 
+/** The read verbs' fixtures: a classify envelope is not projected (its kind has no view). */
+const READ_VERB_FIXTURES = [...fixtureFiles("real"), ...fixtureFiles("contract")].filter(
+  (file) => file !== "contract/classify.json",
+);
+
 describe("every fixture projects without throwing", () => {
-  it.each([...fixtureFiles("real"), ...fixtureFiles("contract")])("%s", (file) => {
+  it.each(READ_VERB_FIXTURES)("%s", (file) => {
     const projected = loadEnvelopes(file).map(projectEnvelope);
     expect(projected.reduce((sum, n) => sum + n, 0) > 0 || file.endsWith("empty.jsonl")).toBe(true);
   });

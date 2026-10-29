@@ -104,6 +104,17 @@ slips are left to red/green tests; the next review is of the plan.
 
 ## Autonomy log
 
+- PHASE-01 · VA-1/EX-1 recorded satisfied by the seat's preflight probe (ASM-002 validated); not re-run · charter says done · decided
+- PHASE-01 · stdinEnv refusals (string command, inheritEnv not false — absent included, empty argv) return `spawn_error` · design says "refused" without a code; mirrors NodeExecutionEnv's empty-argv convention · decided
+- PHASE-01 · answers schema kept as the design's three shapes; pi had widened it to accept a bare string so the generic extra-field sweep passed — reverted, and the sweep instead adds a future *question* (known shape) inside `answers` (`withFutureFields`) · a string answer must stay a contract violation · decided
+- PHASE-01 · `test/mail/project.test.ts` projection sweep excludes `contract/classify.json` (classify has no view) · needed for green; not in plan's file list · decided
+- PHASE-01 · fixture scores set to the probability-weighted level (0.9, 1.5) per screwtape § classify's "within 0.05" rule · transcription fidelity · decided
+- PHASE-01 · fakeMailSource.classify: an unscripted id answers `failed`; no reply rejects like the other verbs · EX-4 leaves the default open · decided
+
+## Pi runs
+
+- PHASE-01 · 5 implement runs (red A, red B, green A, green B, refactor B), ~$0.14 total · misses: widened the answers schema instead of flagging the test conflict; briefed `biome lint` (my error — lint is ESLint), so green B landed 12 ESLint errors, fixed in the refactor run
+
 ## Harvest
 <!-- single-copy: updated in place each harvest; ids only, never restated content -->
 fresh-as-of: 2026-10-29 · re-locked (design run rev 70, DEC-094); planned, 8 phases; slice ready · a4461f9 (SL-007 planning uncommitted)

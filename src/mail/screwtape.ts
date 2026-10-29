@@ -327,5 +327,6 @@ export function screwtapeSource(options: ScrewtapeOptions): MailSource {
         limit: query.limit,
         kind: "thread",
       }),
+    classify: () => Promise.reject(new Error("classify: not implemented")),
   };
 }

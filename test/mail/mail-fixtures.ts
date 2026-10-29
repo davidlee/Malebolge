@@ -11,6 +11,8 @@ import {
   type Attachment,
   type Body,
   checkData,
+  type Classification,
+  type ClassifyOutcome,
   type ListData,
   type MailboxesData,
   type Mailbox,
@@ -19,6 +21,7 @@ import {
   type Summary,
   type ThreadData,
   type ThreadItem,
+  type Unclassified,
 } from "../../src/mail/source.ts";
 
 // ---------------------------------------------------------------- fixtures
@@ -101,6 +104,30 @@ export function setAt(node: unknown, path: readonly (string | number)[], value: 
   throw new Error(`no ${String(head)} to set`);
 }
 
+/** A copy of `node` with the last key of `path` removed; `node` is untouched. */
+export function withoutKey(node: unknown, path: readonly (string | number)[]): unknown {
+  const [head, ...rest] = path;
+  if (head === undefined) {
+    throw new Error("no key to remove");
+  }
+  if (Array.isArray(node)) {
+    const copy: unknown[] = node.slice();
+    copy[Number(head)] = withoutKey(copy[Number(head)], rest);
+    return copy;
+  }
+  if (isRecord(node)) {
+    const key = String(head);
+    if (rest.length === 0) {
+      return Object.fromEntries(Object.entries(node).filter(([name]) => name !== key));
+    }
+    return { ...node, [key]: withoutKey(node[key], rest) };
+  }
+  throw new Error(`no ${String(head)} to remove`);
+}
+
+/** The key withExtraFields adds. */
+export const FUTURE_FIELD = "x_future_field";
+
 /** A deep copy with an unknown extra field added to every object (a future v1 addition). */
 export function withExtraFields(node: unknown): unknown {
   if (Array.isArray(node)) {
@@ -108,7 +135,7 @@ export function withExtraFields(node: unknown): unknown {
   }
   if (isRecord(node)) {
     const entries = Object.entries(node).map(([key, value]) => [key, withExtraFields(value)]);
-    return { ...Object.fromEntries(entries), x_future_field: "future" };
+    return { ...Object.fromEntries(entries), [FUTURE_FIELD]: "future" };
   }
   return node;
 }
@@ -545,6 +572,7 @@ export interface FakeReplies {
   readonly read?: ReadData | Error;
   readonly readAfter?: ReadData[] | Error;
   readonly thread?: ThreadData | Error;
+  readonly classify?: Readonly<Record<string, Classification | Unclassified>> | Error;
 }
 
 export interface RecordedCall {
@@ -582,5 +610,19 @@ export function fakeMailSource(replies: FakeReplies = {}): FakeMailSource {
     read: (query) => answer("read", query, replies.read),
     readAfter: (query) => answer("readAfter", query, replies.readAfter),
     thread: (query) => answer("thread", query, replies.thread),
+    classify: (query): Promise<ClassifyOutcome[]> => {
+      const reply = replies.classify;
+      if (reply === undefined || reply instanceof Error) {
+        return answer<ClassifyOutcome[]>("classify", query, reply);
+      }
+      const outcomes: ClassifyOutcome[] = query.ids.map((id) => {
+        const found = reply[id];
+        if (found === undefined) {
+          return { id, unclassified: "failed" };
+        }
+        return typeof found === "string" ? { id, unclassified: found } : { id, classified: found };
+      });
+      return answer("classify", query, outcomes);
+    },
   };
 }
