@@ -1,0 +1,46 @@
+memory_uid = "mem_01a186a1e8577952850075475eb03972"
+memory_key = "mem.fact.malebolge.orchestrated-phases-skip-delta-registry"
+schema_version = 1
+memory_type = "fact"
+status = "active"
+title = "Orchestrated phase commits do not populate the conformance registry"
+summary = "Phases landed by /super-orchestrator charters leave slice conformance's source-delta registry empty; record each phase commit with slice record-delta --commit"
+created = "2026-10-29"
+updated = "2026-10-29"
+
+[scope]
+paths = []
+globs = []
+commands = ["doctrine slice conformance"]
+tags = ["doctrine", "audit", "conformance"]
+workspace = "default"
+repo = "github.com/davidlee/Malebolge"
+repo_id_kind = "remote"
+repo_id_confidence = "high"
+
+[git]
+anchor_kind = "checkout_state"
+commit = ""
+tree = "b6ed7120288f64de7b7f30807e785b3f99af4e37"
+ref_name = "refs/heads/main"
+checkout_state_id = "fb5f48c29baafc81c862cee183a8662bdaa0e299a63b7ce1513941aea96760d7"
+base_commit = "c4204c046fa8370042f325431b21e4f69ce6c36a"
+verified_sha = ""
+normalizer = "forget.checkout.v1"
+
+[review]
+verification_state = "unverified"
+reviewed = ""
+review_by = ""
+
+[trust]
+trust_level = "medium"
+
+[ranking]
+severity = "none"
+weight = 0
+
+[[source]]
+kind = "review"
+ref = "RV-024"
+

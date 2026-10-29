@@ -63,7 +63,6 @@ export function cutRendered(
   return { text: longestFittingPrefix(Array.from(text), maxBytes, suffix), cut: true };
 }
 
-/** `value` as a count: a non-negative safe integer, or a failed header. */
 /** `value` when it is a non-negative safe integer; otherwise the header fails closed. */
 export function count(value: number, what: string): number {
   if (!Number.isSafeInteger(value) || value < 0) {

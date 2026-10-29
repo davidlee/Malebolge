@@ -1,0 +1,216 @@
+id    = 24
+slug  = "sl-008-reconciliation-audit-bookmark-read-tools"
+title = "SL-008 reconciliation audit: bookmark read tools"
+# no status — a review's status is DERIVED from its findings, so
+# it is never stored (the storage rule forbids derived data in authored files).
+
+[review]
+facet     = "reconciliation"     # scope|design|plan|phase-plan|implementation|code-review|reconciliation
+raiser    = "raiser"
+responder = "responder"
+rounds_base = 0
+contests_base = 0
+
+[target]                   # the outbound `reviews` edge: RV-NNN ──reviews──▶ <ref>
+ref   = "SL-008"
+
+[[finding]]
+id = "F-1"
+status = "verified"
+severity = "minor"
+title = "conformance: 11 edited paths are undeclared, and the source-delta registry was empty until this audit"
+detail = """
+Expected: `doctrine slice conformance 8` reads a registry recorded as phases landed, and every edited path matches a design-target selector (design sec-6 is the human mirror).
+Observed: before the audit the registry was empty (13 undelivered, 0 conformant). The audit bootstrapped it with `slice record-delta 8 PHASE-NN --commit <phase commit>` for 8c755fe c210362 6396a65 4d3ddb0 0043565 b88faf8 1d24b99. Result: 27 conformant, 0 undelivered, 11 undeclared:
+- named in design sec-6 but missing from the selector registry: src/ranges.ts, src/mail/tools.ts, test/structure.test.ts;
+- edited but in neither sec-6 nor the registry: src/mail/project.ts (cutRendered import repointed, Autonomy log PHASE-01), biome.json (fixture exclusion, PHASE-02), test/ranges.test.ts, test/untrusted-block.test.ts, test/mail/render.test.ts, test/config.test.ts, test/threads-tools.test.ts (bookmarksPart in the VT-3 harness);
+- .doctrine/slice/008/notes.md (the slice's own notes, committed with each phase).
+c045e59 (docs fix after PHASE-07) is not in the registry; its one path, docs/internals.md, is declared.
+Every undeclared edit is in scope and logged; none is scope creep.
+"""
+disposition = "design-wrong"
+response = """
+The registry, not the code, is short. Reconcile adds the missing paths with `doctrine slice selector add` (load-bearing; conformance reads slice-008.toml) and mirrors the edited-but-unlisted ones in design sec-6. Brief § Registry. The registry bootstrap itself is done (seven --commit rows).
+"""
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "design-wrong"
+response = """
+The registry, not the code, is short. Reconcile adds the missing paths with `doctrine slice selector add` (load-bearing; conformance reads slice-008.toml) and mirrors the edited-but-unlisted ones in design sec-6. Brief § Registry. The registry bootstrap itself is done (seven --commit rows).
+"""
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+
+[[finding]]
+id = "F-2"
+status = "verified"
+severity = "minor"
+title = "design sec-5 and CHR-006 describe the rollout as env in ~/flakes, bind in satan; satan's launcher does both"
+detail = """
+Expected: design sec-5 "Operator rollout" and CHR-006 describe the rollout as made.
+Observed: sec-5 (and the sec-8 follow-up line, and CHR-006's body/title) say: set MALEBOLGE_BOOKMARK_BACKUPS in ~/flakes and add the bind in satan's mkJailedMalebolge. As made (satan 95e40a8, ~/flakes 08c0f37d; notes § Review passes PHASE-07): mkJailedMalebolge takes an optional `bookmarkBackups` path and does both set-env and the read-only bind, because the jail sets the daemon's environment; ~/flakes (features/satan/malebolge.nix) only passes the path. docs/internals.md § Bookmarks "Operator rollout" was corrected in c045e59 and is right.
+State: deployed on Sleipnir (VH-1 passed), but satan 95e40a8 is unpushed and the ~/flakes lock pins satan cacfd5d, so a non-override switch fails until the push and `nix flake update satan` (operator acts). CHR-006 is therefore not yet done.
+"""
+disposition = "design-wrong"
+response = """
+docs are right since c045e59; design sec-5 / sec-8 and CHR-006 lag. Reconcile edits design sec-5's "Operator rollout" paragraph and the sec-8 follow-up line, and updates CHR-006's body to the as-made split plus the outstanding operator acts (push satan 95e40a8, bump the ~/flakes lock). CHR-006 stays open until those land. Brief § Per-slice and § Backlog.
+"""
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "design-wrong"
+response = """
+docs are right since c045e59; design sec-5 / sec-8 and CHR-006 lag. Reconcile edits design sec-5's "Operator rollout" paragraph and the sec-8 follow-up line, and updates CHR-006's body to the as-made split plus the outstanding operator acts (push satan 95e40a8, bump the ~/flakes lock). CHR-006 stays open until those land. Brief § Per-slice and § Backlog.
+"""
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+
+[[finding]]
+id = "F-3"
+status = "verified"
+severity = "minor"
+title = "behaviour chosen during execution (Autonomy log) is not in the locked design"
+detail = """
+Expected: design.md tells the truth about observable behaviour; choices the design left open are recorded there once made.
+Observed: the Autonomy log (notes.md) records these as decided, but design.md does not carry them:
+- sec-2: the top container (placesRoot) adds no path segment and is not a folder; a container with no or an unknown `root` key is named by its title.
+- sec-2: a JSON.parse failure, and any throw from the schema check or the walk (deep-nesting RangeError), map to `invalid`; `corrupt` is the mozlz4 frame only. `no_backup` text does not name the directory.
+- sec-3: an empty `tag` or `folder` filters nothing, as an absent one (the design says so for `query` only).
+- sec-3: ties sort by code unit, not localeCompare. bookmarks_tags counts tags exactly (case-sensitive), while the search `tag` filter is case-insensitive. Probe 2026-10-29 on the live backup (host, counts only): 384 distinct tags exact and 384 case-folded, so 0 case-only collisions today; the asymmetry is latent.
+- sec-4: header line order (search: items, matched[, next_offset], source, stale, clamps; listings: `shown N of M[, next_offset: X]`, source, stale, cut by caps, clamps); `stale` counts whole days to `now`'s local calendar date, and a backup dated after now prints no stale line; a non-empty window that fits no item throws rather than sending next_offset = offset.
+- sec-2: the decoder is 80 lines, not "~30" (40-line body plus refusals).
+Code and tests are consistent with each choice (host review of src/bookmarks/*.ts).
+"""
+disposition = "design-wrong"
+response = """
+Each choice is reasonable, fail-closed or deterministic, and test-pinned; the design should carry them. Reconcile appends them to sec-2, sec-3 and sec-4. The tag-case asymmetry is recorded as a known, latent inconsistency (0 collisions on live data) rather than changed: Firefox's own tag handling decides whether it can occur, and IDE-008 step 2 (tag rationalisation) is where it would matter. Brief § Per-slice.
+"""
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "design-wrong"
+response = """
+Each choice is reasonable, fail-closed or deterministic, and test-pinned; the design should carry them. Reconcile appends them to sec-2, sec-3 and sec-4. The tag-case asymmetry is recorded as a known, latent inconsistency (0 collisions on live data) rather than changed: Firefox's own tag handling decides whether it can occur, and IDE-008 step 2 (tag rationalisation) is where it would matter. Brief § Per-slice.
+"""
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+
+[[finding]]
+id = "F-4"
+status = "verified"
+severity = "nit"
+title = "src/untrusted-block.ts: two stacked doc comments on count"
+detail = """
+Expected: one doc comment per export.
+Observed: src/untrusted-block.ts:289-290 carried two /** */ blocks above `count`, saying the same thing twice (notes § Harvest → Open).
+"""
+disposition = "fix-now"
+response = """
+Fixed in the audit: the first of the two comments is removed. eslint (0 warnings), biome format and test/untrusted-block.test.ts (11 tests) green on the edited file.
+"""
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+response = """
+Fixed in the audit: the first of the two comments is removed. eslint (0 warnings), biome format and test/untrusted-block.test.ts (11 tests) green on the edited file.
+"""
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+
+[[finding]]
+id = "F-5"
+status = "verified"
+severity = "nit"
+title = "README and docs/internals.md toolset tables gained threads rows, outside SL-008's scope"
+detail = """
+Expected: the slice edits only what its design names.
+Observed: PHASE-07 (1d24b99) added the missing `threads` entries to the toolset tables in README.md and docs/internals.md, and noted tasks+threads are room-only while bookmarks are on both profiles. The gap was SL-006's. The edits sit in declared files beside the row the slice had to edit, and are correct against src/toolsets.ts.
+"""
+disposition = "aligned"
+response = """
+The rows are correct against src/toolsets.ts and fix a gap a reader of the edited row would trip on; logged as an envelope decision (PHASE-07). No reconcile write.
+"""
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "aligned"
+response = """
+The rows are correct against src/toolsets.ts and fix a gap a reader of the edited row would trip on; logged as an envelope decision (PHASE-07). No reconcile write.
+"""
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+
+[[finding]]
+id = "F-6"
+status = "verified"
+severity = "minor"
+title = "design sec-8 governance edits are outstanding: DEC-029, RSK-002, SL-005, IMP-023, new ASM"
+detail = """
+Expected: at close, governance tells the truth about the shipped toolset and the RSK-002 carve-out.
+Observed: none of the sec-8 edits has been made:
+- DEC-029 choice (2) lists interactive as persona … tasks, satan; it now has bookmarks immediately before satan on both profiles (src/toolsets.ts), and "prompt and tool order are unchanged" is historical. (It also omits threads, which is SL-006's to reconcile.)
+- RSK-002 controls do not name DEC-053 (bookmark-metadata carve-out with field caps).
+- SL-005's context note ("not in the interactive tool set") reads as covering all untrusted web content; it is about mail bodies.
+- IMP-023 does not say bookmark metadata is outside its scope.
+- No ASM records that the daemon reads the bookmark backups directory from a configured absolute path the jail binds read-only.
+"""
+disposition = "design-wrong"
+response = """
+These are sec-8's planned reconcile writes; until made, DEC-029 is false about the interactive list. Reconcile writes them through REV (DEC-029, RSK-002, IMP-023, new ASM) and a direct note edit for SL-005 if its slice is closed per project convention. Brief § Governance.
+"""
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "design-wrong"
+response = """
+These are sec-8's planned reconcile writes; until made, DEC-029 is false about the interactive list. Reconcile writes them through REV (DEC-029, RSK-002, IMP-023, new ASM) and a direct note edit for SL-005 if its slice is closed per project convention. Brief § Governance.
+"""
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+
+# Findings are append-only `[[finding]]` tables, added by `review raise`.
+# Empty here at creation — a fresh review is Active, awaiting the raiser.
