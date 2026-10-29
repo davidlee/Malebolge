@@ -88,6 +88,22 @@ bounds, the raw bounds table); whether the mail-only framing should move into
 the shared untrusted block for bookmarks (SL-008, DEC-054). Recipe-level
 slips are left to red/green tests; the next review is of the plan.
 
+## Implementation run
+<!-- written by the /super-orchestrator seat, 2026-10-29; charters point here -->
+
+- **Driver**: /super-orchestrator seat → `sub-orchestrator` charters → quotient pi workers. Main worktree. Scope PHASE-01..07; halt before PHASE-08 (VH, operator: satan IMP-060, flakes IMP-055, deployed screwtape) and before audit. Screwtape SL-005 is `done` (checked at preflight), so PHASE-07 is in reach; its EN-2 still re-reads the contract.
+- **PHASE-01 VA-1 / EX-1: done at preflight by the seat (host), PASS.** socat bridge `127.0.0.1:4107` → `/run/llm-gateway-client/api.sock` vs relay `:4000`, on `/v1/systemone` (screwtape `jev/client.gleam`): GET 404 `no such route` and POST 401 `auth_error "unknown key"` on both, identical JSON bodies. Recorded on ASM-002 (now `validated`). PHASE-01 starts at its code.
+- **Host gate**: `just check` from the session shell. Baseline 2026-10-29 at 5540321: fmt-check, lint, typecheck green; vitest 3782 passed, 3 failed — all in SL-009's in-flight files (`test/bridge-inbound.test.ts`, `test/bridge-listener.test.ts`, `test/bridge-pairing.test.ts`; red TDD in another session). **A gate is green for SL-007 when every failure is in a file SL-009 holds dirty**; any other failure is ours.
+- **Never run two `vitest run` at once in this root** (shared `coverage/`; the loser dies with "coverage report directory … already in use" — happened at preflight, from another session). Before the host gate check `pgrep -af vitest` (a `pgrep -f 'vitest run'` loop matches its own shell line); re-run alone on that error. pi workers run targeted tests: `npx vitest run <file> --coverage.enabled=false`.
+- **quotient forms**: `write` re-probed: just, biome, node, npx present; fmt-check, lint, typecheck, targeted vitest green; root writable. **No `socat`, `nix`, `python3` in the form.** Use PATH `biome` (via `just format` / `biome format --write <files>`), not `npx biome`. fmt-check's 4 warnings (broken `.quotient/` symlinks) are benign.
+- **Operator ruling — PHASE-04 overlap** (2026-10-29, "Wait for SL-009"): PHASE-04 edits `test/daemon-sections.test.ts`, which SL-009's session may hold dirty. PHASE-04 starts only once that file is clean in `git status`; if it is still dirty then, park PHASE-04..07 (they depend on it) and push a notification.
+- **Other writers**: SL-009's session (`src/bridge/**`, `test/bridge-*`, `test/daemon-sections.test.ts`, `.doctrine/slice/009/**`) and other sessions committing on main (e.g. IMP-026 fixes in render/emacs). Commit only SL-007 paths and the phase's source files, by path. If another writer appears in a file the current phase owns, halt that phase and escalate.
+- **Cross-repo**: do not edit satan, flakes or screwtape; read-only looks only.
+- **Operator prefs**: YAGNI; no tests pinning framing wording (DEC-061) — only `MAIL_SECTION` names the rendered tag; no test pins a bound's value. VT keywords are test titles/identifiers to write verbatim (`doctrine slice verify-vt 7`).
+- **Background tasks** enabled (`CLAUDE_CODE_DISABLE_BACKGROUND_TASKS` unset); spawn depth unset (default ≥ 2).
+
+## Autonomy log
+
 ## Harvest
 <!-- single-copy: updated in place each harvest; ids only, never restated content -->
 fresh-as-of: 2026-10-29 · re-locked (design run rev 70, DEC-094); planned, 8 phases; slice ready · a4461f9 (SL-007 planning uncommitted)
