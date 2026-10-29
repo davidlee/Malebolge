@@ -131,7 +131,7 @@ export interface TopicsMessage {
 
 /**
  * The daemon's reply to a `models` listing: the chat models its catalogue serves,
- * as refs, in the catalogue's own order (design sec-5). The store is not asked.
+ * as refs, sorted (design sec-2, sec-5). The store is not asked.
  */
 export interface ModelsMessage {
   type: "models";

@@ -1,0 +1,480 @@
+id    = 25
+slug  = "sl-010-audit-per-topic-model-and-topics-in-the-emacs-chooser-conformance"
+title = "SL-010 audit: per-topic model and topics in the Emacs chooser (conformance)"
+# no status — a review's status is DERIVED from its findings, so
+# it is never stored (the storage rule forbids derived data in authored files).
+
+[review]
+facet     = "reconciliation"     # scope|design|plan|phase-plan|implementation|code-review|reconciliation
+raiser    = "raiser"
+responder = "responder"
+rounds_base = 0
+contests_base = 0
+concluded = true
+
+[[review.turn]]
+act = "conclude"
+role = "raiser"
+note = "Conformance audit of SL-010 PHASE-01..07 (commits 8aa02d9..2538398) against design.md sec-1..sec-8 (locked rev 38), plan.toml criteria and DEC-082..091: path conformance after bootstrapping the source-delta registry; a Sonnet diff-vs-design sweep adjudicated here; every notes.md Autonomy-log 'flag for audit' line; the seat's known leads (Emacs old-daemon behaviour, EX-8 ruling, VH-1 substitution, IMP-026 edges, amended DECs, IMP-018, research drift); host gate just check (3800 tests) and just ert (48/48) green; doctrine check gate unavailable (CHR-001). 19 findings, all verified; Reconciliation Brief written."
+
+[target]                   # the outbound `reviews` edge: RV-NNN ──reviews──▶ <ref>
+ref   = "SL-010"
+
+[[finding]]
+id = "F-1"
+status = "verified"
+severity = "minor"
+title = "Expected a source-delta row per completed phase; observed an empty registry at audit"
+detail = "Sub-orchestrators skipped `doctrine slice record-delta`, so `slice conformance 10` had no rows for PHASE-01..07. Bootstrapped at audit with `record-delta 10 PHASE-NN --start <parent> --end <commit>` from the seven single-commit phases: 8aa02d9, c4542f8, 866a88c, 78856d0, 77ac080, a873454, 2538398. Each range is one commit, so interleaved foreign commits (SL-009, knowledge/backlog) are excluded by construction. Conformance now: 35 conformant, 0 undelivered, 3 undeclared (F-2, F-3)."
+disposition = "fix-now"
+response = "Fixed at audit: seven rows recorded (`slice record-delta 10 PHASE-NN --start <parent> --end <commit>`), one commit per phase, foreign commits excluded by construction. Conformance re-run reads the full registry. Process note for future drivers: record the delta at each phase commit."
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+response = "Fixed at audit: seven rows recorded (`slice record-delta 10 PHASE-NN --start <parent> --end <commit>`), one commit per phase, foreign commits excluded by construction. Conformance re-run reads the full registry. Process note for future drivers: record the delta at each phase commit."
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "Fix confirmed at audit."
+
+[[finding]]
+id = "F-2"
+status = "verified"
+severity = "minor"
+title = "Expected every edited path under a design-target selector; observed README.md and docs/internals.md undeclared"
+detail = "`doctrine slice conformance 10` reports undeclared `M README.md` (PHASE-04, -06, -07) and `M docs/internals.md` (PHASE-04, -06). Both are the user/internals docs for the flags and frames the slice adds (--model, --no-model, --models, the models list query, the 4-field --topics and 3-field --list lines). Design sec-7 code impact does not list them and slice-010.toml has no selector for them. In scope (documenting delivered behaviour), but undeclared."
+disposition = "design-wrong"
+response = "Design scope omission, not scope creep: the docs describe delivered flags and frames. Reconciliation Brief (per-slice): `doctrine slice selector add 10 README.md docs/internals.md` with intent design-target (load-bearing for conformance), mirrored as a docs row in design sec-7's code-impact table."
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "design-wrong"
+response = "Design scope omission, not scope creep: the docs describe delivered flags and frames. Reconciliation Brief (per-slice): `doctrine slice selector add 10 README.md docs/internals.md` with intent design-target (load-bearing for conformance), mirrored as a docs row in design sec-7's code-impact table."
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "Brief entry present in review-025.md § Reconciliation Brief."
+
+[[finding]]
+id = "F-3"
+status = "verified"
+severity = "nit"
+title = "Expected only source paths in conformance; observed the slice's own notes.md undeclared"
+detail = "`.doctrine/slice/010/notes.md` is undeclared: each phase commit carried its run log into notes.md, per the seat's charter. It is slice bookkeeping, not delivered source."
+disposition = "tolerated"
+response = "The slice's own notes.md is bookkeeping carried in phase commits by the seat's charter (run logs beside the code they describe). Declaring it as a design-target would misstate it as delivered source. Accepted standing undeclared cell; it does not indicate drift."
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "tolerated"
+response = "The slice's own notes.md is bookkeeping carried in phase commits by the seat's charter (run logs beside the code they describe). Declaring it as a design-target would misstate it as delivered source. Accepted standing undeclared cell; it does not indicate drift."
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "Rationale accepted."
+
+[[finding]]
+id = "F-4"
+status = "verified"
+severity = "minor"
+title = "Expected ModelCatalog members as methods (design sec-2, DEC-082 refinement note); observed function-typed properties"
+detail = "src/models.ts:67-72 declares `require: (ref: string) => ModelRef; refs: () => string[]`. Design sec-2's code block and DEC-082's refinement note write `require(ref): ModelRef; refs(): string[]`. Reason (notes.md Autonomy log, PHASE-01): typescript-eslint `unbound-method` refuses passing `catalog.require` unbound, which design sec-4's own `creationModel(..., catalog.require)` does. Names and types are unchanged; the design's notation is internally inconsistent with its own call site."
+disposition = "design-wrong"
+response = "The implementation is right: design sec-4 passes `catalog.require` unbound, which method notation forbids under the project's lint. Reconciliation Brief: design sec-2 code block → function-typed properties with the one-line reason (per-slice); DEC-082's refinement note notation (governance, with F-15)."
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "design-wrong"
+response = "The implementation is right: design sec-4 passes `catalog.require` unbound, which method notation forbids under the project's lint. Reconciliation Brief: design sec-2 code block → function-typed properties with the one-line reason (per-slice); DEC-082's refinement note notation (governance, with F-15)."
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "Brief entry present in review-025.md § Reconciliation Brief."
+
+[[finding]]
+id = "F-5"
+status = "verified"
+severity = "nit"
+title = "Expected ModelSources.topic as `topic?: string` (design sec-4); observed `topic?: string | undefined`"
+detail = "src/models.ts:100. `exactOptionalPropertyTypes` refuses passing `record?.model` (possibly undefined) to `topic?: string`; design sec-4's own call `creationModel({ topic: record?.model, fallback }, ...)` needs the widened type. No behaviour change (notes.md Autonomy log, PHASE-03)."
+disposition = "design-wrong"
+response = "Forced by `exactOptionalPropertyTypes` and design sec-4's own call site. Reconciliation Brief (per-slice): design sec-4 code block → `topic?: string | undefined`."
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "design-wrong"
+response = "Forced by `exactOptionalPropertyTypes` and design sec-4's own call site. Reconciliation Brief (per-slice): design sec-4 code block → `topic?: string | undefined`."
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "Brief entry present in review-025.md § Reconciliation Brief."
+
+[[finding]]
+id = "F-6"
+status = "verified"
+severity = "nit"
+title = "Expected ConversationDefaults unchanged; observed it tightened to require `model`"
+detail = "PHASE-03 tightened `ConversationDefaults` to `AgentChange & { cwd: string; model: ModelRef }` so topicInit's `fallback` is the defaults' model without a cast (pi-durable types `model` optional). Design sec-4 names the fallback as the daemon default and says nothing about the defaults type; every caller already passed a model (startDaemon's config.model)."
+disposition = "aligned"
+response = "Internal type tightening below the design's altitude: every caller already supplied a model, and design sec-4 already treats the fallback as a ModelRef. No contract or behaviour change; no design text needed."
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "aligned"
+response = "Internal type tightening below the design's altitude: every caller already supplied a model, and design sec-4 already treats the fallback as a ModelRef. No contract or behaviour change; no design text needed."
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "Rationale accepted."
+
+[[finding]]
+id = "F-7"
+status = "verified"
+severity = "minor"
+title = "Expected design sec-4 to state how thread_start surfaces an unknown topic model; observed an arbiter ruling (PHASE-03/EX-8) the design does not carry"
+detail = "src/threads/tools.ts:451-458 `attempted` maps `UnknownModel` (beside `Refusal`) to the tool's refusal result (isError, naming the model) instead of a thrown bug. plan.toml PHASE-03/EX-8 says: 'Design sec-4 is silent on this mapping; see plan.md.' Design sec-4's thread_start row says only 'topic's model, else default (amends DEC-034)', and its refusal paragraph covers attach paths and the heartbeat. DEC-083 (refuse creation) holds on the tool path; the mapping to a tool refusal is undocumented in design."
+disposition = "design-wrong"
+response = "Behaviour is correct and consistent with DEC-083 (nothing created; the caller is told). The design must carry it. Reconciliation Brief (per-slice): design sec-4 — thread_start row/refusal paragraph: an unknown topic model surfaces as thread_start's refusal result (isError, naming the model), via the thread tools' `attempted` mapping, as a Refusal does."
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "design-wrong"
+response = "Behaviour is correct and consistent with DEC-083 (nothing created; the caller is told). The design must carry it. Reconciliation Brief (per-slice): design sec-4 — thread_start row/refusal paragraph: an unknown topic model surfaces as thread_start's refusal result (isError, naming the model), via the thread tools' `attempted` mapping, as a Refusal does."
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "Brief entry present in review-025.md § Reconciliation Brief."
+
+[[finding]]
+id = "F-8"
+status = "verified"
+severity = "nit"
+title = "Expected README --list line text to match the PHASE-05 line shape; observed it stale between PHASE-05 and PHASE-07"
+detail = "PHASE-05 (77ac080) changed --list lines to `ID<TAB>TOPIC<TAB>MODEL[<TAB>MARK]` but left README's `id[<TAB>mark]` text; PHASE-07 (2538398) corrected it. At HEAD README.md:150-152 matches the implementation (checked)."
+disposition = "aligned"
+response = "Resolved inside the slice (PHASE-07); README at HEAD matches the line shape."
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "aligned"
+response = "Resolved inside the slice (PHASE-07); README at HEAD matches the line shape."
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "Rationale accepted."
+
+[[finding]]
+id = "F-9"
+status = "verified"
+severity = "minor"
+title = "Expected Emacs `new` to stay usable against an old daemon; observed it now errors where it used to attach to default"
+detail = """`malebolge--new-target` calls `malebolge--topic-names` → `malebolge--client '("--topics")`. Against a daemon predating the topics query the client exits non-zero (restart hint) and `malebolge--client` signals `user-error` quoting it, so `new` refuses where before PHASE-07 it attached a new conversation in default. Design sec-6: the client 'signals a verb-neutral user-error ... so callers check nothing'; DEC-089/DEC-091."""
+disposition = "aligned"
+response = "This is the design: sec-6 'so callers check nothing' and DEC-089/091. The user-error quotes the client's restart hint, so the operator learns to restart the daemon; SKEWED_KEYS covers the topics key. Old-daemon skew under DEC-007 is answered by the hint, not a silent fallback (consistent with the operator's preference for explicit denial over silent stop)."
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "aligned"
+response = "This is the design: sec-6 'so callers check nothing' and DEC-089/091. The user-error quotes the client's restart hint, so the operator learns to restart the daemon; SKEWED_KEYS covers the topics key. Old-daemon skew under DEC-007 is answered by the hint, not a silent fallback (consistent with the operator's preference for explicit denial over silent stop)."
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "Rationale accepted."
+
+[[finding]]
+id = "F-10"
+status = "verified"
+severity = "minor"
+title = "Expected VH-1 against `gateway/openai-david/gpt-6.1-terra` (plan PHASE-07, design sec-8); observed it passed against `gateway/chatgpt/gpt-6.1-terra`"
+detail = "notes.md 'VH-1 result': operator set topic `dwarf` to `gateway/chatgpt/gpt-6.1-terra` via M-x malebolge-set-topic-model, created 2738 from the chooser, saw `2738<TAB>dwarf<TAB>gateway/chatgpt/gpt-6.1-terra` on --list, got a reply. The openai-david account returned 429 (no credit); the substitution is the operator's choice (Autonomy log). The plan criterion is immutable."
+disposition = "tolerated"
+response = "The operator ran VH-1 and passed it. The criterion's substance (a gateway ref set from Emacs, a conversation created in that topic from the chooser, the model on its line, a reply) is met; the specific ref is incidental because the catalog judges any ref string the same way. The substitution was the operator's own choice (account out of credit). Plan criteria are immutable; recorded as evidence, no plan or design edit."
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "tolerated"
+response = "The operator ran VH-1 and passed it. The criterion's substance (a gateway ref set from Emacs, a conversation created in that topic from the chooser, the model on its line, a reply) is met; the specific ref is incidental because the catalog judges any ref string the same way. The substitution was the operator's own choice (account out of credit). Plan criteria are immutable; recorded as evidence, no plan or design edit."
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "Rationale accepted."
+
+[[finding]]
+id = "F-11"
+status = "verified"
+severity = "minor"
+title = "Expected the `Topic:` prompt to avoid an unnoticed default; observed RET lands the conversation in `default` (hand-run, IMP-026 item 3)"
+detail = """emacs/malebolge.el:355-361 `malebolge--new-target`: `completing-read "Topic: " names nil t nil nil "default"`. The operator's first VH-1 attempt landed in 2672/default unnoticed, compounded by the connect status naming only the id (IMP-026 item 2). Design sec-6: 'completing-read "Topic: " over the names from --topics, require-match, default default' (DEC-089)."""
+disposition = "aligned"
+response = "Code conforms to design sec-6 and DEC-089 exactly. Whether the default should change (no default, or the last-used topic) is a UX decision IMP-026 item 3 already owns; changing it here would contradict DEC-089 without the operator."
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "aligned"
+response = "Code conforms to design sec-6 and DEC-089 exactly. Whether the default should change (no default, or the last-used topic) is a UX decision IMP-026 item 3 already owns; changing it here would contradict DEC-089 without the operator."
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "Rationale accepted."
+
+[[finding]]
+id = "F-12"
+status = "verified"
+severity = "nit"
+title = "Expected malebolge-set-topic-model's `none` message to name the resulting model; observed 'now uses no model'"
+detail = "emacs/malebolge.el:489-491: choosing `none` runs --no-model and messages `malebolge: topic %s now uses no model`. A topic with no model gives its new conversations the daemon default (design sec-4, creationModel's fallback), so 'no model' misstates the outcome. Design sec-6: 'success → a message naming topic and model'."
+disposition = "follow-up"
+response = "Cosmetic UX in SL-010 code, not a spec item. Appended to IMP-026 as item 4 (backlog-026.md)."
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "follow-up"
+response = "Cosmetic UX in SL-010 code, not a spec item. Appended to IMP-026 as item 4 (backlog-026.md)."
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "IMP-026 item 4 appended."
+
+[[finding]]
+id = "F-13"
+status = "verified"
+severity = "nit"
+title = "Expected test mark texts in the daemon's wording; observed ERT fixtures with `forked from 12`"
+detail = "test/malebolge-ert.el fixture lines use marks such as `forked from 12`; the daemon writes `fork of N` / `started by N` (README.md:151-152). The chooser parses the mark as opaque non-empty text, so the tests remain valid (notes.md PHASE-05 run log)."
+disposition = "tolerated"
+response = "Test-only text; the chooser treats the mark as opaque non-empty text, so the wording cannot affect what the tests prove. Not worth a churn commit."
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "tolerated"
+response = "Test-only text; the chooser treats the mark as opaque non-empty text, so the wording cannot affect what the tests prove. Not worth a churn commit."
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "Rationale accepted."
+
+[[finding]]
+id = "F-14"
+status = "verified"
+severity = "nit"
+title = "Expected design sec-2 to cite live code; observed `requireKnownModel (src/daemon-start.ts:55)`, which PHASE-01 deleted"
+detail = "Design sec-2: '`require` is today's `requireKnownModel` (`src/daemon-start.ts:55`), moved'. `grep requireKnownModel src` returns nothing at HEAD. Cosmetic: the sentence reads as a pre-implementation instruction."
+disposition = "design-wrong"
+response = "Reconciliation Brief (per-slice): design sec-2 — say `require` replaced `requireKnownModel` (deleted from src/daemon-start.ts), dropping the line citation."
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "design-wrong"
+response = "Reconciliation Brief (per-slice): design sec-2 — say `require` replaced `requireKnownModel` (deleted from src/daemon-start.ts), dropping the line citation."
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "Brief entry present in review-025.md § Reconciliation Brief."
+
+[[finding]]
+id = "F-15"
+status = "verified"
+severity = "minor"
+title = "Expected the amended decisions to record their amendments; observed DEC-016, DEC-017, DEC-034, DEC-039 carrying none, and DEC-082's note still 'pending'"
+detail = "DEC-084 'Amends DEC-034'; DEC-086 'Amends DEC-016 and DEC-017'; DEC-087 'Amends DEC-039's line format'. The amended records carry no note or relation back. DEC-082's refinement note ends 'Pending the user's section review of sec-2' though the design locked (rev 38) and shipped, and writes the port with method notation (see F-4). Harvest Open lists this for /reconcile."
+disposition = "design-wrong"
+response = "Governance surface. Reconciliation Brief (governance): record the amendments on DEC-016, DEC-017 (by DEC-086), DEC-034 (by DEC-084), DEC-039 (by DEC-087); update DEC-082's refinement note (drop 'pending'; function-property notation per F-4)."
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "design-wrong"
+response = "Governance surface. Reconciliation Brief (governance): record the amendments on DEC-016, DEC-017 (by DEC-086), DEC-034 (by DEC-084), DEC-039 (by DEC-087); update DEC-082's refinement note (drop 'pending'; function-property notation per F-4)."
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "Brief entry present in review-025.md § Reconciliation Brief."
+
+[[finding]]
+id = "F-16"
+status = "verified"
+severity = "minor"
+title = "Expected stale texts to track the implementation; observed three comments/docs describing pre-SL-010 or unsorted behaviour"
+detail = "Sonnet sweep, confirmed: (a) docs/internals.md:117 named `toolsetInit`, renamed `topicInit` in PHASE-03; (b) src/protocol.ts:134 and src/render.ts:374 said refs are in 'the catalogue's own order', but `modelCatalog.refs` sorts (design sec-2 'sorted'); (c) src/daemon.ts:185 said the models reply 'answers while nothing is loaded', but every turn awaits `state.conversations` (src/daemon.ts:295) first; design sec-5 only claims it is answered before reaching Conversations."
+disposition = "fix-now"
+response = "Fixed at audit (one-line edits, `just fmt-check` and `just lint` clean): internals.md `topicInit`; protocol.ts and render.ts say sorted; daemon.ts says no Conversations method is called and the turn still awaits the resumed session. Committed with the audit."
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+response = "Fixed at audit (one-line edits, `just fmt-check` and `just lint` clean): internals.md `topicInit`; protocol.ts and render.ts say sorted; daemon.ts says no Conversations method is called and the turn still awaits the resumed session. Committed with the audit."
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "Fix confirmed at audit."
+
+[[finding]]
+id = "F-17"
+status = "verified"
+severity = "nit"
+title = "Expected `doctrine check gate` to run the project gate; observed `justfile does not contain recipe gate`"
+detail = "`doctrine check gate` exits 1: unconfigured, it proxies `just gate`, which malebolge lacks. Owned by CHR-001 (open). Gate evidence used instead: `just check` (107 files / 3800 tests, lint, typecheck, fmt green) and `just ert` (48/48, byte-compile clean) on the host, 2026-10-29. Not an SL-010 defect."
+disposition = "follow-up"
+response = "Project gate configuration, owned by CHR-001 (open). Gate evidence for this audit is just check + just ert on the host."
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "follow-up"
+response = "Project gate configuration, owned by CHR-001 (open). Gate evidence for this audit is just check + just ert on the host."
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "CHR-001 owns it."
+
+[[finding]]
+id = "F-18"
+status = "verified"
+severity = "nit"
+title = "Expected research to be fresh against scope/design; observed the staleness advisory reporting drift, not restamped"
+detail = "Harvest Open: the research advisory reports drift because slice-010.md and design.md were edited after research round 1. The design locked after those edits and the review passes integrated their evidence."
+disposition = "tolerated"
+response = "Research is tier-5 evidence; the design locked after the scope edits and four review passes integrated their evidence. Restamping now would record nothing a reader needs. Accepted."
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "tolerated"
+response = "Research is tier-5 evidence; the design locked after the scope edits and four review passes integrated their evidence. Restamping now would record nothing a reader needs. Accepted."
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "Rationale accepted."
+
+[[finding]]
+id = "F-19"
+status = "verified"
+severity = "nit"
+title = "Expected IMP-018 to close with the slice that delivers it; observed it still open"
+detail = "IMP-018 'Emacs client: create a conversation in a named topic' is delivered by PHASE-07 (`new` asks for a topic, `(new . TOPIC)` → `--topic NAME --new --emacs`; ERT and smoke pin it). Still `open` in backlog."
+disposition = "aligned"
+response = "Delivered by PHASE-07 and verified (ERT, smoke, VH-1). Reconciliation Brief close-time note: resolve IMP-018 at /close, citing SL-010."
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "aligned"
+response = "Delivered by PHASE-07 and verified (ERT, smoke, VH-1). Reconciliation Brief close-time note: resolve IMP-018 at /close, citing SL-010."
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "Rationale accepted."
+
+# Findings are append-only `[[finding]]` tables, added by `review raise`.
+# Empty here at creation — a fresh review is Active, awaiting the raiser.

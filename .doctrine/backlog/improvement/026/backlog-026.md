@@ -22,6 +22,9 @@ folded in as a duplicate).
 3. **`Topic:` defaults to `default` on a bare RET** (`malebolge--new-target`,
    SL-010 PHASE-07). The operator's first attempt landed in 2672/default
    unnoticed — compounded by 2.
+4. **`malebolge-set-topic-model`'s `none` says "now uses no model".** The
+   topic's new conversations take the daemon default; the message should say
+   so (`emacs/malebolge.el`, SL-010 PHASE-07; RV-025 F-12).
 
 Outside this repo, noted only: the operator's `dl-satan.el` `:commands`
 autoloads only attach/start/stop (so `malebolge-set-topic-model` is undefined

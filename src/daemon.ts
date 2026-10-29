@@ -182,7 +182,7 @@ const topicsReply = (
 
 /**
  * The `models` reply: the catalogue's chat-model refs, read from the daemon's own
- * port. No store call is made, so this answers while nothing is loaded.
+ * port. No `Conversations` method is called (the turn still awaits the resumed session).
  */
 const modelsReply = (state: Connection): ModelsMessage => ({
   type: "models",

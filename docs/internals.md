@@ -114,7 +114,7 @@ code, opens the harness with no index and stores no name.
   The profile's policy judges the name, whatever its origin, and refuses one
   it does not allow.
 - **The index entry** (`{ topic, parent?, toolset }`) carries the name a
-  conversation was created with. `toolsetInit` resolves it inside the
+  conversation was created with. `topicInit` resolves it inside the
   creating commit — the topic's, else the profile default — and sets the
   conversation's `extensions` from it, so no create path can omit it. The
   name is fixed at creation; the list is re-derived from it, so a change in

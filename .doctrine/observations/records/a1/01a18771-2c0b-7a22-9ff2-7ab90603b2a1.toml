@@ -1,0 +1,18 @@
+schema = "doctrine.observation"
+schema_version = 1
+uid = "01a18771-2c0b-7a22-9ff2-7ab90603b2a1"
+recorded_at = "2026-10-29T11:35:03.43541167Z"
+kind = "friction"
+summary = "pi deepseek-flash out of balance mid-audit (402 insufficient_balance)"
+detail = "SL-010 audit sweep: quotient review run failed after 57 requests with no answer; continuation refused instantly with litellm 402 Insufficient Balance. Fell back to a Sonnet subagent for the diff-vs-design sweep."
+
+[facets.execution]
+schema_version = 1
+interface = "cli"
+interface_origin = "automatic"
+product_surface = "doctrine"
+product_surface_origin = "automatic"
+command = "observation record"
+command_origin = "automatic"
+repository_context = "primary"
+repository_context_origin = "automatic"

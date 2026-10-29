@@ -122,25 +122,28 @@ Passed (reply "yes"): topic `dwarf` set to `gateway/chatgpt/gpt-6.1-terra` via `
 - 2026-10-29, host, node-sqlite store (`openNodeSqliteStorage`, the daemon's), 60 conversations created via `Conversations.open({kind:"new"})`, page = LIST_PAGE (50): one commit of `scanConversations` + `readIndexDoc` + 50 `tx.doc(AgentDoc, id)` (all 50 carried a model). Warm session, 20 reps: median 0.14 ms, max 0.31 ms (scan + index alone: 0.03 ms). Cold, first commit after reopening the file: 0.30 ms.
 - Outcome: go. Three orders of magnitude under the 100 ms consult threshold. Throwaway test kept at `.doctrine/state/slice/010/en2-bench.test.ts.txt` (gitignored), not committed.
 
+## Audit pass (RV-025, 2026-10-29)
+
+- Sweep: pi `review` (deepseek-flash) ran 57 requests, $0.07, no answer — the provider returned 402 insufficient balance; the continuation was refused at once. Fallback: one Sonnet subagent (read-only diff-vs-design sweep), 5 leads: 1 doc + 3 comments confirmed stale (F-16, fixed at audit), 2 judged not findings.
+- Registry: sub-orchestrators had not run `slice record-delta`; bootstrapped at audit (F-1). Drivers should record at each phase commit.
+- Phase sheets (`.doctrine/state/slice/010/phases/`): Risks/Decisions/Findings empty; everything durable was already lifted into this file's Autonomy log and run logs. Nothing further to harvest from them.
+
 ## Harvest
 <!-- single-copy: updated in place each harvest; ids only, never restated content -->
-fresh-as-of: 2026-10-29 · ready (PHASE-01..07 planned, none started) · cf7049a
+fresh-as-of: 2026-10-29 · audit concluded (RV-025) · status reconcile
 
 ### Produced
-- SL-010 scoped (slice-010.md, scope re-confirmed at review.scope); research round 1 (research/)
-- design run dr-01a18627 locked rev 38 (eddc7d9); informal review: 4 passes, see "Review passes" above; RV-022 waived (no findings)
-- minted: DEC-082..DEC-089, DEC-091 (refines DEC-089); DEC-083 + DEC-089 body notes; ISS-004 (SL-009 follow-ups; SL-010 lands first)
-- plan.toml + plan.md, 7 phases (cf7049a); phase sheets materialised; status ready
-- no code changed; gate not run (nothing to gate)
+- PHASE-01..07 done (8aa02d9, c4542f8, 866a88c, 78856d0, 77ac080, a873454, 2538398); VH-1 passed by the operator (substituted ref, RV-025 F-10)
+- design run dr-01a18627 locked rev 38 (eddc7d9); DEC-082..DEC-089, DEC-091; ISS-004
+- RV-025 audit: 19 findings, all verified; Reconciliation Brief in review-025.md; F-16 comment/doc fixes and IMP-026 item 4 landed with the audit commit
 
 ### Learned
 - mem.fact.malebolge.model-ref-provider-is-gateway
 - mem.fact.malebolge.root-indexed-in-default
 
 ### Open
-- DEC-034, DEC-039, DEC-016, DEC-017 — amended by DEC-084/087/086; record at /reconcile
-- PHASE-03/EX-8 — thread_start maps UnknownModel to a refusal (DEC-083 on the tool path; arbiter ruling, not in design)
-- PHASE-05/EN-2 — summaries cost on a 50-id page, measure before the phase
-- ISS-004 — SL-009 (other session) absorbing; DEC-092/093 there call SL-010's topicInit
-- IMP-018 — absorbed by SL-010; close with the slice
-- research advisory reports drift (scope/design edited since research); not restamped
+- RV-025 Reconciliation Brief — per-slice: selectors + design sec-2/sec-4/sec-7; governance: DEC-016, DEC-017, DEC-034, DEC-039, DEC-082 (for /reconcile)
+- IMP-018 — resolve at /close (RV-025 F-19)
+- IMP-026 — Emacs/transcript rough edges, incl. `Topic:` default (amends DEC-089 if changed)
+- CHR-001 — `doctrine check gate` has no `just gate` recipe
+- ISS-004 — SL-009 follow-ups (other session)

@@ -1,7 +1,7 @@
 id = 10
 slug = "topic-model"
 title = "Per-topic model, and topics in the Emacs attach chooser"
-status = "started"
+status = "reconcile"
 created = "2026-10-29"
 updated = "2026-10-29"
 tags = []
