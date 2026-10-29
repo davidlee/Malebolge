@@ -6,7 +6,7 @@ disposable phase sheet (`.doctrine/state/.../phase-NN.md`) that must survive
 
 ## Harvest
 <!-- single-copy: updated in place each harvest; ids only, never restated content -->
-fresh-as-of: 2026-10-29 · ready (plan approved by operator: "ah. approve.") · a5a8761 + plan commit
+fresh-as-of: 2026-10-29 · ready (plan approved by operator: "ah. approve.") · 1384894
 
 ### Produced
 - Slice scoped, researched (`research/research.md`, round 1), design run
