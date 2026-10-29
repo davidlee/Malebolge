@@ -2,7 +2,7 @@
 // before the store is opened (the room's private bridge listener too, DEC-064),
 // SATAN's tools refreshed before the session resumes.
 
-import { mkdirSync } from "node:fs";
+import { mkdirSync, readdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import type { Models } from "@earendil-works/pi-ai/models";
 import type { ConversationId, Extension, Registry } from "@earendil-works/pi-durable";
@@ -20,7 +20,8 @@ import { type Daemon, type ServeOptions, serve } from "./daemon.ts";
 import { type DaemonEnv, daemonEnv, requireGatewaySocket } from "./daemon-env.ts";
 import { daemonExtensions } from "./daemon-extensions.ts";
 import { acquireInstanceLock } from "./instance-lock.ts";
-import { mailExtension } from "./mail/extension.ts";
+import { classificationCache } from "./mail/classifications.ts";
+import { mailExtension, mailRefusal } from "./mail/extension.ts";
 import { screwtapeSource } from "./mail/screwtape.ts";
 import {
   loadGatewayModels,
@@ -162,6 +163,19 @@ const toolCount = (registry: Registry, name: string): number =>
   registry.snapshot().extension(name)?.tools?.length ?? 0;
 
 /**
+ * The interfaces this process can reach, read once per build, or undefined when
+ * `/sys/class/net` cannot be listed: a failed precondition, not an absence
+ * (design § Preconditions).
+ */
+const networkInterfaces = (): readonly string[] | undefined => {
+  try {
+    return readdirSync("/sys/class/net");
+  } catch {
+    return undefined;
+  }
+};
+
+/**
  * The mail extension over `screwtape`, or none where the profile allows no mail.
  * Its environment is a host `NodeExecutionEnv` holding no resources (no `close`):
  * an in-flight child ends with its call's abort signal when the harness closes,
@@ -170,6 +184,7 @@ const toolCount = (registry: Registry, name: string): number =>
 const mailPart = (
   screwtape: ScrewtapePaths | undefined,
   now: () => number,
+  log: Log,
 ): Extension | undefined =>
   screwtape === undefined
     ? undefined
@@ -179,6 +194,13 @@ const mailPart = (
           env: new NodeExecutionEnv({ cwd: screwtape.home }),
         }),
         now,
+        cache: classificationCache(),
+        reported: new Map(),
+        log,
+        refusal: mailRefusal({
+          interfaces: networkInterfaces(),
+          credentials: screwtape.credentials,
+        }),
       });
 
 /**
@@ -202,8 +224,9 @@ const daemonRegistry = (
     threads: Extension;
   },
   now: () => number,
+  log: Log,
 ): Registry => {
-  const mail = mailPart(config.screwtape, now);
+  const mail = mailPart(config.screwtape, now, log);
   return registryOf(
     daemonExtensions({
       personaFiles: (toolset) => personaFiles(config.corpusRoot, toolset, config.execution.profile),
@@ -340,6 +363,7 @@ export async function startDaemon(config: Config, deps: StartDeps): Promise<Daem
     config,
     { projectContext, skills, wakes, task, threads: threadsExtension(threads.deps, postTaskDef) },
     now,
+    log,
   );
 
   const lock = lockOrClose(config, environment);

@@ -6,6 +6,9 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { isRecord, type JsonRecord } from "../../src/json.ts";
+import { classificationCache } from "../../src/mail/classifications.ts";
+import type { MailDeps } from "../../src/mail/tools.ts";
+import { untrustedLine } from "../../src/untrusted-block.ts";
 import {
   type Address,
   type Attachment,
@@ -530,10 +533,21 @@ export function dataLinesOf(result: string): string[] {
   return lines.slice(open + 1, -1);
 }
 
-/** The header lines before the open tag. */
+/** The tag an opening line (`<tag untrusted="true">`) names: what its warning line is derived from. */
+function tagOf(openLine: string): string {
+  return openLine.slice(1, openLine.indexOf(" "));
+}
+
+/**
+ * The trusted header's lines: renderHeader's own output, above the block's fixed
+ * untrusted warning (written by renderBlock, not by the header) and its open tag.
+ */
 export function headerLinesOf(result: string): string[] {
   const { lines, open } = resultLines(result);
-  return lines.slice(0, open);
+  const warning = open > 0 ? lines[open - 1] : undefined;
+  return warning === untrustedLine(tagOf(lines[open] ?? ""))
+    ? lines.slice(0, open - 1)
+    : lines.slice(0, open);
 }
 
 /** A data line parsed back to its object. */
@@ -584,6 +598,22 @@ export interface RecordedCall {
 
 export interface FakeMailSource extends MailSource {
   readonly calls: readonly RecordedCall[];
+}
+
+/**
+ * A MailDeps over a fake port, this test's constants for everything else: the
+ * one place a mail test gets its dependencies, so a new member is added here.
+ */
+export function fakeMailDeps(overrides: Partial<MailDeps> = {}): MailDeps {
+  return {
+    source: fakeMailSource(),
+    now: () => 0,
+    cache: classificationCache(),
+    reported: new Map(),
+    log: () => undefined,
+    refusal: undefined,
+    ...overrides,
+  };
 }
 
 /**

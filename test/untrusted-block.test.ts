@@ -6,9 +6,13 @@ import {
   count,
   dataLine,
   fitWhole,
+  HEADER_MAX_BYTES,
+  HEADER_RESERVE,
   ITEMS_MAX_BYTES,
   RESULT_MAX_BYTES,
   renderBlock,
+  untrustedLine,
+  WRAPPER_BYTES,
 } from "../src/untrusted-block.ts";
 
 /** The bytes `value` takes on its data line, the one measure here. */
@@ -64,15 +68,44 @@ describe("fitWhole", () => {
   });
 });
 
+describe("untrustedLine", () => {
+  it.each(["x-data", "bookmark-data"])("names %s, on one line", (tag) => {
+    const line = untrustedLine(tag);
+    expect(line).toContain(tag);
+    expect(line).not.toContain("\n");
+    expect(line.trim()).not.toBe("");
+  });
+});
+
 describe("renderBlock", () => {
+  it.each(["x-data", "bookmark-data"])(
+    "writes untrustedLine(%s) as the line right before the opening tag",
+    (tag) => {
+      const lines = renderBlock(tag, "H", ["a"]).split("\n");
+      const open = lines.indexOf(`<${tag} untrusted="true">`);
+      expect(open).toBeGreaterThan(0);
+      expect(lines[open - 1]).toBe(untrustedLine(tag));
+    },
+  );
+
+  it("keeps the wrapper's room at the longest tag in use (bookmark-data)", () => {
+    expect(HEADER_MAX_BYTES + WRAPPER_BYTES).toBe(HEADER_RESERVE);
+    const header = "h".repeat(HEADER_MAX_BYTES);
+    // One line and its newline are exactly the items' room.
+    const item = "i".repeat(ITEMS_MAX_BYTES - 1);
+    expect(() => renderBlock("bookmark-data", header, [item])).not.toThrow();
+  });
+
   it("is the header, the tagged wrapper and one line each", () => {
     expect(renderBlock("x-data", "H", ["a", "b"])).toBe(
-      'H\n<x-data untrusted="true">\na\nb\n</x-data>',
+      `H\n${untrustedLine("x-data")}\n<x-data untrusted="true">\na\nb\n</x-data>`,
     );
   });
 
   it("wraps an empty body as the open and close tag only", () => {
-    expect(renderBlock("x-data", "H", [])).toBe('H\n<x-data untrusted="true">\n</x-data>');
+    expect(renderBlock("x-data", "H", [])).toBe(
+      `H\n${untrustedLine("x-data")}\n<x-data untrusted="true">\n</x-data>`,
+    );
   });
 
   it("carries a data line with no raw <, > or &", () => {
@@ -82,7 +115,7 @@ describe("renderBlock", () => {
     expect(line).toContain("\\u003e");
     expect(line).toContain("\\u0026");
     expect(renderBlock("x-data", "H", [line])).toBe(
-      `H\n<x-data untrusted="true">\n${line}\n</x-data>`,
+      `H\n${untrustedLine("x-data")}\n<x-data untrusted="true">\n${line}\n</x-data>`,
     );
   });
 

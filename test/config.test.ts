@@ -5,6 +5,7 @@ import {
   daemonSocket,
   type Profile,
   resolveConfig,
+  screwtapeOf,
 } from "../src/config.ts";
 
 const DOOR_PATH = "/h/.config/malebolge/door.toml";
@@ -363,6 +364,51 @@ describe("bookmark backups (VT-1)", () => {
       const expected = `${KEY} must be an absolute path, not ${JSON.stringify(value)}`;
       expect(refusalMessage({ ...env, [KEY]: value })).toBe(expected);
       expect(() => bookmarkBackupsOf({ ...env, [KEY]: value }, profile)).toThrow(expected);
+    }
+  });
+});
+
+// SL-007 PHASE-04 VT-2: Jev's credentials directory, read on exactly the profiles
+// that allow mail. Unset is no startup error: the mail tools stay installed and
+// refuse at call time (design sec-3 "Config").
+describe("MALEBOLGE_SCREWTAPE_CREDENTIALS (VT-2)", () => {
+  const KEY = "MALEBOLGE_SCREWTAPE_CREDENTIALS";
+  const CREDENTIALS = "/run/credentials/jev";
+  const SCREWTAPE = {
+    binary: "/opt/screwtape/bin/screwtape",
+    config: "/opt/screwtape/config.toml",
+    home: "/h",
+  };
+  const RELATIVE = ["credentials", "./c", "~/c"];
+  const mail = { ...room, [KEY]: CREDENTIALS };
+
+  it("VT-2 room reads an absolute MALEBOLGE_SCREWTAPE_CREDENTIALS", () => {
+    expect(resolve(mail).screwtape).toEqual({ ...SCREWTAPE, credentials: CREDENTIALS });
+    expect(screwtapeOf(mail, "room", "/h")).toEqual({
+      ...SCREWTAPE,
+      credentials: CREDENTIALS,
+    });
+  });
+
+  it("VT-2 host leaves MALEBOLGE_SCREWTAPE_CREDENTIALS out even when it is set", () => {
+    const configured = { ...host, [KEY]: CREDENTIALS };
+    expect(resolve(configured)).not.toHaveProperty("screwtape");
+    expect(screwtapeOf(configured, "host", "/h")).toBeUndefined();
+  });
+
+  it("VT-2 refuses a relative MALEBOLGE_SCREWTAPE_CREDENTIALS", () => {
+    for (const value of RELATIVE) {
+      const expected = `${KEY} must be an absolute path, not ${JSON.stringify(value)}`;
+      expect(() => resolve({ ...room, [KEY]: value })).toThrow(expected);
+      expect(() => screwtapeOf({ ...room, [KEY]: value }, "room", "/h")).toThrow(expected);
+    }
+  });
+
+  it("VT-2 unset and empty are no error and leave the key out", () => {
+    for (const value of [undefined, ""]) {
+      const without = { ...room, [KEY]: value };
+      expect(() => resolve(without)).not.toThrow();
+      expect(screwtapeOf(without, "room", "/h")).not.toHaveProperty("credentials");
     }
   });
 });

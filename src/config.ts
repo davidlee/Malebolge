@@ -46,6 +46,11 @@ export interface ScrewtapePaths {
   config: string;
   /** The child's HOME: the daemon's HOME. */
   home: string;
+  /**
+   * MALEBOLGE_SCREWTAPE_CREDENTIALS: Jev's credentials directory, absolute; absent
+   * leaves the mail tools refusing (SL-007 design § Preconditions, DEC-049).
+   */
+  credentials?: string;
 }
 
 export interface Config {
@@ -100,6 +105,12 @@ function absolutePathEnv(env: Env, name: string): string {
   return value;
 }
 
+/** `env[name]` as an absolute path, or absent when unset or empty: omitting it is no error. */
+function optionalAbsolutePathEnv(env: Env, name: string): string | undefined {
+  const value = env[name];
+  return value === undefined || value === "" ? undefined : absolutePathEnv(env, name);
+}
+
 /**
  * The room's screwtape, and exactly the profiles that allow `mail` read it: a host
  * neither reads nor refuses the variables. `home` is the daemon's own HOME on the
@@ -109,10 +120,12 @@ export function screwtapeOf(env: Env, profile: Profile, home: string): Screwtape
   if (!PROFILE_TOOLSETS[profile].allowed.includes("mail")) {
     return undefined;
   }
+  const credentials = optionalAbsolutePathEnv(env, "MALEBOLGE_SCREWTAPE_CREDENTIALS");
   return {
     binary: absolutePathEnv(env, "MALEBOLGE_SCREWTAPE"),
     config: absolutePathEnv(env, "MALEBOLGE_SCREWTAPE_CONFIG"),
     home,
+    ...(credentials === undefined ? {} : { credentials }),
   };
 }
 
@@ -126,10 +139,7 @@ export function bookmarkBackupsOf(env: Env, profile: Profile): string | undefine
   if (!PROFILE_TOOLSETS[profile].allowed.includes("interactive")) {
     return undefined;
   }
-  const value = env["MALEBOLGE_BOOKMARK_BACKUPS"];
-  return value === undefined || value === ""
-    ? undefined
-    : absolutePathEnv(env, "MALEBOLGE_BOOKMARK_BACKUPS");
+  return optionalAbsolutePathEnv(env, "MALEBOLGE_BOOKMARK_BACKUPS");
 }
 
 function profileOf(value: string | undefined): Profile {

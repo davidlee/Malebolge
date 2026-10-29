@@ -29,7 +29,7 @@ import {
 } from "../../src/bookmarks/render.ts";
 import { type JsonRecord, isRecord } from "../../src/json.ts";
 import type { Clamp } from "../../src/ranges.ts";
-import { ITEMS_MAX_BYTES } from "../../src/untrusted-block.ts";
+import { ITEMS_MAX_BYTES, untrustedLine } from "../../src/untrusted-block.ts";
 import { rejection, tempDir } from "../fixtures.ts";
 import {
   backupName,
@@ -58,13 +58,20 @@ function at<T>(list: readonly T[], index: number): T {
   return item;
 }
 
-/** The trusted header of `result`: everything before the block's opening line. */
+/** The tag the block's opening line names: what its warning line is derived from. */
+const tagOf = (): string => OPEN.slice(2, OPEN.indexOf(" "));
+
+/**
+ * The trusted header of `result`: renderHeader's own lines, above the block's
+ * fixed untrusted warning (written by renderBlock, not by the header) and its tag.
+ */
 function headerOf(result: string): string {
   const end = result.indexOf(OPEN);
   if (end === -1) {
     throw new Error("no bookmark-data block");
   }
-  return result.slice(0, end);
+  const above = result.slice(0, end).split("\n");
+  return (above.at(-1) === untrustedLine(tagOf()) ? above.slice(0, -1) : above).join("\n");
 }
 
 /** The block's data lines, in order, exactly as sent. */

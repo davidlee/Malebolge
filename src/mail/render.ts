@@ -20,8 +20,8 @@ import {
 import type { CutName, ProjectedItem, ProjectedMailbox } from "./project.ts";
 import { isCanonicalCursor } from "./source.ts";
 
-/** The mail block's tag, as `<mail-data untrusted="true">`. */
-const MAIL_TAG = "mail-data";
+/** The mail block's tag, as `<mail-data untrusted="true">` (design § Framing item 1). */
+export const MAIL_TAG = "mail-data";
 const BODY_KEY_BYTES = 8; // `,"body":`
 const KNOWN_GAPS =
   "known gaps: late arrivals with an older received_at are not returned; filters do not reopen passed positions";

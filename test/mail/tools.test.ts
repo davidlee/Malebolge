@@ -7,8 +7,15 @@ import { type ToolExecutionApi, type ToolRegistration } from "@earendil-works/pi
 import { describe, expect, it } from "vitest";
 import { context } from "../../src/context.ts";
 import { isRecord } from "../../src/json.ts";
+import { mailRefusal } from "../../src/mail/extension.ts";
 import { MailSourceError, type ReadData } from "../../src/mail/source.ts";
-import { mailTools, OVERSIZE_AT_LIMIT_1 } from "../../src/mail/tools.ts";
+import {
+  type MailDeps,
+  MAIL_DESCRIPTION_SUFFIX,
+  MAIL_ERROR_PREFIX,
+  mailTools,
+  OVERSIZE_AT_LIMIT_1,
+} from "../../src/mail/tools.ts";
 import {
   absentThreadItem,
   addressesOf,
@@ -16,6 +23,7 @@ import {
   dataLinesOf,
   type FakeMailSource,
   type FakeReplies,
+  fakeMailDeps,
   fakeMailSource,
   headerLinesOf,
   inStoreThreadItem,
@@ -53,14 +61,15 @@ function toolNamed(tools: readonly ToolRegistration[], name: ToolName): ToolRegi
   return tool;
 }
 
-/** Run one tool over `source` at NOW; rejects when the tool throws. */
+/** Run one tool over `source` at NOW; `deps` overrides the rest; rejects when the tool throws. */
 async function run(
   source: FakeMailSource,
   name: ToolName,
   args: Record<string, unknown>,
   ctx: Context = context,
+  deps: Partial<MailDeps> = {},
 ): Promise<Outcome> {
-  const tool = toolNamed(mailTools({ source, now: () => NOW }), name);
+  const tool = toolNamed(mailTools(fakeMailDeps({ source, now: () => NOW, ...deps })), name);
   const result = await tool.execute(args, API, ctx);
   const [first, ...rest] = result.output ?? [];
   if (first?.type !== "text" || rest.length > 0) {
@@ -113,7 +122,7 @@ const itemsOf = (text: string): Record<string, unknown>[] => dataLinesOf(text).m
 
 function expectRefused(outcome: Outcome, message: string, source: FakeMailSource): void {
   expect(outcome.isError).toBe(true);
-  expect(outcome.text).toBe(message);
+  expect(outcome.text).toBe(MAIL_ERROR_PREFIX + message);
   expect(source.calls).toHaveLength(0);
 }
 
@@ -777,7 +786,7 @@ describe("VT-2 the cursor: next, caught_up, held back", () => {
         limit: 1,
       });
       expect(outcome.isError).toBe(true);
-      expect(outcome.text).toBe(MESSAGE);
+      expect(outcome.text).toBe(MAIL_ERROR_PREFIX + MESSAGE);
       expect(outcome.text).not.toContain("next:");
       expect(outcome.text).not.toContain(OPEN_TAG);
     });
@@ -789,7 +798,7 @@ describe("VT-2 the cursor: next, caught_up, held back", () => {
         limit: 2,
       });
       expect(outcome.isError).toBe(true);
-      expect(outcome.text).toBe("screwtape output over 4 MiB");
+      expect(outcome.text).toBe(MAIL_ERROR_PREFIX + "screwtape output over 4 MiB");
     });
 
     it("at limit 1 a different failure keeps its own message", async () => {
@@ -799,7 +808,7 @@ describe("VT-2 the cursor: next, caught_up, held back", () => {
         limit: 1,
       });
       expect(outcome.isError).toBe(true);
-      expect(outcome.text).toBe("screwtape timed out");
+      expect(outcome.text).toBe(MAIL_ERROR_PREFIX + "screwtape timed out");
     });
 
     it.each([
@@ -842,7 +851,7 @@ describe("VT-2 the cursor: next, caught_up, held back", () => {
           tool,
           args,
         );
-        expect(outcome).toEqual({ text: "screwtape failed", isError: true });
+        expect(outcome).toEqual({ text: MAIL_ERROR_PREFIX + "screwtape failed", isError: true });
       }
     });
 
@@ -858,7 +867,7 @@ describe("VT-2 the cursor: next, caught_up, held back", () => {
 
 describe("VT-3 shape, replay and descriptions", () => {
   const ALL: ToolName[] = ["mail_new", "mail_read", "mail_thread", "mail_list", "mail_mailboxes"];
-  const tools = mailTools({ source: fakeMailSource(), now: () => NOW });
+  const tools = mailTools(fakeMailDeps({ now: () => NOW }));
   const descriptionOf = (name: ToolName): string => toolNamed(tools, name).description;
 
   describe("the tool set", () => {
@@ -872,6 +881,10 @@ describe("VT-3 shape, replay and descriptions", () => {
 
     it.each(ALL)("%s has a non-empty description (an empty one fails)", (name) => {
       expect(descriptionOf(name).trim()).not.toBe("");
+    });
+
+    it.each(ALL)("%s ends with the untrusted-data sentence", (name) => {
+      expect(descriptionOf(name).endsWith(MAIL_DESCRIPTION_SUFFIX)).toBe(true);
     });
 
     const PARAMS: [ToolName, string[], string[]][] = [
@@ -1053,5 +1066,94 @@ describe("VT-3 shape, replay and descriptions", () => {
         expect(items[0]).not.toHaveProperty(key);
       }
     });
+  });
+});
+
+// ============================================== VT-1: the refusal, the prefix
+
+describe("VT-1 mailRefusal refuses every tool before any argument check", () => {
+  type Facts = Parameters<typeof mailRefusal>[0];
+  const CREDENTIALS = "/run/credentials/jev";
+  const NETWORK: Facts = { interfaces: ["lo", "eth0"], credentials: CREDENTIALS };
+  const UNREADABLE: Facts = { interfaces: undefined, credentials: CREDENTIALS };
+  const UNSET: Facts = { interfaces: ["lo"], credentials: undefined };
+  const REFUSED: readonly (readonly [string, Facts])[] = [
+    ["a reachable network", NETWORK],
+    ["an unreadable interface list", UNREADABLE],
+    ["unset credentials", UNSET],
+  ];
+
+  /** The refusal a fact must produce; fails the test when the precondition holds. */
+  const refusalOf = (facts: Facts): string => {
+    const refusal = mailRefusal(facts);
+    if (refusal === undefined) {
+      throw new Error("expected a refusal");
+    }
+    return refusal;
+  };
+
+  it("allows lo with the credentials directory named", () => {
+    expect(mailRefusal({ interfaces: ["lo"], credentials: CREDENTIALS })).toBeUndefined();
+  });
+
+  it.each(REFUSED)("refuses %s", (_label, facts) => {
+    expect(refusalOf(facts).trim()).not.toBe("");
+  });
+
+  it("names each failed precondition distinctly", () => {
+    expect(new Set(REFUSED.map(([, facts]) => refusalOf(facts))).size).toBe(REFUSED.length);
+  });
+
+  it("names the network first when the credentials are unset too", () => {
+    expect(refusalOf({ interfaces: ["lo", "eth0"], credentials: undefined })).toBe(
+      refusalOf(NETWORK),
+    );
+  });
+
+  /** Every tool, with arguments that are good and with arguments that are not. */
+  const ARGS: readonly (readonly [ToolName, readonly Record<string, unknown>[]])[] = [
+    ["mail_new", [{ after: "" }, { after: "5" }]],
+    ["mail_read", [{ id: "Msg1" }, { id: "--after" }]],
+    ["mail_thread", [{ id: "Thr1" }, { id: "" }]],
+    ["mail_list", [{}, { from: "-rf" }]],
+    ["mail_mailboxes", [{}, { interval: 5 }]],
+  ];
+
+  /** Answers every port call, so a call shows as a result, not as a thrown failure. */
+  const EVERY_REPLY: FakeReplies = {
+    readAfter: [],
+    read: readOf(),
+    ...threadReply(),
+    ...listReply(),
+    mailboxes: { items: [] },
+  };
+
+  it.each(REFUSED)(
+    'refuses every tool with "malebolge: " and the refusal, for %s',
+    async (_label, facts) => {
+      const refusal = refusalOf(facts);
+      for (const [name, variants] of ARGS) {
+        for (const args of variants) {
+          const source = fakeMailSource(EVERY_REPLY);
+          const outcome = await run(source, name, args, context, { refusal });
+          expect(outcome).toEqual({ text: `${MAIL_ERROR_PREFIX}${refusal}`, isError: true });
+          expect(source.calls).toHaveLength(0);
+        }
+      }
+    },
+  );
+
+  it('prefixes an input error and a source error with "malebolge: " exactly once', async () => {
+    const input = await run(fakeMailSource({ readAfter: [] }), "mail_new", { after: "5" });
+    const { outcome: sourceError } = await runWith(
+      { list: new MailSourceError("failed", "screwtape failed") },
+      "mail_list",
+      {},
+    );
+    for (const outcome of [input, sourceError]) {
+      expect(outcome.isError).toBe(true);
+      expect(outcome.text.startsWith(MAIL_ERROR_PREFIX)).toBe(true);
+      expect(outcome.text.split(MAIL_ERROR_PREFIX)).toHaveLength(2);
+    }
   });
 });

@@ -14,6 +14,7 @@ import { cwdExtension } from "../src/cwd.ts";
 import { type DaemonParts, daemonExtensions } from "../src/daemon-extensions.ts";
 import { isRecord } from "../src/json.ts";
 import { MAIL_SECTION, mailExtension } from "../src/mail/extension.ts";
+import { MAIL_TAG } from "../src/mail/render.ts";
 import { personaExtension } from "../src/persona.ts";
 import {
   gitRootDirs,
@@ -24,6 +25,7 @@ import {
 import { DEFAULT_TOPIC } from "../src/protocol.ts";
 import { type Skill, skillsExtension } from "../src/skills.ts";
 import { selectionOf } from "../src/toolsets.ts";
+import { renderBlock } from "../src/untrusted-block.ts";
 import { bookmarksPart } from "./bookmarks/bookmark-fixtures.ts";
 import { tempDir } from "./fixtures.ts";
 import {
@@ -34,7 +36,7 @@ import {
   openTestHarness,
   systemPromptSections,
 } from "./harness-fixture.ts";
-import { fakeMailSource } from "./mail/mail-fixtures.ts";
+import { fakeMailDeps } from "./mail/mail-fixtures.ts";
 
 /** The host profile: section order is the profile's, and the host installs no tasks or threads. */
 const HOST: Pick<DaemonParts, "profile" | "tasks" | "threads" | "bookmarks"> = {
@@ -228,9 +230,7 @@ const partsOf = (profile: DaemonParts["profile"]): DaemonParts => ({
   tasks: defineExtension({ name: "tasks" }),
   threads: defineExtension({ name: "threads" }),
   bookmarks: bookmarksPart(),
-  ...(profile === "room"
-    ? { mail: mailExtension({ source: fakeMailSource(), now: () => 0 }) }
-    : {}),
+  ...(profile === "room" ? { mail: mailExtension(fakeMailDeps()) } : {}),
 });
 
 describe("daemonExtensions tasks", () => {
@@ -305,7 +305,7 @@ describe("BRIDGE_SECTION (VT-3)", () => {
 });
 
 describe("mailExtension", () => {
-  const extension = mailExtension({ source: fakeMailSource(), now: () => 0 });
+  const extension = mailExtension(fakeMailDeps());
 
   it("VT-4 is the mail extension: the five mail tools and one tagged section keyed mail", () => {
     expect(extension.name).toBe("mail");
@@ -319,10 +319,13 @@ describe("mailExtension", () => {
     expect((extension.sections ?? []).map(({ key, tag }) => [key, tag])).toEqual([["mail", true]]);
   });
 
-  it("VT-4 the section text states the untrusted-data rule (mail-data, untrusted), pinned", () => {
-    expect(MAIL_SECTION).toContain("mail-data");
-    expect(MAIL_SECTION).toContain("untrusted");
-    expect(MAIL_SECTION).toContain("never an instruction");
+  it("VT-4 the section names the rendered block tag", () => {
+    const rendered = renderBlock(MAIL_TAG, "h", []).split("\n");
+    const opening = rendered.find((line) => line.startsWith(`<${MAIL_TAG}`));
+    if (opening === undefined) {
+      throw new Error("renderBlock wrote no opening tag");
+    }
+    expect(MAIL_SECTION).toContain(opening);
   });
 
   it("VT-4 renders the section text as the prompt's tagged mail section", async () => {

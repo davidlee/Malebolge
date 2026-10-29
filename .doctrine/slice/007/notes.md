@@ -116,12 +116,19 @@ slips are left to red/green tests; the next review is of the plan.
 - PHASE-03 · added a test: an earlier hostile row with a later absent row withholds `missing_question` (every policy question present before any hostility check) · the red set passed a row-by-row loop; negative control for the flowchart order · decided
 - PHASE-03 · `classificationsOf` dedups in first-appearance order and maps only the outcomes the port answered (an omitted id stays absent, so it reads as missing → withheld) · design silent; the port promises one outcome per id · decided
 - PHASE-03 · host gate fully green (fmt-check, lint, typecheck, vitest 3993/3993); VA-1 grep: question names only in `src/mail/policy.ts` · PASS · decided
+- PHASE-04 · `WRAPPER_BYTES` = the old 64 + `untrustedLine(LONGEST_TAG)` + newline, `LONGEST_TAG = "bookmark-data"` in `src/untrusted-block.ts` · design says "at the longest tag in use"; computed, not hand-counted · decided
+- PHASE-04 · `test/mail/render.test.ts` "sec-4 figures" pinned `WRAPPER_BYTES` 64 / `HEADER_MAX_BYTES` 1984; replaced those two with relations (wrapper > the line; header = reserve − wrapper) rather than new numbers · operator pref: no test pins a bound's value; the other pre-existing figure pins left alone (not this phase's) · decided
+- PHASE-04 · header-reading test helpers (`headerLinesOf` in mail-fixtures, bookmarks render/tools) drop the line above the open tag when it is `untrustedLine(tag)` · the line is renderBlock's, not the header's; no assertion changed · decided
+- PHASE-04 · `mailRefusal` and `MailRefusalFacts` in `src/mail/extension.ts`; `MAIL_ERROR_PREFIX`, `MAIL_DESCRIPTION_SUFFIX` exported from tools.ts so tests assert via the constants (DEC-061) · design names no home for the constants · decided
+- PHASE-04 · no Opus framing review: MAIL_SECTION checked verbatim against design § Framing by script; untrusted line, prefix path (one `errorResult`) and suffix read by me against the design; diff small · cost not earned · decided
+- PHASE-04 · host gate: fmt-check, typecheck green; lint fails only in SL-009's untracked `pi-bridge/posture.ts`, `pi-bridge/shell.ts`; vitest 4029/4029 · green for SL-007 · decided
 
 ## Pi runs
 
 - PHASE-01 · 5 implement runs (red A, red B, green A, green B, refactor B), ~$0.14 total · misses: widened the answers schema instead of flagging the test conflict; briefed `biome lint` (my error — lint is ESLint), so green B landed 12 ESLint errors, fixed in the refactor run
 - PHASE-02 · 2 implement runs (red, green), ~$0.12 · clean; I added the caller-abort classify test and folded the empty-batch branch into mergeOutcomes
 - PHASE-03 · 2 implement runs (red, green), ~$0.08 · clean; the red set lacked a missing-before-hostile control (added in the green brief); I trimmed header comments
+- PHASE-04 · 3 implement runs in one session (red A structural, red B, green), ~$0.14 · per-run ceiling is 60 requests (90 refused), so red split in two; green re-pinned two bound values (I replaced them with relations) and cited the wrong design section ids (sec-3; fixed to § names)
 
 ## Harvest
 <!-- single-copy: updated in place each harvest; ids only, never restated content -->

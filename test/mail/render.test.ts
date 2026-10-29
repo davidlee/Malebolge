@@ -20,11 +20,13 @@ import {
   ITEMS_MAX_BYTES,
   renderedLength,
   RESULT_MAX_BYTES,
+  untrustedLine,
   WRAPPER_BYTES,
 } from "../../src/untrusted-block.ts";
 import {
   fitItem,
   type HeaderFacts,
+  MAIL_TAG,
   renderHeader,
   renderMailboxes,
   renderPage,
@@ -101,9 +103,10 @@ describe("constants and share", () => {
   it("are the sec-4 figures", () => {
     expect(RESULT_MAX_BYTES).toBe(51200);
     expect(HEADER_RESERVE).toBe(2048);
-    expect(WRAPPER_BYTES).toBe(64);
-    expect(HEADER_MAX_BYTES).toBe(1984);
     expect(ITEMS_MAX_BYTES).toBe(49152);
+    // SL-007 § Framing: the wrapper is charged the untrusted line, so the header gives up the same.
+    expect(WRAPPER_BYTES).toBeGreaterThan(Buffer.byteLength(untrustedLine(MAIL_TAG)));
+    expect(HEADER_MAX_BYTES).toBe(HEADER_RESERVE - WRAPPER_BYTES);
   });
 
   it("shareOf divides the items' room less the newlines between them", () => {
@@ -598,7 +601,7 @@ describe("renderHeader", () => {
     expect(header).toContain('next: "-5:a_b-C"');
   });
 
-  it("fits its 1984 bytes, and with the wrapper HEADER_RESERVE, in its largest form (RV-015 F-27)", () => {
+  it("fits HEADER_MAX_BYTES, and with the wrapper HEADER_RESERVE, in its largest form (RV-015 F-27)", () => {
     const next = longestCursor();
     expect(renderedBytes(next)).toBe(278);
     const header = renderHeader({
@@ -723,9 +726,11 @@ describe("mailboxes (RV-015 F-26)", () => {
 describe("renderResult", () => {
   it("is the header, the data block and nothing else", () => {
     expect(renderResult("H", ["a", "b"])).toBe(
-      'H\n<mail-data untrusted="true">\na\nb\n</mail-data>',
+      `H\n${untrustedLine("mail-data")}\n<mail-data untrusted="true">\na\nb\n</mail-data>`,
     );
-    expect(renderResult("H", [])).toBe('H\n<mail-data untrusted="true">\n</mail-data>');
+    expect(renderResult("H", [])).toBe(
+      `H\n${untrustedLine("mail-data")}\n<mail-data untrusted="true">\n</mail-data>`,
+    );
   });
 
   it("fails closed beyond RESULT_MAX_BYTES", () => {

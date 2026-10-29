@@ -43,7 +43,7 @@ import {
   textOf,
   toolResults,
 } from "./harness-fixture.ts";
-import { fakeMailSource } from "./mail/mail-fixtures.ts";
+import { fakeMailDeps } from "./mail/mail-fixtures.ts";
 import { catalogOf, FLASH_REF } from "./model-fixture.ts";
 import {
   heldUntilCutOff,
@@ -294,7 +294,7 @@ async function roomWorld(wakes: { enabled: boolean }): Promise<World> {
 
 /** The mail extension a room registry installs, over a fake source; the host installs none. */
 const mailParts = (profile: Profile): { mail?: Extension } =>
-  profile === "room" ? { mail: mailExtension({ source: fakeMailSource(), now: () => 0 }) } : {};
+  profile === "room" ? { mail: mailExtension(fakeMailDeps()) } : {};
 
 /** The satan-mcp tools a wake calls, answering as a room user who is away. */
 const wakeTools: FakeTool[] = [
@@ -737,11 +737,13 @@ describe("startDaemon mail", () => {
     const w = await roomWorld({ enabled: true });
     const handle = await started(w);
     expect(handle.mailTools).toBe(5);
-    expect(
-      (mailExtension({ source: fakeMailSource(), now: () => 0 }).tools ?? []).map(
-        (tool) => tool.name,
-      ),
-    ).toEqual(["mail_new", "mail_read", "mail_thread", "mail_list", "mail_mailboxes"]);
+    expect((mailExtension(fakeMailDeps()).tools ?? []).map((tool) => tool.name)).toEqual([
+      "mail_new",
+      "mail_read",
+      "mail_thread",
+      "mail_list",
+      "mail_mailboxes",
+    ]);
     // The satan.wake task is still registered: its recurring heartbeat was created.
     expect(createdHeartbeats(w)).toHaveLength(1);
     await handle.stop();

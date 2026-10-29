@@ -19,7 +19,7 @@ import { tasksExtension, wakeBinding } from "../src/wake/extension.ts";
 import { bookmarksPart } from "./bookmarks/bookmark-fixtures.ts";
 import { createTaskOwned, systemPromptSections, textOf } from "./harness-fixture.ts";
 import { interactiveSnapshot } from "./interactive-baseline.ts";
-import { fakeMailSource } from "./mail/mail-fixtures.ts";
+import { fakeMailDeps } from "./mail/mail-fixtures.ts";
 import {
   answeredChild,
   attemptCall,
@@ -386,9 +386,7 @@ describe("threads is the room's extension (VT-3)", () => {
       tasks: tasksExtension(wakeBinding().deps),
       threads: threadsExtension(threadBinding().deps),
       bookmarks: bookmarksPart(),
-      ...(profile === "room"
-        ? { mail: mailExtension({ source: fakeMailSource(), now: () => 0 }) }
-        : {}),
+      ...(profile === "room" ? { mail: mailExtension(fakeMailDeps()) } : {}),
     });
 
   it("thread tools are not installed on host", async () => {

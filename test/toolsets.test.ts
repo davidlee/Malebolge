@@ -34,7 +34,7 @@ import {
   type InteractiveSnapshot,
   interactiveSnapshot,
 } from "./interactive-baseline.ts";
-import { fakeMailSource } from "./mail/mail-fixtures.ts";
+import { fakeMailDeps } from "./mail/mail-fixtures.ts";
 
 const PROFILES: readonly Profile[] = ["room", "host"];
 
@@ -119,9 +119,7 @@ const extensionsOf = (profile: Profile): Extension[] => {
     tasks: tasksExtension(wakeBinding().deps),
     threads: threadsExtension(threadBinding().deps),
     bookmarks: bookmarksPart(),
-    ...(profile === "room"
-      ? { mail: mailExtension({ source: fakeMailSource(), now: () => 0 }) }
-      : {}),
+    ...(profile === "room" ? { mail: mailExtension(fakeMailDeps()) } : {}),
   }).filter(({ name }) => interactive.has(name));
 };
 

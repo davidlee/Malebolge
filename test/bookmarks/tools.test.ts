@@ -27,6 +27,7 @@ import type { Bookmark } from "../../src/bookmarks/project.ts";
 import { bookmarkTools } from "../../src/bookmarks/tools.ts";
 import { context } from "../../src/context.ts";
 import { type JsonRecord, isRecord } from "../../src/json.ts";
+import { untrustedLine } from "../../src/untrusted-block.ts";
 import { bookmark, fakeBookmarkSource, snapshot } from "./bookmark-fixtures.ts";
 
 // ------------------------------------------------------------------ driving
@@ -99,10 +100,17 @@ function resultLines(result: string): { lines: string[]; open: number } {
   return { lines, open };
 }
 
-/** The trusted header lines, before the block's opening line. */
+/** The tag the block's opening line names: what its warning line is derived from. */
+const tagOf = (): string => OPEN.slice(1, OPEN.indexOf(" "));
+
+/**
+ * The trusted header's lines: renderHeader's own output, above the block's fixed
+ * untrusted warning (written by renderBlock, not by the header) and its open tag.
+ */
 function headerLinesOf(result: string): string[] {
   const { lines, open } = resultLines(result);
-  return lines.slice(0, open);
+  const warning = open > 0 ? lines[open - 1] : undefined;
+  return warning === untrustedLine(tagOf()) ? lines.slice(0, open - 1) : lines.slice(0, open);
 }
 
 /** The block's data lines, in order, exactly as sent. */
