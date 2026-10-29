@@ -1,0 +1,14 @@
+#!/usr/bin/env node
+// SL-009 DEC-075: the bare command pi's bash reaches through the spawn hook's PATH.
+import { runCommand } from "./command.ts";
+import { notifyDesktop } from "./notices.ts";
+
+process.exitCode = await runCommand({
+  argv: process.argv.slice(2),
+  stdin: process.stdin,
+  stdout: process.stdout,
+  stderr: process.stderr,
+  env: process.env,
+  cwd: process.cwd(),
+  notifyDesktop,
+});
