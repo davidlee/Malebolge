@@ -5,7 +5,12 @@ import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite
 import { afterEach, describe, expect, it } from "vitest";
 import type { Posture } from "../pi-bridge/wire.ts";
 import { BOOKMARKS_SECTION } from "../src/bookmarks/extension.ts";
-import { BRIDGE_POSTURE_TEXT, BRIDGE_UNTRUSTED, bridgeExtension } from "../src/bridge/extension.ts";
+import {
+  BRIDGE_ENVIRONMENT,
+  BRIDGE_POSTURE_TEXT,
+  BRIDGE_UNTRUSTED,
+  bridgeExtension,
+} from "../src/bridge/extension.ts";
 import { openPairing, pairingDoc } from "../src/bridge/pairing.ts";
 import { context } from "../src/context.ts";
 import { conversationExtension } from "../src/conversation-context.ts";
@@ -280,14 +285,18 @@ async function bridgeSectionOf(posture?: Posture): Promise<string> {
 describe("BRIDGE_SECTION (VT-3)", () => {
   it("renders the consult posture's placeholder, and not the delegate one", async () => {
     const text = await bridgeSectionOf("consult");
-    expect(text).toBe(`${BRIDGE_UNTRUSTED}\n\n${BRIDGE_POSTURE_TEXT.consult}`);
+    expect(text).toBe(
+      `${BRIDGE_UNTRUSTED}\n\n${BRIDGE_ENVIRONMENT}\n\n${BRIDGE_POSTURE_TEXT.consult}`,
+    );
     expect(text).toContain(BRIDGE_UNTRUSTED);
     expect(text).not.toContain(BRIDGE_POSTURE_TEXT.delegate);
   });
 
   it("renders the delegate posture's placeholder, and not the consult one", async () => {
     const text = await bridgeSectionOf("delegate");
-    expect(text).toBe(`${BRIDGE_UNTRUSTED}\n\n${BRIDGE_POSTURE_TEXT.delegate}`);
+    expect(text).toBe(
+      `${BRIDGE_UNTRUSTED}\n\n${BRIDGE_ENVIRONMENT}\n\n${BRIDGE_POSTURE_TEXT.delegate}`,
+    );
     expect(text).toContain(BRIDGE_UNTRUSTED);
     expect(text).not.toContain(BRIDGE_POSTURE_TEXT.consult);
   });

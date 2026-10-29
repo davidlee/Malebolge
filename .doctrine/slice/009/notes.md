@@ -352,6 +352,18 @@ so P4 reduces to `nix run .#jailed-pi-bridge`. Removed PHASE-01's
   posture texts): say that conversation replies do not reach pi, so answering
   pi means `bridge_post`; and that untrusted framing does not forbid
   answering pi's question.
+- 4–5 (continued): operator reports a long pi↔SATAN correspondence; pi's
+  write-up at `~/.local/share/jail.nix/home/agent/protocol.local.md` (the jail
+  home; agent-authored, tier 5). Both directions delivered. Most of it was
+  spent establishing each side's environment: the room's mirror is pinned at
+  23f229a (pre-bridge), and pi's prompt carried only `[placeholder: …]`. Wrong
+  in it: "the jail can write the operator's home" (in the jail, `/home/david`
+  is the persisted jail home); "AGENTS.md:4 false on disk" (`~/.local/src/pi`
+  exists on the host, unmounted in the jail); the "commitments made on the
+  operator's behalf" bind no one.
+- 6 (partial): `echo x | malebolge-bridge send` → `accepted`, exit 0 (pi's
+  report).
+- 7 (partial): pi's write into `/workspace/malebolge` failed with EROFS.
 
 ## Autonomy log
 
@@ -399,3 +411,4 @@ so P4 reduces to `nix run .#jailed-pi-bridge`. Removed PHASE-01's
 - PHASE-10: docs part done (0df3e9e), `just check` green on a `git archive` export of 0df3e9e (115 files / 4054 tests). Phase left in_progress: VH-1, VH-2, VA-1 pending the operator (runbook in § Probes). Tier: decide.
 - PHASE-10 VH run: operator `!` commands lacked the bridge env (step 2). Operator chose to fix (2026-10-30, "I'd say yes"). `user_bash` handler returns pi's local bash operations with `bridgeEnv` applied; base env is `process.env`, since pi passes none, so a `!` command loses pi's own bin dir and any configured `shellPath` (bash tool unchanged). Design sec-7 names only the spawn hook: fold the `user_bash` registration in at /reconcile. `just check` green (115 files / 4168 tests). Tier: escalate → operator decided.
 - PHASE-10 VH run: bridge status invisible under pi-powerbar, which hides pi's footer. Operator chose (2026-10-30, "a") to mirror the status as a powerbar segment: `powerbar:register-segment` at session_start, `powerbar:update` beside every setStatus, over pi's event bus (no dependency). Not in design sec-7: fold in at /reconcile. Jail-home `settings-extensions.json` created to enable the segment (operator's config, outside the repo). Tests `powerbar segment`; `just check` green (115 files / 4170 tests). Tier: escalate → operator decided.
+- PHASE-10 VH run: pi and SATAN spent a long exchange reconciling environments neither prompt described. Operator chose (2026-10-30, "a) yeah add it now") to add environment framing now, posture-independent: `BRIDGE_ENVIRONMENT` in SATAN's bridge section (bridged conversations only, between the untrusted framing and the posture text) and `PI_BRIDGE_ENVIRONMENT` in pi's system prompt before the posture placeholder. Posture texts stay placeholders (CHR-008). Changes design sec-3's section contents: fold in at /reconcile. Room daemon restarted 09:02 to load it. `just check` green (115 files / 4170 tests). Tier: escalate → operator decided.

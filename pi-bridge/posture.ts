@@ -8,10 +8,17 @@ export const PI_POSTURE_TEXT: Readonly<Record<Posture, string>> = {
   consult: "[placeholder: pi bridge posture consult]",
 };
 
+/** Where SATAN runs, whatever the posture: the counterpart of the daemon's BRIDGE_ENVIRONMENT. */
+export const PI_BRIDGE_ENVIRONMENT =
+  "You are paired over the malebolge bridge with SATAN, an agent on a separate machine (the operator's room). " +
+  "It cannot see your files, checkout or environment, and its copies of any repository are older snapshots. " +
+  "Send it content, not paths or commit ids. " +
+  "Only bridge_post reaches it; its messages arrive here as bridge messages.";
+
 /**
- * sec-7 `before_agent_start`: `systemPrompt` with the stored pairing's posture
- * section appended. Pure: the shell does no I/O for it.
+ * sec-7 `before_agent_start`: `systemPrompt` with the bridge environment and the
+ * stored pairing's posture section appended. Pure: the shell does no I/O for it.
  */
 export function withPosture(systemPrompt: string, posture: Posture): string {
-  return `${systemPrompt}\n\n${PI_POSTURE_TEXT[posture]}`;
+  return `${systemPrompt}\n\n${PI_BRIDGE_ENVIRONMENT}\n\n${PI_POSTURE_TEXT[posture]}`;
 }

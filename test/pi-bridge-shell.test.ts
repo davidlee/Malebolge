@@ -17,7 +17,7 @@ import type { EntryRecord } from "@earendil-works/pi-durable";
 import type { Message } from "@earendil-works/pi-ai";
 import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
 import { EXIT, runCommand } from "../pi-bridge/command.ts";
-import { PI_POSTURE_TEXT } from "../pi-bridge/posture.ts";
+import { PI_BRIDGE_ENVIRONMENT, PI_POSTURE_TEXT } from "../pi-bridge/posture.ts";
 import { BRIDGE_CUSTOM_TYPE, bridgeEnv, bridgeExtension } from "../pi-bridge/shell.ts";
 import type { BridgeEntry, Pairing } from "../pi-bridge/state.ts";
 import { BRIDGE_POST_WAIT_MS } from "../pi-bridge/wire.ts";
@@ -641,6 +641,7 @@ describe("posture (EX-6)", () => {
       prompt: "hello",
     });
     const systemPrompt = systemPromptOf(results[0]);
+    expect(systemPrompt).toContain(PI_BRIDGE_ENVIRONMENT);
     expect(systemPrompt).toContain(PI_POSTURE_TEXT.delegate);
     expect(systemPrompt).not.toContain(PI_POSTURE_TEXT.consult);
   });
