@@ -10,7 +10,9 @@
 //      and ends the answer with exactly one blank line;
 //   3. terminal attach still runs its line commands locally;
 //   4. (SL-002 PHASE-03) a prefix-argument attach lists the store, picks from
-//      the daemon's own ids, and sends the chosen target's argv.
+//      the daemon's own ids, and sends the chosen target's argv;
+//   5. (SL-010 PHASE-07) `new' asks for a topic over the daemon's `--topics'
+//      names and sends `--topic NAME --new`.
 //
 // Event order: like the real daemon, the fake echoes a draft submitted
 // mid-answer only after the answer ends. pi-durable queues input to a busy
@@ -42,8 +44,13 @@ const OVERALL_MS = 20_000;
 
 /** The id the stubbed picker answers; not the first, so the listing was read. */
 const CHOSEN = 7;
+/** The conversation the fake creates for a `--topic … --new' attach. */
+const NEW_ID = 1;
 /** What the fake daemon says it holds: ids newest first, as the daemon sends them. */
 const LISTED = [9, CHOSEN, 3];
+
+/** The topic the new-conversation check chooses, among the names the fake reports. */
+const TOPIC = "work";
 
 /** The draft: leading spaces, an interior blank line, a slash line, trailing spaces. */
 const DRAFT = "first line\n\n  /not a command\nlast  ";
@@ -130,10 +137,20 @@ const frameOf =
     isRecord(value) && value["type"] === type;
 
 /**
+ * The fake daemon's answer to `{"type":"list","topics":true}': every topic's
+ * name, as `--topics` prints them, `default` first.
+ */
+const topicsReply = (): Record<string, unknown> => ({
+  type: "topics",
+  profile: "room",
+  topics: [{ name: "default" }, { name: TOPIC, cwd: "/tmp" }],
+});
+
+/**
  * A fake daemon on `path`: answers the attach frame with `attachReply` then
- * runs `serve`, and answers a `list` frame with `LISTED` and its summaries
- * before closing, as the daemon's own clean close does.  Records every frame
- * the client sends.
+ * runs `serve`, and answers a `list` frame before closing, as the daemon's own
+ * clean close does: the topics for a `topics:true` listing, `LISTED` and its
+ * summaries otherwise.  Records every frame the client sends.
  */
 async function fakeDaemon(
   path: string,
@@ -148,19 +165,23 @@ async function fakeDaemon(
       lineSplitter((line) => {
         const value: unknown = JSON.parse(line);
         received.push(value);
-        if (frameOf("list")(value)) {
+        if (isRecord(value) && value["type"] === "list") {
           socket.end(
-            encodeLine({
-              type: "conversations",
-              conversations: LISTED,
-              truncated: false,
-              // SL-010: the chooser's lines are `id<TAB>topic<TAB>model`.
-              summaries: {
-                "9": { topic: "work", model: "faux/faux-2" },
-                [String(CHOSEN)]: { topic: "default", model: "faux/faux-1" },
-                "3": { topic: "default" },
-              },
-            }),
+            encodeLine(
+              value["topics"] === true
+                ? topicsReply()
+                : {
+                    type: "conversations",
+                    conversations: LISTED,
+                    truncated: false,
+                    // SL-010: the chooser's lines are `id<TAB>topic<TAB>model`.
+                    summaries: {
+                      "9": { topic: "work", model: "faux/faux-2" },
+                      [String(CHOSEN)]: { topic: "default", model: "faux/faux-1" },
+                      "3": { topic: "default" },
+                    },
+                  },
+            ),
           );
         }
         if (isRecord(value) && value["type"] === "attach") {
@@ -319,6 +340,35 @@ const targetedElisp = (outFile: string): string => `
   (malebolge-attach t))
 (unless (mlb-smoke-wait ${ANSWER_DONE})
   (mlb-smoke-fail "the chosen conversation's snapshot never arrived"
+                  ${JSON.stringify(outFile)}))
+(malebolge-quit)
+(unless (mlb-smoke-wait (regexp-quote "[status] detached"))
+  (mlb-smoke-fail "the client never detached" ${JSON.stringify(outFile)}))
+(mlb-smoke-finish ${JSON.stringify(outFile)})
+`;
+
+/**
+ * Attach under a prefix argument, `new' at the conversation prompt and TOPIC at
+ * the topic prompt, then save the transcript.  The topic prompt must be offered
+ * the daemon's names: an Emacs that never asks fails here, not silently.
+ */
+const newInTopicElisp = (outFile: string): string => `
+(require 'cl-lib)
+(cl-letf (((symbol-function 'completing-read)
+           (lambda (prompt collection &rest _)
+             (if (string-prefix-p "Topic: " prompt)
+                 (progn
+                   (unless (member ${JSON.stringify(TOPIC)} collection)
+                     (mlb-smoke-fail "the topic prompt never offered the topic"
+                                     ${JSON.stringify(outFile)}))
+                   ${JSON.stringify(TOPIC)})
+               (unless (member "new" collection)
+                 (mlb-smoke-fail "the picker never offered new"
+                                 ${JSON.stringify(outFile)}))
+               "new"))))
+  (malebolge-attach t))
+(unless (mlb-smoke-wait ${ANSWER_DONE})
+  (mlb-smoke-fail "the new conversation's snapshot never arrived"
                   ${JSON.stringify(outFile)}))
 (malebolge-quit)
 (unless (mlb-smoke-wait (regexp-quote "[status] detached"))
@@ -546,6 +596,51 @@ async function checkTargetedAttach(dir: string): Promise<void> {
   }
 }
 
+/**
+ * 5: `new' asks for a topic, and the client sends `--topic NAME --new'.
+ * The fake answers the topics question, so the picker's prompt is offered real
+ * names; the argv the client builds is what reaches the socket, so the attach
+ * frame naming the topic is the check, not a frame the fake happened to expect.
+ */
+async function checkNewInTopic(dir: string): Promise<void> {
+  const received = recorder<unknown>();
+  const fake = await fakeDaemon(
+    join(dir, "new-topic.sock"),
+    received,
+    { type: "attached", conversation: NEW_ID },
+    (socket) => {
+      socket.write(encodeLine(snapshotOf([assistantEntry(AFTER, "a-topic")])));
+    },
+  );
+  const transcriptFile = join(dir, "new-topic.txt");
+  const emacs = emacsSession(fake.path, newInTopicElisp(transcriptFile));
+  try {
+    const code = await emacs.done;
+    const transcript = await readFile(transcriptFile, "utf8").catch(() => "");
+    equal(
+      code,
+      0,
+      `new-in-topic emacs exit (stderr: ${emacs.stderr()}; transcript: ${JSON.stringify(transcript)})`,
+    );
+    equal(
+      framesOf(received.items, "list"),
+      [{ type: "list" }, { type: "list", topics: true }],
+      "the store listing, then the topic names the prompt offered",
+    );
+    equal(
+      framesOf(received.items, "attach"),
+      [{ type: "attach", topic: TOPIC, new: true }],
+      "the argv the topic choice named",
+    );
+    expect(
+      transcript.includes(`attached to conversation ${String(NEW_ID)}`),
+      `the transcript names the new conversation: ${JSON.stringify(transcript)}`,
+    );
+  } finally {
+    emacs.kill();
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Entry point.
 // ---------------------------------------------------------------------------
@@ -560,6 +655,7 @@ async function run(): Promise<void> {
       ["reattach shows role cues and spacing", checkReattach],
       ["terminal attach line commands", checkTerminal],
       ["prefix-argument attach sends the chosen target", checkTargetedAttach],
+      ["new in a topic sends --topic and --new", checkNewInTopic],
     ];
     for (const [name, check] of checks) {
       await within(check(dir), OVERALL_MS, name);

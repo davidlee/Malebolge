@@ -38,9 +38,13 @@
 ;; user unit, and attaches; `malebolge-stop' stops the unit.
 ;;
 ;; `M-x malebolge-attach' with a prefix argument asks the daemon which
-;; conversations it holds, prompts for one, and switches to it.  The switch
-;; is refused while the draft holds unsent text: the draft is shared, so it
-;; would otherwise post one conversation's words to another.
+;; conversations it holds, prompts for one, and switches to it; choosing
+;; `new' there asks which topic to create it in.  The switch is refused
+;; while the draft holds unsent text: the draft is shared, so it would
+;; otherwise post one conversation's words to another.
+;;
+;; `M-x malebolge-set-topic-model' picks a topic and sets the model its
+;; new conversations are created with.
 
 ;;; Code:
 
@@ -250,49 +254,66 @@ signal keys are remapped to."
   "Seconds to wait for a detached client to exit before deleting it.")
 
 (defvar malebolge--list-timeout 5.0
-  "Seconds to wait for the listing client to answer before giving up.")
+  "Seconds to wait for one client call to answer before giving up.
+Every call through `malebolge--client' is bounded by it.")
 
 (defun malebolge--attach-arguments (target)
   "Extra arguments for the attach client when it should open TARGET.
-TARGET is nil for root, `new', or a conversation id."
+TARGET is nil for root, `new', a conversation id, or `(new . TOPIC)'
+for a new conversation in TOPIC."
   (cond ((null target) '("--emacs"))
         ((equal target "new") '("--new" "--emacs"))
+        ((consp target) (list "--topic" (cdr target) "--new" "--emacs"))
         (t (list "--conversation" target "--emacs"))))
 
 (defun malebolge--target-label (target)
-  "How TARGET reads inside a message."
-  (if (equal target "new")
-      "a new conversation"
-    (format "conversation %s" target)))
+  "How TARGET reads inside a message.
+TARGET is nil for root, `new', a conversation id, or `(new . TOPIC)'."
+  (cond ((equal target "new") "a new conversation")
+        ((consp target) (format "a new conversation in %s" (cdr target)))
+        (t (format "conversation %s" target))))
 
-(defun malebolge--list-conversations ()
-  "Ask the daemon which conversations this store holds.
-Run the attach client with `--list' and wait, boundedly, for it: its
-standard output in a temporary buffer and its standard error in a buffer
-of its own.  Return a plist (:stdout TEXT :stderr TEXT); signal
-`user-error', naming the client's output, when it fails or never answers."
+(defun malebolge--client (args)
+  "Ask the attach client ARGS and return its output.
+Run `malebolge-attach-command' plus ARGS and wait, boundedly, for it:
+its standard output in a temporary buffer and its standard error in a
+buffer of its own.  Return a plist (:stdout TEXT :stderr TEXT) when the
+client exits 0.  A client that fails signals `user-error' naming ARGS
+and quoting its output; one still running after
+`malebolge--list-timeout' is deleted and signals one saying the outcome
+is unknown, because a call that never answered is not a call that
+failed."
   (with-temp-buffer
-    (let* ((stderr (generate-new-buffer " *malebolge-list-stderr*"))
-           (pipe (make-pipe-process :name "malebolge-list-stderr"
+    (let* ((invocation (string-join args " "))
+           (stderr (generate-new-buffer " *malebolge-client-stderr*"))
+           (pipe (make-pipe-process :name "malebolge-client-stderr"
                                     :buffer stderr
                                     :sentinel #'ignore
                                     :noquery t)))
       (unwind-protect
           (let ((process (make-process
-                          :name "malebolge-list"
+                          :name "malebolge-client"
                           :buffer (current-buffer)
                           :stderr pipe
                           :sentinel #'ignore
                           :connection-type 'pipe
                           :noquery t
-                          :command (append malebolge-attach-command
-                                           '("--list")))))
-            (malebolge--await-listing process)
+                          :command (append malebolge-attach-command args)))
+                (deadline (+ (float-time) malebolge--list-timeout)))
+            (while (and (process-live-p process) (< (float-time) deadline))
+              (accept-process-output process 0.05))
+            (when (process-live-p process)
+              (delete-process process)
+              (user-error
+               "malebolge: malebolge-attach %s did not answer in %s seconds; \
+the outcome is unknown"
+               invocation malebolge--list-timeout))
             (let ((out (buffer-string))
                   (err (with-current-buffer stderr (buffer-string)))
                   (status (process-exit-status process)))
               (unless (eql status 0)
-                (user-error "malebolge: cannot list conversations: %s"
+                (user-error "malebolge: malebolge-attach %s failed: %s"
+                            invocation
                             (string-trim (concat out err))))
               (list :stdout out :stderr err)))
         (when (process-live-p pipe)
@@ -300,18 +321,13 @@ of its own.  Return a plist (:stdout TEXT :stderr TEXT); signal
         (when (buffer-live-p stderr)
           (kill-buffer stderr))))))
 
-(defun malebolge--await-listing (process)
-  "Wait, boundedly, for the listing PROCESS to exit, and signal if it will not.
-The client answers and closes; one still running after
-`malebolge--list-timeout' is waiting for a daemon that never will."
-  (let ((deadline (+ (float-time) malebolge--list-timeout)))
-    (while (and (process-live-p process) (< (float-time) deadline))
-      (accept-process-output process 0.05)))
-  (when (process-live-p process)
-    (delete-process process)
-    (user-error
-     "malebolge: the daemon did not answer the listing in %s seconds"
-     malebolge--list-timeout)))
+(defun malebolge--topic-names ()
+  "The topic names the daemon holds, `default' first.
+`--topics' prints one topic per line as `NAME<TAB>DIR<TAB>TOOLSET<TAB>MODEL',
+so each name is its line's first tab field."
+  (mapcar (lambda (line) (car (split-string line "\t")))
+          (split-string (plist-get (malebolge--client '("--topics")) :stdout)
+                        "\n" t)))
 
 (defun malebolge--candidate-id (candidate)
   "The conversation id the candidate line CANDIDATE names, or nil.
@@ -336,13 +352,22 @@ mark is empty."
         (push line candidates)))
     (nreverse candidates)))
 
+(defun malebolge--new-target ()
+  "Ask which topic to create the new conversation in, and name its target.
+`default' needs no `--topic', so it stays the plain `new' target; any
+other name becomes `(new . TOPIC)', which the argv builder reads."
+  (let ((topic (completing-read "Topic: " (malebolge--topic-names)
+                                nil t nil nil "default")))
+    (if (equal topic "default") "new" (cons 'new topic))))
+
 (defun malebolge--choose-target ()
   "Ask which conversation to attach to.
-The daemon's own lines come first, newest first, then `new'.  A listing
-the daemon cut short says so as a message, never as a candidate."
+The daemon's own lines come first, newest first, then `new'; choosing
+`new' asks for the topic to create it in.  A listing the daemon cut
+short says so as a message, never as a candidate."
   (message "malebolge: asking the daemon which conversations it holds...")
   (redisplay)
-  (let* ((listing (malebolge--list-conversations))
+  (let* ((listing (malebolge--client '("--list")))
          (candidates (malebolge--conversation-candidates
                       (or (plist-get listing :stdout) "")))
          (diagnostics (string-trim (or (plist-get listing :stderr) ""))))
@@ -351,8 +376,10 @@ the daemon cut short says so as a message, never as a candidate."
     (prog1 (let ((choice (completing-read "Conversation (new to create): "
                                           (append candidates (list "new"))
                                           nil t)))
-             ;; A candidate is the whole listing line; the target is its id.
-             (or (malebolge--candidate-id choice) choice))
+             (if (equal choice "new")
+                 (malebolge--new-target)
+               ;; A candidate is the whole listing line; the target is its id.
+               (or (malebolge--candidate-id choice) choice)))
       (unless (string-empty-p diagnostics)
         (message "malebolge: %s" diagnostics)))))
 
@@ -394,10 +421,11 @@ which does not erase (DEC-009)."
 
 (defun malebolge--start-transcript (target)
   "Start the attach client in the transcript buffer, attached to TARGET.
-TARGET is nil for root, `new', or a conversation id.  A client that will
-not start is reported for root as a `[status]' line, as it always has
-been; for a chosen TARGET it signals `user-error' instead, leaving the
-transcript empty rather than silently attaching somewhere else."
+TARGET is nil for root, `new', a conversation id, or `(new . TOPIC)'.
+A client that will not start is reported for root as a `[status]' line,
+as it always has been; for a chosen TARGET it signals `user-error'
+instead, leaving the transcript empty rather than silently attaching
+somewhere else."
   (let ((buffer (get-buffer-create malebolge-buffer-name)))
     (with-current-buffer buffer
       (unless (derived-mode-p 'malebolge-transcript-mode)
@@ -441,6 +469,28 @@ Without one, attach to root as always."
       (when target
         (malebolge--follow buffer))
       (malebolge--pop-to-draft))))
+
+;;;###autoload
+(defun malebolge-set-topic-model ()
+  "Set the model that a topic's new conversations are created with.
+Ask for a topic among the daemon's names, `default' aside because it
+takes none, then for a model among the daemon's catalogue refs, plus
+`none' to leave the topic on the default model.  A refusal is the
+client's own `user-error', reported as it comes."
+  (interactive)
+  (let* ((names (remove "default" (malebolge--topic-names)))
+         (topic (completing-read "Topic: " names nil t))
+         (refs (split-string (plist-get (malebolge--client '("--models"))
+                                        :stdout)
+                             "\n" t))
+         (ref (completing-read (format "Model for %s: " topic)
+                               (append refs '("none")) nil t)))
+    (if (equal ref "none")
+        (progn
+          (malebolge--client (list "--set-topic" topic "--no-model"))
+          (message "malebolge: topic %s now uses no model" topic))
+      (malebolge--client (list "--set-topic" topic "--model" ref))
+      (message "malebolge: topic %s now uses %s" topic ref))))
 
 ;;;###autoload
 (defun malebolge-draft ()

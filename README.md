@@ -129,8 +129,10 @@ name it than rely on the default.
 
 There are two ways to choose. `C-u M-x malebolge-attach` asks the daemon which
 conversations this store holds, then prompts with those ids newest first, plus
-`new`; the one you pick is the one it attaches to. In a terminal, or from a
-script, ask for the list yourself and pass the id:
+`new`; the one you pick is the one it attaches to. Choosing `new` then asks
+which topic to create it in, over the daemon's own names and defaulting to
+`default`. In a terminal, or from a script, ask for the list yourself and pass
+the id:
 
 ```sh
 node src/attach-main.ts --list             # this store's ids, newest first
@@ -139,9 +141,15 @@ node src/attach-main.ts --new              # a new one, in the daemon's cwd
 node src/attach-main.ts --new --cwd DIR    # a new one whose cwd is DIR
 ```
 
+`M-x malebolge-set-topic-model` sets a topic's model from Emacs: it prompts for
+a topic (every name but `default`) and then for a model ref from the daemon's
+catalogue, or `none` to leave the topic on the default model, and reports the
+result in the minibuffer.
+
 `--list` prints one conversation per line on standard output, and exits 0.
-A line is the id, then for a thread a tab and how it began: `2484<TAB>started
-by 1` for one a conversation started, `2490<TAB>fork of 1` for a fork. It
+A line is `ID<TAB>TOPIC<TAB>MODEL` (either may be empty), then for a thread a
+tab and how it began: `2484<TAB>work<TAB>REF<TAB>started by 1` for one a
+conversation started, `2490<TAB>default<TAB><TAB>fork of 1` for a fork. It
 takes `--topic NAME` or `--here` to narrow it, and nothing else: `--list` with
 `--conversation`, `--new`, `--cwd` or `--emacs` is one usage line and exit 2,
 before any connection is made. A

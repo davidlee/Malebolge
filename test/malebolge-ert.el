@@ -34,17 +34,26 @@
 ;; - `malebolge-attach' with a prefix argument lists the store, prompts over
 ;;   the ids, refuses a switch while the draft holds text, detaches, then
 ;;   attaches; the chosen target becomes argv before "--emacs".
-;; - `malebolge--attach-arguments' turns a target (nil, "new", or an id
-;;   string) into the extra argv.
-;; - `malebolge--list-conversations' is the listing seam: it returns a plist
-;;   (:stdout TEXT :stderr TEXT).  No ERT case starts a real client.
+;; - Choosing `new' there asks `Topic: ' over the `--topics' names, default
+;;   `default': `default' attaches `--new --emacs', a name `--topic NAME
+;;   --new --emacs', carried as a `(new . TOPIC)' target.
+;; - `malebolge--attach-arguments' turns a target (nil, "new", `(new . TOPIC)',
+;;   or an id string) into the extra argv.
+;; - `malebolge--client' is the one client seam: `(malebolge--client ARGS)' runs
+;;   `malebolge-attach-command' plus ARGS and returns a plist
+;;   (:stdout TEXT :stderr TEXT); it signals a verb-neutral `user-error'
+;;   naming ARGS on a non-zero exit and on a timeout.  No ERT case starts a
+;;   real client through it.
+;; - `malebolge--topic-names' reads the first tab field of each `--topics'
+;;   line; `malebolge-set-topic-model' writes a topic's model through
+;;   `malebolge--client'.
 ;; - `malebolge--conversation-candidates' parses stdout's lines: each is
 ;;   `id<TAB>topic<TAB>model', with an optional `<TAB>mark', offered whole.
 ;;   Topic and model may be empty, a mark may not, and a bare id names
 ;;   nothing.  `malebolge--candidate-id' names the id of such a line.
 ;; - `malebolge--await-exit' waits boundedly for the client to go, then
 ;;   deletes it.  `malebolge--detach-timeout' bounds the wait, and
-;;   `malebolge--list-timeout' bounds the synchronous listing.
+;;   `malebolge--list-timeout' bounds every client call.
 
 ;;; Code:
 
@@ -703,25 +712,97 @@ Only a window whose point is at the end follows output."
 (defvar malebolge-test--messages nil
   "Every message the stubbed `message' was given, newest first.")
 
-(defmacro malebolge-test--with-target-choice (listing answer &rest body)
-  "Run BODY with the listing stubbed to LISTING and the prompt answering ANSWER.
-LISTING is a plist.  BODY reads the offered collection from
-`malebolge-test--offered' and the messages from `malebolge-test--messages'."
-  (declare (indent 2) (debug t))
+(defvar malebolge-test--prompts nil
+  "Every prompt the stubbed `completing-read' was given, newest first.
+Each offer is a plist of :prompt, :collection, :require-match and :default.")
+
+(defvar malebolge-test--client-calls nil
+  "The args each stubbed `malebolge--client' call received, newest first.")
+
+(defvar malebolge-test--topics-listing
+  '(:stdout "default\t\t\t\nwork\t/tmp/work\t\t\n" :stderr "")
+  "The `--topics' reply `malebolge-test--with-target-choice' stubs.
+`default' comes first, as the daemon prints it.")
+
+(defun malebolge-test--offer (prefix)
+  "The recorded prompt offer whose prompt starts with PREFIX, or nil."
+  (cl-find-if (lambda (offer) (string-prefix-p prefix (plist-get offer :prompt)))
+              malebolge-test--prompts))
+
+(defun malebolge-test--answer-prompt (prompt collection answer)
+  "What the stubbed `completing-read' answers for PROMPT over COLLECTION.
+ANSWER is a string, a function of PROMPT and COLLECTION, or an alist
+mapping a prompt prefix to either."
+  (cond ((functionp answer) (funcall answer prompt collection))
+        ((and (consp answer) (consp (car answer)))
+         (let ((entry (cl-find-if (lambda (offered)
+                                    (string-prefix-p (car offered) prompt))
+                                  answer)))
+           (unless entry
+             (error "no stubbed answer for the prompt %S" prompt))
+           (malebolge-test--answer-prompt prompt collection (cdr entry))))
+        (t answer)))
+
+(defun malebolge-test--answer-client (args answers)
+  "The stubbed `malebolge--client' reply for ARGS, recording the call.
+ANSWERS is an alist of argv lists to reply plists; an ARGS no entry names
+is an error, so a test fails loudly rather than inventing a reply."
+  (push args malebolge-test--client-calls)
+  (let ((entry (assoc args answers)))
+    (unless entry
+      (error "unexpected client call: %S" args))
+    (cdr entry)))
+
+(defmacro malebolge-test--with-prompts (answer &rest body)
+  "Run BODY with `completing-read', `message' and `redisplay' stubbed.
+ANSWER is what every prompt answers: a string, a function of the prompt
+and the collection, or an alist of prompt prefixes to either.  BODY reads
+the offers from `malebolge-test--prompts' (see `malebolge-test--offer')
+and the messages from `malebolge-test--messages'."
+  (declare (indent 1) (debug t))
   `(let ((malebolge-test--offered nil)
-         (malebolge-test--messages nil))
-     (cl-letf (((symbol-function 'malebolge--list-conversations)
-                (lambda () ,listing))
-               ((symbol-function 'completing-read)
-                (lambda (_prompt collection &rest _)
+         (malebolge-test--messages nil)
+         (malebolge-test--prompts nil)
+         (answer ,answer))
+     (cl-letf (((symbol-function 'completing-read)
+                (lambda (prompt collection &optional _predicate require-match
+                                _initial _hist default &rest _)
+                  (push (list :prompt prompt :collection collection
+                              :require-match require-match :default default)
+                        malebolge-test--prompts)
                   (setq malebolge-test--offered collection)
-                  ,answer))
+                  (malebolge-test--answer-prompt prompt collection answer)))
                ((symbol-function 'message)
                 (lambda (string &rest args)
                   (push (apply #'format-message string args)
                         malebolge-test--messages)))
                ((symbol-function 'redisplay) #'ignore))
        ,@body)))
+
+(defmacro malebolge-test--with-client-choice (answers answer &rest body)
+  "Run BODY with `malebolge--client' answering from ANSWERS.
+ANSWERS is an alist of argv lists to reply plists.  BODY reads the calls
+from `malebolge-test--client-calls', each offer from `malebolge-test--offer'
+and each message from `malebolge-test--messages'."
+  (declare (indent 2) (debug t))
+  `(let ((malebolge-test--client-calls nil)
+         (answers ,answers))
+     (cl-letf (((symbol-function 'malebolge--client)
+                (lambda (args) (malebolge-test--answer-client args answers))))
+       (malebolge-test--with-prompts ,answer ,@body))))
+
+(defmacro malebolge-test--with-target-choice (listing answer &rest body)
+  "Run BODY with `malebolge--client' stubbed and the prompt answering ANSWER.
+LISTING is the plist `--list' answers with; `--topics' answers with
+`malebolge-test--topics-listing'.  BODY reads the calls from
+`malebolge-test--client-calls', the offers from `malebolge-test--offer'
+and the messages from `malebolge-test--messages'."
+  (declare (indent 2) (debug t))
+  `(malebolge-test--with-client-choice
+       (list (cons '("--list") ,listing)
+             (cons '("--topics") malebolge-test--topics-listing))
+       ,answer
+     ,@body))
 
 (defmacro malebolge-test--with-fast-detach (&rest body)
   "Run BODY with the detach wait too short to notice, but still bounded."
@@ -742,16 +823,21 @@ LISTING is a plist.  BODY reads the offered collection from
 ;;; The argv a target names
 
 (ert-deftest malebolge-attach-arguments-name-each-target ()
-  "Root, `new' and an id each shape the client's arguments.
-The chosen target reaches the command as --conversation N, before --emacs."
+  "Root, `new', a topic and an id each shape the client's arguments.
+The chosen target reaches the command as --conversation N, before --emacs;
+a `(new . TOPIC)' target names the topic before it asks for a new one."
   (should (equal '("--emacs") (malebolge--attach-arguments nil)))
   (should (equal '("--new" "--emacs") (malebolge--attach-arguments "new")))
+  (should (equal '("--topic" "work" "--new" "--emacs")
+                 (malebolge--attach-arguments '(new . "work"))))
   (should (equal '("--conversation" "7" "--emacs")
                  (malebolge--attach-arguments "7"))))
 
 (ert-deftest malebolge-target-labels-read-in-a-message ()
   "A target reads as prose when it is reported."
   (should (equal "a new conversation" (malebolge--target-label "new")))
+  (should (equal "a new conversation in work"
+                 (malebolge--target-label '(new . "work"))))
   (should (equal "conversation 7" (malebolge--target-label "7"))))
 
 ;;; Candidates come from stdout only
@@ -840,6 +926,40 @@ The client stays attached and the draft survives untouched."
         (should (equal '("--conversation" "7" "--emacs") started))
         (should (string-match-p "\"quit\"" (or quit-before-attach "")))))))
 
+(ert-deftest malebolge-prefix-argument-asks-for-a-topic-when-creating-a-conversation ()
+  "Choosing `new' asks for a topic over the daemon's names, `default' first.
+A name builds --topic NAME --new --emacs through the one argv builder."
+  (malebolge-test--with-session
+    (malebolge-test--with-target-choice
+        '(:stdout "9\twork\tfaux/faux-1\n" :stderr "")
+        '(("Conversation" . "new") ("Topic: " . "work"))
+      (let ((started (malebolge-test--with-fast-detach
+                       (malebolge-test--started-args
+                        (lambda () (malebolge-attach '(4)))))))
+        (should (equal '("9\twork\tfaux/faux-1" "new")
+                       (plist-get (malebolge-test--offer "Conversation")
+                                  :collection)))
+        (let ((topic-ask (malebolge-test--offer "Topic: ")))
+          (should topic-ask)
+          (should (equal '("default" "work")
+                         (plist-get topic-ask :collection)))
+          (should (eq t (plist-get topic-ask :require-match)))
+          (should (equal "default" (plist-get topic-ask :default))))
+        (should (equal '("--topic" "work" "--new" "--emacs") started))))))
+
+(ert-deftest malebolge-prefix-argument-keeps-plain-new-for-the-default-topic ()
+  "Choosing `new' and then `default' attaches exactly as it did before.
+The topic prompt is still asked, and `default' adds no argv."
+  (malebolge-test--with-session
+    (malebolge-test--with-target-choice
+        '(:stdout "9\twork\tfaux/faux-1\n" :stderr "")
+        '(("Conversation" . "new") ("Topic: " . "default"))
+      (let ((started (malebolge-test--with-fast-detach
+                       (malebolge-test--started-args
+                        (lambda () (malebolge-attach '(4)))))))
+        (should (malebolge-test--offer "Topic: "))
+        (should (equal '("--new" "--emacs") started))))))
+
 (ert-deftest malebolge-picker-attaches-to-a-marked-id ()
   "The picker attaches to a marked id: a marked line is offered whole and
 the client starts with the bare id it names."
@@ -885,10 +1005,10 @@ attached."
   (malebolge-test--with-session
     (let ((prompted nil))
       (malebolge-test--with-fast-detach
-        (cl-letf (((symbol-function 'malebolge--list-conversations)
-                   (lambda ()
+        (cl-letf (((symbol-function 'malebolge--client)
+                   (lambda (_args)
                      (signal 'user-error
-                             '("malebolge: cannot list conversations: \
+                             '("malebolge: malebolge-attach --list failed: \
 the daemon predates list"))))
                   ((symbol-function 'completing-read)
                    (lambda (&rest _) (setq prompted t) "7"))
@@ -906,8 +1026,8 @@ the daemon predates list"))))
   "No prefix argument: no listing, no prompt, argv is --emacs alone."
   (malebolge-test--with-session
     (delete-process (get-buffer-process transcript))
-    (cl-letf (((symbol-function 'malebolge--list-conversations)
-               (lambda () (error "the plain path must not list")))
+    (cl-letf (((symbol-function 'malebolge--client)
+               (lambda (_args) (error "the plain path must not call the client")))
               ((symbol-function 'completing-read)
                (lambda (&rest _) (error "the plain path must not prompt"))))
       (should (equal '("--emacs")
@@ -983,26 +1103,97 @@ window to the process mark; the helper makes it independent of that."
       (should-not (process-live-p process))
       (should (< (- (float-time) started) 2)))))
 
-;;; The listing itself, without a daemon
+;;; The client itself, without a daemon
 
-(ert-deftest malebolge-listing-keeps-stdout-and-stderr-apart ()
-  "The listing's lines and its prose arrive in separate streams, never merged."
+(ert-deftest malebolge-client-keeps-stdout-and-stderr-apart ()
+  "A client call's lines and its prose arrive in separate streams, never merged."
   (let ((malebolge-attach-command
          '("sh" "-c"
            "printf '9\\twork\\tfaux/faux-1\\n7\\tdefault\\t\\n'; printf 'cut short\\n' >&2")))
-    (let ((listing (malebolge--list-conversations)))
+    (let ((listing (malebolge--client '("--list"))))
       (should (equal "9\twork\tfaux/faux-1\n7\tdefault\t\n"
                      (plist-get listing :stdout)))
       (should (equal "cut short\n" (plist-get listing :stderr))))))
 
-(ert-deftest malebolge-listing-gives-up-when-the-daemon-never-answers ()
-  "The listing is bounded, so a daemon that never replies cannot freeze Emacs."
+(ert-deftest malebolge-client-names-the-args-and-the-output-when-it-fails ()
+  "A client that exits non-zero is a `user-error' naming its args and its words."
+  (let ((malebolge-attach-command '("sh" "-c" "echo refused >&2; exit 3")))
+    (let ((failure (should-error (malebolge--client '("--topics")) :type 'user-error)))
+      (should (string-match-p "--topics" (error-message-string failure)))
+      (should (string-match-p "refused" (error-message-string failure))))))
+
+(ert-deftest malebolge-client-gives-up-when-the-daemon-never-answers ()
+  "A client call is bounded, so a daemon that never replies cannot freeze Emacs.
+The timeout says the outcome is unknown and names the args: no retry."
   ;; `sh -c' ignores the "extra argument --list", so this process really does hang.
   (let ((malebolge-attach-command '("sh" "-c" "sleep 30"))
         (malebolge--list-timeout 0.2)
         (started (float-time)))
-    (should-error (malebolge--list-conversations) :type 'user-error)
+    (let ((failure (should-error (malebolge--client '("--list")) :type 'user-error)))
+      (should (string-match-p "unknown" (error-message-string failure)))
+      (should (string-match-p "--list" (error-message-string failure))))
     (should (< (- (float-time) started) 5))))
+
+;;; Setting a topic's model
+
+(defun malebolge-test--set-topic-answers (write)
+  "The client replies a set-topic call needs, and WRITE, the one it should make.
+WRITE is the argv the command must end with; the store holds `default' and
+`work', the catalogue two refs."
+  (list (cons '("--topics")
+              '(:stdout "default\t\t\t\nwork\t/tmp/work\t\t\n" :stderr ""))
+        (cons '("--models") '(:stdout "faux/faux\nfaux/faux-2\n" :stderr ""))
+        (cons write '(:stdout "work\t/tmp/work\t\tfaux/faux-2\n" :stderr ""))))
+
+(ert-deftest malebolge-set-topic-model-writes-the-chosen-ref ()
+  "The topic prompt leaves `default' out; the model prompt adds `none'.
+Choosing a ref writes --set-topic NAME --model REF and says so."
+  (malebolge-test--with-client-choice
+      (malebolge-test--set-topic-answers
+       '("--set-topic" "work" "--model" "faux/faux-2"))
+      '(("Topic" . "work") ("Model for work" . "faux/faux-2"))
+    (call-interactively #'malebolge-set-topic-model)
+    (let ((topic-ask (malebolge-test--offer "Topic: ")))
+      (should topic-ask)
+      (should (equal '("work") (plist-get topic-ask :collection))))
+    (let ((model-ask (malebolge-test--offer "Model")))
+      (should model-ask)
+      (should (equal '("faux/faux" "faux/faux-2" "none")
+                     (plist-get model-ask :collection))))
+    (should (equal '("--set-topic" "work" "--model" "faux/faux-2")
+                   (car malebolge-test--client-calls)))
+    (should (cl-some (lambda (message)
+                       (and (string-match-p "work" message)
+                            (string-match-p "faux/faux-2" message)))
+                     malebolge-test--messages))))
+
+(ert-deftest malebolge-set-topic-model-clears-the-model-with-none ()
+  "Choosing `none' writes --no-model and says the topic now uses no model."
+  (malebolge-test--with-client-choice
+      (malebolge-test--set-topic-answers '("--set-topic" "work" "--no-model"))
+      '(("Topic" . "work") ("Model for work" . "none"))
+    (call-interactively #'malebolge-set-topic-model)
+    (should (equal '("--set-topic" "work" "--no-model")
+                   (car malebolge-test--client-calls)))
+    (should (cl-some (lambda (message)
+                       (and (string-match-p "work" message)
+                            (string-match-p "no model" message)))
+                     malebolge-test--messages))))
+
+(ert-deftest malebolge-set-topic-model-reports-the-clients-refusal ()
+  "A refused write is `malebolge--client's `user-error', naming its words."
+  (let ((malebolge-attach-command
+         '("sh" "-c"
+           "case \"$*\" in *set-topic*) echo 'unknown model x' >&2; exit 1;; \
+*--topics*) printf 'default\\t\\t\\t\\nwork\\t\\t\\t\\n';; \
+*) printf 'x/y\\n';; esac"
+           "sh")))
+    (malebolge-test--with-prompts
+        '(("Topic" . "work") ("Model for work" . "x/y"))
+      (let ((failure (should-error (call-interactively #'malebolge-set-topic-model)
+                                   :type 'user-error)))
+        (should (string-match-p "unknown model x"
+                                (error-message-string failure)))))))
 
 (provide 'malebolge-ert)
 ;;; malebolge-ert.el ends here

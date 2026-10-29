@@ -49,6 +49,10 @@ wanted, is left to phase-plan as checks against code, not design questions:
 - PHASE-06 · `listQuery` reads `topic`/`topics`/`models` from one `LIST_QUESTIONS` table; a clash names the first two present (`topic and topics are exclusive` unchanged) · one check for three questions; exclusive-pair wording otherwise free in design sec-5 · decided
 - PHASE-06 · `SKEWED_KEYS` gains `models` (carried from PHASE-04's hand-back; PHASE-06/EX-4 names it) · in plan, no adaptation needed · decided
 - PHASE-06 · `serveOptionsOf` helper in src/daemon-start.ts builds `ServeOptions` (adds `modelRefs: catalog.refs`) · `startDaemon` at `max-lines-per-function` · decided (adjacent refactor)
+- PHASE-07 · `malebolge--new-target` helper (topic prompt on `new`) beside the spec's `malebolge--topic-names`; `malebolge--await-listing` folded into `malebolge--client` · one bounded wait, `malebolge--choose-target` stays one prompt deep · decided (adjacent refactor)
+- PHASE-07 · client failure wording `malebolge: malebolge-attach ARGS failed: OUTPUT` / `… did not answer in N seconds; the outcome is unknown` · design sec-6 fixes only "verb-neutral, names the args" · decided
+- PHASE-07 · README `--list` line description corrected to `ID<TAB>TOPIC<TAB>MODEL[<TAB>MARK]` · PHASE-05 changed the lines and left README's old `id[<TAB>mark]` text · decided (doc correction; flag for audit)
+- PHASE-07 · phase left `in_progress`, VH-1 awaiting operator · charter: do not mark VH-1 met; `completed` would misstate it · decided
 
 ## PHASE-01 run log
 
@@ -86,6 +90,26 @@ wanted, is left to phase-plan as checks against code, not design questions:
 - pi `implement` (deepseek-flash), one session: tests-red 30 requests $0.04 (VT-1 6, VT-2 1, VT-3 9, VT-4 4, VT-5 1 red; VT-5 red as a missing-renderer-row TypeError, not a diff); implementation 51 requests $0.07 (hit the request ceiling during its final diff read, work complete). Misses: none of substance; the orchestrator collapsed `listQuery`'s helper (`listingAsked` returned a pointless `true`) into the table form and merged `hereOf`'s two `undefined` cases.
 - Negative controls (orchestrator): `models` dropped from `SKEWED_KEYS` → VT-4 red (2); clash check disabled → VT-1 red (4). VT-2's Conversations stub throws on `list`/`topics`, so a store-touching answer cannot pass.
 - Gate: `just check` 104 files / 3621 tests green.
+
+## PHASE-07 run log
+
+- EN-1: `just ert` 42/42 + byte-compile clean, `just smoke` 4/4 before the phase; PHASE-06 a873454.
+- pi `implement` (deepseek-flash), one session: tests run 51 requests $0.08 (hit the ceiling while answering; answer complete); host ERT then 13 red for the right reasons (void `malebolge--client` / `malebolge-set-topic-model`, `(new . TOPIC)` reaching the `--conversation` arm, no `Topic: ` prompt); implementation 25 requests $0.05. Host: `just ert` 48/48 and byte-compile clean, `just smoke` 5/5, first try. Misses: none of substance; the orchestrator swapped `(delete … (copy-sequence …))` for `remove`, and fixed README's stale `--list` line text.
+- Negative controls (orchestrator): bound replaced by 60 s → `malebolge-client-gives-up…` red (30 s); `none` not mapped to `--no-model` → `…clears-the-model-with-none` red.
+- Gate: `just check` 104 files / 3621 tests green.
+- Status: left `in_progress` — **VH-1 awaiting operator** (checklist below).
+
+## PHASE-07 VH-1 operator checklist
+
+VH-1 (operator, live gateway): set a topic to `gateway/openai-david/gpt-6.1-terra` from Emacs, create a conversation in it from the chooser, see the model on its chooser line, and get a reply from that model.
+
+1. Restart the daemon on this build (`M-x malebolge-stop`, `M-x malebolge-start`); `node src/attach-main.ts --models` should list `gateway/openai-david/gpt-6.1-terra`.
+2. Have a non-default topic (e.g. `node src/attach-main.ts --set-topic work`).
+3. `M-x malebolge-set-topic-model` → `work` → `gateway/openai-david/gpt-6.1-terra`; expect `malebolge: topic work now uses gateway/openai-david/gpt-6.1-terra`. (`--topics` shows it in the fourth field.)
+4. `C-u M-x malebolge-attach` → `new` → `Topic: work`; the transcript attaches to a new conversation.
+5. Send a prompt (draft, `C-c C-c`); a reply arrives from that model.
+6. `C-u M-x malebolge-attach` again: the new conversation's chooser line reads `ID<TAB>work<TAB>gateway/openai-david/gpt-6.1-terra`.
+7. Record the outcome (pass, or what failed) for the agent to mark VH-1 and flip PHASE-07 `completed`.
 
 ## PHASE-05 EN-2 measurement (VA-1)
 
