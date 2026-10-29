@@ -66,6 +66,56 @@ intent = "design-target"
 selector = "README.md"
 intent = "design-target"
 
+[[selector]]
+selector = "src/ranges.ts"
+intent = "design-target"
+note = "added at reconcile (RV-024 F-1)"
+
+[[selector]]
+selector = "src/mail/tools.ts"
+intent = "design-target"
+note = "added at reconcile (RV-024 F-1)"
+
+[[selector]]
+selector = "src/mail/project.ts"
+intent = "design-target"
+note = "added at reconcile (RV-024 F-1)"
+
+[[selector]]
+selector = "biome.json"
+intent = "design-target"
+note = "added at reconcile (RV-024 F-1)"
+
+[[selector]]
+selector = "test/structure.test.ts"
+intent = "design-target"
+note = "added at reconcile (RV-024 F-1)"
+
+[[selector]]
+selector = "test/ranges.test.ts"
+intent = "design-target"
+note = "added at reconcile (RV-024 F-1)"
+
+[[selector]]
+selector = "test/untrusted-block.test.ts"
+intent = "design-target"
+note = "added at reconcile (RV-024 F-1)"
+
+[[selector]]
+selector = "test/mail/render.test.ts"
+intent = "design-target"
+note = "added at reconcile (RV-024 F-1)"
+
+[[selector]]
+selector = "test/config.test.ts"
+intent = "design-target"
+note = "added at reconcile (RV-024 F-1)"
+
+[[selector]]
+selector = "test/threads-tools.test.ts"
+intent = "design-target"
+note = "added at reconcile (RV-024 F-1)"
+
 [[relation]]
 label = "fulfils"
 degree = "partial"

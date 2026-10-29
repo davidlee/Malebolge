@@ -38,3 +38,10 @@ and digest access should be its own capability.
   `content_read`'s content and digest scopes in satan.
 - Shared framing between mail (`src/mail/render.ts`) and panopticon content.
 - Relationship to IDE-006 (mail digests): probably one quarantine model for both.
+
+## Scope note (SL-008, 2026-10-29)
+
+Bookmark metadata — titles, URLs, tags, folders from Firefox's backup — is
+outside this item: DEC-053 admits it to `interactive`, framed untrusted with
+per-field caps. The bookmark tools never return page content or digests, so a
+digest tool never joins `interactive` by way of them (RV-024 F-6).

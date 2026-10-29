@@ -18,6 +18,8 @@ the JMAP credential (M1 and M2 are done in screwtape SL-001 and SL-002).
   daemon has host bash, so "no arbitrary shell" cannot hold there. Mail tools
   belong only to a restricted tool set: `mail_*` reads plus whatever that
   invocation's own output needs.
+  (SL-008, 2026-10-29: this concerns mail bodies. Bookmark metadata enters
+  `interactive` under DEC-053.)
 
 malebolge has no way to say "this run gets these tools" today. The daemon's
 tool set is fixed in `src/daemon-extensions.ts` (`CodingTools`, `grep`, and

@@ -1,0 +1,36 @@
+schema = "doctrine.knowledge"
+version = 1
+
+id = 10
+slug = "bookmark-backups-configured-jail-bound"
+title = "The daemon reads bookmark backups from a configured absolute path that the jail binds read-only"
+record_kind = "assumption"
+status = "held"
+created = "2026-10-29"
+updated = "2026-10-29"
+tags = []
+
+[facet]                         # every field typed; seeded empty (captured later)
+claim = "The daemon learns the bookmark backups directory only from MALEBOLGE_BOOKMARK_BACKUPS, an absolute path the jail launcher sets and binds read-only; the path is never discovered, and the bind is never the Firefox profile directory (history, logins.json, key4.db)."
+confidence = "high"
+basis = "observation"
+validation_plan = "Re-check when the jail launcher or the profile layout changes: the daemon's view holds only bookmarkbackups from the Firefox tree"
+validated_by = "SL-008 PHASE-07 VH-1 (operator)"
+validated_on = "2026-10-29"
+invalidated_by  = ""
+invalidated_on  = ""
+
+[evidence]                      # free-text citations (supports / contradicts / notes)
+supports    = []
+contradicts = []
+notes       = []
+
+[relationships]                 # verb-written edges (set by doctrine supersede)
+supersedes    = []   # record ids this one replaces (set by doctrine supersede)
+superseded_by = []   # set on superseded predecessor (verb-written)
+
+[[relation]]
+label = "references"
+role = "concerns"
+descriptor = "bookmark source configuration and jail bind"
+target = "SL-008"

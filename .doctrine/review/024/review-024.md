@@ -150,3 +150,64 @@ Findings are terminal; the writes below are `/reconcile`'s.
   configured absolute path (`MALEBOLGE_BOOKMARK_BACKUPS`) that the jail binds
   read-only; never discovered, never the profile directory. Capture with
   `/knowledge`, linked to SL-008 and DEC-055.
+
+## Reconciliation Outcome
+
+Operator assent: "done" (2026-10-29), in reply to the proposal listing every
+edit below.
+
+### Direct edits applied
+
+- **design.md sec-2** (F-3): placesRoot adds no segment and is not a folder;
+  unknown/no `root` → named by title; `no_backup` names no directory; `corrupt`
+  is the frame only, JSON/check/walk throws → `invalid`; decoder size "a ~40-line
+  body plus its refusals".
+- **design.md sec-3** (F-3): empty `tag`/`folder` filters nothing; code-unit
+  ordering; tag counts case-sensitive vs case-insensitive filter, recorded as a
+  latent inconsistency (0 pairs live) for IDE-008 step 2.
+- **design.md sec-4** (F-3): search header lines in the shown order; listing
+  header order with `next_offset` on the first line; `stale` by local calendar
+  date, none for a future-dated backup; a non-empty window that fits no item is
+  refused.
+- **design.md sec-5, sec-8** (F-2): rollout as made — satan's launcher sets the
+  env var and binds; `~/flakes` passes the path.
+- **design.md sec-6** (F-1, mirror): rows for `src/mail/project.ts`, `biome.json`
+  and the shared-module, config and threads-harness tests.
+- **SL-005 `slice-005.md` Context** (F-6): the "not in the interactive tool set"
+  bullet now notes it concerns mail bodies; bookmark metadata is DEC-053's.
+- **CHR-006 body** (F-2): "As made" section; satan 95e40a8 is pushed; the one
+  remaining operator act is `nix flake update satan` in ~/flakes (lock pins
+  cacfd5d). Title unchanged (no backlog retitle verb). Stays open.
+- **IMP-023 body** (F-6): scope note — bookmark metadata is outside it.
+
+### Selector registry (F-1)
+
+- `doctrine slice selector add 8 --intent design-target` for the ten paths in
+  the brief. `slice conformance 8` now reads **1 undeclared / 0 undelivered /
+  37 conformant**. The one undeclared path is `.doctrine/slice/008/notes.md`: a
+  `scope-relevant` selector does not clear it (tried, then removed), and it is
+  slice bookkeeping, not a design target. Left as is, by intent.
+
+### Knowledge and backlog records (not REV surfaces)
+
+No brief item targets a SPEC/PRD/REQ/ADR/POL/STD, so no REV was opened
+(precedent: RV-007 outcome — decisions and assumptions are amended through
+their own verbs).
+
+- **DEC-029** (F-6): body appended via `knowledge edit --body-mode append`:
+  `bookmarks` before `satan` on both profiles under DEC-053; the "order
+  unchanged" sentence is historical; `threads` left to SL-006.
+- **RSK-002** (F-6): `risk set --controls` adds the seventh control (bookmark
+  metadata framed untrusted with per-field caps, DEC-053); likelihood/impact
+  unchanged.
+- **ASM-010** (F-6, new): the daemon reads the bookmark backups directory only
+  from a configured absolute path the jail binds read-only; confidence high,
+  validated by VH-1. Linked `references (concerns) SL-008`; DEC-055/DEC-052
+  cited in its body (`governed_by` admits only ADR/POL/STD).
+
+### Not reconciled on purpose
+
+- F-4 was fixed in the audit; F-5 is aligned.
+- `plan.toml` criteria untouched (immutable-append).
+
+Reconcile pass complete — handoff to /close.

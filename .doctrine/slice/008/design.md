@@ -53,7 +53,7 @@ greatest date (ties: lexically greatest name). Other files, and names whose
 date is not a real calendar date, are ignored. None → `no_backup`.
 
 **Decoding (mozlz4).** Format: 8-byte magic `mozLz40\0`, u32 LE decompressed
-size, one raw LZ4 block. In-repo decoder, ~30 lines, pure
+size, one raw LZ4 block. In-repo decoder, a ~40-line body plus its refusals, pure
 (`decodeMozLz4(buf): Buffer`):
 
 - file size cap `BACKUP_FILE_MAX_BYTES` = 16 MiB: `stat` rejects early, then
@@ -83,7 +83,9 @@ interface Bookmark {
 - `folder`: container titles from the root down, joined with `/`; the roots
   are named by their `root` key: `bookmarksMenuFolder`→`Menu`,
   `toolbarFolder`→`Toolbar`, `unfiledBookmarksFolder`→`Other`,
-  `mobileFolder`→`Mobile`.
+  `mobileFolder`→`Mobile`. The tree's top container (`placesRoot`) adds no
+  segment and is not itself a folder; a container with no or an unknown
+  `root` key is named by its title.
 - `folders`: the same traversal records every container's path (capped like
   `folder`) with its count of direct bookmarks, zero allowed. One entry per
   distinct path after caps: equal paths (same-titled siblings, or paths cut
@@ -101,7 +103,10 @@ interface Bookmark {
 `not_configured | no_backup | too_large | unreadable | corrupt | invalid`,
 and a message built only from fixed text and the file name's date — never
 file content. The directory missing or unreadable → `unreadable`, with fixed
-text naming the directory, not a file, as the cause.
+text naming the directory, not a file, as the cause. `no_backup` is fixed
+text and names no directory. `corrupt` is the mozlz4 frame only: a
+`JSON.parse` failure, and any throw from the schema check or the projection
+walk (a deeply nested tree overflows the stack), is `invalid`.
 
 <!-- doctrine:section sec-3 -->
 ## 3. Tools (`src/bookmarks/tools.ts`)
@@ -127,7 +132,16 @@ mail. Matching is pure over `Snapshot.bookmarks`.
 - `tag`: case-insensitive equality with one of the bookmark's tags.
 - `folder`: case-insensitive path prefix at a segment boundary
   (`Menu/dev` matches `Menu/dev` and `Menu/dev/cli`, not `Menu/devops`).
-- Filters combine with AND. Matching runs on the capped fields.
+- Filters combine with AND. Matching runs on the capped fields. An empty
+  `tag` or `folder` filters nothing, as an absent one does.
+
+Ordering ties and path order compare by UTF-16 code unit, not
+`localeCompare`, so the order is the same in every locale. `bookmarks_tags`
+counts exact (case-sensitive) tags, a bookmark once per tag, while the
+search `tag` filter is case-insensitive: two tags differing only by case are
+counted apart but matched together. A known, latent inconsistency — the live
+backup had no such pair on 2026-10-29 (RV-024 F-3) — for IDE-008 step 2 to
+settle if it comes to matter.
 
 Input refusals (before the source is read): `query` over 512 bytes, `tag`
 over 64, `folder` over 256.
@@ -191,14 +205,22 @@ stale: 4 days                      (only when the backup is > 2 days old)
 limit clamped to 200               (only when clamped)
 ```
 
-`next_offset` = offset + items emitted, present only when matches remain.
-An offset at or past the last match gives 0 items and no `next_offset`.
+The search header's lines come in the order shown. `next_offset` = offset +
+items emitted, present only when matches remain.
+An offset at or past the last match gives 0 items and no `next_offset`. A
+non-empty window that fits no item is refused (`bookmark page fits no
+item`), never sent with `next_offset` = offset; projected bookmarks cannot
+reach it.
 
-`bookmarks_tags` / `bookmarks_folders`: `shown N of M` (N counts the items
-emitted), `next_offset` when more, the `source`/`stale` lines, and
+`bookmarks_tags` / `bookmarks_folders`, in this order:
+`bookmarks_<tool>: shown N of M[, next_offset: X]` (N counts the items
+emitted), the `source`/`stale` lines,
 `cut by caps: N bookmarks` when N > 0, where N = `cutCount(bookmarks)` (pure,
-in `src/bookmarks/render.ts`): the bookmarks with a non-empty `cut`. `stale` is computed from the file
-name's date and an injected `now`.
+in `src/bookmarks/render.ts`): the bookmarks with a non-empty `cut`, then the
+clamps. `stale` is computed from the file name's date and an injected `now`:
+whole days from the backup's date to `now`'s local calendar date (Firefox
+names backups by local date); a backup dated after `now` gives no `stale`
+line.
 
 **Section (`BOOKMARKS_SECTION`, tagged, test-pinned):** bookmark tool
 results open with a header written by malebolge, then a
@@ -223,13 +245,16 @@ shortened.
 - Existing interactive conversations gain the tools at the next restart
   (DEC-029(6)); startup logs each changed list.
 
-**Operator rollout (outside this repo; follow-up item):** in `~/flakes`, set
-`MALEBOLGE_BOOKMARK_BACKUPS` to
-`~/.config/mozilla/firefox/ez06zp0k.default/bookmarkbackups` (absolute) and
-add a read-only bind of that directory to `jailed-malebolge`
-(`~/dev/satan/flake.nix` `mkJailedMalebolge`). Firefox's profile moved under
-`XDG_CONFIG_HOME` with a recent Home Manager update — the path is
-configured, never discovered.
+**Operator rollout (outside this repo; CHR-006):** satan's launcher
+(`~/dev/satan/flake.nix` `mkJailedMalebolge`) takes an optional
+`bookmarkBackups` path: it sets `MALEBOLGE_BOOKMARK_BACKUPS` inside the jail
+and binds exactly that directory read-only. The jail sets the daemon's
+environment, so the variable cannot come from outside it. `~/flakes`
+(`features/satan/malebolge.nix`) passes the absolute path,
+`~/.config/mozilla/firefox/ez06zp0k.default/bookmarkbackups`. Firefox's
+profile moved under `XDG_CONFIG_HOME` with a recent Home Manager update — the
+path is configured, never discovered. (Revised at reconcile, RV-024 F-2: the
+design first put the variable in `~/flakes` and only the bind in satan.)
 
 <!-- doctrine:section sec-6 -->
 ## 6. Code impact
@@ -252,6 +277,10 @@ configured, never discovered.
 | `test/bookmarks/**` | new tests, fixtures, fake source, test-side encoder |
 | `test/toolsets.test.ts`, `test/daemon-start.test.ts`, `test/daemon-sections.test.ts` | membership, wiring, pinned section |
 | `test/structure.test.ts` | rule: `src/bookmarks/` imports nothing from `src/mail/` |
+| `src/mail/project.ts` | imports `cutRendered` from `src/untrusted-block.ts`; no behaviour change |
+| `biome.json` | excludes `test/bookmarks/fixtures/**`, so fixtures stay byte-exact |
+| `test/untrusted-block.test.ts`, `test/ranges.test.ts`, `test/mail/render.test.ts` | the shared modules; mail's suite follows the renames |
+| `test/config.test.ts`, `test/threads-tools.test.ts` | `bookmarkBackupsOf`; the VT-3 harness installs bookmarks |
 | `docs/internals.md`, `README.md` | toolset table, Bookmarks section, env var, jail bind |
 
 Module boundary: `src/bookmarks/` is tier "other" and imports neither
@@ -327,7 +356,8 @@ At reconcile:
 
 Follow-ups (backlog):
 
-- Operator rollout: env var + jail bind in `~/flakes` / satan flake (Configuration and wiring).
+- Operator rollout (CHR-006): satan's launcher sets the env var and the jail
+  bind; `~/flakes` passes the path (Configuration and wiring).
 - IDE-008 step 2 (reorganisation plans; tag writes need restore or an
   offline write — research X3), step 3 (capture-on-demand, after IMP-023),
   step 4 (history).
