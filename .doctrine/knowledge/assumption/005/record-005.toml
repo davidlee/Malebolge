@@ -5,7 +5,7 @@ id = 5
 slug = "notify-send-run-inside-a-pi-jail-reaches-the-operators-desktop"
 title = "notify-send run inside a pi jail reaches the operator's desktop"
 record_kind = "assumption"
-status = "held"
+status = "invalidated"
 created = "2026-10-29"
 updated = "2026-10-29"
 tags = []
@@ -17,8 +17,8 @@ basis = "design-inference"
 validation_plan = "PHASE-01 probe: run notify-send in a pi jail. If it fails, the loud floor is ctx.ui.notify and stderr (DEC-073, DEC-075); binding the bus is a ~/flakes contract item (DEC-074) only if the operator wants it."
 validated_by    = ""
 validated_on    = ""
-invalidated_by  = ""
-invalidated_on  = ""
+invalidated_by = "operator (VH-1), recorded by agent"
+invalidated_on = "2026-10-29"
 
 [evidence]                      # free-text citations (supports / contradicts / notes)
 supports    = []

@@ -166,7 +166,7 @@ Observations for the design (none invalidates a premise):
 conversation": validated; negative control (the note sent as `input`) fails
 the zero-model-calls assertion. ASM-006 settled validated.
 
-### VH-1: operator in-jail probes (pending)
+### VH-1: operator in-jail probes (done 2026-10-29)
 
 Kit: `probes/vh1/sl009-probe/` (`index.ts` stub: TypeBox tool `sl009_echo`,
 bash replaced via `createBashTool` spawnHook setting `SL009_PROBE=1` and
@@ -206,9 +206,21 @@ Runbook (operator; `<H>` = the jail's persisted home on the host):
 6. Report each outcome; the agent records ASM-005/007/008/009 and flips
    PHASE-01 completed.
 
+
+Outcomes (operator, 2026-10-29; recorded on the ASMs):
+- EX-3 / ASM-007 validated: `sl009_echo hi` → `sl009:hi`.
+- EX-4 / ASM-008 (RV-021 F-6) validated: `1`, hello line with `cwd=/tmp`, `/tmp`;
+  stderr `ok`; exit 3 reported.
+- EX-10 / ASM-009 validated: `sl009-wire` on node v26.12.1, no flags. That
+  jail's node came from its project, so node in every pi jail stays a
+  ~/flakes concern (proposed diff, assent pending).
+- EX-2 / ASM-005 invalidated, as EX-2 allows: notify-send exit 1, no D-Bus
+  (glib machine-id missing). DEC-073 floor stands; no /consult needed.
+
 ## Autonomy log
 
 - PHASE-01: probe stubs and drivers kept in `.doctrine/slice/009/probes/` (beside notes) instead of only the scratchpad, so VH-1 and reruns survive the session; outside src/ and pi-bridge/, unlinted, untested (EX-9 intent kept). Tier: decide.
 - PHASE-01: VA-1 probes used a stub-registered fake provider instead of a reachable model; deterministic, no credentials, retryable error forced as EX-6 allows. Tier: decide.
 - PHASE-01: EX-10 premise recorded as ASM-009 (held; host evidence only). Tier: decide.
 - PHASE-01: VH-1 needs node in non-malebolge pi jails: proposed ~/flakes diff handed back for operator assent, not applied (outward reach). Tier: escalate.
+- PHASE-01: ASM-005 invalidated but pre-ruled acceptable by PHASE-01 EX-2 and DEC-073; PHASE-01 closed without /consult. decided
