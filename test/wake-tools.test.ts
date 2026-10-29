@@ -29,6 +29,7 @@ import { topicInit } from "../src/conversations.ts";
 import { context } from "../src/context.ts";
 import { isRecord, type JsonRecord } from "../src/json.ts";
 import { DEFAULT_TOPIC } from "../src/protocol.ts";
+import type { DaemonToolset } from "../src/toolsets.ts";
 import { writeTopicRecord } from "../src/topics.ts";
 import type { WakeDeps } from "../src/wake/extension.ts";
 import { wakeRequestId } from "../src/wake/task.ts";
@@ -298,6 +299,22 @@ const aTurn = (): Promise<void> =>
       resolve();
     }, WAIT.interval);
   });
+
+/** A conversation in `topic`, created on the topic's own toolset (as `thread_start` creates one). */
+const topicConversation = async (
+  session: WakeSession,
+  topic: string,
+  toolset: DaemonToolset,
+): Promise<Conversation> => {
+  await writeTopicRecord(session.harness, topic, { toolset });
+  return talking(session, topicInit("room", topic, FAUX_CATALOG, FAUX_MODEL));
+};
+
+/** The live wake tasks of `session`: what a refused reach must not have created. */
+const liveWakesOf = async (session: WakeSession): Promise<TaskInspection[]> =>
+  (await session.harness.inspect(context)).tasks.filter(
+    (task) => task.record.kind === "satan.wake",
+  );
 
 /** A task that is not a wake, sleeping far ahead: live when a cancel reads it. */
 const sleeper = defineTask({
@@ -752,5 +769,100 @@ describe("wake tools (SL-034 sec-13)", () => {
     world.setEnabled(false);
     const off = await callTool(world, session, asker, "wake_list", {});
     expect(booleanOf(off.json, "enabled")).toBe(false);
+  });
+});
+
+// SL-009 PHASE-04 VT-2: a wake reaches only conversations inside the caller's
+// talk set, and only conversations the index knows (DEC-076).
+describe("wake reach (SL-009 VT-2)", () => {
+  it("a bridge caller waking another topic is refused, and creates no wake", async () => {
+    const world = wakeWorld();
+    const session = await world.open();
+    const bridge = await topicConversation(session, "bridgework", "bridge");
+    await topicConversation(session, "work", "interactive");
+    const result = await callTool(world, session, bridge, "wake_schedule", {
+      intent: "the work topic",
+      episode_class: "attend",
+      topic: "work",
+    });
+    expect(result.isError).toBe(true);
+    expect(result.text).toBe("toolset bridge has no talk set on profile room");
+    expect(await liveWakesOf(session)).toEqual([]);
+  });
+
+  it("a bridge caller with no topic wakes itself", async () => {
+    const world = wakeWorld();
+    const session = await world.open();
+    const bridge = await topicConversation(session, "bridgework", "bridge");
+    const result = await callTool(world, session, bridge, "wake_schedule", {
+      intent: "my own turn",
+      episode_class: "seclude",
+      after_minutes: 30,
+    });
+    expect(result.isError).toBe(false);
+    expect(numberOf(result.json, "conversation")).toBe(bridge.id);
+    await asleepById(session.harness, numberOf(result.json, "id"));
+  });
+
+  it("a bridge caller naming its own topic wakes itself", async () => {
+    const world = wakeWorld();
+    const session = await world.open();
+    const bridge = await topicConversation(session, "bridgework", "bridge");
+    const result = await callTool(world, session, bridge, "wake_schedule", {
+      intent: "my own topic",
+      episode_class: "seclude",
+      topic: "bridgework",
+    });
+    expect(result.isError).toBe(false);
+    expect(numberOf(result.json, "conversation")).toBe(bridge.id);
+    await asleepById(session.harness, numberOf(result.json, "id"));
+  });
+
+  it("an interactive caller waking a mail topic is refused, and creates no wake", async () => {
+    const world = wakeWorld();
+    const session = await world.open();
+    await topicConversation(session, "inbox", "mail");
+    const result = await callTool(world, session, session.root, "wake_schedule", {
+      intent: "the mail topic",
+      episode_class: "attend",
+      topic: "inbox",
+    });
+    expect(result.isError).toBe(true);
+    expect(result.text).toBe(
+      "topic inbox (toolset mail) is outside this conversation's talk set (interactive)",
+    );
+    expect(await liveWakesOf(session)).toEqual([]);
+  });
+
+  it("an interactive caller waking another interactive topic still succeeds", async () => {
+    const world = wakeWorld();
+    const session = await world.open();
+    const work = await topicConversation(session, "work", "interactive");
+    const result = await callTool(world, session, session.root, "wake_schedule", {
+      intent: "the work topic",
+      episode_class: "attend",
+      topic: "work",
+    });
+    expect(result.isError).toBe(false);
+    expect(numberOf(result.json, "conversation")).toBe(work.id);
+    await asleepById(session.harness, numberOf(result.json, "id"));
+  });
+
+  it("a target with no index entry is refused, and creates no wake", async () => {
+    const world = wakeWorld();
+    const session = await world.open();
+    // Created after startup with no `topicInit`: the create hook writes its entry
+    // without a toolset, which is how an entry the reconcile has not backfilled reads.
+    const unindexed = await talking(session);
+    const result = await callTool(world, session, session.root, "wake_schedule", {
+      intent: "the default topic",
+      episode_class: "attend",
+      topic: DEFAULT_TOPIC,
+    });
+    expect(result.isError).toBe(true);
+    expect(result.text).toBe(
+      `topic ${DEFAULT_TOPIC}: conversation ${String(unindexed.id)} has no index entry`,
+    );
+    expect(await liveWakesOf(session)).toEqual([]);
   });
 });

@@ -99,6 +99,27 @@ describe("persona", () => {
     expect(prompts).toEqual([{ persona: "scaffold\n" }]);
   });
 
+  it("SL-009 VT-1: bridge shares the interactive persona files, on both profiles", () => {
+    for (const profile of ["room", "host"] as const) {
+      expect(personaFiles(CORPUS, "bridge", profile)).toEqual(
+        personaFiles(CORPUS, "interactive", profile),
+      );
+    }
+  });
+
+  it("SL-009 VT-1: the interactive and mail corpus files cover the room's bridge persona too", async () => {
+    const dir = await corpus({
+      "system/scaffold.txt": "scaffold\n",
+      "prompts/interactive.txt": "interactive\n",
+      "prompts/env/room.txt": "room\n",
+      "prompts/mail.txt": "mail\n",
+    });
+    // No prompts/bridge.txt: bridge reads interactive's, so housekeeping adds no file.
+    expect(() => {
+      requirePersonaFiles(dir, "room");
+    }).not.toThrow();
+  });
+
   it("VT-2: a room corpus without the mail prompt refuses startup, naming prompts/mail.txt", async () => {
     const dir = await corpus({
       "system/scaffold.txt": "scaffold\n",

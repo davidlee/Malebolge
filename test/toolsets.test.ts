@@ -39,7 +39,7 @@ import { fakeMailSource } from "./mail/mail-fixtures.ts";
 const PROFILES: readonly Profile[] = ["room", "host"];
 
 /** The toolsets a daemon installs; the runner's `job` is selected elsewhere. */
-const DAEMON_TOOLSETS: readonly DaemonToolset[] = ["interactive", "mail"];
+const DAEMON_TOOLSETS: readonly DaemonToolset[] = ["interactive", "mail", "bridge"];
 
 /**
  * One profile's frozen baseline. It also records `registry`, the names the
@@ -266,6 +266,29 @@ describe("toolset catalogue", () => {
     expect(toolsetList("interactive", "host")).not.toContain("threads");
   });
 
+  it("SL-009 VT-1: bridge is interactive's list without threads, bridge spliced before satan", () => {
+    for (const profile of PROFILES) {
+      const interactive = toolsetList("interactive", profile);
+      const expected = interactive.filter((name) => name !== "threads");
+      expected.splice(expected.indexOf(SATAN), 0, "bridge");
+      expect(toolsetList("bridge", profile)).toEqual(expected);
+      expect(toolsetList("bridge", profile)).not.toContain("threads");
+      // Catalogue order, pinned: the bridge extension sits between bookmarks and satan.
+      expect(toolsetList("bridge", profile).slice(-3)).toEqual(["bookmarks", "bridge", SATAN]);
+    }
+  });
+
+  it("SL-009 VT-1: the room allows bridge and the host does not", () => {
+    expect(PROFILE_TOOLSETS.room.allowed).toEqual(["interactive", "mail", "bridge"]);
+    expect(PROFILE_TOOLSETS.host.allowed).toEqual(["interactive"]);
+  });
+
+  it("SL-009 VT-1: allowedNames gains bridge last on the room, and never on the host", () => {
+    // The union is deduplicated in allowed order, so bridge is the one name it appends.
+    expect(allowedNames("room").at(-1)).toBe("bridge");
+    expect(allowedNames("host")).not.toContain("bridge");
+  });
+
   it("VT-2: the job list is the runner's two extensions, whatever the profile", () => {
     for (const profile of PROFILES) {
       expect(toolsetList("job", profile)).toEqual(["job-tools", "job-guard"]);
@@ -317,6 +340,11 @@ describe("talk sets", () => {
     expect(TALK_SETS.host).toEqual({});
   });
 
+  it("SL-009 VT-1: bridge belongs to no talk set on either profile", () => {
+    expect(TALK_SETS.room.bridge).toBeUndefined();
+    expect(TALK_SETS.host.bridge).toBeUndefined();
+  });
+
   describe("VT-2: requireSameTalkSet refuses mail, host and mixed sets", () => {
     it("caller mail has no talk set on profile room", () => {
       expect(() => requireSameTalkSet("room", "mail", "interactive", "conversation 13")).toThrow(
@@ -339,6 +367,18 @@ describe("talk sets", () => {
     it("a mail target is outside the interactive set, named as a topic", () => {
       expect(() => requireSameTalkSet("room", "interactive", "mail", "topic inbox")).toThrow(
         "topic inbox (toolset mail) is outside this conversation's talk set (interactive)",
+      );
+    });
+
+    it("SL-009 a bridge caller has no talk set on profile room", () => {
+      expect(() => requireSameTalkSet("room", "bridge", "interactive", "topic work")).toThrow(
+        "toolset bridge has no talk set on profile room",
+      );
+    });
+
+    it("SL-009 a bridge target is outside the interactive set", () => {
+      expect(() => requireSameTalkSet("room", "interactive", "bridge", "topic bridgework")).toThrow(
+        "topic bridgework (toolset bridge) is outside this conversation's talk set (interactive)",
       );
     });
 

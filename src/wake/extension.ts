@@ -8,6 +8,7 @@ import {
   type Harness,
   type Task,
 } from "@earendil-works/pi-durable";
+import type { Profile } from "../config.ts";
 import type { Conversations } from "../conversations.ts";
 import { type LateBinding, lateBinding } from "../late-binding.ts";
 import type { Log, SatanTools } from "../satan-tools.ts";
@@ -16,6 +17,8 @@ import { type WakeInput, type WakeResult, type WakeState, wakeTask } from "./tas
 import { wakeCancel, wakeList, wakeSchedule } from "./tools.ts";
 
 export interface WakeDeps {
+  /** The daemon's execution profile: the reach check reads its talk sets (design sec-6). */
+  profile: Profile;
   settings: WakeSettings;
   policy: WakePolicy;
   /** The harness clock: the same function the session's `now` is. */

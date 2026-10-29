@@ -69,6 +69,7 @@ const earlyWakeDeps = (
 ): EarlyWakeDeps => {
   const fragment = join(config.corpusRoot, "prompts", "wake.md");
   return {
+    profile: config.execution.profile,
     settings: config.wakes,
     policy: v0Policy(config.wakes),
     now,

@@ -6,7 +6,7 @@ import { defineExtension, type Extension } from "@earendil-works/pi-durable";
 import type { Profile } from "./config.ts";
 
 /** A run kind. The daemon builds its own; the runner selects `job` in code. */
-export type Toolset = "interactive" | "mail" | "job";
+export type Toolset = "interactive" | "mail" | "bridge" | "job";
 
 /** What a daemon may install, profile by profile. */
 export type DaemonToolset = Exclude<Toolset, "job">;
@@ -33,6 +33,20 @@ const CATALOG: Readonly<Record<Toolset, readonly string[]>> = {
     "tasks",
     "threads",
     "bookmarks",
+    SATAN,
+  ],
+  // Interactive's list without `threads`, with `bridge` before SATAN (design sec-6; DEC-071).
+  bridge: [
+    "persona",
+    "project_context",
+    "skills",
+    "cwd",
+    "conversation",
+    "coding-tools",
+    "grep",
+    "tasks",
+    "bookmarks",
+    "bridge",
     SATAN,
   ],
   mail: ["mail-persona", "conversation", "mail"],
@@ -64,7 +78,7 @@ export function selectionOf(names: readonly string[]): Extension[] {
 
 /** Each profile's default toolset and the ones it may use. */
 export const PROFILE_TOOLSETS: Readonly<Record<Profile, ProfileToolsets>> = {
-  room: { default: "interactive", allowed: ["interactive", "mail"] },
+  room: { default: "interactive", allowed: ["interactive", "mail", "bridge"] },
   host: { default: "interactive", allowed: ["interactive"] },
 };
 
@@ -80,7 +94,7 @@ export const TALK_SETS: Readonly<Record<Profile, Partial<Record<DaemonToolset, T
 /**
  * The talk set `caller` and `target` share on `profile`, refusing when either has none or they
  * differ. `targetLabel` names the target in the refusal (`conversation 13`, `topic inbox`).
- * Start, fork and post call it alike.
+ * Start, fork, post and the wake reach check call it alike.
  */
 export function requireSameTalkSet(
   profile: Profile,

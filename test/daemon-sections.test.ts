@@ -216,24 +216,39 @@ describe("daemon system prompt sections", () => {
   });
 });
 
+/** The parts a test daemon builds; the mail extension exists only where the profile allows it. */
+const partsOf = (profile: DaemonParts["profile"]): DaemonParts => ({
+  personaFiles: () => [],
+  projectContext: undefined,
+  skills: [],
+  profile,
+  tasks: defineExtension({ name: "tasks" }),
+  threads: defineExtension({ name: "threads" }),
+  bookmarks: bookmarksPart(),
+  ...(profile === "room"
+    ? { mail: mailExtension({ source: fakeMailSource(), now: () => 0 }) }
+    : {}),
+});
+
 describe("daemonExtensions tasks", () => {
   const namesOf = (profile: DaemonParts["profile"]): string[] =>
-    daemonExtensions({
-      personaFiles: () => [],
-      projectContext: undefined,
-      skills: [],
-      profile,
-      tasks: defineExtension({ name: "tasks" }),
-      threads: defineExtension({ name: "threads" }),
-      bookmarks: bookmarksPart(),
-      ...(profile === "room"
-        ? { mail: mailExtension({ source: fakeMailSource(), now: () => 0 }) }
-        : {}),
-    }).map(({ name }) => name);
+    daemonExtensions(partsOf(profile)).map(({ name }) => name);
 
   it("VT-3 e: the room installs the tasks extension and the host never does (W10)", () => {
     expect(namesOf("room")).toContain("tasks");
     expect(namesOf("host")).not.toContain("tasks");
+  });
+});
+
+describe("daemonExtensions bridge (SL-009)", () => {
+  it("SL-009 VT-1: the room installs an empty bridge extension and the host installs none", () => {
+    const installed = daemonExtensions(partsOf("room"));
+    const bridge = installed.find(({ name }) => name === "bridge");
+    expect(bridge).toBeDefined();
+    // PHASE-04's bridge extension is a name and nothing else: its tools and prose come later.
+    expect(bridge?.tools ?? []).toEqual([]);
+    expect(bridge?.sections ?? []).toEqual([]);
+    expect(daemonExtensions(partsOf("host")).map(({ name }) => name)).not.toContain("bridge");
   });
 });
 

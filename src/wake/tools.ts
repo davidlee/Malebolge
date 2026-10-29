@@ -14,9 +14,12 @@ import {
 } from "@earendil-works/pi-durable";
 import { contextOf } from "../conversation-context.ts";
 import { isConversationKey } from "../conversations.ts";
+import type { Profile } from "../config.ts";
 import { isRecord } from "../json.ts";
+import { messageOf } from "../message-of.ts";
 import { answer, refusal } from "../tool-results.ts";
-import { isKnownTopic, latestIn, readIndex } from "../topics.ts";
+import { requireSameTalkSet } from "../toolsets.ts";
+import { type IndexDoc, isKnownTopic, latestIn, readIndex, storedEntry } from "../topics.ts";
 import type { WakeDeps } from "./extension.ts";
 import { localIso } from "./local-time.ts";
 import {
@@ -31,13 +34,27 @@ type WakeTask = Task<WakeInput, WakeState, WakeResult, object>;
 
 const MINUTE = 60_000;
 
+/**
+ * A wake's destination (W8): the caller itself, or a topic's latest conversation and
+ * the one index read that resolved it. The reach check reads entries from that index;
+ * a self-wake skips the check, so it needs none (design sec-6; DEC-076).
+ */
+type Target =
+  | { readonly kind: "self"; readonly id: ConversationId }
+  | {
+      readonly kind: "topic";
+      readonly id: ConversationId;
+      readonly topic: string;
+      readonly index: IndexDoc;
+    };
+
 /** The conversation a wake goes to, or why there is none: the caller, or a known topic's latest now (W8). */
 const targetOf = async (
   api: ToolExecutionApi,
   topic: string | undefined,
-): Promise<ConversationId | string> => {
+): Promise<Target | string> => {
   if (topic === undefined) {
-    return api.conversationId;
+    return { kind: "self", id: api.conversationId };
   }
   const index = await readIndex(api);
   if (!isKnownTopic(index, topic)) {
@@ -45,8 +62,39 @@ const targetOf = async (
   }
   const latest = latestIn(index, topic);
   return latest !== undefined && isConversationKey(latest)
-    ? latest
+    ? { kind: "topic", id: latest, topic, index }
     : `topic ${topic} has no conversation`;
+};
+
+/**
+ * Why a wake from `caller` may not reach `target`, or undefined when it may: the two
+ * conversations' index entries, then the talk set they must share (design sec-6;
+ * DEC-076). An entry nobody wrote — a conversation the reconcile has not backfilled —
+ * is refused rather than given a toolset it did not state.
+ */
+const reachRefusal = (
+  profile: Profile,
+  index: IndexDoc,
+  caller: ConversationId,
+  target: ConversationId,
+  topic: string,
+): string | undefined => {
+  const noEntry = (id: ConversationId): string =>
+    `topic ${topic}: conversation ${String(id)} has no index entry`;
+  const callerEntry = storedEntry(index, caller);
+  if (callerEntry === undefined) {
+    return noEntry(caller);
+  }
+  const targetEntry = storedEntry(index, target);
+  if (targetEntry === undefined) {
+    return noEntry(target);
+  }
+  try {
+    requireSameTalkSet(profile, callerEntry.toolset, targetEntry.toolset, `topic ${topic}`);
+    return undefined;
+  } catch (error) {
+    return messageOf(error);
+  }
 };
 
 const scheduleParameters = Type.Object({
@@ -84,6 +132,15 @@ export const wakeSchedule = (
         return refusal(target);
       }
       const wake = deps();
+      const caller = api.conversationId;
+      // A self-wake reaches only itself, whatever the toolset; a topic target must share
+      // the caller's talk set, so bridge wakes only bridge and nothing wakes into it.
+      if (target.kind === "topic" && target.id !== caller) {
+        const refused = reachRefusal(wake.profile, target.index, caller, target.id, target.topic);
+        if (refused !== undefined) {
+          return refusal(refused);
+        }
+      }
       const now = api.now();
       const requestedAt =
         args.after_minutes === undefined ? undefined : now + args.after_minutes * MINUTE;
@@ -93,7 +150,7 @@ export const wakeSchedule = (
         presence: () => Promise.resolve("unknown"),
       });
       const input: WakeInput = {
-        conversationId: target,
+        conversationId: target.id,
         intent: args.intent,
         ...(args.payload === undefined ? {} : { payload: args.payload }),
         episodeClass: args.episode_class,
@@ -105,7 +162,7 @@ export const wakeSchedule = (
       return answer({
         id,
         at: localIso(at),
-        conversation: target,
+        conversation: target.id,
         enabled: wake.settings.enabled,
       });
     },

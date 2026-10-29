@@ -247,6 +247,8 @@ export function wakeWorld(): WakeWorld {
     },
   };
   const wake: WakeDeps = {
+    // SL-009: the reach check reads the profile's talk sets.
+    profile: "room",
     settings,
     policy: v0Policy(settings),
     now: clock.now,

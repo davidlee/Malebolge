@@ -3,6 +3,7 @@
 
 import type { Extension } from "@earendil-works/pi-durable";
 import { CodingTools } from "@earendil-works/pi-durable/tools";
+import { bridgeExtension } from "./bridge/extension.ts";
 import type { Profile } from "./config.ts";
 import { conversationExtension } from "./conversation-context.ts";
 import { cwdExtension } from "./cwd.ts";
@@ -43,6 +44,8 @@ const builders = (parts: DaemonParts): ReadonlyMap<string, () => Extension> => {
     ["tasks", (): Extension => parts.tasks],
     ["threads", (): Extension => parts.threads],
     ["bookmarks", (): Extension => parts.bookmarks],
+    // Built unconditionally: only the room's policy installs it (design sec-6).
+    ["bridge", (): Extension => bridgeExtension],
   ]);
   // A room start without it is refused by `requireInstalled` rather than left unbuilt.
   const { mail } = parts;
