@@ -1,7 +1,7 @@
 import { existsSync, readdirSync, readlinkSync } from "node:fs";
-import { mkdir, rm, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import type { Message } from "@earendil-works/pi-ai";
+import type { Message, ToolResultMessage } from "@earendil-works/pi-ai";
 import type { Models } from "@earendil-works/pi-ai/models";
 import type { FauxProviderHandle } from "@earendil-works/pi-ai/providers/faux";
 import { defineExtension, defineTask, type Extension, Harness } from "@earendil-works/pi-durable";
@@ -21,6 +21,7 @@ import { storedEntry } from "../src/topics.ts";
 import { SocketInUse, serveUnix } from "../src/unix-socket.ts";
 import { tasksExtension, wakeBinding } from "../src/wake/extension.ts";
 import { liveWakes, type WakeInput } from "../src/wake/task.ts";
+import { bookmarksPart } from "./bookmarks/bookmark-fixtures.ts";
 import { type FakeTool, fakeMcpServer, rejection, staleSocket, tempDir } from "./fixtures.ts";
 import {
   callThenAnswer,
@@ -310,6 +311,7 @@ async function inStore<T>(
           profile,
           tasks: tasksExtension(wakeBinding().deps),
           threads: threadsExtension(threadBinding().deps),
+          bookmarks: bookmarksPart(),
           ...mailParts(profile),
         }),
       ),
@@ -475,6 +477,7 @@ describe("startDaemon wakes", () => {
           profile: "room",
           tasks: tasksExtension(wakeBinding().deps),
           threads: threadsExtension(threadBinding().deps),
+          bookmarks: bookmarksPart(),
           ...mailParts("room"),
         }),
       ),
@@ -620,6 +623,7 @@ describe("startDaemon mail", () => {
         profile: "host",
         tasks: tasksExtension(wakeBinding().deps),
         threads: threadsExtension(threadBinding().deps),
+        bookmarks: bookmarksPart(),
       }),
     );
     expect(registry.snapshot().extension("mail")).toBeUndefined();
@@ -683,5 +687,83 @@ describe("startDaemon mail", () => {
     track(failed);
     await expect(failed).rejects.toThrow("extension mail is not installed");
     lockFree(w.config);
+  });
+});
+
+/** The fixture backup the configured case reads: a real Firefox places tree. */
+const SCRATCHPAD = join(import.meta.dirname, "bookmarks", "fixtures", "scratchpad.jsonlz4");
+/** A name the source accepts: `bookmarks-<date>_<counter>_<suffix>.jsonlz4`. */
+const BACKUP_NAME = "bookmarks-2026-03-25_4_AbCdEf==.jsonlz4";
+
+/**
+ * A host world whose root conversation holds a turn left in flight, as a crash
+ * leaves it: the resume replays it, and its next response calls the tool.
+ */
+async function heldHostTurn(w: World): Promise<void> {
+  await mkdir(dirname(w.config.storagePath), { recursive: true });
+  w.faux.setResponses([heldUntilCutOff]);
+  const seeded = await openSession(await openNodeSqliteStorage(w.config.storagePath), {
+    models: w.models,
+    registry: registryOf(
+      daemonExtensions({
+        personaFiles: () => [],
+        projectContext: undefined,
+        skills: [],
+        profile: "host",
+        tasks: tasksExtension(wakeBinding().deps),
+        threads: threadsExtension(threadBinding().deps),
+        bookmarks: bookmarksPart(),
+      }),
+    ),
+    agent: { model: FAUX_MODEL, cwd: w.cwd },
+    profile: "host",
+    log: () => undefined,
+    env: nodeEnv,
+  });
+  await seeded.root.submit({ type: "input", content: "hello" }, context);
+  await vi.waitFor(() => {
+    expect(w.faux.state.callCount).toBe(1);
+  }, WAIT);
+  await seeded.harness.close(context);
+}
+
+/** Resume the held turn with one `tool` call, stop the daemon, and return the stored result. */
+async function resumedToolResult(w: World, tool: string): Promise<ToolResultMessage | undefined> {
+  w.faux.setResponses(callThenAnswer(tool, {}, "answered"));
+  const handle = await started(w);
+  await vi.waitFor(() => {
+    expect(w.faux.state.callCount).toBeGreaterThanOrEqual(3);
+  }, WAIT);
+  await handle.stop();
+  const results = await inStore(w, "host", (harness) => toolResults(harness));
+  return results.find((message) => message.toolName === tool);
+}
+
+// PHASE-07 VT-4: startDaemon wires config.bookmarkBackups into the tools, end to
+// end: the resumed turn's call reads the configured directory, or refuses when
+// the Config carries none (DEC-055).
+describe("startDaemon bookmarks", () => {
+  it("VT-4 unset: the resumed turn's bookmarks_tags is an error, 'bookmarks are not configured'", async () => {
+    const w = await world();
+    expect(w.config.bookmarkBackups).toBeUndefined();
+    await heldHostTurn(w);
+    const result = await resumedToolResult(w, "bookmarks_tags");
+    expect(result?.isError).toBe(true);
+    expect(result === undefined ? "" : textOf(result)).toBe("bookmarks are not configured");
+  });
+
+  it("VT-4 configured: the resumed turn's bookmarks_tags reads the backup directory", async () => {
+    const w = await world();
+    const backups = join(dirname(w.config.storagePath), "bookmarkbackups");
+    await mkdir(backups, { recursive: true });
+    await copyFile(SCRATCHPAD, join(backups, BACKUP_NAME));
+    w.config.bookmarkBackups = backups;
+    await heldHostTurn(w);
+    const result = await resumedToolResult(w, "bookmarks_tags");
+    expect(result?.isError).toBe(false);
+    const text = result === undefined ? "" : textOf(result);
+    expect(text).toContain('<bookmark-data untrusted="true">');
+    // The header carries the fixture's own date, so the daemon read the file itself.
+    expect(text).toContain("source: bookmark backup 2026-03-25");
   });
 });

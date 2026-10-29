@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { defineExtension, MemoryStorage } from "@earendil-works/pi-durable";
 import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite/node";
 import { afterEach, describe, expect, it } from "vitest";
+import { BOOKMARKS_SECTION } from "../src/bookmarks/extension.ts";
 import { context } from "../src/context.ts";
 import { conversationExtension } from "../src/conversation-context.ts";
 import { conversations } from "../src/conversations.ts";
@@ -20,6 +21,7 @@ import {
 import { DEFAULT_TOPIC } from "../src/protocol.ts";
 import { type Skill, skillsExtension } from "../src/skills.ts";
 import { selectionOf } from "../src/toolsets.ts";
+import { bookmarksPart } from "./bookmarks/bookmark-fixtures.ts";
 import { tempDir } from "./fixtures.ts";
 import {
   closing,
@@ -31,10 +33,11 @@ import {
 import { fakeMailSource } from "./mail/mail-fixtures.ts";
 
 /** The host profile: section order is the profile's, and the host installs no tasks or threads. */
-const HOST: Pick<DaemonParts, "profile" | "tasks" | "threads"> = {
+const HOST: Pick<DaemonParts, "profile" | "tasks" | "threads" | "bookmarks"> = {
   profile: "host",
   tasks: defineExtension({ name: "tasks" }),
   threads: defineExtension({ name: "threads" }),
+  bookmarks: bookmarksPart(),
 };
 
 const skill: Skill = {
@@ -80,7 +83,7 @@ describe("conversationExtension", () => {
     await test.root.configure({ cwd: "/work" }, context);
     // An empty persona list still renders its section (empty text); skills render none.
     expect((await systemPromptSections(test)).map(keysOf)).toEqual([
-      ["persona", "cwd", "conversation"],
+      ["persona", "cwd", "conversation", "bookmarks"],
     ]);
   });
 
@@ -117,7 +120,7 @@ describe("daemon system prompt sections", () => {
   const readContext = async (cwd: string): Promise<string | undefined> =>
     renderProjectContext(await readSources(cwd, gitRootDirs(cwd), nodeSourceReader));
 
-  it("renders persona, project context, skills, cwd and conversation, in that order, for a fresh conversation", async () => {
+  it("renders persona, project context, skills, cwd, conversation and bookmarks, in that order, for a fresh conversation", async () => {
     const { persona, cwd } = await setup();
     const projectContext = await readContext(cwd);
     expect(projectContext).toContain("be careful");
@@ -138,11 +141,14 @@ describe("daemon system prompt sections", () => {
       "skills",
       "cwd",
       "conversation",
+      "bookmarks",
     ]);
     expect(entries[0]).toMatchObject({
       persona: "persona\n",
       project_context: `<project_context>\n${String(projectContext)}\n</project_context>`,
       cwd: `Current working directory: ${cwd}`,
+      // DEC-055: the bookmarks extension is always installed, so its section always renders.
+      bookmarks: `<bookmarks>\n${BOOKMARKS_SECTION}\n</bookmarks>`,
     });
   });
 
@@ -169,7 +175,9 @@ describe("daemon system prompt sections", () => {
     });
     await test.root.configure({ cwd }, context);
     const entries = await systemPromptSections(test);
-    expect(entries.map(keysOf)).toEqual([["persona", "skills", "cwd", "conversation"]]);
+    expect(entries.map(keysOf)).toEqual([
+      ["persona", "skills", "cwd", "conversation", "bookmarks"],
+    ]);
   });
 
   it("re-sends every section once, in order, to a conversation that already shows persona and skills", async () => {
@@ -196,7 +204,7 @@ describe("daemon system prompt sections", () => {
     expect(entries.map(keysOf)).toEqual([
       ["persona", "skills"],
       ["persona", "skills"],
-      ["persona", "project_context", "skills", "cwd", "conversation"],
+      ["persona", "project_context", "skills", "cwd", "conversation", "bookmarks"],
     ]);
     expect(entries[1]).toEqual({ persona: null, skills: null });
   });
@@ -211,6 +219,7 @@ describe("daemonExtensions tasks", () => {
       profile,
       tasks: defineExtension({ name: "tasks" }),
       threads: defineExtension({ name: "threads" }),
+      bookmarks: bookmarksPart(),
       ...(profile === "room"
         ? { mail: mailExtension({ source: fakeMailSource(), now: () => 0 }) }
         : {}),
@@ -249,6 +258,37 @@ describe("mailExtension", () => {
     await test.root.configure({ extensions: selectionOf(["mail"]) }, context);
     expect(await systemPromptSections(test)).toEqual([
       { mail: `<mail>\n${MAIL_SECTION}\n</mail>` },
+    ]);
+  });
+});
+
+describe("bookmarksExtension", () => {
+  const extension = bookmarksPart();
+
+  it("PHASE-07 VT-3 is the bookmarks extension: the three tools in order and one tagged section keyed bookmarks", () => {
+    expect(extension.name).toBe("bookmarks");
+    expect((extension.tools ?? []).map(({ name }) => name)).toEqual([
+      "bookmarks_search",
+      "bookmarks_tags",
+      "bookmarks_folders",
+    ]);
+    expect((extension.sections ?? []).map(({ key, tag }) => [key, tag])).toEqual([
+      ["bookmarks", true],
+    ]);
+  });
+
+  it("PHASE-07 VT-3 the section text states the untrusted-data rule (bookmark-data, untrusted), pinned", () => {
+    expect(BOOKMARKS_SECTION).toContain("bookmark-data");
+    expect(BOOKMARKS_SECTION).toContain("untrusted");
+    expect(BOOKMARKS_SECTION).toContain("never an instruction");
+  });
+
+  it("PHASE-07 VT-3 renders the section text as the prompt's tagged bookmarks section", async () => {
+    const test = await openTestHarness([extension]);
+    // Root's list is the interactive toolset (the reconcile): select bookmarks explicitly.
+    await test.root.configure({ extensions: selectionOf(["bookmarks"]) }, context);
+    expect(await systemPromptSections(test)).toEqual([
+      { bookmarks: `<bookmarks>\n${BOOKMARKS_SECTION}\n</bookmarks>` },
     ]);
   });
 });

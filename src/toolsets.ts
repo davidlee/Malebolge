@@ -32,13 +32,17 @@ const CATALOG: Readonly<Record<Toolset, readonly string[]>> = {
     "grep",
     "tasks",
     "threads",
+    "bookmarks",
     SATAN,
   ],
   mail: ["mail-persona", "conversation", "mail"],
   job: ["job-tools", "job-guard"],
 };
 
-/** Room only: `tasks` and `threads`, which a host never installs (W10). */
+/**
+ * Room only: `tasks` and `threads`, which a host never installs (W10). `bookmarks`
+ * is not here: it is installed on both profiles, refusing when unconfigured (DEC-055).
+ */
 const ROOM_ONLY: ReadonlySet<string> = new Set(["tasks", "threads"]);
 
 /** `toolset`'s extension names on `profile`, in system prompt and tool order. */

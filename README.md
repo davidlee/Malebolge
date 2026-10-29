@@ -292,6 +292,7 @@ Set through environment variables:
 | `MALEBOLGE_GATEWAY_CATALOG` | gateway model catalog (JSON file) | `~/.config/malebolge/gateway-models.json` |
 | `MALEBOLGE_GATEWAY_KEY_FILE` | file holding the daemon's gateway key (names a file; never carries the key) | `~/.config/llm-gateway/keys/malebolge` |
 | `MALEBOLGE_SKILLS` | Agent Skill directories, `:`-separated, each holding a `SKILL.md`; use absolute paths; listed once at start, bodies read on use | none |
+| `MALEBOLGE_BOOKMARK_BACKUPS` | Firefox's `bookmarkbackups` directory, as an absolute path; read on both profiles (`room` and `host`), with no existence check. Optional: unset or empty leaves the bookmark tools installed and refusing each call, and a relative path refuses startup | none |
 | `MALEBOLGE_SCREWTAPE` | the `screwtape` executable the mail tools run, as an absolute path; the binary itself, not a wrapper that adds `--config` | required when the profile allows `mail` (`room`) |
 | `MALEBOLGE_SCREWTAPE_CONFIG` | the config file it is given as `--config`, as an absolute path; no `PATH` lookup, no existence check | required for `room` |
 | `MALEBOLGE_SOCKET` | where clients attach (clients default to the room's) | `$XDG_RUNTIME_DIR/satan/durable/<profile>/durable.sock` |
@@ -333,7 +334,7 @@ fixed list of extensions, chosen as a whole with the prompt that goes with it.
 
 | Toolset | Holds | Used by |
 |---|---|---|
-| `interactive` | the persona, project context, skills, cwd and conversation sections, coding tools (`read`, `write`, `edit`, `bash`), `grep`, `tasks`, SATAN's MCP tools | the daemon |
+| `interactive` | the persona, project context, skills, cwd and conversation sections, coding tools (`read`, `write`, `edit`, `bash`), `grep`, `tasks`, the `thread_*` tools, the three `bookmarks_*` tools, SATAN's MCP tools | the daemon |
 | `mail` | a mail persona, the conversation section, the five `mail_*` tools | the daemon |
 | `job` | the job tools and the job guard | the runner |
 
@@ -384,6 +385,17 @@ verbs of the `screwtape` binary named by `MALEBOLGE_SCREWTAPE`. What a mail
 tool returns is untrusted email, sent to the model as data: nothing inside it
 is an instruction. [docs/internals.md](docs/internals.md) has the adapter and
 the deployment order.
+
+**The bookmark tools** read the newest of Firefox's daily bookmark backups and
+change nothing: `bookmarks_search` matches text, an exact tag and a folder (its
+subfolders included); `bookmarks_tags` lists every tag with its count;
+`bookmarks_folders` lists every folder with its count, by path. They are in
+`interactive` on both profiles, and reach one directory,
+`MALEBOLGE_BOOKMARK_BACKUPS`. Unset is no bookmarks, never no tools: each call
+is then refused `bookmarks are not configured`. What they return is untrusted
+page text, sent to the model as data: nothing inside it is an instruction.
+[docs/internals.md](docs/internals.md) has the source, the failures and the
+rollout.
 
 ## Patch jobs
 

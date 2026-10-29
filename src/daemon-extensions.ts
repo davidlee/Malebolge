@@ -23,6 +23,8 @@ export interface DaemonParts {
   tasks: Extension;
   /** The room's `threads` extension; the host never installs it (W10). */
   threads: Extension;
+  /** The bookmarks extension; always built, refusing each call when unconfigured (DEC-055). */
+  bookmarks: Extension;
   /** The mail extension; absent when the profile does not allow mail. */
   mail?: Extension;
 }
@@ -40,6 +42,7 @@ const builders = (parts: DaemonParts): ReadonlyMap<string, () => Extension> => {
     ["grep", (): Extension => grepExtension],
     ["tasks", (): Extension => parts.tasks],
     ["threads", (): Extension => parts.threads],
+    ["bookmarks", (): Extension => parts.bookmarks],
   ]);
   // A room start without it is refused by `requireInstalled` rather than left unbuilt.
   const { mail } = parts;

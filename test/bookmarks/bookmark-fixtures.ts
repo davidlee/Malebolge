@@ -6,6 +6,7 @@
 
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import type { Extension } from "@earendil-works/pi-durable";
 import type {
   BackupContainer,
   BackupNode,
@@ -15,6 +16,7 @@ import type {
   BookmarkSourceError,
   Snapshot,
 } from "../../src/bookmarks/backup.ts";
+import { bookmarksExtension } from "../../src/bookmarks/extension.ts";
 import type { Bookmark } from "../../src/bookmarks/project.ts";
 
 /** Firefox's mozlz4 magic: "mozLz40" followed by a NUL. */
@@ -199,6 +201,25 @@ export function fakeBookmarkSource(result: Snapshot | BookmarkSourceError): Fake
       return result instanceof Error ? Promise.reject(result) : Promise.resolve(result);
     },
   };
+}
+
+// ------------------------------------------------------------- extension
+//
+// PHASE-07 installs the bookmarks extension in the daemon, always (DEC-055), so
+// every `daemonExtensions` caller must pass one. The helper below keeps those
+// callers off the filesystem: the wiring is what they test, not reading.
+
+/**
+ * The bookmarks extension a `daemonExtensions` caller passes: one fake snapshot
+ * holding a bookmark and its folder, and a fixed clock.
+ */
+export function bookmarksPart(): Extension {
+  return bookmarksExtension({
+    source: fakeBookmarkSource(
+      snapshot({ bookmarks: [bookmark()], folders: [{ path: "Menu", count: 1 }] }),
+    ),
+    now: () => 0,
+  });
 }
 
 // --------------------------------------------------------- backup files

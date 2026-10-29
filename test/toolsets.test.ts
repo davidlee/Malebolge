@@ -6,6 +6,7 @@
 import { readFileSync } from "node:fs";
 import type { Extension } from "@earendil-works/pi-durable";
 import { describe, expect, it } from "vitest";
+import { BOOKMARKS_SECTION } from "../src/bookmarks/extension.ts";
 import type { Profile } from "../src/config.ts";
 import { daemonExtensions } from "../src/daemon-extensions.ts";
 import { isRecord } from "../src/json.ts";
@@ -24,6 +25,7 @@ import {
   toolsetList,
 } from "../src/toolsets.ts";
 import { tasksExtension, wakeBinding } from "../src/wake/extension.ts";
+import { bookmarksPart } from "./bookmarks/bookmark-fixtures.ts";
 import {
   BASELINE_CORPUS,
   BASELINE_PATH,
@@ -116,15 +118,19 @@ const extensionsOf = (profile: Profile): Extension[] => {
     profile,
     tasks: tasksExtension(wakeBinding().deps),
     threads: threadsExtension(threadBinding().deps),
+    bookmarks: bookmarksPart(),
     ...(profile === "room"
       ? { mail: mailExtension({ source: fakeMailSource(), now: () => 0 }) }
       : {}),
   }).filter(({ name }) => interactive.has(name));
 };
 
-/** The extensions `profile` installs, less the threads extension the baseline predates. */
-const withoutThreads = (extensions: readonly Extension[]): Extension[] =>
-  extensions.filter(({ name }) => name !== "threads");
+/**
+ * The extensions `profile` installs, less the two the baseline predates: threads
+ * (PHASE-05) and bookmarks (PHASE-07).
+ */
+const withoutPostBaseline = (extensions: readonly Extension[]): Extension[] =>
+  extensions.filter(({ name }) => name !== "threads" && name !== "bookmarks");
 
 /** What a new interactive conversation offers on `profile`. */
 const snapshotOf = (profile: Profile): Promise<InteractiveSnapshot> =>
@@ -156,40 +162,69 @@ const unionOf = (profile: Profile): string[] => {
 describe("toolset catalogue", () => {
   it("VT-1: a new interactive conversation is the frozen baseline, profile for profile", async () => {
     for (const profile of PROFILES) {
-      // The baseline predates threads (PHASE-05), so compare the room without its extension.
-      const snapshot = await interactiveSnapshot(withoutThreads(extensionsOf(profile)));
+      // The baseline predates threads (PHASE-05) and bookmarks (PHASE-07): compare without them.
+      const snapshot = await interactiveSnapshot(withoutPostBaseline(extensionsOf(profile)));
       expect(snapshot).toEqual(expectedSnapshot(BASELINE.profiles[profile]));
-      // SATAN's tools arrive by discovery, so the static list names no `satan`.
+      // SATAN's tools arrive by discovery, and the baseline predates those two extensions.
       expect(snapshot.extensions).toEqual(
-        toolsetList("interactive", profile).filter((name) => name !== SATAN && name !== "threads"),
+        toolsetList("interactive", profile).filter(
+          (name) => name !== SATAN && name !== "threads" && name !== "bookmarks",
+        ),
       );
     }
   });
 
-  it("VT-5: the room snapshot is the baseline plus exactly what threads adds", async () => {
+  it("VT-5: the room snapshot is the baseline plus exactly what threads and bookmarks add", async () => {
     const baseline = BASELINE.profiles.room;
     const afterTasks = baseline.extensions.indexOf("tasks") + 1;
     expect(afterTasks).toBeGreaterThan(0);
     const extensions = [...baseline.extensions];
     extensions.splice(afterTasks, 0, "threads");
+    extensions.push("bookmarks");
+    const baselineKeys = Object.keys(promptSections(baseline));
 
     const room = await snapshotOf("room");
-    // Key order is prompt order, which toEqual ignores: threads comes last.
-    expect(Object.keys(promptSections(room))).toEqual([
-      ...Object.keys(promptSections(baseline)),
-      "threads",
-    ]);
+    // Key order is prompt order, which toEqual ignores: threads then bookmarks come last.
+    expect(Object.keys(promptSections(room))).toEqual([...baselineKeys, "threads", "bookmarks"]);
     expect(room).toEqual({
       extensions,
       // Catalogue order puts the tagged section after every earlier extension's.
       sections: [
-        { ...promptSections(baseline), threads: `<threads>\n${THREADS_SECTION}\n</threads>` },
+        {
+          ...promptSections(baseline),
+          threads: `<threads>\n${THREADS_SECTION}\n</threads>`,
+          bookmarks: `<bookmarks>\n${BOOKMARKS_SECTION}\n</bookmarks>`,
+        },
       ],
-      // The wake tools are the baseline's last; the thread tools follow them.
-      tools: [...baseline.tools, "thread_post", "thread_start", "thread_fork"],
+      // The wake tools are the baseline's last; the thread tools follow them, bookmarks last.
+      tools: [
+        ...baseline.tools,
+        "thread_post",
+        "thread_start",
+        "thread_fork",
+        "bookmarks_search",
+        "bookmarks_tags",
+        "bookmarks_folders",
+      ],
     });
-    // Room only: the host's snapshot is still exactly the baseline.
-    expect(await snapshotOf("host")).toEqual(expectedSnapshot(BASELINE.profiles.host));
+
+    // The host installs no tasks or threads: it is the baseline plus bookmarks alone.
+    const hostBaseline = BASELINE.profiles.host;
+    const host = await snapshotOf("host");
+    expect(Object.keys(promptSections(host))).toEqual([
+      ...Object.keys(promptSections(hostBaseline)),
+      "bookmarks",
+    ]);
+    expect(host).toEqual({
+      extensions: [...hostBaseline.extensions, "bookmarks"],
+      sections: [
+        {
+          ...promptSections(hostBaseline),
+          bookmarks: `<bookmarks>\n${BOOKMARKS_SECTION}\n</bookmarks>`,
+        },
+      ],
+      tools: [...hostBaseline.tools, "bookmarks_search", "bookmarks_tags", "bookmarks_folders"],
+    });
   });
 
   it("VT-1 negative control: dropping the tasks extension no longer matches the baseline", async () => {
@@ -203,11 +238,11 @@ describe("toolset catalogue", () => {
     expect(BASELINE.sourceCommit).toMatch(/^[0-9a-f]{40}$/);
   });
 
-  it("VT-2: mail offers a conversation and mail tools, and no coding tool", () => {
+  it("VT-2: mail offers a conversation and mail tools, and no coding, thread or bookmark tool", () => {
     for (const profile of PROFILES) {
       const mail = toolsetList("mail", profile);
       expect(mail).toEqual(["mail-persona", "conversation", "mail"]);
-      for (const absent of ["coding-tools", "grep", SATAN, "tasks"]) {
+      for (const absent of ["coding-tools", "grep", SATAN, "tasks", "threads", "bookmarks"]) {
         expect(mail).not.toContain(absent);
       }
       for (const toolset of DAEMON_TOOLSETS) {
@@ -216,13 +251,17 @@ describe("toolset catalogue", () => {
     }
   });
 
-  it("VT-2: satan is last in interactive, and only the room installs tasks and threads", () => {
+  it("VT-2: satan is last in interactive and bookmarks is the name before it; only the room installs tasks and threads", () => {
     for (const profile of PROFILES) {
-      expect(toolsetList("interactive", profile).at(-1)).toBe(SATAN);
+      const names = toolsetList("interactive", profile);
+      expect(names.at(-1)).toBe(SATAN);
+      // Catalogue order, pinned: bookmarks sits immediately before SATAN on both profiles.
+      expect(names.at(-2)).toBe("bookmarks");
     }
     const room = toolsetList("interactive", "room");
     expect(room).toContain("tasks");
     expect(room[room.indexOf("tasks") + 1]).toBe("threads");
+    expect(room[room.indexOf("threads") + 1]).toBe("bookmarks");
     expect(toolsetList("interactive", "host")).not.toContain("tasks");
     expect(toolsetList("interactive", "host")).not.toContain("threads");
   });
@@ -230,6 +269,7 @@ describe("toolset catalogue", () => {
   it("VT-2: the job list is the runner's two extensions, whatever the profile", () => {
     for (const profile of PROFILES) {
       expect(toolsetList("job", profile)).toEqual(["job-tools", "job-guard"]);
+      expect(toolsetList("job", profile)).not.toContain("bookmarks");
     }
   });
 

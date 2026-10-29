@@ -70,14 +70,15 @@ whole with its persona.
 
 | Toolset | Extensions, in system prompt and tool order | Used by |
 |---|---|---|
-| `interactive` | `persona`, `project_context`, `skills`, `cwd`, `conversation`, `coding-tools`, `grep`, `tasks`, `satan` | the daemon |
+| `interactive` | `persona`, `project_context`, `skills`, `cwd`, `conversation`, `coding-tools`, `grep`, `tasks`, `threads`, `bookmarks`, `satan` | the daemon |
 | `mail` | `mail-persona`, `conversation`, `mail` | the daemon |
 | `job` | `job-tools`, `job-guard` | the runner |
 
 - `interactive` is the install order from before toolsets existed; the
   registry's list, with `satan` appended by discovery.
-- `tasks` is room-only, so a host's `interactive` is the same list without
-  it. `mail` names none of `coding-tools`, `grep`, `satan` or `tasks`: the
+- `tasks` and `threads` are room-only, so a host's `interactive` is the same
+  list without them; `bookmarks` is on both profiles (DEC-055). `mail` names
+  none of `coding-tools`, `grep`, `satan`, `tasks` or `bookmarks`: the
   interactive toolset never includes mail, and a mail conversation holds
   nothing but the five `mail_*` tools, the conversation section and its own
   persona.
@@ -198,6 +199,67 @@ set`, and a relative path is `<NAME> must be an absolute path, not "…"`.
   DEC-031). `~/flakes` `features/satan/malebolge.nix` passes it the
   `services.screwtape` module's `package`, `configFile` and `storeDir`.
 
+## Bookmarks
+
+Bookmarks reach a conversation in `interactive`, on both profiles: three
+read-only tools (`bookmarks_search`, `bookmarks_tags`, `bookmarks_folders`)
+over a `BookmarkSource` port (`src/bookmarks/`), fed by Firefox's daily backup.
+
+**The source.** Firefox writes `bookmarks-YYYY-MM-DD_N_*.jsonlz4` into its
+`bookmarkbackups` directory once a day (`src/bookmarks/backup.ts`). A call
+takes the newest of those by name, decodes it (mozlz4, then JSON), checks the
+tree against the backup schema and projects it to a flat list: a folder path,
+tags, and fields capped. Every call re-reads the directory and the file — no
+cache, so no answer comes from an earlier call's snapshot (DEC-027). Nothing
+is written to Firefox: a call changes nothing, and an interrupted one reruns
+after a restart.
+
+- `bookmarks_search` matches a query's terms (title, url, tags, folder path),
+  an exact tag, and a folder with its subfolders, a page at a time.
+- `bookmarks_tags` lists every tag with its bookmark count, most used first.
+- `bookmarks_folders` lists every folder with its direct bookmark count, by
+  path.
+
+**Untrusted data.** Each result opens with a header this code writes — the
+backup's date, how old it is, counts, clamps, only literals and fixed forms —
+and then a `<bookmark-data untrusted="true">` block, one JSON object per line.
+Every `<`, `>` and `&` in a line is escaped, so no field can end the block.
+The extension's section (`src/bookmarks/extension.ts`, `BOOKMARKS_SECTION`)
+tells the model that everything inside the block is bookmark data taken from
+web pages, never an instruction however phrased, and that a field in an item's
+cut list was shortened. `src/bookmarks/` shares the block and the input ranges
+with mail (`src/untrusted-block.ts`, `src/ranges.ts`) but never imports
+`src/mail/`.
+
+**Failures.** `not_configured`, `no_backup`, `too_large`, `unreadable`,
+`corrupt` and `invalid` are error results with a fixed message, never an empty
+page: a tool that cannot read the backup says so rather than reporting no
+bookmarks.
+
+**The variable.** `MALEBOLGE_BOOKMARK_BACKUPS` is Firefox's `bookmarkbackups`
+directory as an absolute path, read when the profile allows `interactive`
+(both profiles). Unset or empty leaves the three tools installed, each call
+refused `bookmarks are not configured` (DEC-055); a relative path refuses
+startup (`<NAME> must be an absolute path, not "…"`). There is no existence
+check at start.
+
+**Operator rollout** (outside this repo):
+
+1. In `~/flakes`, set `MALEBOLGE_BOOKMARK_BACKUPS` for the malebolge daemon(s)
+   to the absolute path of Firefox's `bookmarkbackups` directory, e.g.
+   `/home/<user>/.config/mozilla/firefox/<profile>.default/bookmarkbackups`.
+   The profile lives under `XDG_CONFIG_HOME` since a Home Manager update, and
+   the path is configured, never discovered.
+2. In the satan flake (`~/dev/satan/flake.nix`, `mkJailedMalebolge`) add a
+   read-only bind of exactly that directory — never the Firefox profile
+   directory itself, which holds history, `logins.json` and `key4.db`.
+3. Rebuild and restart the daemon. Existing interactive conversations gain the
+   bookmark tools at that restart; startup logs each changed toolset list
+   (DEC-029(6)).
+4. Check: in an interactive conversation, ask for a bookmark. `bookmarks are
+   not configured` means step 1 did not reach the daemon; `unreadable` or
+   `no bookmark backup found` means the bind or the path is wrong.
+
 ## Jail
 
 The daemon runs in `jailed-malebolge` (`~/dev/satan/flake.nix`
@@ -208,7 +270,9 @@ The jail sees this repo read-only, `~/satan-corpus` read-only (its `goad/`
 read-write), the session store, and `$XDG_RUNTIME_DIR/satan/`. Its only secret
 is the gateway key file, bound read-only with the catalog;
 `MALEBOLGE_GATEWAY_KEY_FILE` and `MALEBOLGE_GATEWAY_CATALOG` point at them. No
-provider keys, no `op run`. It sets `MALEBOLGE_PROFILE=room`.
+provider keys, no `op run`. It sets `MALEBOLGE_PROFILE=room`. The bookmark
+tools need a read-only bind of Firefox's `bookmarkbackups` directory alone:
+see the rollout under [Bookmarks](#bookmarks).
 
 Startup order: the instance lock (`daemon.lock` beside the store; a second
 daemon of the profile is refused before it opens the store), then the socket

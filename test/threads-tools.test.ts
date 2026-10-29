@@ -15,6 +15,7 @@ import type { Origin } from "../src/threads/origin.ts";
 import { THREADS_SECTION, threadBinding, threadsExtension } from "../src/threads/extension.ts";
 import { writeTopicRecord } from "../src/topics.ts";
 import { tasksExtension, wakeBinding } from "../src/wake/extension.ts";
+import { bookmarksPart } from "./bookmarks/bookmark-fixtures.ts";
 import { createTaskOwned, systemPromptSections, textOf } from "./harness-fixture.ts";
 import { interactiveSnapshot } from "./interactive-baseline.ts";
 import { fakeMailSource } from "./mail/mail-fixtures.ts";
@@ -351,6 +352,7 @@ describe("threads is the room's extension (VT-3)", () => {
       profile,
       tasks: tasksExtension(wakeBinding().deps),
       threads: threadsExtension(threadBinding().deps),
+      bookmarks: bookmarksPart(),
       ...(profile === "room"
         ? { mail: mailExtension({ source: fakeMailSource(), now: () => 0 }) }
         : {}),

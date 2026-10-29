@@ -69,6 +69,11 @@ export interface Config {
   wakes: WakeSettings;
   /** Present exactly when the profile allows `mail` (the room). */
   screwtape?: ScrewtapePaths;
+  /**
+   * MALEBOLGE_BOOKMARK_BACKUPS: Firefox's bookmarkbackups directory, absolute;
+   * absent leaves the bookmark tools refusing (DEC-055).
+   */
+  bookmarkBackups?: string;
   /** Where the agent's tools run; daemon-env.ts turns it into their environment and cwd. */
   execution: Execution;
 }
@@ -106,6 +111,22 @@ export function screwtapeOf(env: Env, profile: Profile, home: string): Screwtape
     config: absolutePathEnv(env, "MALEBOLGE_SCREWTAPE_CONFIG"),
     home,
   };
+}
+
+/**
+ * Firefox's bookmark backup directory, and exactly the profiles that allow
+ * `interactive` read it. Unset or empty leaves the tools installed and refusing
+ * (DEC-055); set but not absolute refuses startup. Never checked for existence:
+ * a backup may land after the daemon starts.
+ */
+export function bookmarkBackupsOf(env: Env, profile: Profile): string | undefined {
+  if (!PROFILE_TOOLSETS[profile].allowed.includes("interactive")) {
+    return undefined;
+  }
+  const value = env["MALEBOLGE_BOOKMARK_BACKUPS"];
+  return value === undefined || value === ""
+    ? undefined
+    : absolutePathEnv(env, "MALEBOLGE_BOOKMARK_BACKUPS");
 }
 
 function profileOf(value: string | undefined): Profile {
@@ -298,6 +319,9 @@ export function resolveConfig(env: Env, cwd: string, readFile: (path: string) =>
       wakes: wakesOf(env),
       execution,
     },
-    { screwtape: screwtapeOf(env, profile, home) },
+    {
+      screwtape: screwtapeOf(env, profile, home),
+      bookmarkBackups: bookmarkBackupsOf(env, profile),
+    },
   );
 }

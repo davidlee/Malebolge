@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { attachSocket, daemonSocket, resolveConfig } from "../src/config.ts";
+import {
+  attachSocket,
+  bookmarkBackupsOf,
+  daemonSocket,
+  type Profile,
+  resolveConfig,
+} from "../src/config.ts";
 
 const DOOR_PATH = "/h/.config/malebolge/door.toml";
 const DOOR = `[door]
@@ -314,5 +320,49 @@ describe("wakes (VT-1)", () => {
     expect(refusal({ ...host, MALEBOLGE_WAKE_QUIET: "nonsense" })).toMatch(
       "MALEBOLGE_WAKE_QUIET is for the room profile, not host",
     );
+  });
+});
+
+// PHASE-07 VT-1: the bookmark backup directory, read on exactly the profiles that
+// allow interactive (DEC-055 leaves the tools installed and refusing when unset).
+describe("bookmark backups (VT-1)", () => {
+  const KEY = "MALEBOLGE_BOOKMARK_BACKUPS";
+  const BACKUPS = "/abs/bookmarkbackups";
+  const PROFILES: readonly (readonly [Profile, Env])[] = [
+    ["room", room],
+    ["host", host],
+  ];
+  const RELATIVE = ["bookmarkbackups", "./b", "../b", "~/b"];
+
+  /** What resolving `env` refuses with, as the message alone. */
+  const refusalMessage = (env: Env): string => {
+    try {
+      resolve(env);
+    } catch (error) {
+      return error instanceof Error ? error.message : String(error);
+    }
+    throw new Error("resolved");
+  };
+
+  it.each(PROFILES)("%s reads an absolute MALEBOLGE_BOOKMARK_BACKUPS", (profile, env) => {
+    const configured = { ...env, [KEY]: BACKUPS };
+    expect(resolve(configured).bookmarkBackups).toBe(BACKUPS);
+    expect(bookmarkBackupsOf(configured, profile)).toBe(BACKUPS);
+  });
+
+  it.each(PROFILES)("%s: unset and empty leave the key out of the Config", (profile, env) => {
+    for (const value of [undefined, ""]) {
+      const without = { ...env, [KEY]: value };
+      expect(bookmarkBackupsOf(without, profile)).toBeUndefined();
+      expect(resolve(without)).not.toHaveProperty("bookmarkBackups");
+    }
+  });
+
+  it.each(PROFILES)("%s refuses a relative MALEBOLGE_BOOKMARK_BACKUPS", (profile, env) => {
+    for (const value of RELATIVE) {
+      const expected = `${KEY} must be an absolute path, not ${JSON.stringify(value)}`;
+      expect(refusalMessage({ ...env, [KEY]: value })).toBe(expected);
+      expect(() => bookmarkBackupsOf({ ...env, [KEY]: value }, profile)).toThrow(expected);
+    }
   });
 });

@@ -7,6 +7,8 @@ import type { Models } from "@earendil-works/pi-ai/models";
 import type { Extension, Registry } from "@earendil-works/pi-durable";
 import { NodeExecutionEnv } from "@earendil-works/pi-durable/env/node";
 import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite/node";
+import { backupSource, unconfiguredSource } from "./bookmarks/backup.ts";
+import { bookmarksExtension } from "./bookmarks/extension.ts";
 import { orientationOf } from "./boot-context.ts";
 import type { Config, Profile, ScrewtapePaths } from "./config.ts";
 import { context } from "./context.ts";
@@ -155,7 +157,17 @@ const mailPart = (
         now,
       });
 
-/** The registry the daemon installs: the profile's catalogue, and mail where it has a screwtape. */
+/**
+ * The bookmarks extension over the configured backup directory, or over the
+ * source that refuses every call when there is none (DEC-055).
+ */
+const bookmarksPart = (dir: string | undefined, now: () => number): Extension =>
+  bookmarksExtension({
+    source: dir === undefined ? unconfiguredSource() : backupSource(dir),
+    now,
+  });
+
+/** The registry the daemon installs: the profile's catalogue, bookmarks and mail. */
 const daemonRegistry = (
   config: Config,
   parts: {
@@ -176,6 +188,7 @@ const daemonRegistry = (
       profile: config.execution.profile,
       tasks: tasksExtension(parts.wakes.deps, parts.task),
       threads: parts.threads,
+      bookmarks: bookmarksPart(config.bookmarkBackups, now),
       ...(mail === undefined ? {} : { mail }),
     }),
   );
