@@ -6,7 +6,12 @@
 // directory, a 0600 socket) and the token is never stored or logged, only its hash.
 
 import type { Socket } from "node:net";
-import type { Conversation, ConversationId, ConversationInit } from "@earendil-works/pi-durable";
+import type {
+  Conversation,
+  ConversationId,
+  ConversationInit,
+  DocumentWatch,
+} from "@earendil-works/pi-durable";
 import {
   BOUND_FRAMES,
   BRIDGE_LINE_MAX_BYTES,
@@ -38,13 +43,16 @@ import type { DaemonToolset } from "../toolsets.ts";
 import { isKnownTopic, readIndex } from "../topics.ts";
 import { servePrivateUnix, type UnixServer } from "../unix-socket.ts";
 import {
+  ackEntry,
   type Check,
   checkToken,
   endPairing,
   mintToken,
   openPairing,
+  type PairingDoc,
   pairingDoc,
   pairingSnapshot,
+  watchPairing,
 } from "./pairing.ts";
 
 /** What the listener serves over: resolved in `beforeResume`, as the daemon socket's own host is. */
@@ -82,6 +90,10 @@ interface Connection {
   ended: boolean;
   /** Every line's turn, one after the previous one. */
   queue: Promise<void>;
+  /** The bind's watch on the pairing document: how the outbox reaches pi; stopped when this connection ends. */
+  watch?: DocumentWatch<PairingDoc>;
+  /** The highest seq delivered on this connection: a change sends only what is above it. */
+  sent: number;
 }
 
 /** What a first-line row acts on: the connection and the host its line waited for. */
@@ -136,6 +148,50 @@ function unbind(state: Connection): void {
   const { bound } = state;
   if (bound !== undefined && bindings.get(bound) === state) {
     bindings.delete(bound);
+  }
+}
+
+/**
+ * Bind `state` to `conversation`, answer `paired`, then follow its pairing: deliver
+ * what the outbox already holds, and every entry a later commit appends. A pairing
+ * no commit ever wrote is not watched.
+ */
+async function bindAndFollow(
+  state: Connection,
+  host: BridgeHost,
+  conversation: ConversationId,
+  token?: string,
+): Promise<void> {
+  bind(state, conversation);
+  state.sent = 0;
+  write(state, paired(conversation, token));
+  const watch = await watchPairing(host.session.harness, conversation);
+  if (watch === undefined) {
+    return;
+  }
+  if (state.socket.destroyed || state.ended) {
+    void watch.stop();
+    return;
+  }
+  state.watch = watch;
+  deliver(state, watch.value);
+  watch.start((value) => {
+    deliver(state, value);
+    return Promise.resolve();
+  });
+}
+
+/** Send every outbox entry `state` has not yet sent, in seq order; an ended connection takes nothing. */
+function deliver(state: Connection, value: Readonly<PairingDoc> | null): void {
+  if (state.ended) {
+    return;
+  }
+  for (const entry of value?.outbox ?? []) {
+    if (entry.seq <= state.sent) {
+      continue;
+    }
+    write(state, { type: "deliver", seq: entry.seq, kind: entry.kind, text: entry.text });
+    state.sent = entry.seq;
   }
 }
 
@@ -231,8 +287,7 @@ async function pairRow(
     finish(state, refused(messageOf(error)));
     return;
   }
-  bind(state, conversation.id);
-  write(state, paired(conversation.id, token));
+  await bindAndFollow(state, host, conversation.id, token);
 }
 
 // --- resume and end (DEC-065) ------------------------------------------------
@@ -253,8 +308,14 @@ async function resumeRow(
     finish(state, refused(check.reason));
     return;
   }
-  bind(state, conversation);
-  write(state, paired(conversation));
+  await bindAndFollow(state, host, conversation);
+}
+
+/** ack: forget the entry with exactly `seq`; no reply, either way (an unknown or repeated seq is a no-op). */
+async function ackRow(turn: BoundTurn, frame: Extract<BoundFrame, { type: "ack" }>): Promise<void> {
+  await turn.host.session.harness.commit(async (tx) => {
+    ackEntry(await pairingDoc(tx, turn.conversation), frame.seq);
+  }, context);
 }
 
 /** end: commit `ended`, tell pi, close; the close drops the binding, and the conversation stays attachable. */
@@ -304,13 +365,14 @@ const BRIDGE_FIRST_LINE: { [K in FirstLineFrame["type"]]: FirstLineHandler<K> } 
 };
 
 /**
- * The bound connection's dispatch, separate from `src/daemon.ts`'s tables: post,
- * ack and refill are refused until their phase fills them, and end is the one row
- * that acts. The mapped type keeps every frame of the union represented.
+ * The bound connection's dispatch, separate from `src/daemon.ts`'s tables: ack
+ * forgets one delivered entry and end ends the pairing; post and refill are
+ * refused until their phase fills them. The mapped type keeps every frame of the
+ * union represented.
  */
 const BRIDGE_BOUND: { [K in BoundFrame["type"]]: BoundHandler<K> } = {
   post: unimplemented,
-  ack: unimplemented,
+  ack: ackRow,
   refill: unimplemented,
   end: endRow,
 };
@@ -406,8 +468,15 @@ function enqueue(state: Connection, line: string): void {
  * daemon waits. An over-cap line is refused and the connection closed.
  */
 function startConnection(listener: Listener, socket: Socket): void {
-  const state: Connection = { socket, listener, ended: false, queue: Promise.resolve() };
+  const state: Connection = {
+    socket,
+    listener,
+    ended: false,
+    queue: Promise.resolve(),
+    sent: 0,
+  };
   socket.on("close", () => {
+    void state.watch?.stop();
     unbind(state);
   });
   socket.on(

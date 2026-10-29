@@ -7,7 +7,9 @@
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import {
   type ConversationId,
+  type DocumentObserver,
   type DocumentReader,
+  type DocumentWatch,
   defineDoc,
   type Tx,
 } from "@earendil-works/pi-durable";
@@ -84,6 +86,16 @@ export const pairingSnapshot = (
 ): Promise<Readonly<PairingDoc> | undefined> =>
   reader.snapshot(PairingDocument, conversation, context);
 
+/**
+ * A non-creating watch on `conversation`'s pairing: `undefined` when no commit ever
+ * wrote it, so a bound bridge connection follows a pairing without creating one.
+ */
+export const watchPairing = (
+  observer: Pick<DocumentObserver, "watchDoc">,
+  conversation: ConversationId,
+): Promise<DocumentWatch<PairingDoc> | undefined> =>
+  observer.watchDoc(PairingDocument, conversation, context);
+
 /** Whether a pairing was ever opened on `doc`: only its token hash says so. */
 export const isBridged = (doc: PairingDoc): boolean => doc.tokenHash !== "";
 
@@ -142,6 +154,9 @@ export function appendOutbox(
   kind: MessageKind,
   text: string,
 ): { ok: true; seq: number } | { ok: false; reason: string } {
+  if (!isBridged(doc)) {
+    return { ok: false, reason: "not a bridged conversation" };
+  }
   if (doc.ended) {
     return { ok: false, reason: "pairing ended" };
   }

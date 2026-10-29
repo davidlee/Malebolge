@@ -161,6 +161,17 @@ describe("appendOutbox (VT-4)", () => {
     expect(appendOutbox(doc, "turn", "fits")).toEqual({ ok: true, seq: BRIDGE_OUTBOX_CAP + 1 });
   });
 
+  it("refuses an unbridged document as not a bridged conversation, ahead of ended", () => {
+    const doc = initialDoc();
+    endPairing(doc);
+    const before = structuredClone(doc);
+    expect(appendOutbox(doc, "turn", "nobody is listening")).toEqual({
+      ok: false,
+      reason: "not a bridged conversation",
+    });
+    expect(doc).toEqual(before);
+  });
+
   it("refuses an ended pairing, ahead of a full outbox", () => {
     const doc = withEntries(BRIDGE_OUTBOX_CAP);
     endPairing(doc);

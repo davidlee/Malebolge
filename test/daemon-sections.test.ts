@@ -3,7 +3,10 @@ import { join } from "node:path";
 import { defineExtension, MemoryStorage } from "@earendil-works/pi-durable";
 import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite/node";
 import { afterEach, describe, expect, it } from "vitest";
+import type { Posture } from "../pi-bridge/wire.ts";
 import { BOOKMARKS_SECTION } from "../src/bookmarks/extension.ts";
+import { BRIDGE_POSTURE_TEXT, BRIDGE_UNTRUSTED, bridgeExtension } from "../src/bridge/extension.ts";
+import { openPairing, pairingDoc } from "../src/bridge/pairing.ts";
 import { context } from "../src/context.ts";
 import { conversationExtension } from "../src/conversation-context.ts";
 import { conversations } from "../src/conversations.ts";
@@ -241,14 +244,63 @@ describe("daemonExtensions tasks", () => {
 });
 
 describe("daemonExtensions bridge (SL-009)", () => {
-  it("SL-009 VT-1: the room installs an empty bridge extension and the host installs none", () => {
+  it("SL-009 VT-1: the room installs the bridge extension with bridge_post and its section, the host none", () => {
     const installed = daemonExtensions(partsOf("room"));
     const bridge = installed.find(({ name }) => name === "bridge");
     expect(bridge).toBeDefined();
-    // PHASE-04's bridge extension is a name and nothing else: its tools and prose come later.
-    expect(bridge?.tools ?? []).toEqual([]);
-    expect(bridge?.sections ?? []).toEqual([]);
+    expect((bridge?.tools ?? []).map(({ name }) => name)).toEqual(["bridge_post"]);
+    expect((bridge?.sections ?? []).map(({ key }) => key)).toEqual(["bridge"]);
     expect(daemonExtensions(partsOf("host")).map(({ name }) => name)).not.toContain("bridge");
+  });
+});
+
+/**
+ * The bridge section a root on the bridge toolset renders: with a pairing in
+ * `posture`, or with none when `posture` is undefined. `systemPromptSections`
+ * closes the harness it read.
+ */
+async function bridgeSectionOf(posture?: Posture): Promise<string> {
+  const test = await openTestHarness([bridgeExtension]);
+  await test.root.configure({ extensions: selectionOf(["bridge"]) }, context);
+  if (posture !== undefined) {
+    await test.harness.commit(async (tx) => {
+      openPairing(await pairingDoc(tx, test.root.id), posture, "proj", "root-token");
+    }, context);
+  }
+  const sections = await systemPromptSections(test);
+  expect(sections).toHaveLength(1);
+  const [first] = sections;
+  const text = isRecord(first) ? first["bridge"] : undefined;
+  if (typeof text !== "string") {
+    throw new Error(`no bridge section rendered: ${JSON.stringify(sections)}`);
+  }
+  return text;
+}
+
+describe("BRIDGE_SECTION (VT-3)", () => {
+  it("renders the consult posture's placeholder, and not the delegate one", async () => {
+    const text = await bridgeSectionOf("consult");
+    expect(text).toBe(`${BRIDGE_UNTRUSTED}\n\n${BRIDGE_POSTURE_TEXT.consult}`);
+    expect(text).toContain(BRIDGE_UNTRUSTED);
+    expect(text).not.toContain(BRIDGE_POSTURE_TEXT.delegate);
+  });
+
+  it("renders the delegate posture's placeholder, and not the consult one", async () => {
+    const text = await bridgeSectionOf("delegate");
+    expect(text).toBe(`${BRIDGE_UNTRUSTED}\n\n${BRIDGE_POSTURE_TEXT.delegate}`);
+    expect(text).toContain(BRIDGE_UNTRUSTED);
+    expect(text).not.toContain(BRIDGE_POSTURE_TEXT.consult);
+  });
+
+  it("renders only the untrusted framing on a conversation with no pairing", async () => {
+    expect(await bridgeSectionOf()).toBe(BRIDGE_UNTRUSTED);
+  });
+
+  it("is one untagged section keyed bridge, and bridge_post its one tool", () => {
+    expect((bridgeExtension.tools ?? []).map(({ name }) => name)).toEqual(["bridge_post"]);
+    expect((bridgeExtension.sections ?? []).map(({ key, tag }) => [key, tag])).toEqual([
+      ["bridge", false],
+    ]);
   });
 });
 

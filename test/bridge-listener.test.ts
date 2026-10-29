@@ -1,23 +1,63 @@
 // SL-009 PHASE-05 VT-2 (resume, end, supersede, private socket) and VT-3 (the
 // bridge parser's reach: no attach, refusals, unfilled rows), through the real
-// listener on a private socket. Written red first against
-// .doctrine/state/slice/009/briefs/phase-05-contract.md.
+// listener on a private socket; PHASE-06 VT-2 adds the push (deliver) and the
+// per-entry ack. Written red first against
+// .doctrine/state/slice/009/briefs/phase-05-contract.md and
+// .doctrine/state/slice/009/briefs/phase-06-contract.md.
 
 import { chmod, stat } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { describe, expect, it, onTestFinished } from "vitest";
-import { BRIDGE_LINE_MAX_BYTES } from "../pi-bridge/wire.ts";
+import { describe, expect, it, onTestFinished, vi } from "vitest";
+import { BRIDGE_LINE_MAX_BYTES, type DaemonFrame, type MessageKind } from "../pi-bridge/wire.ts";
 import { serveBridge } from "../src/bridge/listener.ts";
+import { appendOutbox } from "../src/bridge/pairing.ts";
 import { PrivateDirectoryRefused } from "../src/unix-socket.ts";
 import { type BridgeWorld, bridgeHost, bridgeWorld, type PiClient } from "./bridge-fixture.ts";
 import { rejection, tempDir } from "./fixtures.ts";
 
 const refused = (reason: string): object => ({ type: "refused", reason });
 
+/** Append one outbox entry to `conversation`, as a later phase's rule would. */
+const append = (
+  world: BridgeWorld,
+  conversation: string,
+  text: string,
+  kind: MessageKind = "turn",
+): Promise<void> =>
+  world.updatePairing(conversation, (doc) => {
+    appendOutbox(doc, kind, text);
+  });
+
+/** Every deliver frame's seq, in arrival order: how a test sees a repeat or an absence. */
+const deliveredSeqs = (client: PiClient): number[] =>
+  client.received().flatMap((frame) => (frame.type === "deliver" ? [frame.seq] : []));
+
+/** The deliver frames received so far, in arrival order. */
+const deliveriesOf = (client: PiClient): DaemonFrame[] =>
+  client.received().filter((frame) => frame.type === "deliver");
+
+/**
+ * Wait until the client's deliver frames are exactly `seqs`: the next frame the
+ * daemon sends unprompted. A missing or repeated seq fails with what did arrive.
+ */
+async function waitForDeliveries(client: PiClient, seqs: readonly number[]): Promise<void> {
+  await vi.waitFor(
+    () => {
+      expect(deliveredSeqs(client)).toEqual([...seqs]);
+    },
+    { timeout: 2000, interval: 10 },
+  );
+}
+
 /** A request frame the daemon answers with its own id, whatever the row does: proof the connection is bound and open. */
 async function answersProbe(client: PiClient): Promise<void> {
   await client.send({ type: "post", id: "probe", kind: "note", text: "are you there" });
-  expect(await client.next()).toMatchObject({ id: "probe" });
+  // Pushed deliveries are not answers: skip them, so any other frame ahead of the probe's fails.
+  let frame = await client.next();
+  while (frame.type === "deliver") {
+    frame = await client.next();
+  }
+  expect(frame).toMatchObject({ id: "probe" });
 }
 
 describe("resume (VT-2)", () => {
@@ -219,7 +259,6 @@ describe("a bound connection (VT-3)", () => {
 
   it.each([
     ["post", { type: "post", id: "p1", kind: "turn", text: "hi" }, { id: "p1" }],
-    ["ack", { type: "ack", seq: 1 }, {}],
     ["refill", { type: "refill" }, {}],
   ])("answers %s as not implemented yet and stays open", async (type, frame, id) => {
     const world = await bridgeWorld();
@@ -231,5 +270,106 @@ describe("a bound connection (VT-3)", () => {
       reason: `${type} is not implemented yet`,
     });
     await answersProbe(client);
+  });
+});
+
+describe("deliver and ack (VT-2)", () => {
+  it("delivers an entry appended while bound", async () => {
+    const world = await bridgeWorld();
+    const { client, conversation } = await world.pair();
+    await append(world, conversation, "hello pi");
+    await waitForDeliveries(client, [1]);
+    expect(deliveriesOf(client)).toEqual([
+      { type: "deliver", seq: 1, kind: "turn", text: "hello pi" },
+    ]);
+  });
+
+  it("delivers only entries above the highest seq sent on this connection", async () => {
+    const world = await bridgeWorld();
+    const { client, conversation } = await world.pair();
+    await append(world, conversation, "one");
+    await append(world, conversation, "two");
+    await waitForDeliveries(client, [1, 2]);
+    await append(world, conversation, "three");
+    await waitForDeliveries(client, [1, 2, 3]);
+    expect(deliveriesOf(client)).toEqual([
+      { type: "deliver", seq: 1, kind: "turn", text: "one" },
+      { type: "deliver", seq: 2, kind: "turn", text: "two" },
+      { type: "deliver", seq: 3, kind: "turn", text: "three" },
+    ]);
+  });
+
+  it("delivers entries appended while unbound on the next resume", async () => {
+    const world = await bridgeWorld();
+    const { client, conversation, token } = await world.pair();
+    client.close();
+    await client.closed;
+    await append(world, conversation, "while away", "note");
+    const { client: again, reply } = await world.resume(conversation, token);
+    expect(reply).toEqual({ type: "paired", conversation });
+    await waitForDeliveries(again, [1]);
+    expect(again.received().map((frame) => frame.type)).toEqual(["paired", "deliver"]);
+    expect(deliveriesOf(again)).toEqual([
+      { type: "deliver", seq: 1, kind: "note", text: "while away" },
+    ]);
+  });
+
+  it("redelivers every unacked entry right after paired on resume", async () => {
+    const world = await bridgeWorld();
+    const { client, conversation, token } = await world.pair();
+    await append(world, conversation, "one");
+    await append(world, conversation, "two");
+    await waitForDeliveries(client, [1, 2]);
+    client.close();
+    await client.closed;
+    const { client: again, reply } = await world.resume(conversation, token);
+    expect(reply).toEqual({ type: "paired", conversation });
+    await waitForDeliveries(again, [1, 2]);
+    expect(again.received().map((frame) => frame.type)).toEqual(["paired", "deliver", "deliver"]);
+  });
+
+  it("ack removes exactly that entry and answers nothing", async () => {
+    const world = await bridgeWorld();
+    const { client, conversation } = await world.pair();
+    await append(world, conversation, "one");
+    await append(world, conversation, "two");
+    await waitForDeliveries(client, [1, 2]);
+    await client.send({ type: "ack", seq: 1 });
+    // The probe's post is the next frame: the ack itself wrote no reply.
+    await answersProbe(client);
+    expect((await world.pairingOf(conversation)).outbox.map((entry) => entry.seq)).toEqual([2]);
+    expect(deliveredSeqs(client)).toEqual([1, 2]);
+  });
+
+  it("redelivers an unacked entry on the next resume, but not an acked one", async () => {
+    const world = await bridgeWorld();
+    const { client, conversation, token } = await world.pair();
+    await append(world, conversation, "acked");
+    await append(world, conversation, "unacked");
+    await waitForDeliveries(client, [1, 2]);
+    await client.send({ type: "ack", seq: 1 });
+    await answersProbe(client);
+    client.close();
+    await client.closed;
+    const { client: again, reply } = await world.resume(conversation, token);
+    expect(reply).toEqual({ type: "paired", conversation });
+    await waitForDeliveries(again, [2]);
+    expect(deliveriesOf(again)).toEqual([
+      { type: "deliver", seq: 2, kind: "turn", text: "unacked" },
+    ]);
+  });
+
+  it("the superseded connection gets no later deliveries", async () => {
+    const world = await bridgeWorld();
+    const first = await world.pair();
+    const second = await world.resume(first.conversation, first.token);
+    expect(await first.client.next()).toEqual(refused("superseded by a newer connection"));
+    await first.client.closed;
+    await append(world, first.conversation, "after the supersede");
+    await waitForDeliveries(second.client, [1]);
+    expect(deliveriesOf(second.client)).toEqual([
+      { type: "deliver", seq: 1, kind: "turn", text: "after the supersede" },
+    ]);
+    expect(deliveredSeqs(first.client)).toEqual([]);
   });
 });
