@@ -33,15 +33,16 @@ exit_criteria = [
   { id = "EX-3", text = "ASM-007: a stub at the jail home's ~/.pi/agent/extensions/<stub>/index.ts with no node_modules imports typebox and registers a TypeBox-schema tool inside a pi jail. Outcome recorded on ASM-007." },
   { id = "EX-4", text = "ASM-008 and RV-021 F-6 (probe): a createBashTool spawnHook sets a variable and prepends the stub's directory to PATH; a bash call in the jailed pi sees the variable and runs a bare executable from that directory from another cwd; the replaced bash tool keeps the built-in's behaviour. Outcome recorded on ASM-008." },
   { id = "EX-5", text = "RV-021 F-1 (probe): in real pi, ctx.isIdle() is false in the window between a run's start and agent_start (e.g. delayed by a before_agent_start handler); a stub delivery in that window is held by the stub's buffer, not queued in pi; Esc then settle shows aborted=true. Recorded in notes.md § Probes with the pi commit probed." },
-  { id = "EX-6", text = "RV-021 F-9 (probe): with a retryable model error (forced via a fault-injecting provider or a gateway error), agent_end fires before agent_settled and pi continues; agent_settled fires once, last, with aborted false. Recorded in notes.md § Probes." },
+  { id = "EX-6", text = "RV-021 F-9 (probe): with a retryable model error (forced by a stub-registered provider that fails once with an error pi classifies as retryable, or failing that by pi's own agent-session tests with the evidence cited), agent_end fires before agent_settled and pi continues; agent_settled fires once, last, with aborted false. Recorded in notes.md § Probes." },
   { id = "EX-7", text = "DEC-090/DEC-079 abort probe (design sec-9 'abort probe'): busy delivery, Esc, settle against real pi with the stub's buffer-and-flush: the message appears once, as a note. Recorded in notes.md § Probes." },
   { id = "EX-8", text = "ASM-006 as a standing premise test: an idle pi-durable conversation given a `write` with model content starts no run, and the next input's run sees the entry. ASM-006 updated from the result." },
   { id = "EX-9", text = "No stub code under src/ or pi-bridge/; the stub lives in the scratchpad or notes and is described in notes.md § Probes well enough to rerun. Any invalidated ASM has stopped the slice at /consult." },
+  { id = "EX-10", text = "Command runtime premise (not in ASM-004..008; record a new ASM via /knowledge): the jail's node runs an executable script that imports a .ts module (pi-bridge/wire.ts) with no flags (type stripping, node >= 23.6), as malebolge-bridge will (DEC-075). Invalidated → /consult (e.g. a jiti shim or a built .js), not a workaround." },
 ]
 verification = [
   { id = "VT-1", expects = "ASM-006: a write with model content on an idle conversation starts no run; the next input's run sees it", test_file = "test/queue-premises.test.ts", keywords = ["ASM-006", "write"], waived = false },
   { id = "VA-1", text = "Agent runs the non-jail probes (EX-1, EX-5, EX-6, EX-7) against real pi, records each outcome with the pi commit in notes.md § Probes and on the ASM records via `doctrine knowledge`; RV-021 F-1 and F-9 probe evidence cited there." },
-  { id = "VH-1", text = "Operator runs the in-jail probes (EX-2 notify-send, EX-3 typebox stub, EX-4 spawnHook env and PATH; RV-021 F-6) in a real pi jail and reports each outcome." },
+  { id = "VH-1", text = "Operator runs the in-jail probes (EX-2 notify-send, EX-3 typebox stub, EX-4 spawnHook env and PATH; RV-021 F-6; EX-10 node type stripping) in a real pi jail and reports each outcome." },
 ]
 specs        = []
 requirements = []
@@ -99,7 +100,7 @@ requirements = []
 [[phase]]
 id        = "PHASE-04"
 name      = "Bridge mode and wake reach"
-objective = "The `bridge` toolset, its persona case and the wake talk-set check (design sec-6; DEC-071, DEC-076). The bridge extension itself is registered later; this phase lands the catalog with the `bridge` entry pointing at the extension name PHASE-06 registers."
+objective = "The `bridge` toolset, its persona case and the wake talk-set check (design sec-6; DEC-071, DEC-076). The catalogue test requires every catalogued name to be installed, so this phase also registers an empty `bridge` extension (src/bridge/extension.ts, name only: no tool, no section) that PHASE-06 fills."
 entrance_criteria = [
   { id = "EN-1", text = "PHASE-03 completed." },
 ]
@@ -107,6 +108,7 @@ exit_criteria = [
   { id = "EX-1", text = "Toolset gains \"bridge\"; CATALOG.bridge is interactive's list without threads, with bridge before SATAN; PROFILE_TOOLSETS.room.allowed gains bridge, host does not; TALK_SETS gives it no set." },
   { id = "EX-2", text = "src/persona.ts: bridge shares interactive's case; requirePersonaFiles covers it with no new corpus file." },
   { id = "EX-3", text = "wakeSchedule: a target other than the caller requires requireSameTalkSet over both stored toolsets; a throw becomes the tool's refusal naming the target topic; self-wake skips it; a caller or target with no index entry is refused. WakeDeps gains profile through EarlyWakeDeps, bound in daemon-start. src/wake/ imports nothing from src/threads/." },
+  { id = "EX-5", text = "src/bridge/extension.ts registers an extension named bridge with no tools and no section, installed on the room profile only; the catalogue-installed test passes with bridge in the union." },
   { id = "EX-4", text = "`just check` green." },
 ]
 verification = [
@@ -196,7 +198,7 @@ id        = "PHASE-08"
 name      = "pi side: the pure state machine step and the idle-only buffer"
 objective = "pi-bridge/state.ts: step(state, event) → {state, effects} exactly as design sec-7's table, with settlePending and the DEC-090 delivery buffer and flush, tested as the table. No I/O; effects are data the shell performs in PHASE-09."
 entrance_criteria = [
-  { id = "EN-1", text = "PHASE-07 completed (or PHASE-03 at least: this phase depends only on pi-bridge/wire.ts; it may run in parallel with PHASE-04..07)." },
+  { id = "EN-1", text = "PHASE-03 completed. This phase depends only on pi-bridge/wire.ts, so it may run beside PHASE-04..07; it is listed after them for serial execution." },
   { id = "EN-2", text = "PHASE-01's F-1/F-9 probe outcomes match the table's event assumptions (isIdle false before agent_start; agent_settled final and carries aborted)." },
 ]
 exit_criteria = [

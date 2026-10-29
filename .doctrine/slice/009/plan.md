@@ -62,6 +62,11 @@ PHASE-01 probes (real pi, jail) ──► PHASE-02 extractions (needs SL-010 on 
   PHASE-09 EX-4, PHASE-10 VH-2), F-9 (PHASE-01 EX-6, PHASE-08 EX-2), F-10
   (PHASE-08 EX-3, PHASE-10 VA-1); demonstrate F-2, F-4 (PHASE-07), F-3
   (PHASE-09), F-5, F-11, F-12, F-13 (PHASE-08).
+- PHASE-07 carries inbound, idempotence, the withdrawal notice and the
+  budget. If `/phase-plan` finds it oversized, the budget and refill move to
+  an appended phase (ids append; PHASE-07 keeps its id).
+- PHASE-01 EX-10 is a premise the design left implicit: `malebolge-bridge`
+  imports `pi-bridge/wire.ts` and so needs node's type stripping in the jail.
 - Posture texts ship as placeholders (DEC-040); tests pin which text renders,
   not its wording.
 - SL-008's `src/untrusted-block.ts` has landed, so PHASE-07 uses its wrapper

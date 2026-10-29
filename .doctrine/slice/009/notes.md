@@ -6,7 +6,7 @@ disposable phase sheet (`.doctrine/state/.../phase-NN.md`) that must survive
 
 ## Harvest
 <!-- single-copy: updated in place each harvest; ids only, never restated content -->
-fresh-as-of: 2026-10-29 · design locked (rev 45) · 0043565 + uncommitted SL-009 work
+fresh-as-of: 2026-10-29 · design re-locked (rev 55) · plan authored (10 phases) · 654d026 + plan revision
 
 ### Produced
 - Design run dr-01a185c0… locked (rev 45); `design.md` 9 sections;
@@ -16,6 +16,10 @@ fresh-as-of: 2026-10-29 · design locked (rev 45) · 0043565 + uncommitted SL-00
   refine 066).
 - ASM-004..ASM-008 (verify in plan PHASE-01); CHR-007 (~/flakes contract,
   DEC-074); ISS-003; IDE-009.
+- Design revised for SL-010 (ISS-004, resolved): DEC-092, DEC-093; RV-023
+  waived (operator).
+- plan.toml / plan.md: PHASE-01..10; RV-021 routed findings transcribed
+  (index in plan.md § Notes).
 - RV-021 (design review) done: 14 findings, all fix-now, verified, routed
   (probe: F-1, F-6, F-9, F-10; demonstrate: the rest).
 
@@ -32,8 +36,9 @@ fresh-as-of: 2026-10-29 · design locked (rev 45) · 0043565 + uncommitted SL-00
   (`~/dev/satan/flake.nix:486`).
 
 ### Open
-- Plan not started. PHASE-01 must verify ASM-004..008 and run the
-  real-pi probes (abort/settle ordering; notify-send and PATH in jail).
+- PHASE-01 next: ASM-004..008 and real-pi probes, plus EX-10 (jail node
+  type stripping for malebolge-bridge; new ASM to record). PHASE-02 waits
+  on SL-010 landing.
 - Posture texts are placeholder corpus prose (DEC-040) pending the
   satan-corpus session.
 - CHR-007 awaits a ~/flakes session.
