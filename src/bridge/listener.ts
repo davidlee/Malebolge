@@ -43,8 +43,8 @@ import {
   endPairing,
   mintToken,
   openPairing,
-  type PairingDoc,
   pairingDoc,
+  pairingSnapshot,
 } from "./pairing.ts";
 
 /** What the listener serves over: resolved in `beforeResume`, as the daemon socket's own host is. */
@@ -139,40 +139,22 @@ function unbind(state: Connection): void {
   }
 }
 
-// --- the pairing document, as plain values -----------------------------------
+// --- the pairing document, read without a commit ------------------------------
 
-/** A committed document as a plain value: the draft a commit hands out dies with the commit. */
-const plain = (doc: PairingDoc): PairingDoc => ({
-  tokenHash: doc.tokenHash,
-  posture: doc.posture,
-  project: doc.project,
-  ended: doc.ended,
-  nextSeq: doc.nextSeq,
-  outbox: doc.outbox.map((entry) => ({ seq: entry.seq, kind: entry.kind, text: entry.text })),
-  spent: doc.spent,
-});
-
-/** `conversation`'s pairing, read in its own commit. */
-async function readPairing(host: BridgeHost, conversation: ConversationId): Promise<PairingDoc> {
-  return host.session.harness.commit(
-    async (tx) => plain(await pairingDoc(tx, conversation)),
-    context,
-  );
-}
-
-/** `checkToken`'s answer for `conversation`: no such conversation reads as not bridged. */
+/**
+ * Whether `token` resumes `conversation`: read from the committed snapshot, so a
+ * refusal writes nothing. No document (a plain conversation, or none at all) reads
+ * as not bridged.
+ */
 async function checkPairing(
   host: BridgeHost,
   conversation: ConversationId,
   token: string,
 ): Promise<Check> {
-  return host.session.harness.commit(async (tx): Promise<Check> => {
-    const record = await tx.conversation(conversation);
-    if (record === undefined) {
-      return { ok: false, reason: "not a bridged conversation" };
-    }
-    return checkToken(plain(await pairingDoc(tx, conversation)), token);
-  }, context);
+  const doc = await pairingSnapshot(host.session.harness, conversation);
+  return doc === undefined
+    ? { ok: false, reason: "not a bridged conversation" }
+    : checkToken(doc, token);
 }
 
 /** A frame's `conversation` as a conversation key: strict decimal digits, no trailing text. */
@@ -375,8 +357,8 @@ async function boundLine(
     return;
   }
   const frame = parsed.frame;
-  const doc = await readPairing(host, conversation);
-  if (doc.ended && frame.type !== "end") {
+  const doc = await pairingSnapshot(host.session.harness, conversation);
+  if (doc?.ended === true && frame.type !== "end") {
     write(state, endedRefusal(frame));
     return;
   }

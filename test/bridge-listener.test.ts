@@ -57,6 +57,15 @@ describe("resume (VT-2)", () => {
     },
   );
 
+  it("a refused resume of a plain conversation writes no pairing document", async () => {
+    const world = await bridgeWorld();
+    const conversation = await world.plainConversation();
+    const { client, reply } = await world.resume(conversation, "any-token");
+    expect(reply).toEqual(refused("not a bridged conversation"));
+    await client.closed;
+    expect(await world.storedPairing(conversation)).toBeUndefined();
+  });
+
   it("does not read a bridged conversation's id out of trailing text", async () => {
     const world = await bridgeWorld();
     const { conversation, token } = await world.pair();

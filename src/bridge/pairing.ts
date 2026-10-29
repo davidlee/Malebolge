@@ -5,13 +5,19 @@
 // fork of a bridged conversation is not bridged and inherits no token hash.
 
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
-import { type ConversationId, defineDoc, type Tx } from "@earendil-works/pi-durable";
+import {
+  type ConversationId,
+  type DocumentReader,
+  defineDoc,
+  type Tx,
+} from "@earendil-works/pi-durable";
 import {
   BRIDGE_BODY_MAX_BYTES,
   capHeadTail,
   type MessageKind,
   type Posture,
 } from "../../pi-bridge/wire.ts";
+import { context } from "../context.ts";
 
 /** Unacked messages kept before pi is told it is not draining (DEC-066). */
 export const BRIDGE_OUTBOX_CAP = 32;
@@ -66,6 +72,17 @@ const PairingDocument = defineDoc<PairingDoc>({
 /** `conversation`'s pairing, read in the caller's commit. */
 export const pairingDoc = (tx: Tx, conversation: ConversationId): Promise<PairingDoc> =>
   tx.doc(PairingDocument, conversation);
+
+/**
+ * `conversation`'s committed pairing, read without a commit: `undefined` when no
+ * commit ever wrote it, so a read that refuses (a resume of a plain conversation)
+ * writes nothing.
+ */
+export const pairingSnapshot = (
+  reader: Pick<DocumentReader, "snapshot">,
+  conversation: ConversationId,
+): Promise<Readonly<PairingDoc> | undefined> =>
+  reader.snapshot(PairingDocument, conversation, context);
 
 /** Whether a pairing was ever opened on `doc`: only its token hash says so. */
 export const isBridged = (doc: PairingDoc): boolean => doc.tokenHash !== "";

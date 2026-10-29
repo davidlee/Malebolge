@@ -12,7 +12,7 @@ import {
 } from "@earendil-works/pi-durable";
 import { onTestFinished } from "vitest";
 import { DAEMON_FRAMES, type DaemonFrame, type Posture, parseFrame } from "../pi-bridge/wire.ts";
-import { type PairingDoc, pairingDoc } from "../src/bridge/pairing.ts";
+import { type PairingDoc, pairingDoc, pairingSnapshot } from "../src/bridge/pairing.ts";
 import { type BridgeHost, serveBridge } from "../src/bridge/listener.ts";
 import { context } from "../src/context.ts";
 import {
@@ -134,6 +134,8 @@ export interface BridgeWorld extends BridgeHostWorld {
   resume: (conversation: string, token: string) => Promise<FirstReply>;
   /** The pairing document of `conversation`, read in a commit. */
   pairingOf: (conversation: string) => Promise<PairingDoc>;
+  /** The committed pairing document, read without a commit: undefined when none was ever written. */
+  storedPairing: (conversation: string) => Promise<Readonly<PairingDoc> | undefined>;
   /** Mutates `conversation`'s pairing document in its own commit, as a later phase's rules would. */
   updatePairing: (conversation: string, change: (doc: PairingDoc) => void) => Promise<void>;
   /** The model ref the conversation's agent document stores, if it stores one. */
@@ -202,6 +204,7 @@ export async function bridgeWorld(): Promise<BridgeWorld> {
         const doc = await pairingDoc(tx, conversationIdOf(conversation));
         return { ...doc, outbox: doc.outbox.map((entry) => ({ ...entry })) };
       }),
+    storedPairing: (conversation) => pairingSnapshot(test.harness, conversationIdOf(conversation)),
     updatePairing: (conversation, change) =>
       commit(async (tx) => {
         change(await pairingDoc(tx, conversationIdOf(conversation)));
