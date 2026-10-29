@@ -39,10 +39,12 @@ import {
   shareOf,
 } from "../../src/mail/render.ts";
 import {
+  ANY_MAX_BYTES,
   absentThreadItem,
   addressOf,
   bodyPartOf,
   bytesOf,
+  classifiedAs,
   classificationOf,
   jevAnswersOf,
   CLOSE_TAG,
@@ -73,7 +75,10 @@ const KNOWN_GAPS =
   "known gaps: late arrivals with an older received_at are not returned; filters do not reopen passed positions";
 
 /** Cut names a shown mail_new item never names: neither is its fill here, and jev never cuts. */
-const NOT_CUT_HERE: readonly string[] = ["message_id", "size", "jev", "sender_domains"];
+const NOT_CUT_HERE: readonly string[] = ["size", "jev", "sender_domains"];
+
+/** A max_bytes under the fixture bodies: malebolge's own cut, which sets output_truncated. */
+const CUT_MAX_BYTES = 1024;
 
 type PageFacts = Omit<HeaderFacts, "items" | "withCuts">;
 
@@ -199,16 +204,14 @@ describe("escaping (VT-1)", () => {
     ["a body of 4096 <", "<".repeat(4096)],
     ["a body of every hostile character", HOSTILE_ONCE],
   ])("%s stays in one valid JSON line, and the block closes once", (_name, body) => {
-    const item = projectRead(
-      readOf({
-        subject: CLOSER,
-        preview: CLOSER,
-        from: [{ name: CLOSER, email: "a&b@example.com" }],
-        keywords: [CLOSER],
-        bodies: [bodyPartOf({ text: body })],
-      }),
-      classificationOf("Msg1"),
-    );
+    const read = readOf({
+      subject: CLOSER,
+      preview: CLOSER,
+      from: [{ name: CLOSER, email: "a&b@example.com" }],
+      keywords: [CLOSER],
+      bodies: [bodyPartOf({ text: body })],
+    });
+    const item = projectRead(read, classifiedAs(read), ANY_MAX_BYTES);
     const result = renderPage({ tool: "mail_read", clamps: [] }, [item], 1);
     const lines = dataLinesOf(result);
     expect(lines).toHaveLength(1);
@@ -367,14 +370,12 @@ describe("fitItem: the body takes what remains (VT-1 body cut)", () => {
 describe("a body of 4096 > at limit 10 (RV-015 F-3, F-4, F-25)", () => {
   const share = shareOf(10);
   const BODY = ">".repeat(4096);
-  const item = projectNew(
-    readOf({
-      from: [addressOf(1)],
-      to: [addressOf(2), addressOf(3)],
-      bodies: [bodyPartOf({ text: BODY })],
-    }),
-    classificationOf("Msg1"),
-  );
+  const read = readOf({
+    from: [addressOf(1)],
+    to: [addressOf(2), addressOf(3)],
+    bodies: [bodyPartOf({ text: BODY })],
+  });
+  const item = projectNew(read, classifiedAs(read), ANY_MAX_BYTES);
   const { line, cut } = fitItem(item, share);
   const parsed = parseLine(line);
 
@@ -403,37 +404,41 @@ describe("a body of 4096 > at limit 10 (RV-015 F-3, F-4, F-25)", () => {
   });
 });
 
-describe("a long to list and a long references list (RV-015 F-28)", () => {
+describe("a long to list and the dropped reference lists (RV-015 F-28)", () => {
   const share = shareOf(20);
   const to = Array.from({ length: 40 }, (_, n) => addressOf(n, 40));
   const references = Array.from({ length: 100 }, (_, n) => `ref${String(n)}-${"r".repeat(20)}`);
-  const item = projectNew(
-    readOf({
-      to,
-      references,
-      cc: [addressOf(5)],
-      in_reply_to: ["parent"],
-      keywords: ["$seen"],
-      attachments: [],
-    }),
-    classificationOf("Msg1"),
-  );
+  const read = readOf({
+    to,
+    references,
+    cc: [addressOf(5)],
+    in_reply_to: ["parent"],
+    keywords: ["$seen"],
+    attachments: [],
+  });
+  const item = projectNew(read, classifiedAs(read), ANY_MAX_BYTES);
   const { line, cut } = fitItem(item, share);
   const parsed = parseLine(line);
 
-  it("are left out whole (key absent, not shortened) and named in cut", () => {
+  it("leaves the long to list out whole (key absent, not shortened) and names it in cut", () => {
     expect(Buffer.byteLength(JSON.stringify(to))).toBeGreaterThan(share);
-    expect(Buffer.byteLength(JSON.stringify(references))).toBeGreaterThan(share);
     expect(parsed).not.toHaveProperty("to");
-    expect(parsed).not.toHaveProperty("references");
-    expect(cut).toEqual(["to", "references"]);
-    expect(parsed["cut"]).toEqual(["to", "references"]);
+    expect(cut).toEqual(["to"]);
+    expect(parsed["cut"]).toEqual(["to"]);
   });
 
-  it("do not stop the smaller later fields from appearing", () => {
+  it("drops references and in_reply_to entirely, naming neither", () => {
+    expect(Buffer.byteLength(JSON.stringify(references))).toBeGreaterThan(share);
+    for (const dropped of ["references", "in_reply_to"]) {
+      expect(parsed).not.toHaveProperty(dropped);
+      expect(cut).not.toContain(dropped);
+      expect(parsed["cut"]).not.toContain(dropped);
+    }
+  });
+
+  it("lets the smaller later fields still appear", () => {
     expect(parsed["cc"]).toEqual([addressOf(5)]);
     expect(parsed["keywords"]).toEqual(["$seen"]);
-    expect(parsed["in_reply_to"]).toEqual(["parent"]);
     expect(parsed["attachments"]).toEqual([]);
     expect(parsed["body"]).toBe("body text");
     expect(Buffer.byteLength(line)).toBeLessThanOrEqual(share);
@@ -479,7 +484,8 @@ describe("jevField (SL-007 sec-16)", () => {
   });
 
   it("renders probabilities, model and schema never", () => {
-    const item = projectListItem(summaryOf(), classificationOf("Msg1"));
+    const summary = summaryOf();
+    const item = projectListItem(summary, classifiedAs(summary));
     const line = fitItem(item, shareOf(40)).line;
     for (const absent of [
       "probabilities",
@@ -526,11 +532,14 @@ describe("jevField (SL-007 sec-16)", () => {
   });
 
   it("is the core field right after has_attachment in every shown item", () => {
+    const summary = summaryOf();
+    const entry = inStoreThreadItem();
+    const read = readOf();
     for (const item of [
-      projectListItem(summaryOf(), classificationOf("Msg1")),
-      projectThreadItem(inStoreThreadItem(), classificationOf("Msg1")),
-      projectNew(readOf(), classificationOf("Msg1")),
-      projectRead(readOf(), classificationOf("Msg1")),
+      projectListItem(summary, classifiedAs(summary)),
+      projectThreadItem(entry, classifiedAs(entry)),
+      projectNew(read, classifiedAs(read), ANY_MAX_BYTES),
+      projectRead(read, classifiedAs(read), ANY_MAX_BYTES),
     ]) {
       const keys = item.core.map(([key]) => key);
       const at = keys.indexOf("has_attachment");
@@ -546,12 +555,11 @@ describe("the largest cores fit their share (RV-015 F-25, F-39)", () => {
   const coreWithCut = (item: ProjectedItem, cut: readonly string[]): number =>
     renderedBytes({ ...coreOf(item), cut });
 
+  const largestList = maxSummary("list");
+  const largestThread = { ...maxSummary("thr"), in_store: true } satisfies EntryArg;
   it.each([
-    ["mail_list", projectListItem(maxSummary("list"), classificationOf("Msg1"), true)],
-    [
-      "mail_thread",
-      projectThreadItem({ ...maxSummary("thr"), in_store: true }, classificationOf("Msg1")),
-    ],
+    ["mail_list", projectListItem(largestList, classifiedAs(largestList), true)],
+    ["mail_thread", projectThreadItem(largestThread, classifiedAs(largestThread))],
   ])(
     "%s at limit 40: a summary core with every flag, 255-byte ids and every fill left out",
     (_tool, item) => {
@@ -567,10 +575,7 @@ describe("the largest cores fit their share (RV-015 F-25, F-39)", () => {
 
   it("a maximal list item with jev fits shareOf(40)", () => {
     const summary = maxSummary("jev-list");
-    const item = projectListItem(
-      summary,
-      classificationOf(summary.id, jevAnswersOf(JEV_MAX_BYTES)),
-    );
+    const item = projectListItem(summary, classifiedAs(summary, jevAnswersOf(JEV_MAX_BYTES)));
     const { line, cut } = fitItem(item, shareOf(40));
     expect(Buffer.byteLength(line)).toBeLessThanOrEqual(shareOf(40));
     expectCoreWhole(parseLine(line), item);
@@ -584,7 +589,7 @@ describe("the largest cores fit their share (RV-015 F-25, F-39)", () => {
     const [row] = WITHHOLD_POLICY;
     const item = projectWithheld(
       summary,
-      { id: summary.id, classified: classificationOf(summary.id, jevAnswersOf(JEV_MAX_BYTES)) },
+      { id: summary.id, classified: classifiedAs(summary, jevAnswersOf(JEV_MAX_BYTES)) },
       { reason: "hostile", detail: row.question, score: 0.99 },
       { inStore: true, heldBack: true },
     );
@@ -601,8 +606,8 @@ describe("the largest cores fit their share (RV-015 F-25, F-39)", () => {
   });
 
   it("a maximal thread item with jev fits shareOf(40)", () => {
-    const entry: EntryArg = { ...maxSummary("jev-thr"), in_store: true };
-    const item = projectThreadItem(entry, classificationOf(entry.id, jevAnswersOf(JEV_MAX_BYTES)));
+    const entry = { ...maxSummary("jev-thr"), in_store: true } satisfies EntryArg;
+    const item = projectThreadItem(entry, classifiedAs(entry, jevAnswersOf(JEV_MAX_BYTES)));
     const { line, cut } = fitItem(item, shareOf(40));
     expect(Buffer.byteLength(line)).toBeLessThanOrEqual(shareOf(40));
     expectCoreWhole(parseLine(line), item);
@@ -612,16 +617,14 @@ describe("the largest cores fit their share (RV-015 F-25, F-39)", () => {
 
   it("an item whose jev is cut names jev in cut, after subject when both", () => {
     const summary = summaryOf({ subject: "s".repeat(300) });
-    const item = projectListItem(
-      summary,
-      classificationOf(summary.id, jevAnswersOf(JEV_MAX_BYTES + 100)),
-    );
+    const item = projectListItem(summary, classifiedAs(summary, jevAnswersOf(JEV_MAX_BYTES + 100)));
     expect(item.cut).toEqual(["subject", "jev"]);
     expect(coreOf(item)["cut"]).toEqual(["subject", "jev"]);
   });
 
   it("mail_new at limit 20: the core with every body flag and held_back, other fields left out", () => {
-    const item = projectNew(maxRead("new"), classificationOf("Msg1"), true);
+    const read = maxRead("new");
+    const item = projectNew(read, classifiedAs(read), CUT_MAX_BYTES, true);
     const { line, cut } = fitItem(item, shareOf(20));
     const parsed = parseLine(line);
     expect(Buffer.byteLength(line)).toBeLessThanOrEqual(shareOf(20));
@@ -634,13 +637,15 @@ describe("the largest cores fit their share (RV-015 F-25, F-39)", () => {
     expect(coreWithCut(item, CUT_ORDER)).toBeLessThanOrEqual(shareOf(20) - 1024);
   });
 
-  it("mail_read: the core with every flag and 5 long message ids renders within 3 KiB", () => {
-    const item = projectRead(maxRead("read"), classificationOf("Msg1"));
+  it("mail_read: the core with every flag renders within 3 KiB, with malebolge's cut shown", () => {
+    const read = maxRead("read");
+    const item = projectRead(read, classifiedAs(read), CUT_MAX_BYTES);
     const core = coreOf(item);
     expect(core["is_truncated"]).toBe(true);
     expect(core["is_encoding_problem"]).toBe(true);
     expect(core["conversion_failed"]).toBe(true);
     expect(core["truncated_by"]).toEqual(["server", "message_limit"]);
+    // The seen bodies exceed CUT_MAX_BYTES: the max_bytes cut is what sets the flag.
     expect(core["output_truncated"]).toBe(true);
     expect(coreWithCut(item, CUT_ORDER)).toBeLessThanOrEqual(3072);
     const { line } = fitItem(item, shareOf(1));
@@ -659,7 +664,7 @@ describe("received_at (RV-015 F-42)", () => {
     });
     const result = renderPage(
       { tool: "mail_list", clamps: [] },
-      data.items.map((s) => projectListItem(s, classificationOf("Msg1"))),
+      data.items.map((s) => projectListItem(s, classifiedAs(s))),
       1,
     );
     const [line] = dataLinesOf(result);
@@ -679,7 +684,7 @@ describe("fields outside the projection (RV-015 F-39)", () => {
     });
     const result = renderPage(
       { tool: "mail_read", clamps: [] },
-      [projectRead(noisy, classificationOf("Msg1"))],
+      [projectRead(noisy, classifiedAs(noisy), ANY_MAX_BYTES)],
       1,
     );
     for (const stray of [
@@ -957,20 +962,21 @@ describe("renderPage", () => {
   const long = "s".repeat(300);
 
   it("throws when there are more items than the limit", () => {
-    const items = [
-      projectListItem(summaryOf({ id: "A" }), classificationOf("Msg1")),
-      projectListItem(summaryOf({ id: "B" }), classificationOf("Msg1")),
-    ];
+    const items = ["A", "B"].map((id) => {
+      const summary = summaryOf({ id });
+      return projectListItem(summary, classifiedAs(summary));
+    });
     expect(() => renderPage({ tool: "mail_list", clamps: [] }, items, 1)).toThrow();
     expect(() => renderPage({ tool: "mail_list", clamps: [] }, items, 2)).not.toThrow();
   });
 
   it("counts items and items with cuts into the header, and renders one line per item", () => {
-    const items = [
-      projectListItem(summaryOf({ id: "A", subject: long }), classificationOf("Msg1")),
-      projectListItem(summaryOf({ id: "B" }), classificationOf("Msg1")),
-      projectListItem(summaryOf({ id: "C", subject: long }), classificationOf("Msg1")),
-    ];
+    const items = [{ id: "A", subject: long }, { id: "B" }, { id: "C", subject: long }].map(
+      (fields) => {
+        const summary = summaryOf(fields);
+        return projectListItem(summary, classifiedAs(summary));
+      },
+    );
     const result = renderPage(
       { tool: "mail_list", clamps: [{ name: "limit", to: 40 }] },
       items,
@@ -982,9 +988,10 @@ describe("renderPage", () => {
   });
 
   it("renders a thread entry not in the store as exactly its id and in_store: false", () => {
+    const entry = inStoreThreadItem();
     const items = [
       projectThreadItem(absentThreadItem("MsgOut"), undefined),
-      projectThreadItem(inStoreThreadItem(), classificationOf("Msg1")),
+      projectThreadItem(entry, classifiedAs(entry)),
     ];
     const result = renderPage(
       { tool: "mail_thread", clamps: [], thread: { total: 5, truncated: true } },
@@ -999,9 +1006,10 @@ describe("renderPage", () => {
   });
 
   it("passes held back through as a count in the header and held_back: true on the line", () => {
+    const read = readOf({ id: "Future" });
     const result = renderPage(
       { tool: "mail_new", clamps: [], heldBack: 1, next: "", caughtUp: true },
-      [projectNew(readOf({ id: "Future" }), classificationOf("Msg1"), true)],
+      [projectNew(read, classifiedAs(read), ANY_MAX_BYTES, true)],
       10,
     );
     expect(headerLinesOf(result)[0]).toBe("mail_new: 1 items, 0 with cuts, 1 held back");
@@ -1035,7 +1043,7 @@ function hostilePage(verb: Verb, rng: Rng, limit: number): Page {
       const summaries = indexes.map((n) => randomSummary(rng, sizeOf(rng, n), `i${String(n)}`));
       const data = mustCheck("list", { offset: 0, limit, items: summaries });
       return {
-        items: data.items.map((s) => projectListItem(s, classificationOf("Msg1"), rng.chance(0.2))),
+        items: data.items.map((s) => projectListItem(s, classifiedAs(s), rng.chance(0.2))),
         facts: { tool: "mail_list", clamps: [] },
       };
     }
@@ -1049,7 +1057,7 @@ function hostilePage(verb: Verb, rng: Rng, limit: number): Page {
       });
       return {
         items: data.items.map((entry) =>
-          projectThreadItem(entry, entry.in_store ? classificationOf(entry.id) : undefined),
+          projectThreadItem(entry, entry.in_store ? classifiedAs(entry) : undefined),
         ),
         facts: { tool: "mail_thread", clamps: [], thread: { total: limit, truncated: false } },
       };
@@ -1061,8 +1069,8 @@ function hostilePage(verb: Verb, rng: Rng, limit: number): Page {
       );
       const items = reads.map((r) =>
         verb === "new"
-          ? projectNew(r, classificationOf("Msg1"), rng.chance(0.2))
-          : projectRead(r, classificationOf("Msg1")),
+          ? projectNew(r, classifiedAs(r), ANY_MAX_BYTES, rng.chance(0.2))
+          : projectRead(r, classifiedAs(r), ANY_MAX_BYTES),
       );
       const facts: PageFacts =
         verb === "new"

@@ -146,6 +146,16 @@ slips are left to red/green tests; the next review is of the plan.
 - fix · `interfaceNamesOf` answers undefined when the file names no interface (refuses "cannot list"), since an empty list would pass `onlyLoopback` and every netns holds `lo` · fail closed · decided
 - fix · design drift for /reconcile: design § Preconditions (table row "checked from", and the `mailPart` paragraph) still says `/sys/class/net` / `readdirSync`; the design run is locked (rev 71) and reopening was an operator act, so the text is left · deferred to /reconcile
 
+- PHASE-07 · EN-2: screwtape README re-read at d705f5b (HEAD; README last changed 65879a9, the commit DEC-094 cites); § classify_state seen shape equals SeenSchema field for field, no drift; fixture and schema unchanged · decided
+- PHASE-07 · test fixtures: `seenOf(item)`, `classifiedAs(item, answers?)`, `classifyAll(items)`, `ANY_MAX_BYTES` in mail-fixtures; existing tests moved to a seen mirroring the item first (refactor step, suite green) so the switch broke only the dropped-field tests · fixtures/helpers · decided
+- PHASE-07 · a seen attachment with no read attachment at its index is dropped and names `attachments` in cut (never an invented id) · design silent; Opus review agreed · decided
+- PHASE-07 · `bodies_omitted` sets is_truncated only, not a `body` cut name · design § Jev's window body-flags row · decided
+- PHASE-07 · `foldBodies` narrowed to `readBodyFlags` (is_encoding_problem, truncated_by); the blank-line join lives only in `seenBody`; `readParts` shared by projectNew/projectRead · Opus review M2 / DRY · decided
+- PHASE-07 · test "mail_read max_bytes above 32768" pinned 32768; rewritten against `READ_MAX_BYTES.max` (green stopped and reported it) · operator pref: no pinned bound values · decided
+- PHASE-07 · IMP-028 (mail_new default max_bytes reports a clamp) does not fall out of passing maxBytes to the projectors; left deferred · no extra scope · deferred
+- PHASE-07 · Opus review (capsule-worker, opus; reason: DEC-048 trust boundary): no blocker/major; adopted M1 (attachment-mismatch test), M2, M3 (distinct seen type in VT-1), N1 (header comment), N2 (shared ANY_MAX_BYTES); not acted on: N3 (fixture flag state screwtape never emits, follows the design table), N4 (READ_MAX_BYTES.max not tied to CLASSIFY_READ_BYTES; DEC-094 makes it unnecessary) · decided
+- PHASE-07 · host gate fully green (fmt-check, lint, typecheck, vitest 4166/4166); verify-vt PHASE-07 VT-1, VT-2 PASS · decided
+
 ## Pi runs
 
 - PHASE-01 · 5 implement runs (red A, red B, green A, green B, refactor B), ~$0.14 total · misses: widened the answers schema instead of flagging the test conflict; briefed `biome lint` (my error — lint is ESLint), so green B landed 12 ESLint errors, fixed in the refactor run
@@ -154,6 +164,7 @@ slips are left to red/green tests; the next review is of the plan.
 - PHASE-04 · 3 implement runs in one session (red A structural, red B, green), ~$0.14 · per-run ceiling is 60 requests (90 refused), so red split in two; green re-pinned two bound values (I replaced them with relations) and cited the wrong design section ids (sec-3; fixed to § names)
 - PHASE-05 · 6 implement runs (red A + continuation, red B, green + continuation, refactor), ~$0.42 · two runs hit the 60-request ceiling before answering (continued in-session); green correctly refused to edit 8 stale clamp tests and reported them; green dropped `in_store` on withheld thread entries (caught by me, not by its tests); red A re-pinned nothing but cited `sec-16` (fixed)
 - PHASE-06 · 2 implement runs (red, green), ~$0.10 · red pinned `required: ["id"]` for mail_report (wrong); green stopped and reported it instead of widening the schema (good); green coupled the log line to MAIL_ERROR_PREFIX and mis-cited one comment (fixed)
+- PHASE-07 · 3 implement runs (fixtures refactor, red, green), ~$0.22 · clean; green stopped on a stale 32768 clamp pin and reported it (good); I folded the projectNew/projectRead duplication into `readParts` and applied the Opus review
 
 ## Harvest
 <!-- single-copy: updated in place each harvest; ids only, never restated content -->

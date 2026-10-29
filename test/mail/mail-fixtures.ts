@@ -21,6 +21,7 @@ import {
   type Mailbox,
   type MailSource,
   type ReadData,
+  type Seen,
   type Summary,
   type ThreadData,
   type ThreadItem,
@@ -311,7 +312,7 @@ export function readOf(overrides: Partial<ReadData> = {}): ReadData {
   };
 }
 
-export function inStoreThreadItem(overrides: Partial<Summary> = {}): ThreadItem {
+export function inStoreThreadItem(overrides: Partial<Summary> = {}): Summary & { in_store: true } {
   return { ...summaryOf(overrides), in_store: true };
 }
 
@@ -659,23 +660,94 @@ export function fakeMailSource(replies: FakeReplies = {}): FakeMailSource {
 
 // ------------------------------------------- classifications (SL-007 PHASE-05)
 
+/** A max_bytes for tests not about the body cut: no fixture body reaches it. */
+export const ANY_MAX_BYTES = 16 * 1024;
+
+/** Addresses as the `seen` window carries them: the written name and email, nothing else. */
+function seenAddresses(addresses: readonly Address[]): Seen["from"] {
+  return addresses.map(({ name, email }) => ({ name, email }));
+}
+
+/** One of the address lists only a read carries; `[]` for a summary, which has none of them. */
+function seenListOf(
+  item: Summary | ReadData,
+  field: "sender" | "reply_to" | "to" | "cc" | "bcc",
+): Seen["from"] {
+  return "bodies" in item ? seenAddresses(item[field]) : [];
+}
+
+/** The bodies as `seen` carries them, or none for a summary. */
+function seenBodiesOf(item: Summary | ReadData): Seen["bodies"] {
+  if (!("bodies" in item)) {
+    return [];
+  }
+  return item.bodies.map(({ text, is_truncated, conversion_failed }) => ({
+    text,
+    is_truncated,
+    conversion_failed,
+  }));
+}
+
+/** The attachments as `seen` carries them, or none for a summary. */
+function seenAttachmentsOf(item: Summary | ReadData): Seen["attachments"] {
+  return "attachments" in item ? item.attachments.map(({ type, name }) => ({ type, name })) : [];
+}
+
+/** The `seen` window that mirrors `item`: every sender-written text of it, none omitted, unbounded. */
+export function seenOf(item: Summary | ReadData): Seen {
+  return {
+    subject: item.subject,
+    from: seenAddresses(item.from),
+    from_omitted: 0,
+    sender: seenListOf(item, "sender"),
+    sender_omitted: 0,
+    reply_to: seenListOf(item, "reply_to"),
+    reply_to_omitted: 0,
+    to: seenListOf(item, "to"),
+    to_omitted: 0,
+    cc: seenListOf(item, "cc"),
+    cc_omitted: 0,
+    bcc: seenListOf(item, "bcc"),
+    bcc_omitted: 0,
+    bodies: seenBodiesOf(item),
+    bodies_omitted: 0,
+    attachments: seenAttachmentsOf(item),
+    attachments_omitted: 0,
+  };
+}
+
 /**
  * The contract classification with `id` (and so its cursor) replaced and the
- * answers as given, validated: the one way a test builds a `Classification`.
+ * answers and `seen` as given, validated: the one way a test builds a `Classification`.
  */
-export function classificationOf(id: string, answers?: Classification["answers"]): Classification {
+export function classificationOf(
+  id: string,
+  answers?: Classification["answers"],
+  seen?: Seen,
+): Classification {
   const data = loadData("classify", "contract/classify.json");
   return mustCheck("classify", {
     ...data,
     id,
     cursor: `1793120280000:${id}`,
+    seen: seen ?? data.seen,
     answers: answers ?? data.answers,
   });
 }
 
-/** Benign classifications for `ids`: the contract answers, each policy noul below its threshold. */
-export function classifyAll(ids: readonly string[]): Record<string, Classification> {
-  return Object.fromEntries(ids.map((id) => [id, classificationOf(id)]));
+/** The contract classification of `item`, its `seen` mirroring the item's own text. */
+export function classifiedAs(
+  item: Summary | ReadData,
+  answers?: Classification["answers"],
+): Classification {
+  return classificationOf(item.id, answers, seenOf(item));
+}
+
+/** Benign classifications for `items`: the contract answers, each policy noul below its threshold. */
+export function classifyAll(
+  items: readonly (Summary | ReadData)[],
+): Record<string, Classification> {
+  return Object.fromEntries(items.map((item) => [item.id, classifiedAs(item)]));
 }
 
 /** Noul answers rendered as they are: `{q0: 0.5, q1: 0.5, ...}`. */

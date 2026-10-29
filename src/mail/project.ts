@@ -1,21 +1,25 @@
-// The mail projection: a validated envelope to the item the renderer fills.
+// The mail projection: a validated envelope and its classification to the item the
+// renderer fills.
 //
 // A projection copies only the fields the contract names, so a field added to a
-// later v1 envelope is neither rendered nor counted (F-39). The only fields it
-// ever shortens are `subject` and `message_id`, because a core field cannot be
-// left out; everything else is shown whole or named in `cut`.
+// later v1 envelope is neither rendered nor counted (F-39). Every sender-written
+// text a shown item carries is taken from the classification's `seen` — the window
+// Jev's state was stripped from — so the agent's view is a prefix of Jev's (design
+// § Jev's window). It shortens only `subject` (a core field cannot be left out)
+// and the body (to the caller's `max_bytes`); everything else is shown whole or
+// named in `cut`.
 
 import { cutRendered, renderedLength } from "../untrusted-block.ts";
 import type { Withheld } from "./policy.ts";
 import {
   isRfc3339,
   type Address,
-  type Attachment,
   type Body,
   type Classification,
   type ClassifyOutcome,
   type Mailbox,
   type ReadData,
+  type Seen,
   type Summary,
   type ThreadItem,
 } from "./source.ts";
@@ -24,7 +28,6 @@ import {
 export const CUT_ORDER = [
   "subject",
   "jev",
-  "message_id",
   "from",
   "sender_domains",
   "mailbox_ids",
@@ -37,8 +40,6 @@ export const CUT_ORDER = [
   "size",
   "preview",
   "keywords",
-  "in_reply_to",
-  "references",
   "attachments",
   "body",
 ] as const;
@@ -68,10 +69,6 @@ export interface ProjectedMailbox {
 
 /** A cut subject is at most this many rendered bytes, quotes and `…` included. */
 export const SUBJECT_MAX_BYTES = 200;
-/** At most this many `message_id` entries are shown. */
-export const MESSAGE_ID_MAX_ENTRIES = 5;
-/** A cut `message_id` entry is at most this many rendered bytes, `…` included. */
-export const MESSAGE_ID_ENTRY_MAX_BYTES = 256;
 
 const ELLIPSIS = "…";
 
@@ -87,22 +84,16 @@ export type TruncationReason = "server" | "message_limit";
 
 const TRUNCATION_REASONS: readonly TruncationReason[] = ["server", "message_limit"];
 
-/** The one body and one flag set the parts of a message fold into. */
-export interface FoldedBody {
-  readonly body: string;
-  readonly is_truncated: boolean;
+/** The flags only the read's parts know: the window carries neither (design § Jev's window). */
+export interface ReadBodyFlags {
   readonly is_encoding_problem: boolean;
-  readonly conversion_failed: boolean;
   readonly truncated_by: readonly TruncationReason[];
 }
 
-/** The parts' texts joined by a blank line; flags ORed; distinct reasons in order. */
-export function foldBodies(bodies: readonly Body[]): FoldedBody {
+/** The read's parts' encoding problem ORed; their distinct truncation reasons in order. */
+export function readBodyFlags(bodies: readonly Body[]): ReadBodyFlags {
   return {
-    body: bodies.map((part) => part.text).join("\n\n"),
-    is_truncated: bodies.some((part) => part.is_truncated),
     is_encoding_problem: bodies.some((part) => part.is_encoding_problem),
-    conversion_failed: bodies.some((part) => part.conversion_failed),
     truncated_by: TRUNCATION_REASONS.filter((reason) =>
       bodies.some((part) => part.truncated_by === reason),
     ),
@@ -124,13 +115,45 @@ function capSubject(subject: string | null): { value: string | null; cuts: CutNa
   return { value: capped.text, cuts: capped.cut ? ["subject"] : [] };
 }
 
-function capMessageIds(ids: readonly string[]): { value: string[]; cut: boolean } {
-  const kept = ids.slice(0, MESSAGE_ID_MAX_ENTRIES);
-  const capped = kept.map((id) => cutRendered(id, MESSAGE_ID_ENTRY_MAX_BYTES, ELLIPSIS));
-  return {
-    value: capped.map((entry) => entry.text),
-    cut: ids.length > kept.length || capped.some((entry) => entry.cut),
-  };
+/** The address lists a read shows; `seen` carries an `_omitted` count for each. */
+const READ_ADDRESS_LISTS = ["from", "sender", "reply_to", "to", "cc", "bcc"] as const;
+/** The one address list a summary shows. */
+const SUMMARY_ADDRESS_LISTS = ["from"] as const;
+
+/** Each shown list whose `_omitted` count is non-zero, as a cut name (design § Jev's window). */
+function omittedCuts(seen: Seen, lists: readonly (typeof READ_ADDRESS_LISTS)[number][]): CutName[] {
+  return lists.filter((list) => seen[`${list}_omitted`] > 0);
+}
+
+/**
+ * `text` when it fits `maxBytes` raw UTF-8 bytes; otherwise its longest code-point
+ * prefix that does, and that it was cut. Never splits a surrogate pair, and adds no
+ * suffix (design § Jev's window).
+ */
+function cutRawBytes(text: string, maxBytes: number): { text: string; cut: boolean } {
+  if (Buffer.byteLength(text, "utf8") <= maxBytes) {
+    return { text, cut: false };
+  }
+  let used = 0;
+  let end = 0;
+  for (const character of text) {
+    const size = Buffer.byteLength(character, "utf8");
+    if (used + size > maxBytes) {
+      break;
+    }
+    used += size;
+    end += character.length;
+  }
+  return { text: text.slice(0, end), cut: true };
+}
+
+/**
+ * The window's body text: its parts joined by a blank line, then cut to
+ * the caller's `max_bytes` raw bytes (design § Jev's window).
+ */
+function seenBody(seen: Seen, maxBytes: number): { body: string; cut: boolean } {
+  const cut = cutRawBytes(seen.bodies.map((part) => part.text).join("\n\n"), maxBytes);
+  return { body: cut.text, cut: cut.cut };
 }
 
 /** `value` as every rendered number is written: 2 decimal places (design § Rendering). */
@@ -182,10 +205,10 @@ export function jevField(outcome: ClassifyOutcome): {
 }
 
 function summaryEntries(
-  summary: Summary,
+  item: Summary,
   classified: Classification,
 ): { core: Entries; cuts: CutName[] } {
-  const subject = capSubject(summary.subject);
+  const subject = capSubject(classified.seen.subject);
   const jev = jevOfAnswers(classified.answers);
   const cuts = [...subject.cuts];
   if (jev.cut) {
@@ -193,25 +216,30 @@ function summaryEntries(
   }
   return {
     core: [
-      ["id", summary.id],
-      ["thread_id", summary.thread_id],
-      ["received_at", normaliseReceivedAt(summary.received_at)],
+      ["id", item.id],
+      ["thread_id", item.thread_id],
+      ["received_at", normaliseReceivedAt(item.received_at)],
       ["subject", subject.value],
-      ["is_seen", summary.is_seen],
-      ["is_flagged", summary.is_flagged],
-      ["has_attachment", summary.has_attachment],
+      ["is_seen", item.is_seen],
+      ["is_flagged", item.is_flagged],
+      ["has_attachment", item.has_attachment],
       ["jev", jev.value],
     ],
     cuts: orderedCuts(cuts),
   };
 }
 
-function bodyFlagEntries(folded: FoldedBody, outputTruncated: boolean): Entries {
+/**
+ * The five body flags: `is_truncated` and `conversion_failed` from the window's
+ * bodies, `is_encoding_problem` and `truncated_by` from the read's parts, and
+ * `output_truncated` from malebolge's own cut (design § Jev's window).
+ */
+function bodyFlagEntries(read: ReadBodyFlags, seen: Seen, outputTruncated: boolean): Entries {
   return [
-    ["is_truncated", folded.is_truncated],
-    ["is_encoding_problem", folded.is_encoding_problem],
-    ["conversion_failed", folded.conversion_failed],
-    ["truncated_by", folded.truncated_by],
+    ["is_truncated", seen.bodies.some((body) => body.is_truncated) || seen.bodies_omitted > 0],
+    ["is_encoding_problem", read.is_encoding_problem],
+    ["conversion_failed", seen.bodies.some((body) => body.conversion_failed)],
+    ["truncated_by", read.truncated_by],
     ["output_truncated", outputTruncated],
   ];
 }
@@ -220,52 +248,70 @@ function projectAddresses(addresses: readonly Address[]): { name: string | null;
   return addresses.map((address) => ({ name: address.name, email: address.email }));
 }
 
-function projectAttachments(attachments: readonly Attachment[]): ProjectedAttachment[] {
-  return attachments.map((attachment) => ({
-    part_id: attachment.part_id,
-    blob_id: attachment.blob_id,
-    name: attachment.name,
-    type: attachment.type,
-    size: attachment.size,
-    disposition: attachment.disposition,
-    cid: attachment.cid,
-  }));
-}
-
 interface ProjectedAttachment {
   readonly part_id: string;
   readonly blob_id: string;
   readonly name: string | null;
   readonly type: string;
   readonly size: number;
-  readonly disposition: string | null;
-  readonly cid: string | null;
 }
 
-function summaryFill(summary: Summary): ProjectedItem["fill"] {
+/**
+ * The window's attachments joined by index to the read's: `type` and `name` from
+ * `seen`, `part_id`, `blob_id` and `size` from the read's attachment at the same
+ * index. An index the read lacks drops that seen entry and names `attachments` in
+ * cut: an id is never invented (design § Jev's window).
+ */
+function projectAttachments(
+  read: ReadData,
+  seen: Seen,
+): { value: ProjectedAttachment[]; cut: boolean } {
+  const value: ProjectedAttachment[] = [];
+  for (const [index, attachment] of seen.attachments.entries()) {
+    const part = read.attachments[index];
+    if (part === undefined) {
+      continue;
+    }
+    value.push({
+      part_id: part.part_id,
+      blob_id: part.blob_id,
+      name: attachment.name,
+      type: attachment.type,
+      size: part.size,
+    });
+  }
+  return {
+    value,
+    cut: seen.attachments_omitted > 0 || value.length < seen.attachments.length,
+  };
+}
+
+function summaryFill(summary: Summary, seen: Seen): ProjectedItem["fill"] {
   return [
-    ["from", projectAddresses(summary.from)],
+    ["from", projectAddresses(seen.from)],
     ["mailbox_ids", summary.mailbox_ids],
     ["preview", summary.preview],
   ];
 }
 
-function readFill(read: ReadData): ProjectedItem["fill"] {
+function readFill(
+  read: ReadData,
+  seen: Seen,
+  attachments: ProjectedAttachment[],
+): ProjectedItem["fill"] {
   return [
-    ["from", projectAddresses(read.from)],
+    ["from", projectAddresses(seen.from)],
     ["mailbox_ids", read.mailbox_ids],
-    ["to", projectAddresses(read.to)],
-    ["cc", projectAddresses(read.cc)],
-    ["bcc", projectAddresses(read.bcc)],
-    ["reply_to", projectAddresses(read.reply_to)],
-    ["sender", projectAddresses(read.sender)],
+    ["to", projectAddresses(seen.to)],
+    ["cc", projectAddresses(seen.cc)],
+    ["bcc", projectAddresses(seen.bcc)],
+    ["reply_to", projectAddresses(seen.reply_to)],
+    ["sender", projectAddresses(seen.sender)],
     ["sent_at", read.sent_at],
     ["size", read.size],
     ["preview", read.preview],
     ["keywords", read.keywords],
-    ["in_reply_to", read.in_reply_to],
-    ["references", read.references],
-    ["attachments", projectAttachments(read.attachments)],
+    ["attachments", attachments],
   ];
 }
 
@@ -285,13 +331,15 @@ export function projectListItem(
   classified: Classification,
   heldBack = false,
 ): ProjectedItem {
+  const seen = classified.seen;
   const entries = summaryEntries(summary, classified);
+  const cuts = orderedCuts([...entries.cuts, ...omittedCuts(seen, SUMMARY_ADDRESS_LISTS)]);
   const core: Entries = [...entries.core];
   if (heldBack) {
     core.push(["held_back", true]);
   }
-  core.push(["cut", entries.cuts]);
-  return projected(core, summaryFill(summary), entries.cuts);
+  core.push(["cut", cuts]);
+  return projected(core, summaryFill(summary, seen), cuts);
 }
 
 /**
@@ -315,50 +363,76 @@ export function projectThreadItem(
   if (classified === undefined) {
     throw new Error("an in-store thread entry needs its classification");
   }
+  const seen = classified.seen;
   const entries = summaryEntries(entry, classified);
+  const cuts = orderedCuts([...entries.cuts, ...omittedCuts(seen, SUMMARY_ADDRESS_LISTS)]);
   return projected(
-    [...entries.core, ["in_store", true], ["cut", entries.cuts]],
-    summaryFill(entry),
-    entries.cuts,
+    [...entries.core, ["in_store", true], ["cut", cuts]],
+    summaryFill(entry, seen),
+    cuts,
   );
 }
 
-/** A `mail_new` item: summary core, body flags, `cut`; no message_id or account_id. */
+/** What a read item shows before its tool adds its own core fields. */
+interface ReadParts {
+  readonly core: Entries;
+  readonly flags: Entries;
+  readonly fill: ProjectedItem["fill"];
+  readonly body: string;
+  readonly cut: CutName[];
+}
+
+/**
+ * The parts `mail_new` and `mail_read` share: the summary core, the body flags,
+ * the fill and the window's body cut to `maxBytes` raw bytes, and the cut names
+ * (design § Jev's window).
+ */
+function readParts(read: ReadData, classified: Classification, maxBytes: number): ReadParts {
+  const seen = classified.seen;
+  const entries = summaryEntries(read, classified);
+  const body = seenBody(seen, maxBytes);
+  const attachments = projectAttachments(read, seen);
+  const cuts: CutName[] = [...entries.cuts, ...omittedCuts(seen, READ_ADDRESS_LISTS)];
+  if (attachments.cut) {
+    cuts.push("attachments");
+  }
+  return {
+    core: entries.core,
+    flags: bodyFlagEntries(readBodyFlags(read.bodies), seen, body.cut),
+    fill: readFill(read, seen, attachments.value),
+    body: body.body,
+    cut: orderedCuts(cuts),
+  };
+}
+
+/** A `mail_new` item: summary core, held_back when held, body flags, `cut`; no account_id. */
 export function projectNew(
   read: ReadData,
   classified: Classification,
+  maxBytes: number,
   heldBack = false,
 ): ProjectedItem {
-  const entries = summaryEntries(read, classified);
-  const folded = foldBodies(read.bodies);
-  const core: Entries = [...entries.core];
+  const parts = readParts(read, classified, maxBytes);
+  const core: Entries = [...parts.core];
   if (heldBack) {
     core.push(["held_back", true]);
   }
-  core.push(...bodyFlagEntries(folded, read.output_truncated), ["cut", entries.cuts]);
-  return projected(core, readFill(read), entries.cuts, folded.body);
+  core.push(...parts.flags, ["cut", parts.cut]);
+  return projected(core, parts.fill, parts.cut, parts.body);
 }
 
-/** A `mail_read` item: summary core, body flags, message_id, account_id, `cut`. */
-export function projectRead(read: ReadData, classified: Classification): ProjectedItem {
-  const entries = summaryEntries(read, classified);
-  const folded = foldBodies(read.bodies);
-  const messageIds = capMessageIds(read.message_id);
-  const cuts: CutName[] = [...entries.cuts];
-  if (messageIds.cut) {
-    cuts.push("message_id");
-  }
+/** A `mail_read` item: summary core, body flags, account_id, `cut`. */
+export function projectRead(
+  read: ReadData,
+  classified: Classification,
+  maxBytes: number,
+): ProjectedItem {
+  const parts = readParts(read, classified, maxBytes);
   return projected(
-    [
-      ...entries.core,
-      ...bodyFlagEntries(folded, read.output_truncated),
-      ["message_id", messageIds.value],
-      ["account_id", read.provenance.account_id],
-      ["cut", orderedCuts(cuts)],
-    ],
-    readFill(read),
-    orderedCuts(cuts),
-    folded.body,
+    [...parts.core, ...parts.flags, ["account_id", read.provenance.account_id], ["cut", parts.cut]],
+    parts.fill,
+    parts.cut,
+    parts.body,
   );
 }
 

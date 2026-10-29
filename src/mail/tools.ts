@@ -56,7 +56,7 @@ import {
 
 export const NEW_LIMIT: Range = { min: 1, max: 20, default: 10 };
 export const NEW_MAX_BYTES: Range = { min: 512, max: 8192, default: 4096 };
-export const READ_MAX_BYTES: Range = { min: 1024, max: 32768, default: 16384 };
+export const READ_MAX_BYTES: Range = { min: 1024, max: 16384, default: 16384 };
 export const THREAD_LIMIT: Range = { min: 1, max: 40, default: 20 };
 export const LIST_LIMIT: Range = { min: 1, max: 40, default: 20 };
 export const LIST_OFFSET: Range = { min: 0, max: 10000, default: 0 };
@@ -279,8 +279,7 @@ const LIST_PARAMETERS = Type.Object({
 
 const NEW_DESCRIPTION = `Read new mail in arrival order, from a cursor. Pass after "" to start (with since, a date YYYY-MM-DD, to skip mail before midnight UTC that day), then pass the header's next back as after. caught_up: true means nothing more is waiting now. A message dated more than 10 minutes ahead is shown with held_back: true and not passed; it returns on later calls. limit 1-20 (default 10); max_bytes 512-8192 (default 4096, at most ${String(NEW_JOINT_BYTES)} / limit - ${String(JEV_MAX_BYTES)}) bounds each body. Filters: mailbox (an id from mail_mailboxes), unread, from. If a call fails as over 4 MiB, retry with limit 1.`;
 
-const READ_DESCRIPTION =
-  "Read one message by id: its headers, attachments list and body. max_bytes 1024-32768 (default 16384) bounds the body.";
+const READ_DESCRIPTION = `Read one message by id: its headers, attachments list and body. max_bytes ${String(READ_MAX_BYTES.min)}-${String(READ_MAX_BYTES.max)} (default ${String(READ_MAX_BYTES.default)}) bounds the body.`;
 
 const THREAD_DESCRIPTION =
   "Show a thread by its thread_id: the last limit entries in thread order (1-40, default 20); the header gives total and whether older entries were left out. If a call fails as over 4 MiB, retry with limit 1.";
@@ -485,7 +484,7 @@ async function newText(deps: MailDeps, args: JsonRecord, context: Context): Prom
       knownGaps: true,
     },
     screen.map((entry, index) =>
-      itemOf(entry, projectNew, {
+      itemOf(entry, (item, classified, held) => projectNew(item, classified, maxBytes, held), {
         heldBack: position.heldBack[index] === true,
         size: entry.item.size,
       }),
@@ -502,7 +501,11 @@ async function readText(deps: MailDeps, args: JsonRecord, context: Context): Pro
   const screen = await screened(deps, [read], context.abortSignal);
   return renderPage(
     { tool: "mail_read", ...screenedFacts(screen), clamps },
-    screen.map((entry) => itemOf(entry, projectRead, { size: entry.item.size })),
+    screen.map((entry) =>
+      itemOf(entry, (item, classified) => projectRead(item, classified, maxBytes), {
+        size: entry.item.size,
+      }),
+    ),
     1,
   );
 }

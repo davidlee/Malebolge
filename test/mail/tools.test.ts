@@ -17,6 +17,8 @@ import {
   type Classification,
   MailSourceError,
   type ReadData,
+  type Summary,
+  type ThreadItem,
 } from "../../src/mail/source.ts";
 import {
   type MailDeps,
@@ -26,6 +28,7 @@ import {
   NEW_JOINT_BYTES,
   NEW_MAX_BYTES,
   OVERSIZE_AT_LIMIT_1,
+  READ_MAX_BYTES,
   REPORTED_MAX,
 } from "../../src/mail/tools.ts";
 import {
@@ -35,6 +38,7 @@ import {
   bodyPartOf,
   bytesOf,
   classificationOf,
+  classifiedAs,
   classifyAll,
   dataLinesOf,
   type FakeMailSource,
@@ -48,6 +52,7 @@ import {
   parseLine,
   readOf,
   type RecordedCall,
+  seenOf,
   summaryOf,
 } from "./mail-fixtures.ts";
 
@@ -104,56 +109,53 @@ async function run(
   return { text: first.text, isError: result.isError === true };
 }
 
-function idsOfReadAfter(replies: FakeReplies): string[] {
+function itemsOfReadAfter(replies: FakeReplies): (Summary | ReadData)[] {
   const page = replies.readAfter;
-  return Array.isArray(page) ? page.map((read) => read.id) : [];
+  return Array.isArray(page) ? page : [];
 }
 
-function idsOfRead(replies: FakeReplies): string[] {
+function itemsOfRead(replies: FakeReplies): (Summary | ReadData)[] {
   const read = replies.read;
-  return read === undefined || read instanceof Error ? [] : [read.id];
+  return read === undefined || read instanceof Error ? [] : [read];
 }
 
-function idsOfThread(replies: FakeReplies): string[] {
+function itemsOfThread(replies: FakeReplies): (Summary | ReadData)[] {
   const thread = replies.thread;
   if (thread === undefined || thread instanceof Error) {
     return [];
   }
-  return thread.items.flatMap((item) => (item.in_store ? [item.id] : []));
+  return thread.items.flatMap((item) => (item.in_store ? [item] : []));
 }
 
-function idsOfList(replies: FakeReplies): string[] {
+function itemsOfList(replies: FakeReplies): (Summary | ReadData)[] {
   const list = replies.list;
-  if (list === undefined || list instanceof Error) {
-    return [];
-  }
-  return list.items.map((item) => item.id);
+  return list === undefined || list instanceof Error ? [] : list.items;
 }
 
-/** The ids the tool's read reaches for these replies: the page's, in-store only for a thread. */
-function itemIdsOf(name: ToolName, replies: FakeReplies): string[] {
+/** The items the tool's read reaches for these replies: the page's, in-store only for a thread. */
+function readItemsOf(name: ToolName, replies: FakeReplies): (Summary | ReadData)[] {
   switch (name) {
     case "mail_new":
-      return idsOfReadAfter(replies);
+      return itemsOfReadAfter(replies);
     case "mail_read":
-      return idsOfRead(replies);
+      return itemsOfRead(replies);
     case "mail_thread":
-      return idsOfThread(replies);
+      return itemsOfThread(replies);
     case "mail_list":
-      return idsOfList(replies);
+      return itemsOfList(replies);
     case "mail_mailboxes":
     case "mail_report":
       return [];
   }
 }
 
-/** `replies` with a benign classification for every id the tool's read reaches (SL-007 PHASE-05). */
+/** `replies` with a benign classification for every item the tool's read reaches (SL-007 PHASE-05). */
 function withClassify(name: ToolName, replies: FakeReplies): FakeReplies {
   const classify = replies.classify;
   if (classify !== undefined) {
     return replies;
   }
-  return { ...replies, classify: classifyAll(itemIdsOf(name, replies)) };
+  return { ...replies, classify: classifyAll(readItemsOf(name, replies)) };
 }
 
 /** mail_new's joint bound at `limit`, built from the exported constants and never typed. */
@@ -260,7 +262,7 @@ const listReply = (items = [summaryOf()]): Pick<FakeReplies, "list"> => ({
 const threadReply = (
   total = 1,
   truncated = false,
-  items = [inStoreThreadItem()],
+  items: ThreadItem[] = [inStoreThreadItem()],
 ): Pick<FakeReplies, "thread"> => ({
   thread: { id: "Thr1", total, truncated, items },
 });
@@ -581,12 +583,12 @@ describe("VT-1 mail tools refuse bad input before any port call", () => {
         },
       ],
       [
-        "mail_read max_bytes above 32768",
+        "mail_read max_bytes above its maximum",
         {
           tool: "mail_read",
           args: { id: "Msg1", max_bytes: 99999 },
-          header: "max_bytes clamped to 32768",
-          query: { id: "Msg1", maxBytes: 32768 },
+          header: `max_bytes clamped to ${String(READ_MAX_BYTES.max)}`,
+          query: { id: "Msg1", maxBytes: READ_MAX_BYTES.max },
         },
       ],
       [
@@ -1178,14 +1180,15 @@ describe("VT-3 shape, replay and descriptions", () => {
       expect(keysOf(item ?? {}, core.length)).toEqual(core);
     });
 
-    it("mail_read: summary, the five body flags, message_id, account_id, cut", async () => {
+    it("mail_read: summary, the five body flags, account_id, cut", async () => {
       const { outcome } = await runWith({ read: readOf() }, "mail_read", { id: "Msg1" });
       const items = itemsOf(outcome.text);
       expect(items).toHaveLength(1);
-      const core = [...SUMMARY, ...BODY_FLAGS, "message_id", "account_id", "cut"];
+      const core = [...SUMMARY, ...BODY_FLAGS, "account_id", "cut"];
       expect(keysOf(items[0] ?? {}, core.length)).toEqual(core);
       expect(items[0]?.["account_id"]).toBe("u1234");
-      expect(items[0]?.["message_id"]).toEqual(["<m1@example.com>"]);
+      // DEC-050: the message id is dropped, not shown.
+      expect(items[0]).not.toHaveProperty("message_id");
       for (const key of [...NEVER, "in_store", "held_back"]) {
         expect(items[0]).not.toHaveProperty(key);
       }
@@ -1450,8 +1453,8 @@ function hostileCases(): HoldCase[] {
     label: `hostile: ${row.question} at exactly its bound`,
     screening: {
       classify: {
-        [SCREENED_ID]: classificationOf(
-          SCREENED_ID,
+        [SCREENED_ID]: classifiedAs(
+          screenedRead(),
           answersFor(SCREENED_ID, row.question, { noul: row.atLeast }),
         ),
       },
@@ -1465,7 +1468,7 @@ const HOLD_CASES: readonly HoldCase[] = [
   {
     label: "reported",
     screening: {
-      classify: classifyAll([SCREENED_ID]),
+      classify: classifyAll([screenedRead()]),
       reported: new Map<string, ReportKind>([[SCREENED_ID, "phishing"]]),
     },
     withheld: { reason: "reported", detail: "phishing" },
@@ -1484,8 +1487,8 @@ const HOLD_CASES: readonly HoldCase[] = [
     label: `missing_question: ${FIRST_ROW.question} absent`,
     screening: {
       classify: {
-        [SCREENED_ID]: classificationOf(
-          SCREENED_ID,
+        [SCREENED_ID]: classifiedAs(
+          screenedRead(),
           answersFor(SCREENED_ID, FIRST_ROW.question, undefined),
         ),
       },
@@ -1496,8 +1499,8 @@ const HOLD_CASES: readonly HoldCase[] = [
     label: `missing_question: ${FIRST_ROW.question} under a choice shape (counts as missing)`,
     screening: {
       classify: {
-        [SCREENED_ID]: classificationOf(
-          SCREENED_ID,
+        [SCREENED_ID]: classifiedAs(
+          screenedRead(),
           answersFor(SCREENED_ID, FIRST_ROW.question, { choice: "a label", confidence: 0.9 }),
         ),
       },
@@ -1600,7 +1603,7 @@ describe("VT-2 projectWithheld withholds the sender's text, keeping sender_domai
           }
         : itemReplies(tool, item);
     const { outcome, source } = await runWith(
-      { ...replies, classify: classifyAll([SCREENED_ID]) },
+      { ...replies, classify: classifyAll([item]) },
       tool,
       itemArgs(tool),
     );
@@ -1612,8 +1615,8 @@ describe("VT-2 projectWithheld withholds the sender's text, keeping sender_domai
     const below = rounded(row.atLeast - 0.01);
     const item = await screenedItem("mail_list", {
       classify: {
-        [SCREENED_ID]: classificationOf(
-          SCREENED_ID,
+        [SCREENED_ID]: classifiedAs(
+          screenedRead(),
           answersFor(SCREENED_ID, row.question, { noul: below }),
         ),
       },
@@ -1630,7 +1633,7 @@ describe("VT-2 projectWithheld withholds the sender's text, keeping sender_domai
     const { outcome } = await runWith(
       {
         list: { limit: 40, offset: 0, items },
-        classify: classifyAll(items.map((item) => item.id)),
+        classify: classifyAll(items),
       },
       "mail_list",
       { limit: 40 },
@@ -1664,7 +1667,7 @@ describe('VT-3 "missing question:" lines, the withheld count, and the one classi
       [UNKNOWN_QUESTION]: { noul: 0.99 },
     };
     const item = await screenedItem("mail_list", {
-      classify: { [SCREENED_ID]: classificationOf(SCREENED_ID, answers) },
+      classify: { [SCREENED_ID]: classifiedAs(screenedRead(), answers) },
     });
     expect(item["withheld"]).toBeUndefined();
     expect(jevOf(item)[UNKNOWN_QUESTION]).toBe(0.99);
@@ -1673,14 +1676,15 @@ describe('VT-3 "missing question:" lines, the withheld count, and the one classi
 
   it("a missing policy question adds one missing question: line, once for two items", async () => {
     const ids = ["M0", "M1"];
+    const summaries = ids.map((id) => summaryOf({ id }));
     const classify = Object.fromEntries(
-      ids.map((id): [string, Classification] => [
-        id,
-        classificationOf(id, answersFor(id, FIRST_ROW.question, undefined)),
+      summaries.map((item): [string, Classification] => [
+        item.id,
+        classifiedAs(item, answersFor(item.id, FIRST_ROW.question, undefined)),
       ]),
     );
     const { outcome } = await runWith(
-      { list: { limit: 20, offset: 0, items: ids.map((id) => summaryOf({ id })) }, classify },
+      { list: { limit: 20, offset: 0, items: summaries }, classify },
       "mail_list",
       {},
     );
@@ -1692,12 +1696,12 @@ describe('VT-3 "missing question:" lines, the withheld count, and the one classi
   });
 
   it("a classify reply that omits one id's item withholds that item as failed, the other shown with jev", async () => {
-    const ids = ["M0", "M1"];
     const shownId = "M1";
+    const shownItem = summaryOf({ id: shownId });
     const { outcome } = await runWith(
       {
-        list: { limit: 20, offset: 0, items: ids.map((id) => summaryOf({ id })) },
-        classify: { [shownId]: classificationOf(shownId) },
+        list: { limit: 20, offset: 0, items: [summaryOf({ id: "M0" }), shownItem] },
+        classify: { [shownId]: classifiedAs(shownItem) },
       },
       "mail_list",
       {},
@@ -1720,10 +1724,10 @@ describe('VT-3 "missing question:" lines, the withheld count, and the one classi
   });
 
   it("the items line ends with , N withheld when items are withheld and says nothing when none is", async () => {
-    const ids = ["M0", "M1", "M2"];
+    const items = ["M0", "M1", "M2"].map((id) => summaryOf({ id }));
     const replies: FakeReplies = {
-      list: { limit: 20, offset: 0, items: ids.map((id) => summaryOf({ id })) },
-      classify: classifyAll(ids),
+      list: { limit: 20, offset: 0, items },
+      classify: classifyAll(items),
     };
     const held = await runWith(
       replies,
@@ -1742,7 +1746,7 @@ describe('VT-3 "missing question:" lines, the withheld count, and the one classi
     const page = [arrival(0, PAST), arrival(1, AHEAD)];
     const replies: FakeReplies = {
       readAfter: page,
-      classify: classifyAll(page.map((read) => read.id)),
+      classify: classifyAll(page),
     };
     const shown = await runWith(replies, "mail_new", { after: "", limit: 2 });
     const held = await runWith(
@@ -1763,9 +1767,10 @@ describe('VT-3 "missing question:" lines, the withheld count, and the one classi
   });
 
   it("mail_thread: an in_store: false entry is not classified and renders as before", async () => {
-    const items = [inStoreThreadItem({ id: "M0" }), absentThreadItem("Gone1")];
+    const entry = inStoreThreadItem({ id: "M0" });
+    const items = [entry, absentThreadItem("Gone1")];
     const { outcome, source } = await runWith(
-      { thread: { id: "Thr1", total: 2, truncated: false, items }, classify: classifyAll(["M0"]) },
+      { thread: { id: "Thr1", total: 2, truncated: false, items }, classify: classifyAll([entry]) },
       "mail_thread",
       { id: "Thr1", limit: 2 },
     );
@@ -1776,9 +1781,10 @@ describe('VT-3 "missing question:" lines, the withheld count, and the one classi
   it("a page whose ids are all cached makes no classify call on the second call", async () => {
     const cache = classificationCache();
     const ids = ["M0", "M1"];
+    const summaries = ids.map((id) => summaryOf({ id }));
     const source = fakeMailSource({
-      list: { limit: 20, offset: 0, items: ids.map((id) => summaryOf({ id })) },
-      classify: classifyAll(ids),
+      list: { limit: 20, offset: 0, items: summaries },
+      classify: classifyAll(summaries),
     });
     const first = await run(source, "mail_list", {}, context, { cache });
     const second = await run(source, "mail_list", {}, context, { cache });
@@ -1791,10 +1797,10 @@ describe('VT-3 "missing question:" lines, the withheld count, and the one classi
 
   it("the classify call receives the tool's abort signal", async () => {
     const controller = new AbortController();
-    const ids = ["M0"];
+    const summaries = [summaryOf({ id: "M0" })];
     const source = fakeMailSource({
-      list: { limit: 20, offset: 0, items: ids.map((id) => summaryOf({ id })) },
-      classify: classifyAll(ids),
+      list: { limit: 20, offset: 0, items: summaries },
+      classify: classifyAll(summaries),
     });
     await run(source, "mail_list", {}, withAbortSignal(controller.signal, context));
     const classifyCalls = classifyCallsOf(source);
@@ -1896,7 +1902,7 @@ describe("VT-1 mail_report: one journal line, the reported set, the refusals (SL
       expect(lines).toHaveLength(1);
       expect(reported.get(REPORTED_ID)).toBe(REPORT_KIND);
       const { item } = await screenedOutput(tool, {
-        classify: classifyAll([REPORTED_ID]),
+        classify: classifyAll([screenedRead()]),
         reported,
       });
       expect(item["withheld"]).toEqual({ reason: "reported", detail: "instructions_to_agent" });
@@ -2000,5 +2006,113 @@ describe("VT-2 mail_report at REPORTED_MAX refuses a new id, re-reports a held o
     expect(reported.get(HELD_ID)).toBe("malware");
     expect(reported.size).toBe(REPORTED_MAX);
     expect([...reported.keys()]).toEqual(HELD_IDS);
+  });
+});
+
+// ================================= PHASE-07: the agent's view clamps at Jev's
+
+describe("VT-1 every item tool shows seen's text, never the read's (SL-007 PHASE-07)", () => {
+  // The read's own sender-written text: Jev was not shown any of it, so none may reach the agent.
+  const READ_ONLY_SUBJECT = "read-only subject line";
+  const READ_ONLY_FROM: Address = {
+    name: "Read Only From",
+    email: "read-only-from@read.example",
+  };
+  const READ_ONLY_TO: Address = { name: "Read Only To", email: "read-only-to@read.example" };
+  const READ_ONLY_BODY = "read-only body text";
+  const READ_ONLY_ATTACHMENT = "read-only-attachment.txt";
+
+  // The window Jev was shown: a longer subject, an extra sender, a longer body, a renamed attachment.
+  const SEEN_SUBJECT = "the subject Jev was shown, and longer than the read's";
+  const SEEN_FROM: Address[] = [
+    { name: "Seen Sender", email: "seen-sender@seen.example" },
+    { name: "Seen Extra", email: "seen-extra@seen.example" },
+  ];
+  const SEEN_TO: Address[] = [{ name: "Seen Recipient", email: "seen-to@seen.example" }];
+  const SEEN_BODY = "the body Jev was shown, and longer than the read's";
+  const SEEN_ATTACHMENT_TYPE = "seen/type";
+  const SEEN_ATTACHMENT = "seen-attachment.txt";
+
+  const asShown = (addresses: readonly Address[]): { name: string | null; email: string }[] =>
+    addresses.map(({ name, email }) => ({ name, email }));
+
+  /** Every string only the read carries: none of them may appear in the result text. */
+  const READ_ONLY_TEXT: string[] = [
+    READ_ONLY_SUBJECT,
+    READ_ONLY_FROM.name,
+    READ_ONLY_FROM.email,
+    READ_ONLY_TO.name,
+    READ_ONLY_TO.email,
+    READ_ONLY_BODY,
+    READ_ONLY_ATTACHMENT,
+  ].filter((text): text is string => typeof text === "string");
+
+  /** The item the tool reads: every sender-written field differs from the window. */
+  const read = readOf({
+    id: SCREENED_ID,
+    subject: READ_ONLY_SUBJECT,
+    from: [READ_ONLY_FROM],
+    to: [READ_ONLY_TO],
+    bodies: [bodyPartOf({ text: READ_ONLY_BODY })],
+    attachments: [attachmentOf({ name: READ_ONLY_ATTACHMENT })],
+  });
+
+  /** The tool's one-message page, and the classification whose `seen` is Jev's window. */
+  function repliesFor(tool: ItemTool): FakeReplies {
+    const seen = {
+      ...seenOf(read),
+      subject: SEEN_SUBJECT,
+      from: asShown(SEEN_FROM),
+      to: asShown(SEEN_TO),
+      bodies: [{ text: SEEN_BODY, is_truncated: false, conversion_failed: false }],
+      attachments: [{ type: SEEN_ATTACHMENT_TYPE, name: SEEN_ATTACHMENT }],
+    };
+    const page: FakeReplies =
+      tool === "mail_thread"
+        ? { thread: { id: "Thr1", total: 1, truncated: false, items: [inStoreThreadItem(read)] } }
+        : itemReplies(tool, read);
+    return { ...page, classify: { [SCREENED_ID]: classificationOf(SCREENED_ID, undefined, seen) } };
+  }
+
+  it.each(ITEM_TOOLS)("%s shows seen's text, never the read's", async (tool) => {
+    const { outcome } = await runWith(repliesFor(tool), tool, itemArgs(tool));
+    expect(outcome.isError).toBe(false);
+    const lines = dataLinesOf(outcome.text);
+    expect(lines).toHaveLength(1);
+    const [line] = lines;
+    if (line === undefined) {
+      throw new Error(`${tool}: no item`);
+    }
+    const item = parseLine(line);
+
+    // The window's text reaches the data line.
+    expect(item["subject"]).toBe(SEEN_SUBJECT);
+    expect(line).toContain(SEEN_SUBJECT);
+    expect(item["from"]).toEqual(asShown(SEEN_FROM));
+    if (tool === "mail_new" || tool === "mail_read") {
+      const [attachment] = read.attachments;
+      if (attachment === undefined) {
+        throw new Error("the read needs one attachment");
+      }
+      expect(item["to"]).toEqual(asShown(SEEN_TO));
+      expect(line).toContain(SEEN_TO[0]?.email);
+      expect(item["body"]).toBe(SEEN_BODY);
+      expect(line).toContain(SEEN_BODY);
+      expect(item["attachments"]).toEqual([
+        {
+          part_id: attachment.part_id,
+          blob_id: attachment.blob_id,
+          name: SEEN_ATTACHMENT,
+          type: SEEN_ATTACHMENT_TYPE,
+          size: attachment.size,
+        },
+      ]);
+    }
+
+    // Nothing of the read's own sender text appears anywhere in the result.
+    expect(READ_ONLY_TEXT.length).toBeGreaterThan(0);
+    for (const readOnly of READ_ONLY_TEXT) {
+      expect(outcome.text, readOnly).not.toContain(readOnly);
+    }
   });
 });
