@@ -31,14 +31,22 @@ import { onTestFinished } from "vitest";
 import type { Profile } from "../src/config.ts";
 import { context } from "../src/context.ts";
 import { conversations, toolsetInit } from "../src/conversations.ts";
+import { refOf } from "../src/models.ts";
 import { type Daemon, serve } from "../src/daemon.ts";
 import { isRecord } from "../src/json.ts";
 import { registryOf } from "../src/registry.ts";
 import { openSession, type SessionOptions } from "../src/session.ts";
 import { type IndexDoc, type IndexReader, readIndex } from "../src/topics.ts";
 import { type DaemonToolset, requireSameTalkSet } from "../src/toolsets.ts";
+import { catalogOf } from "./model-fixture.ts";
 
 export const FAUX_MODEL = { provider: "faux", modelId: "faux-1" } as const;
+
+/**
+ * The catalog the tests' conversations take: the faux model's ref is all they write, and
+ * a topic write of any other ref is refused, so a stray ref fails loudly in the tests.
+ */
+export const FAUX_CATALOG = catalogOf(refOf(FAUX_MODEL));
 
 export interface TestHarness {
   harness: Harness;
@@ -371,7 +379,7 @@ export const serveTest = (test: TestHarness, path: string): Promise<Daemon> =>
   serve({
     socketPath: path,
     conversations: Promise.resolve(
-      conversations(test, { model: FAUX_MODEL, cwd: process.cwd() }, "host"),
+      conversations(test, { model: FAUX_MODEL, cwd: process.cwd() }, "host", FAUX_CATALOG),
     ),
     beforeInput: () => Promise.resolve(),
     orientation: () => Promise.resolve(""),

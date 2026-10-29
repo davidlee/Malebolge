@@ -67,7 +67,7 @@ export interface ListMessage {
   query: ListQuery;
 }
 
-/** The `topic` frame: create one topic, set its directory or toolset, or leave it unchanged. */
+/** The `topic` frame: create one topic, set its directory, toolset or model, or leave it unchanged. */
 export interface TopicMessage {
   type: "topic";
   name: string;
@@ -75,6 +75,8 @@ export interface TopicMessage {
   cwd?: string | null;
   /** The same three cases for the toolset, which the profile's policy judges in `setTopic`. */
   toolset?: string | null;
+  /** The same three cases for the model ref, which the gateway catalog judges in `setTopic`. */
+  model?: string | null;
 }
 
 /**
@@ -96,11 +98,12 @@ export interface ConversationsMessage {
   marks?: Record<string, ThreadMark>;
 }
 
-/** One topic as a `topics` reply shows it: its name, its directory and its toolset. */
+/** One topic as a `topics` reply shows it: its name, its directory, its toolset and its model. */
 export interface TopicSummary {
   name: string;
   cwd?: string;
   toolset?: string;
+  model?: string;
 }
 
 /**
@@ -137,8 +140,8 @@ const ATTACH_KEYS: readonly string[] = ["type", "conversation", "new", "cwd", "t
 /** Strict too: `{"type":"list","page":2}` is a refusal, not root's transcript. */
 const LIST_KEYS: readonly string[] = ["type", "topic", "topics"];
 
-/** Strict: a `topic` write names the name and the directory, nothing else. */
-const TOPIC_KEYS: readonly string[] = ["type", "name", "cwd", "toolset"];
+/** Strict: a `topic` write names the name, the directory, the toolset and the model, nothing else. */
+const TOPIC_KEYS: readonly string[] = ["type", "name", "cwd", "toolset", "model"];
 
 /**
  * The topic every conversation starts in: it always exists and is never stored
@@ -294,10 +297,13 @@ function listFrame(message: JsonRecord): ListMessage {
 const CONTROL_CHARACTER = /[\u0000-\u001f\u007f]/u;
 
 /**
- * One optional field of a `topic` frame, checked as `cwd` and `toolset` both are:
+ * One optional field of a `topic` frame, checked as every optional field is:
  * `undefined` when the frame leaves it out, a string or `null` otherwise.
  */
-function topicField(message: JsonRecord, key: "cwd" | "toolset"): string | null | undefined {
+function topicField(
+  message: JsonRecord,
+  key: "cwd" | "toolset" | "model",
+): string | null | undefined {
   const value = message[key];
   if (value === undefined) {
     return undefined;
@@ -313,9 +319,10 @@ function topicField(message: JsonRecord, key: "cwd" | "toolset"): string | null 
 }
 
 /**
- * The `topic` frame, parsed strictly. `cwd` and `toolset` absent create or leave
- * the topic unchanged (so the frame is idempotent), a string sets one, `null`
- * clears it. The frame does not judge a toolset's name: the profile's policy does.
+ * The `topic` frame, parsed strictly. `cwd`, `toolset` and `model` absent create or leave
+ * the topic unchanged (so the frame is idempotent), a string sets one, `null` clears it.
+ * The frame judges neither a toolset's name (the profile's policy does) nor a model's
+ * ref (the catalog does): both are `setTopic`'s.
  */
 function topicFrame(message: JsonRecord): TopicMessage {
   const unknown = unknownKey(message, TOPIC_KEYS);
@@ -335,6 +342,10 @@ function topicFrame(message: JsonRecord): TopicMessage {
   const toolset = topicField(message, "toolset");
   if (toolset !== undefined) {
     frame.toolset = toolset;
+  }
+  const model = topicField(message, "model");
+  if (model !== undefined) {
+    frame.model = model;
   }
   return frame;
 }

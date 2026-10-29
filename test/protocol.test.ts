@@ -110,6 +110,7 @@ describe("parseConnectionMessage", () => {
 
   const CONTROL_REFUSAL = "topic: cwd must not contain a control character";
   const TOOLSET_CONTROL_REFUSAL = "topic: toolset must not contain a control character";
+  const MODEL_CONTROL_REFUSAL = "topic: model must not contain a control character";
 
   /** Every refusal of the widened frames, in design sec-4's words (PHASE-03 EX-1). */
   it.each([
@@ -147,6 +148,17 @@ describe("parseConnectionMessage", () => {
     ['{"type":"topic","name":"work","toolset":"mai\\tl"}', TOOLSET_CONTROL_REFUSAL],
     ['{"type":"topic","name":"work","toolset":"mai\\nl"}', TOOLSET_CONTROL_REFUSAL],
     ['{"type":"topic","name":"work","toolset":"mai\\u007fl"}', TOOLSET_CONTROL_REFUSAL],
+    // A model is one field of a prospective `--topics` line too (SL-010 PHASE-02 VT-3).
+    // The frame does not judge the ref itself: the catalog does, in setTopic.
+    ['{"type":"topic","name":"work","model":1}', "topic: model must be a string or null"],
+    ['{"type":"topic","name":"work","model":false}', "topic: model must be a string or null"],
+    [
+      '{"type":"topic","name":"work","model":["gateway/x"]}',
+      "topic: model must be a string or null",
+    ],
+    ['{"type":"topic","name":"work","model":"gate\\tway/x"}', MODEL_CONTROL_REFUSAL],
+    ['{"type":"topic","name":"work","model":"gate\\nway/x"}', MODEL_CONTROL_REFUSAL],
+    ['{"type":"topic","name":"work","model":"gate\\u007fway/x"}', MODEL_CONTROL_REFUSAL],
     ['{"type":"topic","name":"A"}', `topic: ${NAME_RULE}`],
     ['{"type":"topic"}', `topic: ${NAME_RULE}`],
     ['{"type":"topic","name":"work","conversation":3}', "topic: unknown key conversation"],
@@ -197,13 +209,27 @@ describe("parseConnectionMessage", () => {
       { type: "topic", name: "work", cwd: "/tmp", toolset: "mail" },
       { type: "topic", name: "work", cwd: "/tmp", toolset: "mail" },
     ],
+    // `model` is parsed exactly as `cwd` and `toolset`: a string sets it, `null` clears it (VT-3).
+    [
+      { type: "topic", name: "work", model: "gateway/openai-david/gpt-6.1-terra" },
+      { type: "topic", name: "work", model: "gateway/openai-david/gpt-6.1-terra" },
+    ],
+    [
+      { type: "topic", name: "work", model: null },
+      { type: "topic", name: "work", model: null },
+    ],
+    [
+      { type: "topic", name: "work", cwd: "/tmp", toolset: "mail", model: "gateway/x" },
+      { type: "topic", name: "work", cwd: "/tmp", toolset: "mail", model: "gateway/x" },
+    ],
   ])("parses %j as the frame it is", (message, frame) => {
     expect(parseConnectionMessage(JSON.stringify(message))).toEqual(frame);
   });
 
-  it("leaves toolset out of a frame that left it out, so absent stays absent (VT-1)", () => {
+  it("leaves toolset and model out of a frame that left them out, so absent stays absent (VT-1, VT-3)", () => {
     const frame = parseConnectionMessage('{"type":"topic","name":"work","cwd":"/tmp"}');
     expect(Object.hasOwn(frame, "toolset")).toBe(false);
+    expect(Object.hasOwn(frame, "model")).toBe(false);
   });
 
   it.each([

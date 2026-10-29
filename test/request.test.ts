@@ -19,7 +19,7 @@ import {
   skewOf,
 } from "../src/request.ts";
 import { collect, fakeDaemon, rejection, socketPath } from "./fixtures.ts";
-import { FAUX_MODEL, openTestHarness, serveTest } from "./harness-fixture.ts";
+import { FAUX_CATALOG, FAUX_MODEL, openTestHarness, serveTest } from "./harness-fixture.ts";
 
 /** A request for `args`'s mode of `path`: its reply, and what it wrote to stderr. */
 function requested(
@@ -59,7 +59,12 @@ describe("request --list", () => {
     onTestFinished(() => test.harness.close(context));
     const daemon = await serveTest(test, path);
     onTestFinished(daemon.close);
-    const api = conversations(test, { model: FAUX_MODEL, cwd: process.cwd() }, "host");
+    const api = conversations(
+      test,
+      { model: FAUX_MODEL, cwd: process.cwd() },
+      "host",
+      FAUX_CATALOG,
+    );
     const first = await api.open({ kind: "new" });
     const second = await api.open({ kind: "new" });
 

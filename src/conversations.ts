@@ -23,6 +23,7 @@ import {
 } from "@earendil-works/pi-durable";
 import type { Profile } from "./config.ts";
 import { context } from "./context.ts";
+import type { ModelCatalog } from "./models.ts";
 import { type AttachTarget, type ListQuery, type ThreadMark } from "./protocol.ts";
 import type { Session } from "./session.ts";
 import {
@@ -50,12 +51,14 @@ import {
 /** The daemon's creation defaults; `cwd` is required so the fallback is always a string. */
 export type ConversationDefaults = AgentChange & { cwd: string };
 
-/** What a `topic` write names: the name, and the directory and toolset to set, leave, or clear. */
+/** What a `topic` write names: the name, and the directory, toolset and model to set, leave, or clear. */
 export interface TopicWrite {
   name: string;
   cwd?: string | null;
   /** A name is checked against the profile's policy; `null` clears it; absent leaves it. */
   toolset?: string | null;
+  /** A ref the gateway catalog judges; `null` clears it; absent leaves it (DEC-086). */
+  model?: string | null;
 }
 
 export interface Conversations {
@@ -288,10 +291,25 @@ function toolsetChange(write: TopicWrite, profile: Profile): DaemonToolset | nul
   return requireAllowed(toolset, profile);
 }
 
+/**
+ * `write`'s model as the index stores it: absent leaves it, `null` clears it, a ref is
+ * judged by the catalog. A refusal throws before the write, so nothing is written.
+ */
+function modelChange(write: TopicWrite, catalog: ModelCatalog): string | null | undefined {
+  const { model } = write;
+  if (model === undefined || model === null) {
+    return model;
+  }
+  // The catalog owns which refs exist; the ref is stored as given, not as its pieces.
+  catalog.require(model);
+  return model;
+}
+
 export function conversations(
   session: Session,
   defaults: ConversationDefaults,
   profile: Profile,
+  catalog: ModelCatalog,
 ): Conversations {
   // The find and the create are two commits: two attaches to an empty topic must
   // not each find it empty. One daemon owns the store, so in-process order suffices.
@@ -338,6 +356,7 @@ export function conversations(
       writeTopicRecord(session.harness, topic.name, {
         cwd: topic.cwd,
         toolset: toolsetChange(topic, profile),
+        model: modelChange(topic, catalog),
       }),
   };
 }

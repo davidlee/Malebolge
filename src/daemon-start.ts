@@ -262,7 +262,7 @@ export async function startDaemon(config: Config, deps: StartDeps): Promise<Daem
       now,
       // The one Conversations: the socket's, and the wakes' (design § Daemon wiring, step 2).
       beforeResume: (opened) => {
-        const shared = conversations(opened, defaults, config.execution.profile);
+        const shared = conversations(opened, defaults, config.execution.profile, catalog);
         wakes.bindLate({ harness: opened.harness, conversations: shared });
         threads.bindLate({ harness: opened.harness });
         conversationsReady.resolve(shared);

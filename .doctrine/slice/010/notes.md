@@ -37,12 +37,19 @@ wanted, is left to phase-plan as checks against code, not design questions:
 - PHASE-01 · `startDaemon`'s first three preflight calls extracted into a `preflight` helper (same calls, order, errors) · `max-lines-per-function` (80) was saturated and the catalog check needs two lines · decided (adjacent refactor)
 - PHASE-01 · shared fixture placed in new `test/model-fixture.ts` (EX-6 allows "beside" harness-fixture): `SLASHED_REF`, `FLASH_REF`, `IMAGE_REF`, `slashedModels()`, `catalogOf(...refs)` · model-only module avoids harness-fixture's conversation/daemon imports · decided (fixture)
 - PHASE-01 · UnknownModel message is `unknown model <ref>` for both refusals; an unparseable ref carries the parse error as `cause` · one wording satisfies EX-2 · decided
+- PHASE-02 · `FAUX_CATALOG = catalogOf(refOf(FAUX_MODEL))` exported from `test/harness-fixture.ts`; `test/conversations.test.ts` gains an `apiOf(session, defaults?, profile?)` helper over ~33 call sites · `conversations(...)` gained a 4th parameter; one shared catalog keeps callers to one added argument and a stray ref fails loudly · decided (fixture)
 
 ## PHASE-01 run log
 
 - EN-2: pi-ai 1.4.0 `Models.getModelsOfType(type, provider?)` confirmed at dist/models.d.ts:151; name unchanged.
 - pi `implement` (deepseek-flash), 1 run, 23 requests, $0.05: fixture + VT-1..4 red-first (VT-4 already green, as predicted), then implementation; green. Misses: VT-2's "only chat" assertion was vacuous-risk (no proof the fixture held the image model) and sorting was unpinned (fixture catalog already in sorted order); both fixed by the orchestrator. The worker also noted the coverage threshold fails targeted runs: use `--coverage.enabled=false` for those.
 - Negative controls (orchestrator): fallback on an unknown topic, all model types in refs, refs unsorted, split on the last slash, start check removed: each turns its VT red.
+
+## PHASE-02 run log
+
+- pi `implement` (deepseek-flash), 1 run, 54 requests, $0.06: VT-1..3 red-first (runtime assertion failures, not compile errors), then store/judge/frame/wiring; green. No misses of substance; the orchestrator collapsed redundant `apiOf(session, DEFAULTS, "host")` to `apiOf(session)`.
+- Negative controls (orchestrator): `model` dropped from `KEYS` → VT-1 red (2 tests); `catalog.require` skipped in `modelChange` → VT-2 red; control-char check skipped for `model` → VT-3 red (3 rows).
+- EX-4: `default` refusal tests untouched. Gate: `just check` 104 files / 3560 tests green.
 
 ## Harvest
 <!-- single-copy: updated in place each harvest; ids only, never restated content -->

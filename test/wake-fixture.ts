@@ -54,6 +54,7 @@ import {
 } from "../src/wake/task.ts";
 import {
   closing,
+  FAUX_CATALOG,
   FAUX_MODEL,
   fakeClock,
   type FakeClock,
@@ -279,7 +280,12 @@ export function wakeWorld(): WakeWorld {
   // The daemon's second binding step: the session's harness and its one Conversations.
   const bind = (session: WakeSession): void => {
     wake.harness = session.harness;
-    wake.conversations = conversations(session, { model: FAUX_MODEL, cwd: process.cwd() }, "room");
+    wake.conversations = conversations(
+      session,
+      { model: FAUX_MODEL, cwd: process.cwd() },
+      "room",
+      FAUX_CATALOG,
+    );
   };
   return {
     clock,

@@ -47,13 +47,18 @@ export type IndexEntry = {
  */
 type StoredEntry = Omit<IndexEntry, "toolset"> & { toolset?: DaemonToolset };
 
-/** What a topic carries: its directory (D3), and the toolset its conversations take (design sec-3). */
-export type TopicRecord = { cwd?: string; toolset?: DaemonToolset };
+/**
+ * What a topic carries: its directory (D3), the toolset its conversations take, and the
+ * model they take (design sec-3).
+ */
+export type TopicRecord = { cwd?: string; toolset?: DaemonToolset; model?: string };
 
 /** A topic write: an absent key is unchanged, `null` clears it, a value sets it. */
 export type TopicChange = {
   cwd?: string | null | undefined;
   toolset?: DaemonToolset | null | undefined;
+  /** A ref the catalog judges before the write lands; stored exactly as given. */
+  model?: string | null | undefined;
 };
 
 /** The whole index, one session-scoped document. */
@@ -206,12 +211,12 @@ export function readIndexDoc(tx: Tx): Promise<IndexDoc> {
 }
 
 /** The keys a topic record carries, in write order. */
-const KEYS = ["cwd", "toolset"] as const;
+const KEYS = ["cwd", "toolset", "model"] as const;
 
 /** `record` with `key` removed: what a cleared key leaves. */
 function without(record: TopicRecord, key: keyof TopicRecord): TopicRecord {
   const rest = { ...record };
-  // eslint-disable-next-line @typescript-eslint/no-dynamic-delete -- the record's own keys, both optional
+  // eslint-disable-next-line @typescript-eslint/no-dynamic-delete -- the record's own keys, every one optional
   delete rest[key];
   return rest;
 }

@@ -20,14 +20,17 @@ import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite
 import { CodingTools } from "@earendil-works/pi-durable/tools";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { context } from "../src/context.ts";
+import type { Profile } from "../src/config.ts";
 import {
   type ConversationDefaults,
+  type Conversations,
   conversations,
   isConversationKey,
   LIST_PAGE,
   toolsetInit,
 } from "../src/conversations.ts";
 import { registryOf } from "../src/registry.ts";
+import { UnknownModel } from "../src/models.ts";
 import { openSession, type Session } from "../src/session.ts";
 import { threadsExtension } from "../src/threads/extension.ts";
 import {
@@ -51,6 +54,7 @@ import {
   callThenAnswer,
   createConversation,
   createTaskOwned,
+  FAUX_CATALOG,
   FAUX_MODEL,
   fauxModels,
   type FauxHarnessOptions,
@@ -74,6 +78,7 @@ import {
   threadWorld,
 } from "./thread-fixture.ts";
 import { WAIT } from "./wake-fixture.ts";
+import { catalogOf as modelCatalogOf, FLASH_REF, SLASHED_REF } from "./model-fixture.ts";
 
 const DEFAULTS: ConversationDefaults = { model: FAUX_MODEL, cwd: "/daemon-default" };
 
@@ -131,6 +136,17 @@ const openRoomStore = async (
         }),
   });
 
+/**
+ * The conversations API over `session`, with the tests' catalog: it knows only the faux
+ * model's ref, so a topic write naming any other ref is refused (the VT-2 tests pass
+ * their own catalog instead).
+ */
+const apiOf = (
+  session: Session,
+  defaults: ConversationDefaults = DEFAULTS,
+  profile: Profile = "host",
+): Conversations => conversations(session, defaults, profile, FAUX_CATALOG);
+
 /** The conversation `id` names in `session`; fails when the store lost it. */
 async function reopened(session: Session, id: ConversationId): Promise<Conversation> {
   const conversation = await session.harness.conversation(id, context);
@@ -182,14 +198,12 @@ describe("conversations", () => {
 
   it("opens root", async () => {
     const session = await passive();
-    expect(await conversations(session, DEFAULTS, "host").open({ kind: "root" })).toBe(
-      session.root,
-    );
+    expect(await apiOf(session).open({ kind: "root" })).toBe(session.root);
   });
 
   it("opens an existing conversation by the id a wire frame names", async () => {
     const session = await passive();
-    const opened = await conversations(session, DEFAULTS, "host").open({
+    const opened = await apiOf(session).open({
       kind: "existing",
       id: session.root.id,
     });
@@ -198,13 +212,13 @@ describe("conversations", () => {
 
   it("refuses an unknown id", async () => {
     const session = await passive();
-    const open = conversations(session, DEFAULTS, "host").open({ kind: "existing", id: 999999 });
+    const open = apiOf(session).open({ kind: "existing", id: 999999 });
     await expect(open).rejects.toThrow("no conversation 999999");
   });
 
   it("refuses an id no wire parser would accept", async () => {
     const session = await passive();
-    const open = conversations(session, DEFAULTS, "host").open({ kind: "existing", id: 0 });
+    const open = apiOf(session).open({ kind: "existing", id: 0 });
     await expect(open).rejects.toThrow("no conversation 0");
     expect(isConversationKey(0)).toBe(false);
     expect(isConversationKey(1)).toBe(true);
@@ -213,13 +227,13 @@ describe("conversations", () => {
   it("refuses a conversation that belongs to a task", async () => {
     const session = await passive();
     const id = await createTaskOwned(session);
-    const open = conversations(session, DEFAULTS, "host").open({ kind: "existing", id });
+    const open = apiOf(session).open({ kind: "existing", id });
     await expect(open).rejects.toThrow(`conversation ${String(id)} belongs to a task`);
   });
 
   it("creates a conversation with the daemon's defaults", async () => {
     const session = await passive();
-    const created = await conversations(session, DEFAULTS, "host").open({ kind: "new" });
+    const created = await apiOf(session).open({ kind: "new" });
     const agent = await created.agent(context);
     expect(agent.model).toEqual(FAUX_MODEL);
     expect(agent.cwd).toBe("/daemon-default");
@@ -227,7 +241,7 @@ describe("conversations", () => {
 
   it("creates a conversation in its own cwd, the empty string included", async () => {
     const session = await passive();
-    const api = conversations(session, DEFAULTS, "host");
+    const api = apiOf(session);
     expect((await (await api.open({ kind: "new", cwd: "/own" })).agent(context)).cwd).toBe("/own");
     expect((await (await api.open({ kind: "new", cwd: "" })).agent(context)).cwd).toBe("");
   });
@@ -244,7 +258,7 @@ describe("conversations", () => {
         },
       });
       session.faux.setResponses(callThenAnswer("bash", { command: "pwd" }, "done"));
-      const created = await conversations(session, DEFAULTS, "host").open({
+      const created = await apiOf(session).open({
         kind: "new",
         cwd: tmp.dir,
       });
@@ -283,7 +297,7 @@ describe("conversations", () => {
         env: nodeEnv,
       });
       session = first;
-      const created = await conversations(first, { model: FAUX_MODEL, cwd: tmp.dir }, "host").open({
+      const created = await apiOf(first, { model: FAUX_MODEL, cwd: tmp.dir }, "host").open({
         kind: "new",
         cwd: own,
       });
@@ -298,11 +312,10 @@ describe("conversations", () => {
         env: nodeEnv,
       });
       session = second;
-      const reopened = await conversations(
-        second,
-        { model: changedModel, cwd: changedCwd },
-        "host",
-      ).open({ kind: "existing", id: created.id });
+      const reopened = await apiOf(second, { model: changedModel, cwd: changedCwd }, "host").open({
+        kind: "existing",
+        id: created.id,
+      });
       const agent = await reopened.agent(context);
       expect(agent.model).toEqual(FAUX_MODEL);
       expect(agent.cwd).toBe(own);
@@ -314,7 +327,7 @@ describe("conversations", () => {
 
   it("watches the conversation it resolved, not root", async () => {
     const session = await passive();
-    const api = conversations(session, DEFAULTS, "host");
+    const api = apiOf(session);
     const created = await api.open({ kind: "new", cwd: "/watch" });
     const stream = await api.watch(created);
     try {
@@ -328,7 +341,7 @@ describe("conversations", () => {
 
   it("lists root alone in a fresh store", async () => {
     const session = await passive();
-    expect(await conversations(session, DEFAULTS, "host").list({ kind: "all" })).toEqual({
+    expect(await apiOf(session).list({ kind: "all" })).toEqual({
       ids: [session.root.id],
       truncated: false,
     });
@@ -336,7 +349,7 @@ describe("conversations", () => {
 
   it("lists the ownerless conversations newest first", async () => {
     const session = await passive();
-    const api = conversations(session, DEFAULTS, "host");
+    const api = apiOf(session);
     const first = await api.open({ kind: "new" });
     const second = await api.open({ kind: "new" });
     expect((await api.list({ kind: "all" })).ids).toEqual([second.id, first.id, session.root.id]);
@@ -344,7 +357,7 @@ describe("conversations", () => {
 
   it("keeps a task-owned conversation out of the listing", async () => {
     const session = await passive();
-    const api = conversations(session, DEFAULTS, "host");
+    const api = apiOf(session);
     const owned = await createTaskOwned(session);
     const created = await api.open({ kind: "new" });
     const { ids } = await api.list({ kind: "all" });
@@ -359,13 +372,13 @@ describe("conversations", () => {
         await tx.createConversation({ ownership: { kind: "ownerless" } });
       }
     }, context);
-    const page = await conversations(session, DEFAULTS, "host").list({ kind: "all" });
+    const page = await apiOf(session).list({ kind: "all" });
     expect(page.ids).toHaveLength(LIST_PAGE);
     expect(page.truncated).toBe(true);
   });
   it("starts a topic's first conversation in the topic's directory (EX-3, D1)", async () => {
     const session = await passive();
-    const api = conversations(session, DEFAULTS, "host");
+    const api = apiOf(session);
     await api.setTopic({ name: "work", cwd: "/topic-work" });
     const created = await api.open({ kind: "topic", name: "work", new: false });
     expect((await created.agent(context)).cwd).toBe("/topic-work");
@@ -377,7 +390,7 @@ describe("conversations", () => {
 
   it("binds a topic's latest conversation, and creates only when asked or empty (EX-3)", async () => {
     const session = await passive();
-    const api = conversations(session, DEFAULTS, "host");
+    const api = apiOf(session);
     await api.setTopic({ name: "work" });
     const first = await api.open({ kind: "topic", name: "work", new: true });
     expect((await api.open({ kind: "topic", name: "work", new: false })).id).toBe(first.id);
@@ -389,7 +402,7 @@ describe("conversations", () => {
   // PHASE-02: a thread tool's conversation never answers for the topic (DEC-037).
   it("attach by topic lands on the operator-created conversation", async () => {
     const session = await passive();
-    const api = conversations(session, DEFAULTS, "host");
+    const api = apiOf(session);
     await api.setTopic({ name: "work" });
     const operator = await api.open({ kind: "topic", name: "work", new: true });
     const thread = await startThread(session.harness, operator, "work", "room");
@@ -420,7 +433,7 @@ describe("conversations", () => {
   // PHASE-08 EX-1, VT-2: one listing, marked for exactly the ids a thread tool created.
   it("--list marks forks and started threads", async () => {
     const session = await passive();
-    const api = conversations(session, DEFAULTS, "host");
+    const api = apiOf(session);
     await api.setTopic({ name: "work" });
     const operator = await api.open({ kind: "topic", name: "work", new: true });
     const thread = await startThread(session.harness, operator, "work", "room");
@@ -448,7 +461,7 @@ describe("conversations", () => {
 
   it("toolsetInit with a started thread records startedBy", async () => {
     const session = await passive();
-    const api = conversations(session, DEFAULTS, "host");
+    const api = apiOf(session);
     await api.setTopic({ name: "work" });
     const caller = await api.open({ kind: "topic", name: "work", new: true });
     const saw: DaemonToolset[] = [];
@@ -491,7 +504,7 @@ describe("conversations", () => {
 
   it("starts one conversation when two attaches race on an empty topic", async () => {
     const session = await passive();
-    const api = conversations(session, DEFAULTS, "host");
+    const api = apiOf(session);
     await api.setTopic({ name: "work" });
     const open = (): Promise<Conversation> => api.open({ kind: "topic", name: "work", new: false });
     const [one, two] = await Promise.all([open(), open()]);
@@ -501,7 +514,7 @@ describe("conversations", () => {
 
   it("refuses a topic whose latest entry is not a conversation key, creating nothing", async () => {
     const session = await passive();
-    const api = conversations(session, DEFAULTS, "host");
+    const api = apiOf(session);
     await api.setTopic({ name: "work" });
     // A damaged index: an entry no conversation id could ever be.
     await session.harness.commit(async (tx) => {
@@ -522,7 +535,7 @@ describe("conversations", () => {
     "refuses a topic nobody wrote, creating neither topic nor conversation: %s (DEC-016)",
     async (name) => {
       const session = await passive();
-      const api = conversations(session, DEFAULTS, "host");
+      const api = apiOf(session);
       for (const fresh of [false, true]) {
         await expect(api.open({ kind: "topic", name, new: fresh })).rejects.toThrow(
           `no topic ${name}`,
@@ -537,7 +550,7 @@ describe("conversations", () => {
 
   it("writes, lists and attaches a topic named like an object's own key", async () => {
     const session = await passive();
-    const api = conversations(session, DEFAULTS, "host");
+    const api = apiOf(session);
     expect(await api.setTopic({ name: "constructor", cwd: "/c" })).toEqual({
       name: "constructor",
       cwd: "/c",
@@ -549,7 +562,7 @@ describe("conversations", () => {
 
   it("keeps an existing conversation's directory when the topic's changes (D1, EX-2)", async () => {
     const session = await passive();
-    const api = conversations(session, DEFAULTS, "host");
+    const api = apiOf(session);
     await api.setTopic({ name: "work", cwd: "/a" });
     const first = await api.open({ kind: "topic", name: "work", new: false });
     expect(await api.setTopic({ name: "work", cwd: "/b" })).toEqual({ name: "work", cwd: "/b" });
@@ -562,7 +575,7 @@ describe("conversations", () => {
 
   it("takes the client's cwd, then the topic's, then the daemon's (EX-2)", async () => {
     const session = await passive();
-    const api = conversations(session, DEFAULTS, "host");
+    const api = apiOf(session);
     await api.setTopic({ name: "bare" });
     expect(
       (await (await api.open({ kind: "topic", name: "bare", new: true })).agent(context)).cwd,
@@ -578,7 +591,7 @@ describe("conversations", () => {
 
   it("binds default's latest conversation, which is root until another joins (EX-3)", async () => {
     const session = await passive();
-    const api = conversations(session, DEFAULTS, "host");
+    const api = apiOf(session);
     expect((await api.open({ kind: "topic", name: "default", new: false })).id).toBe(
       session.root.id,
     );
@@ -589,7 +602,7 @@ describe("conversations", () => {
 
   it("creates a topic with no directory, then leaves it unchanged (EX-5)", async () => {
     const session = await passive();
-    const api = conversations(session, DEFAULTS, "host");
+    const api = apiOf(session);
     expect(await api.setTopic({ name: "bare" })).toEqual({ name: "bare" });
     await api.setTopic({ name: "bare", cwd: "/ignored" });
     // Absent `cwd` leaves the record alone, so the write above is the one that stands.
@@ -599,7 +612,7 @@ describe("conversations", () => {
 
   it("sets and clears a topic's directory, returning the written record (EX-5)", async () => {
     const session = await passive();
-    const api = conversations(session, DEFAULTS, "host");
+    const api = apiOf(session);
     expect(await api.setTopic({ name: "work", cwd: "/w" })).toEqual({ name: "work", cwd: "/w" });
     expect(await api.setTopic({ name: "work", cwd: null })).toEqual({ name: "work" });
     expect((await indexOf(session.harness)).topics).toEqual({ work: {} });
@@ -615,7 +628,7 @@ describe("conversations", () => {
     "refuses a toolset the %s profile's policy does not allow, writing nothing",
     async (profile) => {
       const session = await passive();
-      const api = conversations(session, DEFAULTS, profile);
+      const api = apiOf(session, DEFAULTS, profile);
       await api.setTopic({ name: "work", cwd: "/w" });
       const before = await indexOf(session.harness);
       // The throw may be synchronous or a rejection: both are the same refusal.
@@ -627,7 +640,7 @@ describe("conversations", () => {
 
   it("stores a toolset the policy allows, leaving it when a write omits it (VT-1)", async () => {
     const session = await passive();
-    const api = conversations(session, DEFAULTS, "host");
+    const api = apiOf(session);
     expect(await api.setTopic({ name: "work", toolset: "interactive" })).toEqual({
       name: "work",
       toolset: "interactive",
@@ -645,9 +658,49 @@ describe("conversations", () => {
     expect((await indexOf(session.harness)).topics).toEqual({ work: { cwd: "/w" } });
   });
 
+  // SL-010 PHASE-02 VT-2: a topic's model is judged against the gateway catalog when written.
+  it("setTopic refuses a model the catalog lacks, writing nothing (VT-2)", async () => {
+    const session = await passive();
+    const api = conversations(session, DEFAULTS, "host", modelCatalogOf(SLASHED_REF, FLASH_REF));
+    await api.setTopic({ name: "work", cwd: "/w" });
+    const before = await indexOf(session.harness);
+    const refused = async (name: string): Promise<unknown> =>
+      api.setTopic({ name, model: "gateway/gpt-nope" });
+    // The judge runs before the write, so a refusal leaves the store exactly as it was.
+    await expect(refused("work")).rejects.toBeInstanceOf(UnknownModel);
+    await expect(refused("work")).rejects.toThrow("unknown model gateway/gpt-nope");
+    expect(await indexOf(session.harness)).toEqual(before);
+    // A topic that did not exist is not created either.
+    await expect(refused("fresh")).rejects.toThrow("unknown model gateway/gpt-nope");
+    expect((await indexOf(session.harness)).topics).toEqual({ work: { cwd: "/w" } });
+  });
+
+  it("setTopic stores a model the catalog holds, as given, and topics() lists it (VT-2)", async () => {
+    const session = await passive();
+    const api = conversations(session, DEFAULTS, "host", modelCatalogOf(SLASHED_REF, FLASH_REF));
+    // The slashed ref is stored exactly as given, not as its parsed pieces.
+    expect(await api.setTopic({ name: "work", model: SLASHED_REF })).toEqual({
+      name: "work",
+      model: SLASHED_REF,
+    });
+    expect(await api.setTopic({ name: "other", model: FLASH_REF })).toEqual({
+      name: "other",
+      model: FLASH_REF,
+    });
+    expect(await api.topics()).toEqual([
+      { name: "default" },
+      { name: "other", model: FLASH_REF },
+      { name: "work", model: SLASHED_REF },
+    ]);
+    expect((await indexOf(session.harness)).topics).toEqual({
+      other: { model: FLASH_REF },
+      work: { model: SLASHED_REF },
+    });
+  });
+
   it("lists one topic's ids newest first, leaving other topics out (EX-4)", async () => {
     const session = await passive();
-    const api = conversations(session, DEFAULTS, "host");
+    const api = apiOf(session);
     await api.setTopic({ name: "work" });
     const first = await api.open({ kind: "topic", name: "work", new: true });
     const elsewhere = await api.open({ kind: "new" });
@@ -662,7 +715,7 @@ describe("conversations", () => {
 
   it("stops a topic listing at LIST_PAGE and reports the cut (EX-4)", async () => {
     const session = await passive();
-    const api = conversations(session, DEFAULTS, "host");
+    const api = apiOf(session);
     await api.setTopic({ name: "many" });
     for (let made = 0; made < LIST_PAGE + 1; made += 1) {
       await api.open({ kind: "topic", name: "many", new: true });
@@ -674,13 +727,13 @@ describe("conversations", () => {
 
   it("refuses a topic listing for a topic nobody wrote (EX-4)", async () => {
     const session = await passive();
-    const listing = conversations(session, DEFAULTS, "host").list({ kind: "topic", name: "nope" });
+    const listing = apiOf(session).list({ kind: "topic", name: "nope" });
     await expect(listing).rejects.toThrow("no topic nope");
   });
 
   it("lists the topics themselves, default first, as plain records (EX-4, EX-8)", async () => {
     const session = await passive();
-    const api = conversations(session, DEFAULTS, "host");
+    const api = apiOf(session);
     await api.setTopic({ name: "work", cwd: "/w" });
     await api.setTopic({ name: "bare" });
     expect(await api.topics()).toEqual([
@@ -713,19 +766,19 @@ describe("conversations", () => {
       session = first;
       // (a) The production path creates the mail topic's conversation: the room allows mail.
       await writeTopicRecord(first.harness, "mailbox", { toolset: "mail" });
-      const mailTopic = await conversations(first, DEFAULTS, "room").open({
+      const mailTopic = await apiOf(first, DEFAULTS, "room").open({
         kind: "topic",
         name: "mailbox",
         new: true,
       });
       // (b) A plain topic, and (c) attach `new`: the profile default.
       await writeTopicRecord(first.harness, "work", {});
-      const plain = await conversations(first, DEFAULTS, "room").open({
+      const plain = await apiOf(first, DEFAULTS, "room").open({
         kind: "topic",
         name: "work",
         new: true,
       });
-      const fresh = await conversations(first, DEFAULTS, "room").open({ kind: "new" });
+      const fresh = await apiOf(first, DEFAULTS, "room").open({ kind: "new" });
 
       // (d) The thread tools' own creates: one started in `work`, one forked from a caller.
       // The caller holds the whole interactive list, as a plain create does, so the fork
@@ -808,7 +861,7 @@ describe("conversations", () => {
 
   it("VT-1 refusal: the host profile refuses a mail topic's conversation and creates none", async () => {
     const session = await passive();
-    const api = conversations(session, DEFAULTS, "host");
+    const api = apiOf(session);
     await writeTopicRecord(session.harness, "mailbox", { toolset: "mail" });
     await expect(api.open({ kind: "topic", name: "mailbox", new: true })).rejects.toThrow(
       "toolset mail is not allowed on profile host",

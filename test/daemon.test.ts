@@ -43,6 +43,7 @@ import {
 } from "./fixtures.ts";
 import {
   createTaskOwned,
+  FAUX_CATALOG,
   FAUX_MODEL,
   forkConversation,
   NAME_RULE,
@@ -198,7 +199,9 @@ describe("daemon", () => {
   ): Promise<Daemon> =>
     serve({
       socketPath,
-      conversations: session.then((harness) => conversations(harness, DEFAULTS, "host")),
+      conversations: session.then((harness) =>
+        conversations(harness, DEFAULTS, "host", FAUX_CATALOG),
+      ),
       beforeInput,
       orientation,
     });
@@ -649,7 +652,7 @@ describe("daemon", () => {
     expect(creator.received().filter(isType("attached"))).toHaveLength(1);
     expect(at(creator, "attached")).toBeLessThan(at(creator, "snapshot"));
     expect(snapshot.agent.cwd).toBe("/own");
-    const api = conversations(test, DEFAULTS, "host");
+    const api = conversations(test, DEFAULTS, "host", FAUX_CATALOG);
     const created = await api.open({ kind: "existing", id: attached.conversation });
     expect((await created.agent(context)).cwd).toBe("/own");
     const second = await lineClient(socketPath, toPrintable);
@@ -722,7 +725,7 @@ describe("daemon", () => {
     await start();
     test.faux.setResponses([fauxAssistantMessage([fauxText("hello")])]);
     // A conversation this connection is not bound to: a re-bind would be visible.
-    const other = await conversations(test, DEFAULTS, "host").open({ kind: "new" });
+    const other = await conversations(test, DEFAULTS, "host", FAUX_CATALOG).open({ kind: "new" });
     const client = await attach();
     client.send({ type: "attach", conversation: other.id });
     const error = await client.next(isType("error"));
@@ -751,7 +754,7 @@ describe("daemon", () => {
 
   it("answers a list frame with one page of ids, then closes cleanly (DEC-007)", async () => {
     await start();
-    const api = conversations(test, DEFAULTS, "host");
+    const api = conversations(test, DEFAULTS, "host", FAUX_CATALOG);
     const first = await api.open({ kind: "new" });
     const second = await api.open({ kind: "new" });
     const client = await listClient();
@@ -805,7 +808,7 @@ describe("daemon", () => {
 
   it("passes a listed thread's mark through, and marks nothing when no id is a thread (EX-1)", async () => {
     await start();
-    const api = conversations(test, DEFAULTS, "host");
+    const api = conversations(test, DEFAULTS, "host", FAUX_CATALOG);
     const operator = await api.open({ kind: "new" });
     // A store with no thread: the reply has no `marks` key at all.
     expect(Object.hasOwn(await wireList(), "marks")).toBe(false);
@@ -919,7 +922,7 @@ describe("daemon", () => {
     test = await openTestHarness([]);
     daemon = await serve({
       socketPath,
-      conversations: Promise.resolve(conversations(test, DEFAULTS, "room")),
+      conversations: Promise.resolve(conversations(test, DEFAULTS, "room", FAUX_CATALOG)),
       beforeInput: noGate,
       orientation: noOrientation,
     });
@@ -946,7 +949,7 @@ describe("daemon", () => {
 
   it("a failed listing answers one error and closes", async () => {
     test = await openTestHarness([]);
-    const api = conversations(test, DEFAULTS, "host");
+    const api = conversations(test, DEFAULTS, "host", FAUX_CATALOG);
     const failing = {
       ...api,
       list: (): Promise<never> => Promise.reject(new Error("listing failed")),
@@ -1148,7 +1151,7 @@ describe("daemon", () => {
     // Root is A; the conversation B attached to is read by the id it was given.
     expect(await entriesText(test.root)).toContain("alpha answer");
     expect(await entriesText(test.root)).not.toContain("bravo answer");
-    const created = await conversations(test, DEFAULTS, "host").open({
+    const created = await conversations(test, DEFAULTS, "host", FAUX_CATALOG).open({
       kind: "existing",
       id: b.attached.conversation,
     });
@@ -1158,7 +1161,7 @@ describe("daemon", () => {
 
   it("aborts a created A while overlapping root B, leaving B intact and A aborted (V-4)", async () => {
     test = await openTestHarness([]);
-    const api = conversations(test, DEFAULTS, "host");
+    const api = conversations(test, DEFAULTS, "host", FAUX_CATALOG);
     // The daemon opens A through this seam, so the spy below holds the very instance
     // it binds and aborts; only the one created target resolves `opened`.
     const opened = Promise.withResolvers<Conversation>();

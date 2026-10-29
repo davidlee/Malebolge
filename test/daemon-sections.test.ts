@@ -25,6 +25,7 @@ import { bookmarksPart } from "./bookmarks/bookmark-fixtures.ts";
 import { tempDir } from "./fixtures.ts";
 import {
   closing,
+  FAUX_CATALOG,
   FAUX_MODEL,
   openFauxHarness,
   openTestHarness,
@@ -156,7 +157,12 @@ describe("daemon system prompt sections", () => {
     const test = await openTestHarness(
       daemonExtensions({ ...HOST, personaFiles: () => [], projectContext: undefined, skills: [] }),
     );
-    const api = conversations(test, { model: FAUX_MODEL, cwd: "/daemon-default" }, "host");
+    const api = conversations(
+      test,
+      { model: FAUX_MODEL, cwd: "/daemon-default" },
+      "host",
+      FAUX_CATALOG,
+    );
     const created = await api.open({ kind: "new", cwd: "/own" });
     expect(await systemPromptSections(test, created)).toMatchObject([
       { cwd: "Current working directory: /own" },

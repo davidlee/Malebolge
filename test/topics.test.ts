@@ -39,6 +39,7 @@ import {
   openIndexedHarness,
   type TestHarness,
 } from "./harness-fixture.ts";
+import { SLASHED_REF } from "./model-fixture.ts";
 
 /** A harness with no hook at all: a store from before this slice, unless `options` says otherwise. */
 const preIndex = async (options: FauxHarnessOptions = {}): Promise<TestHarness> => {
@@ -277,6 +278,71 @@ it("sets, clears and leaves a topic's toolset, the directory surviving every wri
     cwd: "/back",
   });
   expect((await indexOf(test.harness)).topics).toEqual({ work: { cwd: "/back" } });
+});
+
+// SL-010 PHASE-02 VT-1: a topic's model is written exactly as its toolset is (design sec-3).
+it("sets, clears and leaves a topic's model, the directory surviving every write", async () => {
+  const test = await openIndexedHarness();
+  expect(await writeTopicRecord(test.harness, "work", { cwd: "/w", model: SLASHED_REF })).toEqual({
+    name: "work",
+    cwd: "/w",
+    model: SLASHED_REF,
+  });
+  // An absent model leaves the record as it is…
+  expect(await writeTopicRecord(test.harness, "work", { cwd: "/elsewhere" })).toEqual({
+    name: "work",
+    cwd: "/elsewhere",
+    model: SLASHED_REF,
+  });
+  expect(await writeTopicRecord(test.harness, "work", { toolset: "mail" })).toEqual({
+    name: "work",
+    cwd: "/elsewhere",
+    toolset: "mail",
+    model: SLASHED_REF,
+  });
+  // …and `null` clears it, taking neither the directory nor the toolset with it.
+  expect(await writeTopicRecord(test.harness, "work", { model: null })).toEqual({
+    name: "work",
+    cwd: "/elsewhere",
+    toolset: "mail",
+  });
+  expect((await indexOf(test.harness)).topics).toEqual({
+    work: { cwd: "/elsewhere", toolset: "mail" },
+  });
+});
+
+it("keeps a topic's model across a reopen of the store", async () => {
+  const tmp = await tempDir();
+  const path = join(tmp.dir, "topics.sqlite");
+  let opened: TestHarness | undefined;
+  const close = async (): Promise<void> => {
+    await opened?.harness.close(context);
+    opened = undefined;
+  };
+  try {
+    opened = await openFauxHarness(await openNodeSqliteStorage(path), {
+      resume: false,
+      conversationCreated: indexConversation,
+    });
+    await writeTopicRecord(opened.harness, "work", { cwd: "/w", model: SLASHED_REF });
+    await close();
+
+    opened = await openFauxHarness(await openNodeSqliteStorage(path), {
+      resume: false,
+      conversationCreated: indexConversation,
+    });
+    expect((await indexOf(opened.harness)).topics).toEqual({
+      work: { cwd: "/w", model: SLASHED_REF },
+    });
+    expect(topicsOf(await readIndex(opened.harness)).find((t) => t.name === "work")).toEqual({
+      name: "work",
+      cwd: "/w",
+      model: SLASHED_REF,
+    });
+  } finally {
+    await close();
+    await tmp.cleanup();
+  }
 });
 
 it("refuses to store the reserved default topic (DEC-015)", async () => {
