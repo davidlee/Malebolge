@@ -224,6 +224,113 @@ Outcomes (operator, 2026-10-29; recorded on the ASMs):
 - EX-2 / ASM-005 invalidated, as EX-2 allows: notify-send exit 1, no D-Bus
   (glib machine-id missing). DEC-073 floor stands; no /consult needed.
 
+### PHASE-10 VH: real-jail exchange (operator; pending)
+
+Covers PHASE-10 VH-1, VH-2 and VA-1 (RV-021 F-1/F-6/F-10). Docs: 0df3e9e
+(`docs/internals.md` § Bridge, README § Pairing a jailed pi). Facts below
+read from ~/flakes @ 482256f0 (read-only) and malebolge @ 0df3e9e.
+
+**Prerequisites**
+
+P1. EN-1, room daemon redeployed. It runs the live tree, so: on main at or
+    after 0df3e9e, with `git status` showing nothing you do not want running
+    (other sessions' uncommitted src/ work runs too),
+    `systemctl --user restart malebolge-room`. Expect no refusal in
+    `journalctl --user -u malebolge-room -n 50`, and
+    `ls -ld /run/user/1000/satan/durable/room/bridge` → `drwx------ david`,
+    `ls -l /run/user/1000/satan/durable/room/bridge/bridge.sock` → `srw-------`.
+    A `… must be owned by this user and closed to group and other (mode 755 …)`
+    refusal means something else made the directory: `chmod 700` it, restart.
+P2. node in the pi jail. Malebolge's own `jailed-pi` has `nodejs_24`
+    (`shellPkgs`). Another project's pi jail needs ~/flakes 482256f0
+    (`lib.optional piInJail pkgs.nodejs_24`, committed in ~/flakes, not
+    pushed): that project's flake must build against it, e.g.
+    `--override-input agents path:/home/david/flakes/agents`.
+P3. The four clauses (DEC-074). If CHR-007 has landed in ~/flakes, use its
+    options. Otherwise mount them by hand for this check in the project's own
+    flake (local edit, not committed). For malebolge, in `flake.nix`'s
+    `jails` let-block, beside `doctrineOptions`:
+
+    ```nix
+    bridgeOptions = [
+      # (1) the socket directory only, read-only; never durable/room itself
+      (combinators.try-ro-bind
+        "/run/user/1000/satan/durable/room/bridge"
+        "/run/user/1000/satan/durable/room/bridge")
+      # (2) forward MALEBOLGE_BRIDGE_SOCKET when set (the pi jail has no
+      #     XDG_RUNTIME_DIR, so the default path rule cannot resolve there)
+      (combinators.add-runtime ''
+        [ -z "''${MALEBOLGE_BRIDGE_SOCKET+x}" ] || RUNTIME_ARGS+=(--setenv MALEBOLGE_BRIDGE_SOCKET "$MALEBOLGE_BRIDGE_SOCKET")
+      '')
+      # (3) the extension, read-only, in the jail home
+      (combinators.try-ro-bind
+        "/home/david/dev/malebolge/pi-bridge"
+        (combinators.noescape "\"$HOME/.pi/agent/extensions/malebolge-bridge\""))
+      # (4) read-only project: a later bind over the launch dir's rw bind wins
+      (combinators.unsafe-add-raw-args "--ro-bind \"$PWD\" \"/workspace/$(basename \"$PWD\")\"")
+    ];
+    ```
+
+    and in the attrset: `jailed-pi-bridge = mkJail jailLib.makeJailedPi {
+    extraOptions = doctrineOptions ++ bridgeOptions; };` (`// args` replaces
+    `extraOptions`, so keep `doctrineOptions`). Combinator names as used in
+    malebolge's `flake.nix` and satan's `flake.nix`; unverified by build.
+    Remove any copy of the extension left in
+    `~/.local/share/jail.nix/home/agent/.pi/agent/extensions/` by VH-1.
+P4. Launch from the project root (both shells):
+    `env MALEBOLGE_BRIDGE_SOCKET=/run/user/1000/satan/durable/room/bridge/bridge.sock nix run .#jailed-pi-bridge`.
+    Project `malebolge` → topic `malebolge-bridge`. A load failure naming
+    EROFS (the ro extension mount) → copy `pi-bridge/` into the jail home
+    instead and record it: clause 3 then needs revisiting.
+
+**Steps** (in the jailed pi unless marked host)
+
+1. Load (VH-1). `/bridge end` → `malebolge bridge: not paired; run /bridge
+   pair delegate or /bridge pair consult`. In pi's bash:
+   `ls -l /run/user/1000/satan/durable/room/` → `bridge` only (no
+   `durable.sock`); `echo $MALEBOLGE_BRIDGE_SOCKET` → the path above.
+2. Command on PATH, unpaired (VH-2). Bash: `command -v malebolge-bridge` →
+   `$HOME/.pi/agent/extensions/malebolge-bridge/malebolge-bridge`;
+   `echo x | malebolge-bridge send; echo $?` → `not paired: run /bridge pair
+   delegate or /bridge pair consult in pi first`, `2`.
+3. Pair delegate (VH-1). `/bridge pair delegate` → status
+   `malebolge bridge: bound`. Host: `node src/attach-main.ts --topic
+   malebolge-bridge` attaches to the new conversation.
+4. pi → SATAN (delegate). Ask pi: "use bridge_post to ask SATAN what it can
+   see of this project". Expect the tool result `sent`; host client shows a
+   SATAN turn on a `<bridge from="pi" project="malebolge" kind="turn">` input.
+5. SATAN → pi (delegate). Host client: "use bridge_post to ask pi to list the
+   project's top-level files". Expect SATAN's tool result `sent #<seq>`; pi,
+   idle, starts a turn on the message and does it.
+6. Command, paired (VH-2). Bash: `echo hello | malebolge-bridge send; echo $?`
+   → `accepted`, `0`; no SATAN turn starts (the note joins SATAN's context
+   at its next turn).
+   `echo hi | malebolge-bridge tee --turn; echo $?` → `hi`, `0`; a SATAN turn
+   starts.
+7. Read-only mount (VH-1). Bash: `touch /workspace/malebolge/sl009-ro; echo $?`
+   → `Read-only file system`, non-zero; pi's write tool on the same path fails
+   likewise.
+8. Busy delivery, Esc (VA-1, F-1). Give pi a long task; while it runs, host:
+   have SATAN `bridge_post` pi. Press Esc in pi. Expect the message shown once,
+   as a note, not a new turn.
+9. Note across /reload (VA-1, F-10). With a bridge note in pi's session (from
+   8) and pi idle: `/reload`, then any prompt asking pi to quote bridge
+   messages it holds. Expect the note in context exactly once.
+10. Connect failure (VH-1). Host: `systemctl --user stop malebolge-room`. Expect
+    in pi one error notice `malebolge bridge: <reason>; project malebolge, pi
+    session <id>, conversation <n>, topic malebolge-bridge, socket
+    /run/user/1000/satan/durable/room/bridge/bridge.sock`, status
+    `malebolge bridge: outage (attempt N)` climbing, no further notices.
+    notify-send is expected to fail silently (no D-Bus; ASM-005). Bash:
+    `echo x | malebolge-bridge send; echo $?` → the same one line, `1`.
+    Host: `systemctl --user start malebolge-room` → one `malebolge bridge:
+    reconnected; …` notice, status `bound`.
+11. End and pair consult (VH-1). `/bridge end` → `malebolge bridge: pairing
+    ended`. `/bridge pair consult` → `bound`; host: `node src/attach-main.ts
+    --topic malebolge-bridge` (the newer conversation). Repeat 4 and 5.
+12. Report each step's outcome; the agent records them here and flips PHASE-10
+    completed. Afterwards drop the local `flake.nix` edit.
+
 ## Autonomy log
 
 - PHASE-01: probe stubs and drivers kept in `.doctrine/slice/009/probes/` (beside notes) instead of only the scratchpad, so VH-1 and reruns survive the session; outside src/ and pi-bridge/, unlinted, untested (EX-9 intent kept). Tier: decide.
@@ -263,3 +370,8 @@ Outcomes (operator, 2026-10-29; recorded on the ASMs):
 - PHASE-09: no split (VT-5's pi->SATAN note and F-6 need the command). Contract `.doctrine/state/slice/009/briefs/phase-09-contract.md`, stubs/signatures by me: pi-bridge/{notices,connection,posture,shell,command,index}.ts + malebolge-bridge. Local choices, flag for audit: CLI with no MALEBOLGE_BRIDGE_* vars, or bad args, exits 2 (local refusal; design lists only 0-3); `send` prints `accepted`, `tee` prints no ack; pi-direction inject content is the delivery text as-is (design names no framing that way); notify-send fires for outage notices only (and the command's connect failure); topic in notices = `<project>-bridge`. Tier: decide.
 - PHASE-09: pi runs (deepseek-flash, implement): T1 command tests $0.06, T2 notices/connection/command $0.06, T3 shell tests $0.15, T4 shell $0.08 (total ~$0.35, 4 runs, none hit the ceiling). pi misses I fixed: T1's real-script test spawned with no argv and T2 made empty argv mean `send` (contract: usage, exit 2) — test now passes `send`, parser tightened; T4's `bridgeEnv` left a trailing `:` when PATH is unset (an empty PATH element is the cwd) — now the dir alone, test pinned; dead connections stayed in the shell's map — removed on close; connection.ts kept reading lines after a handler closed mid-chunk — guarded. Added tests: outage `/bridge end` through the shell; interactive-only refill (was a surviving mutant). Tier: decide.
 - PHASE-09: negative controls (mutate, run the three pi-bridge test files, restore): 16 mutations, all killed after the refill test was added (outage end busy 2; env keeps inherited vars 1; no desktop 1; shell deadline x2 3; idle always 1; no persisted 4; input any source 1; no PATH prefix 4; posture always delegate 1; tee no copy 1; no cap 1; connect failure as unknown 1; cmd deadline x2 1; ends omit conversation 1; close ignored 3). Host smoke with real pi 1.4.0 (`-e pi-bridge/index.ts`, rpc, fake provider): loads, `/bridge` notices as expected. Gate: `just check` green on a `git archive` export of af200b5 (115 files / 4054 tests, lines 97.5%). record-delta range d5ff906^..af200b5 includes two SL-007 commits (b4caa4b, 107abce) between ours: flag for audit. Tier: decide.
+- PHASE-10: docs drafted by me, not a pi worker: the facts were already in hand from the grep pass, and a pi draft would have needed the same line-by-line check. Every cited path, variable, exit status, constant and refusal text grepped against 0df3e9e. Tier: decide.
+- PHASE-10: docs/internals.md clause (1) adds "whoever creates the bridge directory makes it 0700": servePrivateUnix refuses start on a directory open to group or other, so a ~/flakes host-side `mkdir` at the default umask would stop the daemon. Clarifies DEC-074, no scope change; CHR-007's implementer needs it (not edited: another session's item). Tier: decide (flagged).
+- PHASE-10: EX-2 follow-up recorded as CHR-008 (author the posture texts, SATAN and pi), linked to SL-009. Tier: defer.
+- PHASE-10: runbook's hand mounts go in the project's own flake (`extraOptions` of a local `jailed-pi-bridge`), not ~/flakes; ~/flakes untouched. Snippet unbuilt (building it is the operator's). Tier: decide.
+- PHASE-10: docs part done (0df3e9e), `just check` green on a `git archive` export of 0df3e9e (115 files / 4054 tests). Phase left in_progress: VH-1, VH-2, VA-1 pending the operator (runbook in § Probes). Tier: decide.
