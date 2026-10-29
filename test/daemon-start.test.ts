@@ -733,17 +733,10 @@ describe("startDaemon mail", () => {
     );
   });
 
-  it("VT-1 room start: five mail tools and the satan.wake heartbeat", async () => {
+  it("VT-1 room start: six mail tools and the satan.wake heartbeat", async () => {
     const w = await roomWorld({ enabled: true });
     const handle = await started(w);
-    expect(handle.mailTools).toBe(5);
-    expect((mailExtension(fakeMailDeps()).tools ?? []).map((tool) => tool.name)).toEqual([
-      "mail_new",
-      "mail_read",
-      "mail_thread",
-      "mail_list",
-      "mail_mailboxes",
-    ]);
+    expect(handle.mailTools).toBe(6);
     // The satan.wake task is still registered: its recurring heartbeat was created.
     expect(createdHeartbeats(w)).toHaveLength(1);
     await handle.stop();

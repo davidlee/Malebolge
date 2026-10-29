@@ -1,4 +1,4 @@
-// The five mail tools, driven through their `execute` over a fake MailSource
+// The six mail tools, driven through their `execute` over a fake MailSource
 // (PHASE-07 VT-1..3). "Refused before argv" is observable as the fake having
 // recorded no call. Time is fixed: held back is judged against NOW.
 
@@ -10,7 +10,7 @@ import { isRecord } from "../../src/json.ts";
 import { classificationCache } from "../../src/mail/classifications.ts";
 import { mailRefusal } from "../../src/mail/extension.ts";
 import { type ReportKind, type Withheld, WITHHOLD_POLICY } from "../../src/mail/policy.ts";
-import { JEV_MAX_BYTES } from "../../src/mail/project.ts";
+import { JEV_MAX_BYTES, jevField } from "../../src/mail/project.ts";
 import { shareOf } from "../../src/mail/render.ts";
 import {
   type Address,
@@ -26,6 +26,7 @@ import {
   NEW_JOINT_BYTES,
   NEW_MAX_BYTES,
   OVERSIZE_AT_LIMIT_1,
+  REPORTED_MAX,
 } from "../../src/mail/tools.ts";
 import {
   absentThreadItem,
@@ -58,16 +59,25 @@ const MINUTE = 60_000;
 /** An RFC 3339 time `minutes` from NOW. */
 const at = (minutes: number): string => new Date(NOW + minutes * MINUTE).toISOString();
 
-type ToolName = "mail_new" | "mail_read" | "mail_thread" | "mail_list" | "mail_mailboxes";
+type ToolName =
+  | "mail_new"
+  | "mail_read"
+  | "mail_thread"
+  | "mail_list"
+  | "mail_mailboxes"
+  | "mail_report";
 
 interface Outcome {
   readonly text: string;
   readonly isError: boolean;
 }
 
-/** The tools execute never reads the api; a stub stands in for the one it is given. */
-// eslint-disable-next-line @typescript-eslint/consistent-type-assertions -- a stub of the one field a mail tool could read
-const API = { env: undefined } as unknown as ToolExecutionApi;
+/** The conversation the stub api names: mail_report writes it into its log line. */
+const CONVERSATION = "Conv1";
+
+/** The tools' execute reads only `env`; mail_report also reads `conversationId`. */
+// eslint-disable-next-line @typescript-eslint/consistent-type-assertions -- a stub of the fields a mail tool could read
+const API = { env: undefined, conversationId: CONVERSATION } as unknown as ToolExecutionApi;
 
 function toolNamed(tools: readonly ToolRegistration[], name: ToolName): ToolRegistration {
   const tool = tools.find((candidate) => candidate.name === name);
@@ -132,6 +142,7 @@ function itemIdsOf(name: ToolName, replies: FakeReplies): string[] {
     case "mail_list":
       return idsOfList(replies);
     case "mail_mailboxes":
+    case "mail_report":
       return [];
   }
 }
@@ -970,12 +981,19 @@ describe("VT-2 the cursor: next, caught_up, held back", () => {
 // ======================================================== VT-3: shape, text
 
 describe("VT-3 shape, replay and descriptions", () => {
-  const ALL: ToolName[] = ["mail_new", "mail_read", "mail_thread", "mail_list", "mail_mailboxes"];
+  const ALL: ToolName[] = [
+    "mail_new",
+    "mail_read",
+    "mail_thread",
+    "mail_list",
+    "mail_mailboxes",
+    "mail_report",
+  ];
   const tools = mailTools(fakeMailDeps({ now: () => NOW }));
   const descriptionOf = (name: ToolName): string => toolNamed(tools, name).description;
 
   describe("the tool set", () => {
-    it("is the five tools, in order", () => {
+    it("is the six tools, in order", () => {
       expect(tools.map(({ name }) => name)).toEqual(ALL);
     });
 
@@ -1001,6 +1019,7 @@ describe("VT-3 shape, replay and descriptions", () => {
       ["mail_thread", ["id", "limit"], ["id"]],
       ["mail_list", ["limit", "offset", "mailbox", "unread", "from"], []],
       ["mail_mailboxes", [], []],
+      ["mail_report", ["id", "kind"], ["id", "kind"]],
     ];
     it.each(PARAMS)("%s takes exactly its parameters, required: %j", (name, keys, required) => {
       const schema: unknown = toolNamed(tools, name).parameters;
@@ -1222,6 +1241,13 @@ describe("VT-1 mailRefusal refuses every tool before any argument check", () => 
     ["mail_thread", [{ id: "Thr1" }, { id: "" }]],
     ["mail_list", [{}, { from: "-rf" }]],
     ["mail_mailboxes", [{}, { interval: 5 }]],
+    [
+      "mail_report",
+      [
+        { id: "Msg1", kind: "phishing" },
+        { id: "-x", kind: "phishing" },
+      ],
+    ],
   ];
 
   /** Answers every port call, so a call shows as a result, not as a thrown failure. */
@@ -1770,4 +1796,183 @@ describe("VT-4 mail_new's joint clamp deducts JEV_MAX_BYTES from NEW_JOINT_BYTES
       expect(clamps).toContain(String(expected));
     },
   );
+});
+
+// ================================================= PHASE-06: mail_report
+
+/** The id the report tests report: once reported, every item tool withholds it. */
+const REPORTED_ID = SCREENED_ID;
+/** The one kind the withholding test pins, from the policy's closed vocabulary. */
+const REPORT_KIND: ReportKind = "instructions_to_agent";
+/** An id the full set holds, so a re-report replaces its kind rather than adding one. */
+const HELD_ID = "Held0";
+
+interface ReportOutcome {
+  readonly outcome: Outcome;
+  readonly source: FakeMailSource;
+  readonly lines: string[];
+  readonly reported: Map<string, ReportKind>;
+}
+
+/** Run mail_report over a fresh fake, capturing its journal lines and the set it edits. */
+async function report(
+  args: Record<string, unknown>,
+  deps: Partial<Omit<MailDeps, "source" | "log">> = {},
+): Promise<ReportOutcome> {
+  const source = fakeMailSource();
+  const lines: string[] = [];
+  const reported = deps.reported ?? new Map<string, ReportKind>();
+  const outcome = await run(source, "mail_report", args, context, {
+    ...deps,
+    source,
+    reported,
+    log: (line) => {
+      lines.push(line);
+    },
+  });
+  return { outcome, source, lines, reported };
+}
+
+/** The REPORTED_MAX ids `fullSet` holds, in insertion order. */
+const HELD_IDS: string[] = Array.from({ length: REPORTED_MAX }, (_, n) => `Held${String(n)}`);
+
+/** REPORTED_MAX entries, each held with a kind: the set a daemon that has never restarted has. */
+const fullSet = (): Map<string, ReportKind> =>
+  new Map(HELD_IDS.map((id): [string, ReportKind] => [id, "other"]));
+
+describe("VT-1 mail_report: one journal line, the reported set, the refusals (SL-007 PHASE-06)", () => {
+  it("mail_report logs exactly one line, with the cached jev and none when uncached", async () => {
+    const cached = { id: REPORTED_ID, classified: classificationOf(REPORTED_ID) };
+    const cache = classificationCache();
+    cache.set(REPORTED_ID, cached);
+    const jev = JSON.stringify(jevField(cached).value);
+    const withCache = await report({ id: REPORTED_ID, kind: REPORT_KIND }, { cache });
+    expect(withCache.outcome.isError).toBe(false);
+    expect(withCache.lines).toEqual([
+      `malebolge: mail_report conversation=${CONVERSATION} id=${REPORTED_ID} kind=${REPORT_KIND} jev=${jev}`,
+    ]);
+    const uncached = await report(
+      { id: REPORTED_ID, kind: REPORT_KIND },
+      { cache: classificationCache() },
+    );
+    expect(uncached.outcome.isError).toBe(false);
+    expect(uncached.lines).toEqual([
+      `malebolge: mail_report conversation=${CONVERSATION} id=${REPORTED_ID} kind=${REPORT_KIND} jev=none`,
+    ]);
+  });
+
+  it.each(ITEM_TOOLS)(
+    "after mail_report with instructions_to_agent, %s withholds the id as reported",
+    async (tool) => {
+      const reported = new Map<string, ReportKind>();
+      const { outcome, lines } = await report({ id: REPORTED_ID, kind: REPORT_KIND }, { reported });
+      expect(outcome.isError).toBe(false);
+      expect(lines).toHaveLength(1);
+      expect(reported.get(REPORTED_ID)).toBe(REPORT_KIND);
+      const { item } = await screenedOutput(tool, {
+        classify: classifyAll([REPORTED_ID]),
+        reported,
+      });
+      expect(item["withheld"]).toEqual({ reason: "reported", detail: "instructions_to_agent" });
+      for (const key of ["subject", "preview", "body", "from", "attachments"]) {
+        expect(item).not.toHaveProperty(key);
+      }
+    },
+  );
+
+  const INVALID: readonly (readonly [string, Record<string, unknown>])[] = [
+    ["an id with a leading -", { id: "-x", kind: "phishing" }],
+    ["an empty id", { id: "", kind: "phishing" }],
+    ["a kind outside the vocabulary", { id: REPORTED_ID, kind: "spam" }],
+    ["a number kind", { id: REPORTED_ID, kind: 5 }],
+    ["a missing kind", { id: REPORTED_ID }],
+  ];
+
+  it.each(INVALID)(
+    "mail_report refuses %s: prefixed error, nothing logged, set unchanged, no port call",
+    async (_label, args) => {
+      const { outcome, source, lines, reported } = await report(args);
+      expect(outcome.isError).toBe(true);
+      expect(outcome.text.startsWith(MAIL_ERROR_PREFIX)).toBe(true);
+      expect(lines).toEqual([]);
+      expect(reported.size).toBe(0);
+      expect(source.calls).toHaveLength(0);
+    },
+  );
+
+  it("mail_report's refusal never repeats the value it refused", async () => {
+    const { outcome } = await report({ id: REPORTED_ID, kind: "spam" });
+    expect(outcome.isError).toBe(true);
+    expect(outcome.text).not.toContain("spam");
+  });
+
+  it("mail_report never classifies, even when the id is uncached", async () => {
+    const { outcome, source } = await report(
+      { id: REPORTED_ID, kind: "phishing" },
+      { cache: classificationCache() },
+    );
+    expect(outcome.isError).toBe(false);
+    expect(source.calls).toEqual([]);
+  });
+
+  it("mail_report re-reported for a held id replaces its kind and logs again", async () => {
+    const reported = new Map<string, ReportKind>();
+    const lines: string[] = [];
+    const source = fakeMailSource();
+    const deps: Partial<MailDeps> = {
+      source,
+      reported,
+      log: (line) => {
+        lines.push(line);
+      },
+    };
+    const first = await run(
+      source,
+      "mail_report",
+      { id: REPORTED_ID, kind: "phishing" },
+      context,
+      deps,
+    );
+    const second = await run(
+      source,
+      "mail_report",
+      { id: REPORTED_ID, kind: "malware" },
+      context,
+      deps,
+    );
+    expect(first.isError).toBe(false);
+    expect(second.isError).toBe(false);
+    expect(lines).toHaveLength(2);
+    expect(lines[1]).toContain("kind=malware");
+    expect(reported.get(REPORTED_ID)).toBe("malware");
+    expect(reported.size).toBe(1);
+  });
+});
+
+describe("VT-2 mail_report at REPORTED_MAX refuses a new id, re-reports a held one", () => {
+  it("REPORTED_MAX: mail_report refuses a new id while the reported set is full", async () => {
+    const reported = fullSet();
+    expect(reported.size).toBe(REPORTED_MAX);
+    const { outcome, source, lines } = await report(
+      { id: "Fresh1", kind: "phishing" },
+      { reported },
+    );
+    expect(outcome.isError).toBe(true);
+    expect(outcome.text.startsWith(MAIL_ERROR_PREFIX)).toBe(true);
+    expect(outcome.text).toContain("full");
+    expect(lines).toEqual([]);
+    expect(source.calls).toHaveLength(0);
+    expect([...reported.keys()]).toEqual(HELD_IDS);
+  });
+
+  it("REPORTED_MAX: mail_report re-reports a held id with a new kind and evicts no held id", async () => {
+    const reported = fullSet();
+    expect(HELD_IDS).toContain(HELD_ID);
+    const { outcome, lines } = await report({ id: HELD_ID, kind: "malware" }, { reported });
+    expect(outcome.isError).toBe(false);
+    expect(lines).toHaveLength(1);
+    expect(reported.get(HELD_ID)).toBe("malware");
+    expect(reported.size).toBe(REPORTED_MAX);
+    expect([...reported.keys()]).toEqual(HELD_IDS);
+  });
 });

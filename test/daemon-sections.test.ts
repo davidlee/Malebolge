@@ -307,15 +307,8 @@ describe("BRIDGE_SECTION (VT-3)", () => {
 describe("mailExtension", () => {
   const extension = mailExtension(fakeMailDeps());
 
-  it("VT-4 is the mail extension: the five mail tools and one tagged section keyed mail", () => {
+  it("VT-4 is the mail extension: one tagged section keyed mail", () => {
     expect(extension.name).toBe("mail");
-    expect((extension.tools ?? []).map(({ name }) => name)).toEqual([
-      "mail_new",
-      "mail_read",
-      "mail_thread",
-      "mail_list",
-      "mail_mailboxes",
-    ]);
     expect((extension.sections ?? []).map(({ key, tag }) => [key, tag])).toEqual([["mail", true]]);
   });
 

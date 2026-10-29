@@ -1,6 +1,8 @@
-// The five mail tools (design § One tool call): bounds clamped, inputs refused
+// The six mail tools (design § One tool call): bounds clamped, inputs refused
 // before any port call, the cursor computed from the validated envelopes, each
 // item's classification and withholding resolved once, and one text result each.
+// mail_report is the sixth (design § mail_report): a closed-vocabulary input, one
+// journal line through the injected log, and the reported set, with no port call.
 // No I/O here: all six members of MailDeps (the MailSource, "now", the
 // classification cache, the reports, the log and the refusal) are injected, so the
 // tools stay pure and the four item tools screen their page the same way.
@@ -9,15 +11,23 @@ import type { Context } from "@earendil-works/chord/context";
 import { Type, type TSchema } from "@earendil-works/pi-ai";
 import {
   defineTool,
+  type ToolExecutionApi,
   type ToolExecutionResult,
   type ToolRegistration,
 } from "@earendil-works/pi-durable";
 import { isRecord, type JsonRecord } from "../json.ts";
 import { bounded, type Clamp, type Range, report } from "../ranges.ts";
 import { classificationsOf, type ClassificationCache } from "./classifications.ts";
-import { type PolicyQuestion, type ReportKind, type Withheld, withholding } from "./policy.ts";
+import {
+  type PolicyQuestion,
+  REPORT_KINDS,
+  type ReportKind,
+  type Withheld,
+  withholding,
+} from "./policy.ts";
 import {
   JEV_MAX_BYTES,
+  jevField,
   type ProjectedItem,
   projectListItem,
   projectMailbox,
@@ -55,6 +65,8 @@ export const NEW_JOINT_BYTES = 40 * 1024;
 /** Held back: received_at later than now + this. */
 export const HELD_BACK_AFTER_MS = 10 * 60 * 1000;
 export const FROM_MAX_BYTES = 256;
+/** The most ids the reported set holds; a report of a new id is refused at this size. */
+export const REPORTED_MAX = 1000;
 
 /**
  * mail_new at limit 1 cannot make progress on an oversize failure: the one
@@ -102,11 +114,24 @@ const CONTROL = /\p{Cc}/u;
 
 function idOf(tool: string, param: string, raw: unknown): string {
   // Not a bare isJmapId call: the Id form allows a leading "-", and screwtape
-  // would read such a value as an option (design sec-4 "Inputs").
+  // would read such a value as an option (SL-005 design, "Inputs").
   if (typeof raw !== "string" || raw.startsWith("-") || !isJmapId(raw)) {
     throw new MailInputError(
       `${tool}: ${param} must be a mail id ([A-Za-z0-9_-], 1 to 255 characters)`,
     );
+  }
+  return raw;
+}
+
+/** Whether `raw` is one of `REPORT_KINDS`: the report's closed vocabulary, no free text. */
+function isReportKind(raw: unknown): raw is ReportKind {
+  return REPORT_KINDS.some((kind) => kind === raw);
+}
+
+/** A report's kind, or an input error that never repeats the value (design § mail_report). */
+function kindOf(tool: string, raw: unknown): ReportKind {
+  if (!isReportKind(raw)) {
+    throw new MailInputError(`${tool}: kind must be one of ${REPORT_KINDS.join(", ")}`);
   }
   return raw;
 }
@@ -266,11 +291,38 @@ const LIST_DESCRIPTION =
 const MAILBOXES_DESCRIPTION =
   "List the mailboxes: their ids (for the mailbox filter), names, roles and message counts. The counts are the mail server's; the other tools read a local mirror of a configured window of mail, so a mailbox can count messages they cannot reach.";
 
+const REPORT_PARAMETERS = Type.Object({
+  id: Id("The message id"),
+  kind: Type.String({ enum: [...REPORT_KINDS], description: "What the message attempts" }),
+});
+
+const REPORT_DESCRIPTION =
+  "Report a message as hostile by its id: from then on every mail result withholds it, with kind as the reason. A restart clears the reports. There is no free-text field, and the report is not sent off the machine.";
+
 interface MailToolSpec {
   readonly name: string;
   readonly description: string;
   readonly parameters: TSchema;
-  readonly text: (args: JsonRecord, context: Context) => Promise<string>;
+  readonly text: (args: JsonRecord, context: Context, api: ToolExecutionApi) => Promise<string>;
+}
+
+/**
+ * One report's journal line, exactly as design § mail_report gives it: every
+ * value is validated, typed or classifier-produced, so no sender text reaches it.
+ */
+function reportLine(fields: {
+  readonly conversationId: string;
+  readonly id: string;
+  readonly kind: ReportKind;
+  readonly jev: string;
+}): string {
+  return `malebolge: mail_report conversation=${fields.conversationId} id=${fields.id} kind=${fields.kind} jev=${fields.jev}`;
+}
+
+/** The cached item's jev as the data line renders it, or `none` when it is uncached. */
+function jevOf(deps: MailDeps, id: string): string {
+  const cached = deps.cache.get(id);
+  return cached === undefined ? "none" : JSON.stringify(jevField(cached).value);
 }
 
 /**
@@ -286,7 +338,7 @@ function errorResult(text: string): ToolExecutionResult {
  * model's arguments are read as untrusted JSON, so a MailInputError or
  * MailSourceError becomes the error result the model sees, while anything else
  * (an abort, a bug) is thrown. Every description ends with the one sentence
- * (design § Framing item 4), added here rather than in five literals.
+ * (design § Framing item 4), added here rather than in six literals.
  */
 function mailTool(deps: MailDeps, spec: MailToolSpec): ToolRegistration {
   return defineTool({
@@ -295,7 +347,7 @@ function mailTool(deps: MailDeps, spec: MailToolSpec): ToolRegistration {
     parameters: spec.parameters,
     // Reading mail changes nothing: an interrupted call reruns after a restart.
     replay: "safe",
-    execute: async (raw, _api, context) => {
+    execute: async (raw, api, context) => {
       if (deps.refusal !== undefined) {
         return errorResult(deps.refusal);
       }
@@ -303,7 +355,7 @@ function mailTool(deps: MailDeps, spec: MailToolSpec): ToolRegistration {
         if (!isRecord(raw)) {
           throw new MailInputError(`${spec.name}: arguments must be an object`);
         }
-        const text = await spec.text(raw, context);
+        const text = await spec.text(raw, context, api);
         return { output: [{ type: "text", text }], isError: false };
       } catch (error) {
         if (error instanceof MailInputError || error instanceof MailSourceError) {
@@ -509,6 +561,29 @@ async function mailboxesText(deps: MailDeps, context: Context): Promise<string> 
   return renderMailboxes(page.items.map((mailbox) => projectMailbox(mailbox)));
 }
 
+/**
+ * mail_report: the inputs, then the full set's refusal, then one journal line,
+ * then the set (design § mail_report). It never classifies and never calls the
+ * port: a report is the agent's own word about a message it was shown.
+ */
+function reportText(deps: MailDeps, args: JsonRecord, api: ToolExecutionApi): string {
+  const id = idOf("mail_report", "id", args["id"]);
+  const kind = kindOf("mail_report", args["kind"]);
+  if (!deps.reported.has(id) && deps.reported.size >= REPORTED_MAX) {
+    throw new MailInputError("mail_report refused: the reported set is full; a restart clears it");
+  }
+  deps.log(
+    reportLine({
+      conversationId: String(api.conversationId),
+      id,
+      kind,
+      jev: jevOf(deps, id),
+    }),
+  );
+  deps.reported.set(id, kind);
+  return "reported";
+}
+
 /** The mail tools, in the order the design's table gives them. */
 export function mailTools(deps: MailDeps): ToolRegistration[] {
   return [
@@ -541,6 +616,12 @@ export function mailTools(deps: MailDeps): ToolRegistration[] {
       description: MAILBOXES_DESCRIPTION,
       parameters: Type.Object({}),
       text: async (_args, context) => mailboxesText(deps, context),
+    }),
+    mailTool(deps, {
+      name: "mail_report",
+      description: REPORT_DESCRIPTION,
+      parameters: REPORT_PARAMETERS,
+      text: (args, _context, api) => Promise.resolve(reportText(deps, args, api)),
     }),
   ];
 }

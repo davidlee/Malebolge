@@ -167,7 +167,13 @@ export function fitItem(
 
 // -------------------------------------------------------------- the header
 
-export type MailTool = "mail_new" | "mail_read" | "mail_thread" | "mail_list" | "mail_mailboxes";
+export type MailTool =
+  | "mail_new"
+  | "mail_read"
+  | "mail_thread"
+  | "mail_list"
+  | "mail_mailboxes"
+  | "mail_report";
 
 export interface HeaderFacts {
   readonly tool: MailTool;

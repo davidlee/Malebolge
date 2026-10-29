@@ -135,6 +135,13 @@ slips are left to red/green tests; the next review is of the plan.
 - PHASE-05 · Opus review (no blocker/major) adopted: `projectWithheld` takes `flags.size` instead of sniffing `"bodies" in item` (deletes `summaryView`); `jevOfAnswers` factored out; tests added — maximal withheld item fits shareOf(40), VT-2 matrix asserts the exact key set and no sender text in the line, a page where classify omits one id; red-step `withFact` helper removed · small clarification of the design's projectWithheld signature, behaviour unchanged · decided
 - PHASE-05 · not acted on (review nits): `Object.entries` orders integer-like question keys first (current schemas use identifiers); jev question keys and choice labels are classifier-produced free strings, safe only while screwtape enforces its schema · recorded for audit · decided
 - PHASE-05 · host gate fully green (fmt-check, lint, typecheck, vitest 4133/4133); verify-vt PHASE-05 VT-1..4 PASS · decided
+- PHASE-06 · mail_report returns the plain text `reported` through the shared `mailTool` wrapper (refusal, `malebolge: ` error prefix, description suffix); "the usual framing" read as that wrapper, since the result carries no mail data; `MailTool` gains `mail_report` as design § Rendering lists · design does not say whether the result is a mail block · decided
+- PHASE-06 · a refused report (full set, bad input) logs nothing and sets nothing · design: "a report of a new id is refused", the operator sees refusals in the reply · decided
+- PHASE-06 · the red step pinned `required: ["id"]` for mail_report; green refused to widen `kind` to optional and reported it; I corrected the test to `["id", "kind"]` (design gives `kind` without Optional) · test error, not a contract change · decided
+- PHASE-06 · `reportLine` writes the literal `malebolge: ` rather than reusing `MAIL_ERROR_PREFIX` (a journal line is not an error result); an idOf comment green re-cited to "§ One tool call" restored to SL-005 design "Inputs" · naming/cohesion · decided
+- PHASE-06 · catalog guard collects tools from the room's extensions whose names are in `toolsetList("mail", "room")`; the toolset lists `mail-persona` while the built extension is named `persona`, so a tool the persona extension registered would escape the guard (it registers none today) · pre-existing name mismatch, noted for audit · decided
+- PHASE-06 · no Opus review: diff small (one tool, one validator, one log line), read in full by me against design § mail_report · cost not earned · decided
+- PHASE-06 · host gate fully green (fmt-check, lint, typecheck, vitest 4153/4153); verify-vt PHASE-06 VT-1..3 PASS · decided
 
 ## Pi runs
 
@@ -143,6 +150,7 @@ slips are left to red/green tests; the next review is of the plan.
 - PHASE-03 · 2 implement runs (red, green), ~$0.08 · clean; the red set lacked a missing-before-hostile control (added in the green brief); I trimmed header comments
 - PHASE-04 · 3 implement runs in one session (red A structural, red B, green), ~$0.14 · per-run ceiling is 60 requests (90 refused), so red split in two; green re-pinned two bound values (I replaced them with relations) and cited the wrong design section ids (sec-3; fixed to § names)
 - PHASE-05 · 6 implement runs (red A + continuation, red B, green + continuation, refactor), ~$0.42 · two runs hit the 60-request ceiling before answering (continued in-session); green correctly refused to edit 8 stale clamp tests and reported them; green dropped `in_store` on withheld thread entries (caught by me, not by its tests); red A re-pinned nothing but cited `sec-16` (fixed)
+- PHASE-06 · 2 implement runs (red, green), ~$0.10 · red pinned `required: ["id"]` for mail_report (wrong); green stopped and reported it instead of widening the schema (good); green coupled the log line to MAIL_ERROR_PREFIX and mis-cited one comment (fixed)
 
 ## Harvest
 <!-- single-copy: updated in place each harvest; ids only, never restated content -->

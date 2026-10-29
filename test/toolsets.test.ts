@@ -108,10 +108,9 @@ const expectedSnapshot = ({
   tools: [...tools],
 });
 
-/** The interactive extensions as the daemon builds them, out of the room's whole union. */
-const extensionsOf = (profile: Profile): Extension[] => {
-  const interactive = new Set(toolsetList("interactive", profile));
-  return daemonExtensions({
+/** Every extension the daemon builds for `profile`, before any toolset filter. */
+const daemonExtensionsOf = (profile: Profile): Extension[] =>
+  daemonExtensions({
     personaFiles: (toolset) => personaFiles(BASELINE_CORPUS, toolset, profile),
     projectContext: BASELINE_PROJECT_CONTEXT,
     skills: [BASELINE_SKILL],
@@ -120,7 +119,12 @@ const extensionsOf = (profile: Profile): Extension[] => {
     threads: threadsExtension(threadBinding().deps),
     bookmarks: bookmarksPart(),
     ...(profile === "room" ? { mail: mailExtension(fakeMailDeps()) } : {}),
-  }).filter(({ name }) => interactive.has(name));
+  });
+
+/** The interactive extensions as the daemon builds them, out of the room's whole union. */
+const extensionsOf = (profile: Profile): Extension[] => {
+  const interactive = new Set(toolsetList("interactive", profile));
+  return daemonExtensionsOf(profile).filter(({ name }) => interactive.has(name));
 };
 
 /**
@@ -247,6 +251,20 @@ describe("toolset catalogue", () => {
         expect(toolsetList(toolset, profile)).toContain("conversation");
       }
     }
+  });
+
+  it("VT-3: the mail toolset registers exactly the six mail tools, mail_report and mail_mailboxes included, none with egress", () => {
+    const mail = new Set(toolsetList("mail", "room"));
+    const extensions = daemonExtensionsOf("room").filter(({ name }) => mail.has(name));
+    const tools = extensions.flatMap(({ tools }) => tools ?? []).map(({ name }) => name);
+    expect(tools).toEqual([
+      "mail_new",
+      "mail_read",
+      "mail_thread",
+      "mail_list",
+      "mail_mailboxes",
+      "mail_report",
+    ]);
   });
 
   it("VT-2: satan is last in interactive and bookmarks is the name before it; only the room installs tasks and threads", () => {
