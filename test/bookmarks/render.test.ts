@@ -16,7 +16,7 @@
 // through the real backupSource is invalid.
 
 import { describe, expect, it, onTestFinished } from "vitest";
-import { backupSource, BookmarkSourceError, type Snapshot } from "../../src/bookmarks/backup.ts";
+import { backupSource, BookmarkSourceError } from "../../src/bookmarks/backup.ts";
 import type { Bookmark, Folder } from "../../src/bookmarks/project.ts";
 import {
   cutCount,
@@ -31,32 +31,18 @@ import { type JsonRecord, isRecord } from "../../src/json.ts";
 import type { Clamp } from "../../src/ranges.ts";
 import { ITEMS_MAX_BYTES } from "../../src/untrusted-block.ts";
 import { rejection, tempDir } from "../fixtures.ts";
-import { backupName, backupTree, container, place, writeBackup } from "./bookmark-fixtures.ts";
+import {
+  backupName,
+  backupTree,
+  bookmark,
+  container,
+  place,
+  snapshot,
+  writeBackup,
+} from "./bookmark-fixtures.ts";
 
 const OPEN = '\n<bookmark-data untrusted="true">\n';
 const CLOSE = "</bookmark-data>";
-
-/** How many bookmarks the builders have made, so each one gets its own guid. */
-let bookmarksMade = 0;
-
-/** A projected bookmark; `overrides` win over a short, uncut default. */
-function bookmark(overrides: Partial<Bookmark> = {}): Bookmark {
-  bookmarksMade += 1;
-  return {
-    guid: `guid${String(bookmarksMade).padStart(8, "0")}`,
-    title: "A bookmark",
-    url: "https://example.com/1",
-    tags: [],
-    folder: "Menu",
-    cut: [],
-    ...overrides,
-  };
-}
-
-/** A snapshot dated 2026-10-29 holding `bookmarks` and `folders`. */
-function snapshot(overrides: Partial<Snapshot> = {}): Snapshot {
-  return { date: "2026-10-29", bookmarks: [], folders: [], ...overrides };
-}
 
 /** A page request at `offset`, no clamps, and a local noon on the snapshot's date. */
 function request(overrides: Partial<PageRequest> = {}): PageRequest {

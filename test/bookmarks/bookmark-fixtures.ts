@@ -15,6 +15,7 @@ import type {
   BookmarkSourceError,
   Snapshot,
 } from "../../src/bookmarks/backup.ts";
+import type { Bookmark } from "../../src/bookmarks/project.ts";
 
 /** Firefox's mozlz4 magic: "mozLz40" followed by a NUL. */
 const MAGIC = Buffer.from("mozLz40\0", "latin1");
@@ -140,6 +141,33 @@ export function backupTree(
 ): BackupContainer {
   const children = ROOT_ORDER.map((key) => rootFolder(key, roots[key] ?? []));
   return container("", children, { root: "placesRoot" });
+}
+
+// ------------------------------------------------------------ projections
+//
+// A projected bookmark and a snapshot: what the tools see after the caps, so a
+// tool test says the shape it means and never reads the backup format.
+
+/** How many bookmarks the builders have made, so each one gets its own guid. */
+let bookmarksMade = 0;
+
+/** A projected bookmark; `overrides` win over a short, uncut default. */
+export function bookmark(overrides: Partial<Bookmark> = {}): Bookmark {
+  bookmarksMade += 1;
+  return {
+    guid: `guid${String(bookmarksMade).padStart(8, "0")}`,
+    title: "A bookmark",
+    url: "https://example.com/1",
+    tags: [],
+    folder: "Menu",
+    cut: [],
+    ...overrides,
+  };
+}
+
+/** A snapshot dated 2026-10-29 holding `bookmarks` and `folders`. */
+export function snapshot(overrides: Partial<Snapshot> = {}): Snapshot {
+  return { date: "2026-10-29", bookmarks: [], folders: [], ...overrides };
 }
 
 // --------------------------------------------------------------- sources
