@@ -1,0 +1,206 @@
+# Implementation plan for SL-010 — the authored, durable phase plan.
+#
+# This is the single source of each phase's objective, criteria, verification,
+# and links. Runtime status lives separately under .doctrine/state/ (phase
+# tracking) — never record progress here. Hand-edit freely: the tool reads this
+# file but does not rewrite it.
+schema  = "doctrine.plan.overview"
+version = 1
+slice   = "SL-010"
+
+# Canonical spec/requirement links — cite ids, never restate what they say. The
+# plan reader does not model these yet, so nothing downstream consumes them.
+[specs]
+primary       = []
+collaborators = []
+
+[requirements]
+targets      = []
+dependencies = []
+
+# One [[phase]] per ordered phase, in execution order — the authored array order
+# IS the order; never sort by id. Ids are PHASE-NN (zero-padded), immutable and
+# never reused once authored — edits append, they never renumber, so the id
+# sequence goes non-monotonic after a split and that is expected. Criterion ids
+# are local to their phase, bare, and equally immutable
+# (`lib:reference/glossary.md` § reference forms). The prefix is
+# the only mode marker; there is no mode field. Reference a criterion from
+# another phase phase-qualified (PHASE-03/EX-8) — bare EX-8 is ambiguous.
+
+# ---------------------------------------------------------------------------
+[[phase]]
+id        = "PHASE-01"
+name      = "Model catalog port and creationModel"
+objective = "src/models.ts gains the ModelCatalog port (require, refs), modelCatalog, refOf, the UnknownModel error class, ModelSources and the pure creationModel (design sec-2, sec-4 first block; DEC-082, DEC-085, DEC-088). startDaemon builds one catalog and checks MALEBOLGE_MODEL through it; requireKnownModel is deleted. Nothing outside tests calls creationModel yet."
+entrance_criteria = [
+  { id = "EN-1", text = "Design SL-010 locked (run dr-01a18627…, rev 38; commit eddc7d9); `just check` green on main." },
+  { id = "EN-2", text = "Carried phase-plan check (notes.md § Review passes): the installed pi-ai's Models exposes getModelsOfType(type, provider?) — at plan time node_modules/@earendil-works/pi-ai/dist/models.d.ts:151 (pi-ai 1.4.0). Re-confirm against the installed version; `refs` uses getModelsOfType(\"chat\"). If the name differs, use the installed one and note it in notes.md." },
+]
+exit_criteria = [
+  { id = "EX-1", text = "src/models.ts exports ModelCatalog { require(ref: string): ModelRef; refs(): string[] }, modelCatalog(models: Models), refOf(model: ModelRef): string, class UnknownModel extends Error, ModelSources { topic?: string; fallback: ModelRef } and creationModel(sources, require), with the doc comments design sec-2 and sec-4 give." },
+  { id = "EX-2", text = "require parses the ref (parseModel), then looks it up with getModelOfType(\"chat\", …). Both refusals — an unparseable ref (no slash) and one the catalog lacks — throw UnknownModel whose message names the ref; a catalog miss reads `unknown model <ref>`." },
+  { id = "EX-3", text = "refs returns every chat model's `provider/modelId`, sorted. refOf renders `provider/modelId` and is parseModel's inverse for a model id that itself contains slashes." },
+  { id = "EX-4", text = "creationModel: topic set → require(topic), its UnknownModel propagating (no fallback); topic unset → fallback, unchecked." },
+  { id = "EX-5", text = "src/daemon-start.ts: requireKnownModel is gone; modelsFor still returns Models for openBoundSession; startDaemon builds one catalog from it and checks the configured model with catalog.require(refOf(config.model)). A MALEBOLGE_MODEL the catalog lacks still refuses the start with `unknown model <ref>`." },
+  { id = "EX-6", text = "A shared test fixture (test/harness-fixture.ts or beside it) offers a catalog holding a chat model with a slashed id (e.g. gateway/openai-david/gpt-6.1-terra) and a literal ModelCatalog stub; later phases reuse both rather than defining their own." },
+  { id = "EX-7", text = "`just check` green." },
+]
+verification = [
+  { id = "VT-1", expects = "require accepts a known slashed ref, and refuses an unknown ref and an unparseable one with UnknownModel naming it", test_file = "test/models.test.ts", keywords = ["modelCatalog", "UnknownModel", "unknown model"], waived = false },
+  { id = "VT-2", expects = "refs lists only chat models, sorted; refOf(parseModel(r)) === r for a slashed model id", test_file = "test/models.test.ts", keywords = ["refs()", "refOf(parseModel"], waived = false },
+  { id = "VT-3", expects = "creationModel: topic set and known → it; set and unknown → throws UnknownModel; unset → fallback", test_file = "test/models.test.ts", keywords = ["creationModel", "fallback"], waived = false },
+  { id = "VT-4", expects = "startDaemon refuses a MALEBOLGE_MODEL the catalog lacks, naming it", test_file = "test/daemon-start.test.ts", keywords = ["unknown model"], waived = false },
+]
+specs        = []
+requirements = []
+
+# ---------------------------------------------------------------------------
+[[phase]]
+id        = "PHASE-02"
+name      = "Topic model: store, judge, frame"
+objective = "A topic stores a model ref, judged against the catalog on write (design sec-3 store, judge, frame and reply rows; DEC-086). conversations(…) takes the catalog; setTopic writes, clears or leaves `model` exactly as it does `toolset`. No creation change and no CLI yet."
+entrance_criteria = [
+  { id = "EN-1", text = "PHASE-01 completed; suite green." },
+]
+exit_criteria = [
+  { id = "EX-1", text = "src/topics.ts: TopicRecord.model?: string; TopicChange.model?: string | null; KEYS = [\"cwd\", \"toolset\", \"model\"]; merged/written/without unchanged; topicsOf unchanged (it spreads the record)." },
+  { id = "EX-2", text = "src/conversations.ts: TopicWrite.model?: string | null; modelChange(write, catalog) beside toolsetChange — absent and null pass through, a string must pass catalog.require and is stored as given; a refusal writes nothing. conversations(session, defaults, profile, catalog); startDaemon passes its catalog." },
+  { id = "EX-3", text = "src/protocol.ts: TopicMessage.model?: string | null; TOPIC_KEYS gains model; parsed by topicField, which refuses control characters; TopicSummary.model?: string." },
+  { id = "EX-4", text = "`default` stays refused by both the frame parser and writeTopicRecord." },
+  { id = "EX-5", text = "`just check` green." },
+]
+verification = [
+  { id = "VT-1", expects = "model set, cleared and left unchanged round-trips through the store, and survives reopening", test_file = "test/topics.test.ts", keywords = ["model: null"], waived = false },
+  { id = "VT-2", expects = "setTopic with a model the catalog lacks is refused naming it and writes nothing; a known one is stored as given and returned in the topics reply", test_file = "test/conversations.test.ts", keywords = ["setTopic", "unknown model"], waived = false },
+  { id = "VT-3", expects = "the topic frame parses model (string, null, absent) and refuses a model with a control character", test_file = "test/protocol.test.ts", keywords = ["topic: model must not contain a control character"], waived = false },
+]
+specs        = []
+requirements = []
+
+# ---------------------------------------------------------------------------
+[[phase]]
+id        = "PHASE-03"
+name      = "Creation through topicInit; heartbeat catch"
+objective = "Every creating path takes its topic's model in the creating commit (design sec-4; DEC-083, DEC-084, DEC-085): writeCreated returns the topic's record, toolsetInit becomes topicInit and configures extensions and model together via creationModel. thread_start and the heartbeat follow; startRoomTasks catches UnknownModel only, logs, and the daemon serves without a heartbeat."
+entrance_criteria = [
+  { id = "EN-1", text = "PHASE-02 completed; suite green." },
+  { id = "EN-2", text = "Carried phase-plan check (notes.md § Review passes): the heartbeat's create reaches topicInit. At plan time: ensureHeartbeat calls deps.conversations.open({kind: \"topic\", new: false}) (src/wake/heartbeat.ts:38), deps.conversations is the shared Conversations (src/daemon-start.ts:269), and openTopic creates through create(…, toolsetInit(profile, name)). Re-confirm at phase-plan; if the path differs, /consult before relying on the catch." },
+  { id = "EN-3", text = "An error thrown inside a create's init leaves createConversation as the same object (class intact), as thread tools already rely on for Refusal through api.commit (src/threads/tools.ts:447-458). Confirm with the first red test; if pi-durable wraps it, match on the wrapper's cause and note it in notes.md." },
+]
+exit_criteria = [
+  { id = "EX-1", text = "src/topics.ts: writeCreated returns the topic's record alongside the toolset it chose; the record is read once, in the creating commit." },
+  { id = "EX-2", text = "src/conversations.ts: topicInit(profile, topic, catalog, fallback, thread?) replaces toolsetInit and, after writing the entry, calls configure(tx, id, { extensions, model: creationModel({ topic: record?.model, fallback }, catalog.require) }). openTopic and plain new pass it; fallback is the defaults' model. No caller of toolsetInit remains." },
+  { id = "EX-3", text = "src/threads/tools.ts and src/threads/extension.ts: createStarted uses topicInit; thread deps carry the catalog. thread_fork is unchanged (no code)." },
+  { id = "EX-4", text = "A stored model the catalog lacks makes the creating commit throw UnknownModel: nothing is created — no conversation, no index entry, and for thread_start no post task. An attach answers the client an error naming the model (the daemon's generic error relay)." },
+  { id = "EX-8", text = "thread_start surfaces UnknownModel as its refusal result (isError, naming the model), as it does a Refusal — not as a thrown bug. The thread tools' attempted maps only Refusal today (src/threads/tools.ts:447-458); widen it to UnknownModel, or rethrow it as a Refusal in createStarted, whichever is smaller. Design sec-4 is silent on this mapping; see plan.md." },
+  { id = "EX-5", text = "src/daemon-start.ts: startRoomTasks catches UnknownModel only around ensureHeartbeat, logs `wake: no heartbeat: unknown model <ref> in topic <name>`, and the start continues. Any other heartbeat failure still fails the start and undoes it (the existing VT-3 f test stays unchanged and passing)." },
+  { id = "EX-6", text = "Runner job conversations (src/runner/conversations.ts) and root are untouched." },
+  { id = "EX-7", text = "`just check` green." },
+]
+verification = [
+  { id = "VT-1", expects = "attach --topic and --topic --new in a topic with a model create with it; without one, the default; plain new takes the default; an existing conversation keeps its model after the topic's model changes", test_file = "test/conversations.test.ts", keywords = ["topicInit", "keeps its model"], waived = false },
+  { id = "VT-2", expects = "a stored model the catalog lacks refuses creation in that topic, naming it, and creates nothing", test_file = "test/conversations.test.ts", keywords = ["unknown model", "creates nothing"], waived = false },
+  { id = "VT-3", expects = "a started thread takes its topic's model; with a stale stored model the tool returns a refusal naming it and no child or post task exists", test_file = "test/threads-tools.test.ts", keywords = ["unknown model", "topic's model"], waived = false },
+  { id = "VT-4", expects = "a fork keeps its parent's model even when the topic's model differs", test_file = "test/threads-fork.test.ts", keywords = ["parent's model"], waived = false },
+  { id = "VT-5", expects = "a wake topic with an unknown stored model and no conversation: the daemon starts, logs the no-heartbeat line, and creates no heartbeat", test_file = "test/daemon-start.test.ts", keywords = ["no heartbeat: unknown model", "VT-3 f"], waived = false },
+]
+specs        = []
+requirements = []
+
+# ---------------------------------------------------------------------------
+[[phase]]
+id        = "PHASE-04"
+name      = "CLI: --model / --no-model on --set-topic; --topics model field"
+objective = "The client writes and shows a topic's model (design sec-3 CLI, request, render and usage rows; DEC-086): --set-topic NAME --model REF and --no-model, a fourth --topics field, and the restart hint for an old daemon refusing `model`."
+entrance_criteria = [
+  { id = "EN-1", text = "PHASE-02 completed (the daemon accepts and returns `model`); suite green." },
+]
+exit_criteria = [
+  { id = "EX-1", text = "src/attach-invocation.ts: --model REF and --no-model; modelOf = writeOf(model, noModel, \"model\"); set-topic's allowed set and checkHereAlone gain both; requireSetTopic refuses them without --set-topic (`model needs set-topic`); SetTopicInvocation.model." },
+  { id = "EX-2", text = "src/request.ts: requestFrameOf's set-topic case sends model; SKEWED_KEYS gains model." },
+  { id = "EX-3", text = "src/render.ts: --topics prints name<TAB>cwd<TAB>toolset<TAB>model, unset fields empty." },
+  { id = "EX-4", text = "src/attach-main.ts usage, README.md's topic block and docs/internals.md's --set-topic line name the two flags and the fourth field." },
+  { id = "EX-5", text = "`just check` green." },
+]
+verification = [
+  { id = "VT-1", expects = "--set-topic NAME --model REF and --no-model parse to SetTopicInvocation.model (string, null); either without --set-topic is refused with `model needs set-topic`; --model with --no-model is refused", test_file = "test/attach-invocation.test.ts", keywords = ["--model", "--no-model", "model needs set-topic"], waived = false },
+  { id = "VT-2", expects = "the set-topic request frame carries model; an old daemon's `unknown key model` refusal yields the restart hint", test_file = "test/request.test.ts", keywords = ["unknown key model"], waived = false },
+  { id = "VT-3", expects = "--topics lines carry a fourth model field, empty when unset", test_file = "test/render.test.ts", keywords = ["toolset"], patterns = ['(\\t.*){3}'], waived = false },
+]
+specs        = []
+requirements = []
+
+# ---------------------------------------------------------------------------
+[[phase]]
+id        = "PHASE-05"
+name      = "List summaries and --list lines"
+objective = "The list reply carries per-id summaries {topic, model} and --list prints id<TAB>topic<TAB>model[<TAB>mark] (design sec-5 Summaries and --list lines; DEC-087)."
+entrance_criteria = [
+  { id = "EN-1", text = "PHASE-03 completed (conversations carry topic models); suite green." },
+  { id = "EN-2", text = "Carried phase-plan check (notes.md § Review passes): summaries cost. Before filling summaries, measure one full page — LIST_PAGE (50) conversations, one tx.doc(AgentDoc, id) each, in one commit — on the node-sqlite store the daemon uses; record the time in notes.md. If a page is not comfortably interactive (order of 100 ms or worse), /consult before proceeding." },
+]
+exit_criteria = [
+  { id = "EX-1", text = "src/protocol.ts: ConversationSummary = { topic: string; model?: string }; ConversationsMessage.summaries?: Record<string, ConversationSummary> — optional on the wire only so a new client tolerates an old daemon." },
+  { id = "EX-2", text = "src/conversations.ts: ConversationPage carries summaries, filled in the listing commit: topic from the index entry (every listed id has one; root's is `default`), model from tx.doc(AgentDoc, id).model through refOf, absent when unset. scanPage fills them in its existing commit; topicPage moves its index read into one commit with the agent reads. marks unchanged." },
+  { id = "EX-3", text = "src/daemon.ts: listReply always sends summaries (`{}` for an empty page). The pinned reply-shape test (test/daemon.test.ts, `keeps the shipped list reply's shape … (EX-4)`) widens to include summaries, deliberately." },
+  { id = "EX-4", text = "src/render.ts: one lineOf prints id<TAB>topic<TAB>model, plus <TAB>mark for threads; topic and model are always present, empty when unknown, including against a reply without summaries." },
+  { id = "EX-5", text = "`just check` green." },
+  { id = "EX-6", text = "emacs/malebolge.el, landed with the line change so no commit leaves the chooser unable to read --list: malebolge--candidate-id accepts ID<TAB>TOPIC<TAB>MODEL with an optional <TAB>MARK; topic and model may be empty, a mark may not; lines are offered whole. `just ert` (byte-compile without warnings) and `just smoke` green." },
+]
+verification = [
+  { id = "VT-1", expects = "summaries carry topic and model for all and topic pages; root's topic is default; a conversation without a stored model has no model", test_file = "test/conversations.test.ts", keywords = ["summaries"], waived = false },
+  { id = "VT-2", expects = "the list reply always carries summaries; the shipped-shape test lists conversations, summaries, truncated, type", test_file = "test/daemon.test.ts", keywords = ["summaries", "(EX-4)"], waived = false },
+  { id = "VT-3", expects = "--list lines: id, topic, model, then the mark for threads; empty topic and model fields against a reply without summaries", test_file = "test/render.test.ts", keywords = ["summaries"], waived = false },
+  { id = "VT-4", expects = "candidate parsing of id/topic/model lines with and without a mark, with empty topic or model, and refusal of an empty mark", test_file = "test/malebolge-ert.el", keywords = ["\\tdefault\\t", "malebolge--candidate-id"], waived = false },
+  { id = "VA-1", text = "EN-2's measurement is recorded in notes.md with the page size and store used, and the go/consult outcome." },
+]
+specs        = []
+requirements = []
+
+# ---------------------------------------------------------------------------
+[[phase]]
+id        = "PHASE-06"
+name      = "Models listing: --models"
+objective = "The daemon answers a models list query with the catalog's chat-model refs, and --models prints them one per line (design sec-5 Models; DEC-088, DEC-016)."
+entrance_criteria = [
+  { id = "EN-1", text = "PHASE-04 and PHASE-05 completed; suite green." },
+]
+exit_criteria = [
+  { id = "EX-1", text = "src/protocol.ts: ListQuery gains { kind: \"models\" }, asked by {\"type\":\"list\",\"models\":true}; topic, topics and models are mutually exclusive in listQuery; ModelsMessage = { type: \"models\", models: string[] }." },
+  { id = "EX-2", text = "src/daemon.ts: ServeOptions.modelRefs: () => string[] is copied onto Connection as orientation is (a function field); the first-line table's list row answers {kind: \"models\"} from state.modelRefs() before reaching Conversations; answer's reply union gains ModelsMessage. startDaemon passes catalog.refs." },
+  { id = "EX-3", text = "src/conversations.ts: PageQuery excludes models as well as topics, so Conversations.list never sees it." },
+  { id = "EX-4", text = "Client: src/attach-invocation.ts gains a models mode in RequestInvocation and its exhaustive switches (hereOf, …); --models stands alone (checkAlone). src/request.ts: ReplyMessage gains ModelsMessage, requestFrameOf a models case, replyTypeOf maps list→conversations, models→models, else topics; SKEWED_KEYS gains models. src/render.ts prints one ref per line. Usage and README name --models." },
+  { id = "EX-5", text = "`just check` green." },
+]
+verification = [
+  { id = "VT-1", expects = "listQuery parses models, refuses it combined with topic or topics", test_file = "test/protocol.test.ts", keywords = ["models", "kind: \"models\""], waived = false },
+  { id = "VT-2", expects = "a models list frame over the socket answers the catalog's refs without touching Conversations", test_file = "test/daemon.test.ts", keywords = ["models: true", "modelRefs"], waived = false },
+  { id = "VT-3", expects = "--models parses alone and is refused with any other flag", test_file = "test/attach-invocation.test.ts", keywords = ["--models"], waived = false },
+  { id = "VT-4", expects = "a --models request accepts the models reply; an old daemon's `unknown key models` refusal yields the restart hint", test_file = "test/request.test.ts", keywords = ["--models", "unknown key models"], waived = false },
+]
+specs        = []
+requirements = []
+
+# ---------------------------------------------------------------------------
+[[phase]]
+id        = "PHASE-07"
+name      = "Emacs: bounded client call, topic on new, set-topic-model"
+objective = "Emacs asks for a topic on new and sets a topic's model, every client call through one bounded malebolge--client (design sec-6; DEC-089, DEC-091); the chooser's line parsing landed in PHASE-05. Ends with the operator's hand-run check against the gateway."
+entrance_criteria = [
+  { id = "EN-1", text = "PHASE-04, PHASE-05 and PHASE-06 completed; suite green; `just ert` and `just smoke` green." },
+]
+exit_criteria = [
+  { id = "EX-1", text = "malebolge--list-conversations becomes malebolge--client (args), returning (:stdout :stderr) for any argv under malebolge--list-timeout. --list, --topics, --models and --set-topic … all use it. It signals a verb-neutral user-error naming the args on a non-zero exit (with the client's output) and on timeout (saying the outcome is unknown; no retry); callers check nothing." },
+  { id = "EX-3", text = "Choosing new prompts completing-read \"Topic: \" over --topics' names, require-match, default `default`. default → --new --emacs; a name → --topic NAME --new --emacs, through a (new . TOPIC) target so malebolge--attach-arguments stays the one argv builder. malebolge--target-label reads (new . TOPIC) as `a new conversation in TOPIC`." },
+  { id = "EX-4", text = "malebolge-set-topic-model: a topic from --topics excluding default (require-match), then a model from --models plus none; runs --set-topic NAME --model REF or --no-model through malebolge--client; success messages topic and model." },
+  { id = "EX-5", text = "`just check`, `just ert` (including byte-compile without warnings) and `just smoke` green." },
+]
+verification = [
+  { id = "VT-1", expects = "new with a topic builds --topic NAME --new --emacs; default builds --new --emacs; the target label reads a new conversation in TOPIC", test_file = "test/malebolge-ert.el", keywords = ["(new . ", "a new conversation in"], waived = false },
+  { id = "VT-2", expects = "malebolge--client signals a user-error naming the args on non-zero exit, and within the bound against a client that never exits", test_file = "test/malebolge-ert.el", keywords = ["malebolge--client", "malebolge--list-timeout"], waived = false },
+  { id = "VT-3", expects = "set-topic-model offers --models lines plus none, builds --set-topic NAME --model REF or --no-model, and reports the client's refusal", test_file = "test/malebolge-ert.el", keywords = ["malebolge-set-topic-model", "--no-model"], waived = false },
+  { id = "VT-4", expects = "smoke: new asks for a topic against the fake daemon and sends --topic NAME --new; the fake daemon's list reply carries summaries", test_file = "test/emacs-attach-smoke.ts", keywords = ["summaries", "Topic: "], waived = false },
+  { id = "VH-1", text = "Operator, against the live gateway: set a topic to gateway/openai-david/gpt-6.1-terra from Emacs, create a conversation in it from the chooser, see the model on its chooser line, and get a reply from that model." },
+]
+specs        = []
+requirements = []
