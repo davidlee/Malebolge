@@ -265,6 +265,15 @@ P4. Launch from the project root (both shells):
     EROFS (the ro extension mount) → copy `pi-bridge/` into the jail home
     instead and record it: clause 3 then needs revisiting.
 
+Setup done by agent, 2026-10-30: P1 met without restart (daemon up since
+00:55, after 0df3e9e 00:29; no bridge-path commits since; dir 0700, socket
+0600). P3 applied to `flake.nix` as `jailed-pi-bridge` (local, uncommitted;
+builds). Variant: clauses 1–2 in one `add-runtime` deriving the dir from host
+`$XDG_RUNTIME_DIR`, and `MALEBOLGE_BRIDGE_SOCKET` defaulted to it when unset,
+so P4 reduces to `nix run .#jailed-pi-bridge`. Removed PHASE-01's
+`sl009-probe` extension from the jail home (identical copy in
+`probes/vh1/`).
+
 **Steps** (in the jailed pi unless marked host)
 
 1. Load (VH-1). `/bridge end` → `malebolge bridge: not paired; run /bridge
@@ -313,6 +322,25 @@ P4. Launch from the project root (both shells):
 12. Report each step's outcome; the agent records them here and flips PHASE-10
     completed. Afterwards drop the local `flake.nix` edit.
 
+**Outcomes** (operator, 2026-10-30)
+
+- 2 (VH-2), via the agent's bash: `command -v malebolge-bridge` →
+  `/home/david/.pi/agent/extensions/malebolge-bridge/malebolge-bridge`, exit 0.
+  Via the operator's `!`: exit 1. Cause: pi runs `!` commands outside the bash
+  tool (`user_bash` event), so the spawn hook never applied. Fixed forward
+  (operator: "I'd say yes" to giving `!` the same env): `registerUserBash` in
+  `pi-bridge/shell.ts`, tests `user_bash (VH-2 follow-up)` in
+  `test/pi-bridge-shell.test.ts`. After `/reload`, `!command -v
+  malebolge-bridge` → the same path. Unpaired `send` → exit 2 (operator: "1 + 2
+  done").
+- 1: passed (operator).
+- 3: paired; daemon holds conversation 3949, delegate, live (3931, 3938 ended
+  by re-pairs). pi's status line showed nothing: the operator's
+  pi-powerbar replaces the footer setStatus draws in. Fixed forward (operator
+  chose option a): the status is also emitted as powerbar segment
+  `malebolge-bridge`; segment enabled in the jail home's
+  `settings-extensions.json` (created, powerbar defaults + the segment).
+
 ## Autonomy log
 
 - PHASE-01: probe stubs and drivers kept in `.doctrine/slice/009/probes/` (beside notes) instead of only the scratchpad, so VH-1 and reruns survive the session; outside src/ and pi-bridge/, unlinted, untested (EX-9 intent kept). Tier: decide.
@@ -357,3 +385,5 @@ P4. Launch from the project root (both shells):
 - PHASE-10: EX-2 follow-up recorded as CHR-008 (author the posture texts, SATAN and pi), linked to SL-009. Tier: defer.
 - PHASE-10: runbook's hand mounts go in the project's own flake (`extraOptions` of a local `jailed-pi-bridge`), not ~/flakes; ~/flakes untouched. Snippet unbuilt (building it is the operator's). Tier: decide.
 - PHASE-10: docs part done (0df3e9e), `just check` green on a `git archive` export of 0df3e9e (115 files / 4054 tests). Phase left in_progress: VH-1, VH-2, VA-1 pending the operator (runbook in § Probes). Tier: decide.
+- PHASE-10 VH run: operator `!` commands lacked the bridge env (step 2). Operator chose to fix (2026-10-30, "I'd say yes"). `user_bash` handler returns pi's local bash operations with `bridgeEnv` applied; base env is `process.env`, since pi passes none, so a `!` command loses pi's own bin dir and any configured `shellPath` (bash tool unchanged). Design sec-7 names only the spawn hook: fold the `user_bash` registration in at /reconcile. `just check` green (115 files / 4168 tests). Tier: escalate → operator decided.
+- PHASE-10 VH run: bridge status invisible under pi-powerbar, which hides pi's footer. Operator chose (2026-10-30, "a") to mirror the status as a powerbar segment: `powerbar:register-segment` at session_start, `powerbar:update` beside every setStatus, over pi's event bus (no dependency). Not in design sec-7: fold in at /reconcile. Jail-home `settings-extensions.json` created to enable the segment (operator's config, outside the repo). Tests `powerbar segment`; `just check` green (115 files / 4170 tests). Tier: escalate → operator decided.

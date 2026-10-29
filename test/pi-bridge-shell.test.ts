@@ -566,6 +566,65 @@ describe("spawnHook (VT-4 RV-021 F-6)", () => {
   });
 });
 
+// --- the operator's `!` commands: the same env as the bash tool --------------
+
+describe("user_bash (VH-2 follow-up)", () => {
+  it("user_bash: while paired an operator ! command sees the conversation and the token", async () => {
+    const daemon = await fakeDaemon();
+    const fake = await piWith(daemon.path);
+    await pairWith(fake, daemon);
+
+    expect((await fake.userBash("printenv MALEBOLGE_BRIDGE_CONVERSATION")).trim()).toBe(
+      CONVERSATION,
+    );
+    expect((await fake.userBash('test -n "$MALEBOLGE_BRIDGE_TOKEN" && echo set')).trim()).toBe(
+      "set",
+    );
+  });
+
+  it("user_bash PATH: unpaired, an operator ! command still resolves bare malebolge-bridge", async () => {
+    const daemon = await fakeDaemon();
+    const fake = await piWith(daemon.path);
+
+    expect((await fake.userBash("command -v malebolge-bridge")).trim()).toBe(
+      join(BRIDGE_DIR, "malebolge-bridge"),
+    );
+    expect(await fake.userBash("printenv MALEBOLGE_BRIDGE_TOKEN")).toBe("");
+  });
+});
+
+// --- the status as a powerbar segment: footer-replacing setups hide setStatus ---
+
+describe("powerbar segment", () => {
+  it("powerbar: the shell registers its segment at session start", async () => {
+    const daemon = await fakeDaemon();
+    const fake = await piWith(daemon.path);
+
+    expect(fake.emitted).toContainEqual({
+      channel: "powerbar:register-segment",
+      data: { id: "malebolge-bridge", label: "malebolge bridge" },
+    });
+  });
+
+  it("powerbar: every status, cleared ones too, is also a segment update with the same text", async () => {
+    const daemon = await fakeDaemon();
+    const fake = await piWith(daemon.path);
+    const conn = await pairWith(fake, daemon);
+    await fake.command("bridge", "end");
+    expect(await conn.nextLine()).toEqual({ type: "end" });
+    conn.reply({ type: "refused", reason: "pairing ended" });
+    await waitUntil(() => latestBridge(fake)?.kind === "unpaired", "the unpaired marker");
+
+    const updates = fake.emitted
+      .filter((event) => event.channel === "powerbar:update")
+      .map((event) => event.data);
+    expect(updates).toEqual(
+      fake.statuses.map((status) => ({ id: "malebolge-bridge", text: status.text })),
+    );
+    expect(updates.at(-1)).toEqual({ id: "malebolge-bridge", text: undefined });
+  });
+});
+
 // --- EX-6: the posture in the system prompt ----------------------------------
 
 describe("posture (EX-6)", () => {

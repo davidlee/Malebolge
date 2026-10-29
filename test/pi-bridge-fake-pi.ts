@@ -9,13 +9,15 @@
 // `custom` entry, `sendMessage` pushes a `custom_message` entry, and
 // `runTurn()` appends what a `triggerTurn` call held back, then fires `turn_end`.
 
-import type {
-  CustomEntry,
-  CustomMessageEntry,
-  ExtensionAPI,
-  ExtensionCommandContext,
-  ExtensionContext,
-  SessionEntry,
+import {
+  type BashOperations,
+  type CustomEntry,
+  type CustomMessageEntry,
+  createLocalBashOperations,
+  type ExtensionAPI,
+  type ExtensionCommandContext,
+  type ExtensionContext,
+  type SessionEntry,
 } from "@earendil-works/pi-coding-agent";
 import type { NotifyDesktop } from "../pi-bridge/notices.ts";
 
@@ -40,6 +42,12 @@ export interface Notified {
 }
 
 /** One `ui.setStatus` call. */
+/** One event an extension emitted on pi's shared bus (`pi.events.emit`). */
+export interface Emitted {
+  readonly channel: string;
+  readonly data: unknown;
+}
+
 export interface StatusShown {
   readonly key: string;
   readonly text: string | undefined;
@@ -71,6 +79,8 @@ export interface FakePi {
   readonly notices: readonly Notified[];
   /** Every ui.setStatus call, in order. */
   readonly statuses: readonly StatusShown[];
+  /** What the extension emitted on pi's event bus, in order. */
+  readonly emitted: readonly Emitted[];
   /** Every desktop notification the extension raised, in order. */
   readonly desktop: readonly DesktopNotice[];
   /** The session branch, as it stands now. */
@@ -91,6 +101,8 @@ export interface FakePi {
   ) => Promise<unknown>;
   /** Run the registered bash tool; its text output. */
   readonly bash: (command: string) => Promise<string>;
+  /** Run an operator `!` command as pi does: `user_bash`, then the operations it returns; the output. */
+  readonly userBash: (command: string) => Promise<string>;
   /** Run the turn a `triggerTurn` message waits for: append it, then fire `turn_end`. */
   readonly runTurn: () => Promise<void>;
   /** Whether pi reports itself idle. */
@@ -182,6 +194,7 @@ export function fakePi(options: FakePiOptions = {}): FakePi {
   const messages: SentMessage[] = [];
   const notices: Notified[] = [];
   const statuses: StatusShown[] = [];
+  const emitted: Emitted[] = [];
   const desktop: DesktopNotice[] = [];
   const held: SentMessage[] = [];
   const handlers = new Map<string, ((event: unknown, context: ExtensionContext) => unknown)[]>();
@@ -315,6 +328,12 @@ export function fakePi(options: FakePiOptions = {}): FakePi {
     appendEntry: (customType: string, data?: unknown): void => {
       pushCustom(customType, data);
     },
+    events: {
+      emit: (channel: string, data: unknown): void => {
+        emitted.push({ channel, data });
+      },
+      on: (): (() => void) => (): void => undefined,
+    },
   };
 
   // eslint-disable-next-line @typescript-eslint/consistent-type-assertions -- a fake of pi's API: only the members the shell calls
@@ -335,6 +354,28 @@ export function fakePi(options: FakePiOptions = {}): FakePi {
   const bash = async (command: string): Promise<string> => {
     bashCalls += 1;
     return resultText(await callTool("bash", `bash-${String(bashCalls)}`, { command }));
+  };
+
+  // pi's interactive mode: the first handler's operations, else pi's own; no env is passed.
+  const userBash = async (command: string): Promise<string> => {
+    const results = await fire("user_bash", {
+      type: "user_bash",
+      command,
+      excludeFromContext: false,
+      cwd,
+    });
+    const chosen = results.find(
+      (result): result is { operations: BashOperations } =>
+        isRecord(result) && "operations" in result,
+    );
+    const operations = chosen?.operations ?? createLocalBashOperations();
+    let output = "";
+    await operations.exec(command, cwd, {
+      onData: (data): void => {
+        output += data.toString();
+      },
+    });
+    return output;
   };
 
   const command = async (name: string, args: string): Promise<void> => {
@@ -364,6 +405,7 @@ export function fakePi(options: FakePiOptions = {}): FakePi {
     messages,
     notices,
     statuses,
+    emitted,
     desktop,
     entries: (): readonly SessionEntry[] => [...branch],
     load: (extension: (api: ExtensionAPI) => void): void => {
@@ -376,6 +418,7 @@ export function fakePi(options: FakePiOptions = {}): FakePi {
     command,
     callTool,
     bash,
+    userBash,
     runTurn,
     setIdle: (value: boolean): void => {
       idle = value;

@@ -5,7 +5,9 @@
 // is queued and drained after the current effect, never re-entered.
 import { basename } from "node:path";
 import {
+  type BashOperations,
   createBashTool,
+  createLocalBashOperations,
   type CustomMessageEntry,
   type ExtensionAPI,
   type ExtensionCommandContext,
@@ -41,7 +43,7 @@ import { BRIDGE_POST_WAIT_MS, bridgeSocketPath, type DaemonFrame, type Posture }
 
 /** customType of the bridge's session entries (appendEntry) and injected messages. */
 export const BRIDGE_CUSTOM_TYPE = "malebolge-bridge";
-/** setStatus key. */
+/** setStatus key, and the powerbar segment's id. */
 export const BRIDGE_STATUS_KEY = "malebolge-bridge";
 
 /** The conversation variable the spawn hook sets (ASM-008). */
@@ -129,7 +131,7 @@ export function bridgeEnv(
   return out;
 }
 
-/** The extension: registers bridge_post, /bridge, the bash spawn hook and the event handlers. */
+/** The extension: registers bridge_post, /bridge, the bash env (tool and `!`) and the event handlers. */
 export function bridgeExtension(options: ShellOptions): (pi: ExtensionAPI) => void {
   return (pi): void => {
     const shell = createShell(options, pi);
@@ -359,9 +361,15 @@ function notifyEffect(shell: Shell, effect: EffectOf<"notify">): void {
   }
 }
 
-/** sec-7 `status`: the one status line, which never names the token. */
+/**
+ * sec-7 `status`: the one status line, which never names the token. Also sent
+ * as a pi-powerbar segment: that extension hides the footer setStatus draws in,
+ * and takes segments over pi's event bus, so it is no dependency here.
+ */
 function statusEffect(shell: Shell, effect: EffectOf<"status">): void {
-  shell.ctx?.ui.setStatus(BRIDGE_STATUS_KEY, statusText(effect.status));
+  const text = statusText(effect.status);
+  shell.ctx?.ui.setStatus(BRIDGE_STATUS_KEY, text);
+  shell.pi.events.emit("powerbar:update", { id: BRIDGE_STATUS_KEY, text });
 }
 
 // --- sec-7 session_shutdown ------------------------------------------------
@@ -396,6 +404,8 @@ function registerEvents(shell: Shell): void {
   const { pi } = shell;
   pi.on("session_start", (_event, ctx): void => {
     shell.ctx = ctx;
+    // At session start every extension is loaded, whatever the load order.
+    pi.events.emit("powerbar:register-segment", { id: BRIDGE_STATUS_KEY, label: OUTAGE_SUMMARY });
     dispatch(shell, sessionStartEvent(ctx));
   });
   pi.on("session_shutdown", (_event, ctx): void => {
@@ -437,7 +447,7 @@ function registerEvents(shell: Shell): void {
   });
 }
 
-/** sec-7 Registrations: the `bridge_post` tool and the bash tool with its spawn hook. */
+/** sec-7 Registrations: the `bridge_post` tool, the bash tool with its spawn hook, and `!` commands. */
 function registerTools(shell: Shell): void {
   shell.pi.registerTool({
     name: "bridge_post",
@@ -447,6 +457,7 @@ function registerTools(shell: Shell): void {
     execute: (id, params): Promise<PostResult> => bridgePost(shell, id, params.text),
   });
   registerBashTool(shell);
+  registerUserBash(shell);
 }
 
 /** sec-7 Bash env: pi's bash tool, with the bridge's variables added per spawn. */
@@ -462,6 +473,23 @@ function registerBashTool(shell: Shell): void {
     ...bash,
     execute: (id, params, signal, onUpdate) => bash.execute(id, params, signal, onUpdate),
   });
+}
+
+/**
+ * The operator's `!` commands get the bash tool's env: pi runs them outside the
+ * tool, so its spawn hook never sees them. pi passes no env, so the base is
+ * this process's (without pi's own bin dir or a configured shell path).
+ */
+function registerUserBash(shell: Shell): void {
+  const local = createLocalBashOperations();
+  const operations: BashOperations = {
+    exec: (command, cwd, options) =>
+      local.exec(command, cwd, {
+        ...options,
+        env: bridgeEnv(options.env ?? process.env, shell.vars, shell.options.extensionDir),
+      }),
+  };
+  shell.pi.on("user_bash", () => ({ operations }));
 }
 
 /** sec-7 Registrations: `/bridge pair delegate|consult` and `/bridge end`. */
