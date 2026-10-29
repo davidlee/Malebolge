@@ -14,10 +14,25 @@ export const MAIL_SECTION =
 
 /** What a precondition is checked against: the interface list and the credentials path. */
 export interface MailRefusalFacts {
-  /** `/sys/class/net`'s entries; `undefined` when the read failed. */
+  /** The interface names in `/proc/net/dev`; `undefined` when the read failed. */
   readonly interfaces: readonly string[] | undefined;
   /** MALEBOLGE_SCREWTAPE_CREDENTIALS as configured; `undefined` when unset or empty. */
   readonly credentials: string | undefined;
+}
+
+/**
+ * The interface names in `/proc/net/dev`'s text: one per line after its two
+ * header lines, the text before `:` trimmed. It lists the reading process's own
+ * network namespace (design § Preconditions). Undefined when it names none: a
+ * namespace always holds `lo`, so an empty list is an unreadable one.
+ */
+export function interfaceNamesOf(procNetDev: string): readonly string[] | undefined {
+  const names = procNetDev
+    .split("\n")
+    .slice(2)
+    .filter((line) => line.includes(":"))
+    .map((line) => line.slice(0, line.indexOf(":")).trim());
+  return names.length === 0 ? undefined : names;
 }
 
 /** True when every interface is `lo`: the process can reach no network through them. */

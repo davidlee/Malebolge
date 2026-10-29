@@ -2,7 +2,7 @@
 // before the store is opened (the room's private bridge listener too, DEC-064),
 // SATAN's tools refreshed before the session resumes.
 
-import { mkdirSync, readdirSync } from "node:fs";
+import { mkdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import type { Models } from "@earendil-works/pi-ai/models";
 import type { ConversationId, Extension, Registry } from "@earendil-works/pi-durable";
@@ -21,7 +21,7 @@ import { type DaemonEnv, daemonEnv, requireGatewaySocket } from "./daemon-env.ts
 import { daemonExtensions } from "./daemon-extensions.ts";
 import { acquireInstanceLock } from "./instance-lock.ts";
 import { classificationCache } from "./mail/classifications.ts";
-import { mailExtension, mailRefusal } from "./mail/extension.ts";
+import { interfaceNamesOf, mailExtension, mailRefusal } from "./mail/extension.ts";
 import { screwtapeSource } from "./mail/screwtape.ts";
 import {
   loadGatewayModels,
@@ -164,12 +164,13 @@ const toolCount = (registry: Registry, name: string): number =>
 
 /**
  * The interfaces this process can reach, read once per build, or undefined when
- * `/sys/class/net` cannot be listed: a failed precondition, not an absence
- * (design § Preconditions).
+ * `/proc/net/dev` cannot be read: a failed precondition, not an absence. Not
+ * `/sys/class/net`: a sysfs bound into a `--unshare-net` jail lists its
+ * mounter's namespace, the host's (design § Preconditions).
  */
 const networkInterfaces = (): readonly string[] | undefined => {
   try {
-    return readdirSync("/sys/class/net");
+    return interfaceNamesOf(readFileSync("/proc/net/dev", "utf8"));
   } catch {
     return undefined;
   }

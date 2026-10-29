@@ -8,7 +8,7 @@ import { describe, expect, it } from "vitest";
 import { context } from "../../src/context.ts";
 import { isRecord } from "../../src/json.ts";
 import { classificationCache } from "../../src/mail/classifications.ts";
-import { mailRefusal } from "../../src/mail/extension.ts";
+import { interfaceNamesOf, mailRefusal } from "../../src/mail/extension.ts";
 import { type ReportKind, type Withheld, WITHHOLD_POLICY } from "../../src/mail/policy.ts";
 import { JEV_MAX_BYTES, jevField } from "../../src/mail/project.ts";
 import { shareOf } from "../../src/mail/render.ts";
@@ -1286,6 +1286,32 @@ describe("VT-1 mailRefusal refuses every tool before any argument check", () => 
       expect(outcome.text.startsWith(MAIL_ERROR_PREFIX)).toBe(true);
       expect(outcome.text.split(MAIL_ERROR_PREFIX)).toHaveLength(2);
     }
+  });
+});
+
+describe("interfaceNamesOf reads the names in /proc/net/dev", () => {
+  const HEADER = [
+    "Inter-|   Receive                            |  Transmit",
+    " face |bytes    packets errs drop fifo frame|bytes    packets errs",
+  ];
+  const procNetDev = (...rows: readonly string[]): string => [...HEADER, ...rows, ""].join("\n");
+
+  it("names each interface after the two header lines, trimmed", () => {
+    const text = procNetDev(
+      "    lo: 4722 75 0 0 0 0 4722 75 0",
+      "enp8s0:41786 385 0 62 0 0 6298 143 0",
+    );
+    expect(interfaceNamesOf(text)).toEqual(["lo", "enp8s0"]);
+  });
+
+  it("reads a jail with only lo as loopback, which mailRefusal allows", () => {
+    const interfaces = interfaceNamesOf(procNetDev("    lo: 0 0 0 0 0 0 0 0 0"));
+    expect(mailRefusal({ interfaces, credentials: "/run/credentials/jev" })).toBeUndefined();
+  });
+
+  it("fails closed when no interface can be read", () => {
+    expect(interfaceNamesOf(procNetDev())).toBeUndefined();
+    expect(interfaceNamesOf("")).toBeUndefined();
   });
 });
 

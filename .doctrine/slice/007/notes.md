@@ -142,6 +142,9 @@ slips are left to red/green tests; the next review is of the plan.
 - PHASE-06 · catalog guard collects tools from the room's extensions whose names are in `toolsetList("mail", "room")`; the toolset lists `mail-persona` while the built extension is named `persona`, so a tool the persona extension registered would escape the guard (it registers none today) · pre-existing name mismatch, noted for audit · decided
 - PHASE-06 · no Opus review: diff small (one tool, one validator, one log line), read in full by me against design § mail_report · cost not earned · decided
 - PHASE-06 · host gate fully green (fmt-check, lint, typecheck, vitest 4153/4153); verify-vt PHASE-06 VT-1..3 PASS · decided
+- fix · /proc fix per the seat's operator-ruling line (2026-10-30): `interfaceNamesOf` (pure, `src/mail/extension.ts`) parses `/proc/net/dev`; `networkInterfaces` in daemon-start reads it once at build; refusal texts and `MailRefusalFacts` unchanged · decided by operator
+- fix · `interfaceNamesOf` answers undefined when the file names no interface (refuses "cannot list"), since an empty list would pass `onlyLoopback` and every netns holds `lo` · fail closed · decided
+- fix · design drift for /reconcile: design § Preconditions (table row "checked from", and the `mailPart` paragraph) still says `/sys/class/net` / `readdirSync`; the design run is locked (rev 71) and reopening was an operator act, so the text is left · deferred to /reconcile
 
 ## Pi runs
 
