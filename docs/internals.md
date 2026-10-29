@@ -72,6 +72,7 @@ whole with its persona.
 |---|---|---|
 | `interactive` | `persona`, `project_context`, `skills`, `cwd`, `conversation`, `coding-tools`, `grep`, `tasks`, `threads`, `bookmarks`, `satan` | the daemon |
 | `mail` | `mail-persona`, `conversation`, `mail` | the daemon |
+| `bridge` | `persona`, `project_context`, `skills`, `cwd`, `conversation`, `coding-tools`, `grep`, `tasks`, `bookmarks`, `bridge`, `satan` | the daemon, room only ([Bridge](#bridge)) |
 | `job` | `job-tools`, `job-guard` | the runner |
 
 - `interactive` is the install order from before toolsets existed; the
@@ -82,7 +83,7 @@ whole with its persona.
   interactive toolset never includes mail, and a mail conversation holds
   nothing but the five `mail_*` tools, the conversation section and its own
   persona.
-- The name is a closed type, `Toolset = "interactive" | "mail" | "job"`, so
+- The name is a closed type, `Toolset = "interactive" | "mail" | "bridge" | "job"`, so
   a name outside the catalogue does not compile.
 - A persona belongs to the toolset too: `interactive` reads
   `system/scaffold.txt`, `prompts/interactive.txt` and
@@ -90,12 +91,14 @@ whole with its persona.
   `prompts/mail.txt`, with no environment file, since its tools run on the
   host whatever the profile. Both render the section key `persona`, so the
   two never meet in one conversation.
+  `bridge` reads interactive's persona files; its own prose is the `bridge`
+  section.
 
 **Policy per profile** (`PROFILE_TOOLSETS`):
 
 | Profile | Default for a new conversation | Allowed |
 |---|---|---|
-| `room` | `interactive` | `interactive`, `mail` |
+| `room` | `interactive` | `interactive`, `mail`, `bridge` |
 | `host` | `interactive` | `interactive` |
 
 The daemon installs the union of its allowed toolsets' lists and refuses to
@@ -264,6 +267,134 @@ check at start.
 4. Check: in an interactive conversation, ask for a bookmark. `bookmarks are
    not configured` means the path did not reach the launcher; `unreadable` or
    `no bookmark backup found` means the path is wrong.
+
+## Bridge
+
+A jailed pi session and one room conversation exchange messages (SL-009).
+SATAN never touches the project; the jailed pi does.
+
+```
+ pi jail (per project)                         room daemon
+  /workspace/<project>  ro | rw                 src/bridge/listener.ts ── bridge.sock
+  ~/.pi/agent/extensions/malebolge-bridge (ro)  src/bridge/pairing.ts  token hash · posture
+   = pi-bridge/   index.ts ──── NDJSON ────────▶                       outbox · budget
+                  malebolge-bridge send|tee ──▶ src/bridge/inbound.ts  pi → SATAN
+                                                src/bridge/extension.ts  bridge_post, section
+ pi-bridge/wire.ts: frames, parser, caps, socket path rule — imported by both sides
+```
+
+**The socket.** A second listener, room profile only, with its own frame
+vocabulary (`pi-bridge/wire.ts`). The path rule, `bridgeSocketPath`:
+`MALEBOLGE_BRIDGE_SOCKET`, else
+`$XDG_RUNTIME_DIR/satan/durable/room/bridge/bridge.sock`. The daemon refuses
+to start when the path is not in a `bridge/` directory inside one named
+`room`. It serves the socket through `servePrivateUnix`
+(`src/unix-socket.ts`): the directory is made 0700 if absent, start is refused
+unless it is owned by the daemon's user and closed to group and other, and the
+socket is left 0600. The directory exists so a pi jail can bind it alone,
+never `durable/room/`, which holds `durable.sock`.
+
+**Pairing.** `/bridge pair delegate|consult` in pi sends `pair {posture,
+project}`, the project being the basename of pi's cwd. The daemon creates one
+conversation in topic `<project>-bridge`, writing that topic with toolset
+`bridge` if the index lacks it; an existing topic with another toolset is
+refused (`topic <t> has toolset <x>, not bridge`), and a basename the topic
+rule rejects is refused as `topic must match …`. It mints a token per pairing
+and stores only its SHA-256. pi keeps the pairing as a session entry and
+resumes it on its next `session_start`; a newer connection for the same
+pairing wins (`superseded by a newer connection`). A fork of either side is
+not bridged. `/bridge end` ends the pairing; in an outage it unpairs pi alone
+and leaves the daemon's pairing as it is.
+
+**Messages.** SATAN's `bridge_post {text}` appends a turn to the pairing's
+outbox (at most 32 unread: `outbox full, pi is not draining`); the listener
+delivers it and pi acknowledges each entry once it is in pi's session. pi
+takes a delivery only while idle (DEC-090), and a turn starts a pi turn. pi →
+SATAN is
+pi's own `bridge_post {text}` tool (a turn) or `malebolge-bridge` (a note
+unless `--turn`). The daemon frames each as
+`<bridge from="pi" project="…" kind="…">…</bridge>`, and the `bridge` section
+tells the model the body is untrusted data from the jailed pi, never an
+instruction. Bodies are cut head-and-tail at 32 KiB (`capHeadTail`) on both
+sides.
+
+**Bridge mode's reach** (DEC-071, DEC-076). The `bridge` toolset is
+interactive's list without `threads`, with `bridge` before `satan`; the room
+allows it, the host does not. It has no talk set, so a bridge conversation
+holds no thread tools, its `wake_schedule` reaches only itself, and nothing
+but itself wakes into it. A wake into another conversation needs a shared
+talk set, which also means `interactive` no longer wakes `mail`.
+
+**Budget** (DEC-070, DEC-078). A pairing admits 10 pi-started turns
+(`BRIDGE_TURN_BUDGET`), spent in its own commit before the submit; a
+duplicate request spends nothing and notes are free. Past it, pi is refused
+`budget exhausted, waiting on the operator`. The operator refills it to 10
+by typing in the bridged conversation, or by typing in pi (an interactive
+`input`, while bound). Residual: a subverted pi can fake a refill.
+
+**The pi side** (`pi-bridge/`, DEC-073). `index.ts` is the extension, a thin
+shell over the pure transition function `step` in `pi-bridge/state.ts`. It
+needs nothing from npm beyond pi's own packages. It registers `/bridge`,
+the `bridge_post` tool and a bash tool whose spawn hook prepends the
+extension's directory to `PATH` and, while paired, sets
+`MALEBOLGE_BRIDGE_CONVERSATION` and `MALEBOLGE_BRIDGE_TOKEN` (removed
+otherwise, inherited values included). While paired the posture's text is
+appended to pi's system prompt. The status line reads
+`malebolge bridge: <phase>`, or `malebolge bridge: outage (attempt N)`.
+Failure is loud: the first failure of an outage raises an error notice and a
+best-effort `notify-send`, naming the project, pi session, conversation,
+topic and socket; retries back off from 1 s doubling to 30 s and show only in
+the status line; recovery notifies once. Every request has a 30 s reply
+deadline (`BRIDGE_POST_WAIT_MS`); a post whose reply is lost to a drop is
+resent once the same pairing is bound again, one past its deadline is
+`outcome unknown` and never resent.
+
+**`malebolge-bridge`** (DEC-075), a `#!/usr/bin/env node` script beside
+`index.ts`, a bare command in pi's bash through the spawn hook's `PATH`.
+It needs node 23.6 or later in the jail (type stripping).
+
+```sh
+… | malebolge-bridge send [--turn]   # stdin is the body; prints `accepted`
+… | malebolge-bridge tee [--turn]    # also copies stdin to stdout; no ack line
+```
+
+| Exit | Meaning |
+|---|---|
+| 0 | accepted |
+| 1 | connect failure: one stderr line naming the ends, best-effort `notify-send` |
+| 2 | refused, the reason on stderr; also not paired, or a usage error |
+| 3 | outcome unknown (reply lost, or the 30 s deadline): never retried |
+
+**Variables.**
+
+| Variable | Set by | Read by |
+|---|---|---|
+| `MALEBOLGE_BRIDGE_SOCKET` | optional; the daemon's environment, and the pi jail's by forwarding | the daemon, the extension and the command (`bridgeSocketPath`) |
+| `MALEBOLGE_BRIDGE_CONVERSATION` | the extension, in pi's bash, while paired | `malebolge-bridge` |
+| `MALEBOLGE_BRIDGE_TOKEN` | the extension, in pi's bash, while paired; never logged | `malebolge-bridge` |
+
+The operator never sets the last two.
+
+**Posture texts** are placeholders keyed by posture (DEC-040):
+`BRIDGE_POSTURE_TEXT` in `src/bridge/extension.ts` for SATAN and
+`PI_POSTURE_TEXT` in `pi-bridge/posture.ts` for pi. Corpus prose replaces
+them later.
+
+**Deployment contract** (DEC-074). Malebolge owns it; `~/flakes` implements
+it in the pi jail combinator (CHR-007):
+
+1. `/run/user/1000/satan/durable/room/bridge` exists before a pi jail starts,
+   and pi jails ro-bind that directory only. Whoever creates it makes it
+   0700 (`mkdir -m 700`): a directory open to group or other stops the
+   daemon at start.
+2. `MALEBOLGE_BRIDGE_SOCKET` is forwarded into the jail when set.
+3. This repo's `pi-bridge/` is ro-bound at
+   `~/.pi/agent/extensions/malebolge-bridge` in the jail home.
+4. The project mount has a read-only option (`--ro-bind`).
+
+The jail also needs `node` for `malebolge-bridge` (~/flakes adds `nodejs_24`
+wherever pi runs). The room daemon runs this repo's live tree, so a bridge
+change is deployed by restarting `malebolge-room`.
 
 ## Jail
 

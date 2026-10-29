@@ -308,6 +308,7 @@ Set through environment variables:
 | `MALEBOLGE_SCREWTAPE` | the `screwtape` executable the mail tools run, as an absolute path; the binary itself, not a wrapper that adds `--config` | required when the profile allows `mail` (`room`) |
 | `MALEBOLGE_SCREWTAPE_CONFIG` | the config file it is given as `--config`, as an absolute path; no `PATH` lookup, no existence check | required for `room` |
 | `MALEBOLGE_SOCKET` | where clients attach (clients default to the room's) | `$XDG_RUNTIME_DIR/satan/durable/<profile>/durable.sock` |
+| `MALEBOLGE_BRIDGE_SOCKET` | where a jailed pi pairs (room only); must sit in a `bridge/` directory inside one named `room` | `$XDG_RUNTIME_DIR/satan/durable/room/bridge/bridge.sock` |
 | `SATAN_MCP_SOCKET` | where SATAN's tools are | `$XDG_RUNTIME_DIR/satan/mcp/mcp.sock` |
 | `SATAN_CORPUS_ROOT` | SATAN's persona files | `~/satan-corpus` |
 | `XDG_STATE_HOME` | saved conversations live at `satan/durable/<profile>/session.sqlite` under this | `~/.local/state` |
@@ -348,6 +349,7 @@ fixed list of extensions, chosen as a whole with the prompt that goes with it.
 |---|---|---|
 | `interactive` | the persona, project context, skills, cwd and conversation sections, coding tools (`read`, `write`, `edit`, `bash`), `grep`, `tasks`, the `thread_*` tools, the three `bookmarks_*` tools, SATAN's MCP tools | the daemon |
 | `mail` | a mail persona, the conversation section, the five `mail_*` tools | the daemon |
+| `bridge` | `interactive` without the `thread_*` tools, plus `bridge_post` and the `bridge` section | the daemon, room only ([Pairing a jailed pi](#pairing-a-jailed-pi)) |
 | `job` | the job tools and the job guard | the runner |
 
 `interactive` never includes mail, and `mail` holds no coding tool, no `grep`,
@@ -359,7 +361,7 @@ Each profile decides what its daemon offers:
 
 | Profile | Default for a new conversation | Allowed |
 |---|---|---|
-| `room` | `interactive` | `interactive`, `mail` |
+| `room` | `interactive` | `interactive`, `mail`, `bridge` |
 | `host` | `interactive` | `interactive` |
 
 So a host daemon holds no `mail_*` tool and needs no Screwtape setup, while a
@@ -408,6 +410,42 @@ is then refused `bookmarks are not configured`. What they return is untrusted
 page text, sent to the model as data: nothing inside it is an instruction.
 [docs/internals.md](docs/internals.md) has the source, the failures and the
 rollout.
+
+## Pairing a jailed pi
+
+A pi session in a project's jail can pair with one room conversation, so pi
+and SATAN exchange messages while only pi touches the project. It needs the
+room daemon running and the pi jail set up as
+[docs/internals.md](docs/internals.md#bridge) describes (the deployment
+contract).
+
+In the jailed pi:
+
+| Type | Effect |
+|---|---|
+| `/bridge pair delegate` | pair; SATAN is told the operator is away |
+| `/bridge pair consult` | pair; SATAN is told the operator is present |
+| `/bridge end` | end the pairing; in an outage, drop it on pi's side only |
+
+Pairing creates a conversation in topic `<project>-bridge`, `<project>` being
+the basename of pi's working directory. Attach to it to watch or join in:
+
+```sh
+node src/attach-main.ts --topic <project>-bridge   # its latest conversation
+```
+
+pi's status line shows `malebolge bridge: bound`. SATAN posts to pi with
+`bridge_post`, which starts a turn in pi when it is idle; pi's model answers
+with its own `bridge_post`, and pi's bash can send output as a note:
+
+```sh
+make test 2>&1 | malebolge-bridge tee   # a note; with --turn, a SATAN turn
+```
+
+pi may start 10 SATAN turns before the operator types, in the conversation or
+in pi; past that it is refused `budget exhausted, waiting on the operator`.
+A lost connection is loud once (a notice naming the conversation and socket),
+then retried quietly; the pairing resumes when the daemon is back.
 
 ## Patch jobs
 
