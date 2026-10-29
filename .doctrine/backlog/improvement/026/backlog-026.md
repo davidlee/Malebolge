@@ -34,6 +34,11 @@ folded in as a duplicate).
 3. **`Topic:` defaults to `default` on a bare RET** (`malebolge--new-target`,
    SL-010 PHASE-07). The operator's first attempt landed in 2672/default
    unnoticed — compounded by 2.
+   **Closed 2026-10-29, covered by 2 (operator's call):** under Vertico, RET
+   takes the highlighted first candidate, never the elisp default, so
+   dropping the default or refusing empty input changes nothing; prescient
+   already ranks recent topics first. The risk was not noticing where the
+   attach landed, and the attached status now names the topic and model.
 4. **`malebolge-set-topic-model`'s `none` says "now uses no model".** The
    topic's new conversations take the daemon default; the message should say
    so (`emacs/malebolge.el`, SL-010 PHASE-07; RV-025 F-12).
