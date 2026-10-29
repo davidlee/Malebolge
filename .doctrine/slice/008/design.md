@@ -16,6 +16,7 @@ groundwork for "rationalise my CLI-tool tags and folders" (step 2).
  src/bookmarks/tools.ts    search / tags / folders over Bookmark[]
  src/bookmarks/render.ts   trusted header + <bookmark-data untrusted="true">
  src/untrusted-block.ts    shared with mail: measure, cut, wrap, assert
+ src/ranges.ts            shared with mail: clamp tool input ranges
  src/bookmarks/extension.ts  tools + BOOKMARKS_SECTION → interactive toolset
 ```
 
@@ -36,23 +37,28 @@ interface BookmarkSource {
   /** The newest backup's projected bookmarks, or a BookmarkSourceError. */
   read(): Promise<Snapshot>;
 }
-interface Snapshot { readonly date: string /* YYYY-MM-DD */; readonly bookmarks: readonly Bookmark[] }
+interface Snapshot {
+  readonly date: string; // YYYY-MM-DD, from the file name
+  readonly bookmarks: readonly Bookmark[];
+  readonly folders: readonly { readonly path: string; readonly count: number }[];
+}
 ```
 
-`backupSource(dir, fs)` is the real implementation; tests also get a fake
+`backupSource(dir)` is the real implementation; tests also get a fake
 `fakeBookmarkSource(snapshot | error)` that records calls.
 
 **Choosing the file.** List `dir`; keep names matching
 `^bookmarks-(\d{4}-\d{2}-\d{2})_\d+_[A-Za-z0-9_=+-]+\.jsonlz4$`; pick the
-greatest date (ties: lexically greatest name). Other files are ignored. None
-→ `no_backup`.
+greatest date (ties: lexically greatest name). Other files, and names whose
+date is not a real calendar date, are ignored. None → `no_backup`.
 
 **Decoding (mozlz4).** Format: 8-byte magic `mozLz40\0`, u32 LE decompressed
 size, one raw LZ4 block. In-repo decoder, ~30 lines, pure
 (`decodeMozLz4(buf): Buffer`):
 
-- file size cap `BACKUP_FILE_MAX_BYTES` = 16 MiB (checked by `stat` before
-  reading); declared size cap `BACKUP_JSON_MAX_BYTES` = 64 MiB;
+- file size cap `BACKUP_FILE_MAX_BYTES` = 16 MiB: `stat` rejects early, then
+  the file is opened once and at most `BACKUP_FILE_MAX_BYTES` + 1 bytes are
+  read; the extra byte means `too_large`. Declared size cap `BACKUP_JSON_MAX_BYTES` = 64 MiB;
 - refuses: bad magic, a literal or match running past input or past the
   declared size, match offset 0 or beyond bytes written, output length ≠
   declared size. All → `corrupt`.
@@ -60,7 +66,8 @@ size, one raw LZ4 block. In-repo decoder, ~30 lines, pure
 **Validation.** `JSON.parse`, then a fail-closed TypeBox check of the node
 shapes the projection reads (extra fields allowed):
 container `{type:"text/x-moz-place-container", title?, children?, root?}`,
-place `{type:"text/x-moz-place", guid, title?, uri, dateAdded?, tags?}`,
+place `{type:"text/x-moz-place", guid, title?, uri, dateAdded?, tags?}` with
+`guid` matching `^[A-Za-z0-9_-]{12}$`,
 separator `{type:"text/x-moz-place-separator"}`. Anything else → `invalid`.
 
 **Projection (`src/bookmarks/project.ts`, pure).**
@@ -77,6 +84,10 @@ interface Bookmark {
   are named by their `root` key: `bookmarksMenuFolder`→`Menu`,
   `toolbarFolder`→`Toolbar`, `unfiledBookmarksFolder`→`Other`,
   `mobileFolder`→`Mobile`.
+- `folders`: the same traversal records every container's path (capped like
+  `folder`) with its count of direct bookmarks, zero allowed. One entry per
+  distinct path after caps: equal paths (same-titled siblings, or paths cut
+  to the same prefix) merge, and their counts are summed.
 - `tags`: `tags` split on `,`, trimmed, empties dropped.
 - `added`: `dateAdded` (µs since epoch) as `YYYY-MM-DD` (UTC); absent when
   missing or not a safe integer.
@@ -89,22 +100,24 @@ interface Bookmark {
 **Errors.** `BookmarkSourceError` with a closed `reason`:
 `not_configured | no_backup | too_large | unreadable | corrupt | invalid`,
 and a message built only from fixed text and the file name's date — never
-file content.
+file content. The directory missing or unreadable → `unreadable`, with fixed
+text naming the directory, not a file, as the cause.
 
 <!-- doctrine:section sec-3 -->
 ## 3. Tools (`src/bookmarks/tools.ts`)
 
 All three: `defineTool`, `replay: "safe"` (reading changes nothing), one
 text output, `isError: true` for input and source errors (the mail
-pattern, `src/mail/tools.ts:275-296`). Ranges are data with the shared
-clamp vocabulary; a clamp is reported in the header. Matching is pure over
-`Snapshot.bookmarks`.
+pattern, `src/mail/tools.ts:275-296`). `limit` and `offset` go through the
+shared `bounded` (Framing and bounds): an omitted or non-integer value takes
+the default, an out-of-range one is clamped and named in the header, as in
+mail. Matching is pure over `Snapshot.bookmarks`.
 
 | tool | parameters | result items | order |
 |---|---|---|---|
-| `bookmarks_search` | `query?` string, `tag?` string, `folder?` string, `limit?` 1–200 (default 50), `offset?` ≥0 (default 0) | `{title,url,tags,folder,added,guid,cut}` | `added` desc, then `guid` |
-| `bookmarks_tags` | `offset?` | `{tag, count}` | `count` desc, then tag |
-| `bookmarks_folders` | `offset?` | `{folder, count}` (direct bookmarks) | folder path asc |
+| `bookmarks_search` | `query?` string, `tag?` string, `folder?` string, `limit?` 1–200 (default 50), `offset?` 0–10000 (default 0, `mail_list`'s range) | `{title,url,tags,folder,added,guid,cut}` | `added` desc (missing last), then `guid` |
+| `bookmarks_tags` | `offset?` (as search) | `{tag, count}` | `count` desc, then tag |
+| `bookmarks_folders` | `offset?` (as search) | `{folder, count}`: every folder in `Snapshot.folders`, empty ones included | folder path asc |
 
 `bookmarks_search` semantics:
 
@@ -117,12 +130,15 @@ clamp vocabulary; a clamp is reported in the header. Matching is pure over
 - Filters combine with AND. Matching runs on the capped fields.
 
 Input refusals (before the source is read): `query` over 512 bytes, `tag`
-over 64, `folder` over 256, non-integer `limit`/`offset`.
+over 64, `folder` over 256.
 
 Descriptions (DEC-030: usage lives in code) tell the model: results come
 from a daily backup and may be up to a day behind; for loose topical
 recall, run several searches with different terms or page the full list;
-use `bookmarks_tags` / `bookmarks_folders` to see the structure first.
+use `bookmarks_tags` / `bookmarks_folders` to see the structure first;
+matching and counts use the capped fields (title 200, URL 512 and tag 64
+bytes, at most 20 tags, folder 256 bytes); `bookmarks_folders` counts direct
+bookmarks, while the search `folder` filter includes subfolders.
 
 <!-- doctrine:section sec-4 -->
 ## 4. Framing and bounds
@@ -133,18 +149,36 @@ use `bookmarks_tags` / `bookmarks_folders` to see the structure first.
 - `RESULT_MAX_BYTES` (50 KiB, pi's default), `HEADER_RESERVE`,
   `WRAPPER_BYTES`, `HEADER_MAX_BYTES`, `ITEMS_MAX_BYTES`;
 - `dataLine`, `renderedLength`, `cutRendered`;
-- `count(value, what)` and `assertWithin(text, max, what)`;
+- `count(value, what)`, throwing `header: <what> is not a count` (mail's
+  next-cursor check keeps its own `mail header:` text), and
+  `assertWithin(text, max, what)`;
+- `clampsLine` (from `src/mail/render.ts`), importing only the `Clamp`
+  type from `src/ranges.ts`;
+- `fitWhole(values)`: the longest prefix of whole data lines within
+  `ITEMS_MAX_BYTES`; no item is cut. Generalised from `fitMailboxes`: lines
+  are added in order while the running total fits, stopping at the first
+  that does not; returns `{lines, shown, of}`;
 - `renderBlock(tag, header, lines)`: header, `<tag untrusted="true">`, one
   data line each, `</tag>`; asserts `RESULT_MAX_BYTES`.
 
-Mail keeps `shareOf`, its fill, `MailTool`, its header and `MAIL_SECTION`;
-`MAIL_MAX_BYTES` becomes an alias or its users switch to
-`RESULT_MAX_BYTES` (the mail tests pin behaviour, not names).
+Mail keeps `shareOf`, its per-message fill, `MailTool`, its header assembly
+and `MAIL_SECTION`; mailboxes use `fitWhole`. Mail's users of
+`MAIL_MAX_BYTES` switch to `RESULT_MAX_BYTES` (the mail tests pin
+behaviour, not names).
+
+**Tool input ranges: `src/ranges.ts`.** A DRY move beside DEC-054, not
+under it: `Range`, `Clamp`, `bounded` and `report` leave `src/mail/tools.ts`
+and `src/mail/render.ts`, behaviour unchanged; the module imports nothing
+from `src/untrusted-block.ts`. `Clamp<N extends string>` has `name: N`, and
+`bounded`/`report` are generic in `N`: mail instantiates
+`"limit" | "max_bytes" | "offset"`, bookmarks `"limit" | "offset"`. Clamp
+names are code literals, never input.
 
 **Bookmark page fill (`src/bookmarks/render.ts`).** Items are small and
-already capped (worst case ~2.3 KiB), so no per-item share: lines are added
-in order while the running total fits `ITEMS_MAX_BYTES`; the page stops at
-the first that does not. Always ≥1 item when any match.
+bounded: every field is capped or fixed-form (the field caps, a 12-character
+`guid`, a `YYYY-MM-DD` `added`), so the worst case is ~2.3 KiB, so no per-item share: the page is
+`fitWhole` over the matches from `offset`. Always ≥1 item when any match
+remains.
 
 **Trusted header**, fixed forms only, fails closed (the mail rule,
 `src/mail/render.ts:290-322`):
@@ -157,8 +191,13 @@ stale: 4 days                      (only when the backup is > 2 days old)
 limit clamped to 200               (only when clamped)
 ```
 
-`bookmarks_tags` / `bookmarks_folders`: `shown N of M`, `next_offset` when
-more, and the `source`/`stale` lines. `stale` is computed from the file
+`next_offset` = offset + items emitted, present only when matches remain.
+An offset at or past the last match gives 0 items and no `next_offset`.
+
+`bookmarks_tags` / `bookmarks_folders`: `shown N of M` (N counts the items
+emitted), `next_offset` when more, the `source`/`stale` lines, and
+`cut by caps: N bookmarks` when N > 0, where N = `cutCount(bookmarks)` (pure,
+in `src/bookmarks/render.ts`): the bookmarks with a non-empty `cut`. `stale` is computed from the file
 name's date and an injected `now`.
 
 **Section (`BOOKMARKS_SECTION`, tagged, test-pinned):** bookmark tool
@@ -197,23 +236,27 @@ configured, never discovered.
 
 | path | change |
 |---|---|
-| `src/untrusted-block.ts` | new: shared primitives (§4) |
-| `src/mail/render.ts` | imports the moved primitives; no behaviour change |
+| `src/untrusted-block.ts` | new: shared primitives (Framing and bounds) |
+| `src/mail/render.ts` | imports the moved primitives; `fitMailboxes` → `fitWhole`; no behaviour change |
+| `src/ranges.ts` | new: `Range`, `Clamp`, `bounded`, `report` (Framing and bounds) |
+| `src/mail/tools.ts` | imports the range code from `src/ranges.ts`; no behaviour change |
 | `src/bookmarks/mozlz4.ts` | new: `decodeMozLz4` |
 | `src/bookmarks/backup.ts` | new: port, `backupSource`, `unconfiguredSource`, errors, schema |
 | `src/bookmarks/project.ts` | new: tree → `Bookmark[]`, caps |
 | `src/bookmarks/tools.ts` | new: three tools, matching, clamps |
-| `src/bookmarks/render.ts` | new: fill, header |
+| `src/bookmarks/render.ts` | new: fill, header, `cutCount` |
 | `src/bookmarks/extension.ts` | new: extension + `BOOKMARKS_SECTION` |
 | `src/config.ts` | `bookmarkBackupsOf`, `Config.bookmarkBackups` |
 | `src/daemon-start.ts`, `src/daemon-extensions.ts` | build and register |
 | `src/toolsets.ts` | `"bookmarks"` in `CATALOG.interactive` |
 | `test/bookmarks/**` | new tests, fixtures, fake source, test-side encoder |
 | `test/toolsets.test.ts`, `test/daemon-start.test.ts`, `test/daemon-sections.test.ts` | membership, wiring, pinned section |
+| `test/structure.test.ts` | rule: `src/bookmarks/` imports nothing from `src/mail/` |
 | `docs/internals.md`, `README.md` | toolset table, Bookmarks section, env var, jail bind |
 
 Module boundary: `src/bookmarks/` is tier "other" and imports neither
-`runner/` nor `mail/` (`test/structure.test.ts`).
+`runner/` (the existing tier rule) nor `mail/`. The `mail/` ban is a new
+rule in `test/structure.test.ts` beside `seamAllows`, with a negative case.
 
 <!-- doctrine:section sec-7 -->
 ## 7. Verification
@@ -223,24 +266,38 @@ Module boundary: `src/bookmarks/` is tier "other" and imports neither
 - Decoder: the real 857-byte backup from the operator's `scratchpad` profile
   (Mozilla default bookmarks only, no personal data; exercises real match
   copies) decodes to valid JSON; each refusal case (bad magic, truncated,
-  bad offset, overrun, size mismatch) → `corrupt`. The real decoder is
+  bad offset, overrun, size mismatch) → `corrupt`; a hand-built block with
+  an overlapping match (offset 1, length ≥ 4) decodes correctly; the real
+  fixture's output equals bytes produced once by an independent decoder and
+  stored beside it; exact-output vectors for literal and match length
+  extensions at the 15 and 255 boundaries, including a terminating zero
+  byte; a truncated extension → `corrupt`. The real decoder is
   tested directly, not only through the fake (memory:
   injected-seam-needs-real-test).
 - Test-side literal-only LZ4 encoder builds tagged fixture trees.
 - `backupSource` over a temp dir: newest by name date; non-matching files
-  ignored; empty → `no_backup`; oversize → `too_large`; schema miss →
-  `invalid`; unreadable → `unreadable`. Error messages carry no file content.
-- Projection: folder paths and root names, tags split, separators and
+  ignored, as is a name dated 9999-99-99; empty → `no_backup`; missing
+  directory → `unreadable`; oversize → `too_large`; a file that grows past the cap after `stat` →
+  `too_large`; schema miss
+  (including an oversized `guid`) → `invalid`; unreadable → `unreadable`. Error messages carry no file content.
+- Projection: folder paths and root names, an empty folder and a parent
+  holding only subfolders listed in `folders` with count 0, two same-titled
+  sibling folders giving one entry with the summed count, tags split, separators and
   `place:` skipped, `added` dates, each cap cuts and names its field.
-- Tools: search AND-terms, tag, folder-boundary prefix, order, paging and
-  `next_offset`, clamps in header, input refusals record no source call;
+- Tools: search AND-terms, tag, folder-boundary prefix, order (including
+  missing `added`), paging and
+  `next_offset`, clamps in header (`offset` 1e21 is clamped, not thrown),
+  input refusals record no source call;
   tags and folders counts; `not_configured` is an error result.
 - Render: header fixed forms fail closed; block escapes `<>&`; page stops
-  at budget with ≥1 item; `stale` appears only past 2 days.
+  at budget with ≥1 item, and on such a page `next_offset` = offset + items;
+  `stale` appears only past 2 days; `cut by caps` appears only when `cutCount` > 0;
+  an item with every field at its cap renders within `ITEMS_MAX_BYTES`.
 - Shared module: mail suites stay green unchanged.
-- Toolsets: VT-1 excludes `bookmarks` by name (as `threads`); a delta test
-  asserts interactive = baseline + exactly `bookmarks` (+ threads); mail and
-  job never include `bookmarks`; section text pinned.
+- Toolsets: VT-1 excludes `bookmarks` by name (as `threads`); VT-5 (the
+  existing delta test) extends: room = baseline + `threads` + `bookmarks`,
+  host = baseline + `bookmarks`; mail and job never include `bookmarks`;
+  section text pinned.
 - Config: unset → undefined; relative → refusal; host and room both read it.
 
 **By agent (VA):** decode the operator's live backup in a scratch run;
@@ -270,10 +327,10 @@ At reconcile:
 
 Follow-ups (backlog):
 
-- Operator rollout: env var + jail bind in `~/flakes` / satan flake (§5).
+- Operator rollout: env var + jail bind in `~/flakes` / satan flake (Configuration and wiring).
 - IDE-008 step 2 (reorganisation plans; tag writes need restore or an
   offline write — research X3), step 3 (capture-on-demand, after IMP-023),
   step 4 (history).
 - SL-007 coordination: whichever of SL-007 / SL-008 executes second rebases
-  onto the `src/untrusted-block.ts` move.
+  onto the `src/untrusted-block.ts` and `src/ranges.ts` moves.
 

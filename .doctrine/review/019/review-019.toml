@@ -8,9 +8,471 @@ title = "design review of SL-008"
 facet     = "design"     # scope|design|plan|phase-plan|implementation|code-review|reconciliation
 raiser    = "raiser"
 responder = "responder"
+rounds_base = 0
+contests_base = 0
+concluded = true
+
+[[review.turn]]
+act = "conclude"
+role = "raiser"
+note = "Informal arbiter review of SL-008 design: pi first pass (11 findings) and GPT gpt-6.1-sol adversarial pass (6 findings), plus 7 design smells reported by the revising author; 21 findings, all answered; revisions applied through run revision 37; operator answered Q1-Q3."
 
 [target]                   # the outbound `reviews` edge: RV-NNN ──reviews──▶ <ref>
 ref   = "SL-008"
+
+[[finding]]
+id = "F-1"
+status = "answered"
+severity = "major"
+title = "Shared clamp vocabulary and line fill are claimed reusable but not moved: two live copies (pi F2 + disposer sweep)"
+detail = "Design sec 3 says ranges use the shared clamp vocabulary, but sec 4's DEC-054 move list omits Range, bounded, report (src/mail/tools.ts:29-75), Clamp and clampsLine (src/mail/render.ts:232-293). Sweep sibling: sec 4's bookmark page fill (add lines while the running total fits ITEMS_MAX_BYTES, stop at the first that does not) is fitMailboxes (src/mail/render.ts:209-226) re-described. As written the implementer copies both into src/bookmarks/, the duplication DEC-054 rejected."
+disposition = "design-wrong"
+route = "dedupe"
+response = "Upheld. Verified at the cited lines. Dedupe: the mail-local copies go; src/untrusted-block.ts is the surviving owner of Range, bounded, report, Clamp, clampsLine and the line fill (fitMailboxes generalised to a fit-lines-within-budget function); mail and bookmarks both import it. Header assembly stays per family. Within DEC-054's scope (its context names shareOf and header checks), so no amendment. Sweep: every primitive sec 3 and sec 4 call shared is checked against the sec 4 move list. Revision R-1."
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "design-wrong"
+route = "dedupe"
+response = "Upheld. Verified at the cited lines. Dedupe: the mail-local copies go; src/untrusted-block.ts is the surviving owner of Range, bounded, report, Clamp, clampsLine and the line fill (fitMailboxes generalised to a fit-lines-within-budget function); mail and bookmarks both import it. Header assembly stays per family. Within DEC-054's scope (its context names shareOf and header checks), so no amendment. Sweep: every primitive sec 3 and sec 4 call shared is checked against the sec 4 move list. Revision R-1."
+
+[[finding]]
+id = "F-2"
+status = "answered"
+severity = "minor"
+title = "next_offset and shown-N-of-M arithmetic unspecified under the byte-budget fill (pi F1)"
+detail = "Sec 4 fill can stop before limit (worst item ~2.3 KiB x limit 200 > ITEMS_MAX_BYTES), but no rule says next_offset = offset + items emitted. The header example (offset 0, 50 items, next_offset 50) is consistent with either reading. Page at/after the last match unspecified."
+disposition = "design-wrong"
+response = "Upheld, partly. Observation verified: the rule is unspecified. The claim that the example states offset+limit is not supported; at offset 0 it fits either reading. Fix: next_offset = offset + items emitted, absent when no more matches; offset at or past the end returns 0 items, no next_offset; one VT on a budget-limited page. Revision R-2."
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "design-wrong"
+response = "Upheld, partly. Observation verified: the rule is unspecified. The claim that the example states offset+limit is not supported; at offset 0 it fits either reading. Fix: next_offset = offset + items emitted, absent when no more matches; offset at or past the end returns 0 items, no next_offset; one VT on a budget-limited page. Revision R-2."
+
+[[finding]]
+id = "F-3"
+status = "answered"
+severity = "minor"
+title = "One bad newest backup fails every call until the next backup; no fallback to an older file (pi F3)"
+detail = "Sec 2 picks exactly one file; corrupt/invalid/too_large is fatal. Proposed: retry next-newest."
+disposition = "aligned"
+response = "Rejected. The design already fails explicitly with a closed reason and the file's date, the operator's preferred shape (explicit denial). The fallback adds a second selection path for an unobserved fault (mid-write is inference; too_large would usually recur on the older file). YAGNI; revisit if seen."
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "aligned"
+response = "Rejected. The design already fails explicitly with a closed reason and the file's date, the operator's preferred shape (explicit denial). The fallback adds a second selection path for an unobserved fault (mid-write is inference; too_large would usually recur on the older file). YAGNI; revisit if seen."
+
+[[finding]]
+id = "F-4"
+status = "answered"
+severity = "minor"
+title = "Missing or unreadable backup directory has no specified reason (pi F4)"
+detail = "Sec 2 lists reasons no_backup | unreadable but not which a readdir ENOENT/EACCES maps to. absolutePathEnv does no existence check (src/config.ts:86-93). A stale configured path (profile moved under XDG_CONFIG_HOME, sec 5) would read as no_backup: you have no bookmarks."
+disposition = "design-wrong"
+response = "Upheld. Verified: no mapping specified; absolutePathEnv has no existence check. Fix: the directory missing or not readable maps to unreadable, message fixed text naming the directory as the cause (no path). Startup log line not adopted (YAGNI; the error says enough). Revision R-3."
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "design-wrong"
+response = "Upheld. Verified: no mapping specified; absolutePathEnv has no existence check. Fix: the directory missing or not readable maps to unreadable, message fixed text naming the directory as the cause (no path). Startup log line not adopted (YAGNI; the error says enough). Revision R-3."
+
+[[finding]]
+id = "F-5"
+status = "answered"
+severity = "minor"
+title = "Caps bite before matching and counting; the model is not told (pi F5)"
+detail = "Sec 3: matching runs on capped fields; 21st+ tags dropped, so bookmarks_tags undercounts with no marker. Descriptions (DEC-030) do not say so."
+disposition = "design-wrong"
+response = "Upheld, widened by gpt 4. Matching on capped fields stays (consistency: match what is shown). Descriptions say matching and counts use capped fields and at most 20 tags (R-4). bookmarks_tags and bookmarks_folders headers gain one fixed-form line, only when nonzero: N bookmarks cut by caps; Snapshot carries that count from the projection. No per-field breakdown (YAGNI). Revisions R-4, R-12."
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "design-wrong"
+response = "Upheld (cheap, DEC-030). Matching on capped fields stays (consistency: match what is shown); the descriptions say matching and counts use capped fields and at most 20 tags. Revision R-4."
+
+[[finding.turn]]
+act = "amend"
+role = "responder"
+note = "Deduped gpt finding 4 (inventory headers conceal projection cuts) into this finding; adopted a single count line in the inventory headers to meet scope objective 3, never silent."
+disposition = "design-wrong"
+response = "Upheld, widened by gpt 4. Matching on capped fields stays (consistency: match what is shown). Descriptions say matching and counts use capped fields and at most 20 tags (R-4). bookmarks_tags and bookmarks_folders headers gain one fixed-form line, only when nonzero: N bookmarks cut by caps; Snapshot carries that count from the projection. No per-field breakdown (YAGNI). Revisions R-4, R-12."
+
+[[finding]]
+id = "F-6"
+status = "answered"
+severity = "minor"
+title = "Order by added desc has no rule for bookmarks without added (pi F6)"
+detail = "Sec 2 makes added optional; sec 3 orders by it. Unspecified placement makes offset paging unstable."
+disposition = "design-wrong"
+response = "Upheld. Fix: bookmarks without added sort after those with, then by guid. One VT. Revision R-5."
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "design-wrong"
+response = "Upheld. Fix: bookmarks without added sort after those with, then by guid. One VT. Revision R-5."
+
+[[finding]]
+id = "F-7"
+status = "answered"
+severity = "minor"
+title = "Module boundary bookmarks -/-> mail credited to test/structure.test.ts but not asserted (pi F7)"
+detail = "ALLOWS.other only forbids runner (test/structure.test.ts:91). The file already has a directory seam mechanism (seamAllows, :71-79) that could assert it."
+disposition = "design-wrong"
+response = "Upheld; gpt finding 6 is the same observation. Verified test/structure.test.ts:91. Fix uses the existing seam mechanism: one rule that src/bookmarks/ may not import src/mail/, with a negative case; sec 6 lists the test-file change and cites the rule as asserted only after. Revision R-6."
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "design-wrong"
+response = "Upheld. Verified test/structure.test.ts:91. Fix uses the existing seam mechanism: one rule that src/bookmarks/ may not import src/mail/, with a negative case; the design cites it as asserted only after. Revision R-6."
+
+[[finding.turn]]
+act = "amend"
+role = "responder"
+note = "Deduped gpt finding 6 (identical)."
+disposition = "design-wrong"
+response = "Upheld; gpt finding 6 is the same observation. Verified test/structure.test.ts:91. Fix uses the existing seam mechanism: one rule that src/bookmarks/ may not import src/mail/, with a negative case; sec 6 lists the test-file change and cites the rule as asserted only after. Revision R-6."
+
+[[finding]]
+id = "F-8"
+status = "answered"
+severity = "minor"
+title = "offset has no ceiling and non-integer refusal diverges from mail's bounded (pi F8)"
+detail = "Sec 3: offset >=0 unbounded; count() requires Number.isSafeInteger (src/mail/render.ts:252-256) so offset 1e21 throws from the header. Mail's bounded substitutes the default for a non-integer and clamps ranges (src/mail/tools.ts:67-75); sec 3 refuses non-integers instead."
+disposition = "design-wrong"
+response = "Upheld. Operator chose the recommendation (Q1): bookmarks reuse the shared bounded — non-integers take the default, out-of-range values clamp and are named in the header; offset gets mail_list's 0-10000 Range. Revision R-7 applied."
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "design-wrong"
+response = "Upheld for offset; non-integer half held for the operator. Verified: count() requires a safe integer; mail's bounded defaults non-integers and clamps ranges. Fix: offset gets a Range (0-10000, mail_list's), clamped and named via the shared bounded (follows R-1). Recommended: drop the non-integer refusal for consistency with mail. Revision R-7, held."
+
+[[finding.turn]]
+act = "amend"
+role = "responder"
+note = """operator: "Q1,Q2,Q3 - these seem good recommendations, i'll take em""""
+disposition = "design-wrong"
+response = "Upheld. Operator chose the recommendation (Q1): bookmarks reuse the shared bounded — non-integers take the default, out-of-range values clamp and are named in the header; offset gets mail_list's 0-10000 Range. Revision R-7 applied."
+
+[[finding]]
+id = "F-9"
+status = "answered"
+severity = "nit"
+title = "bookmarks_folders counts are direct while the search folder filter is a subtree prefix (pi F9)"
+detail = "Sec 3 table vs semantics: the two numbers differ for the same folder without the descriptions saying why."
+disposition = "design-wrong"
+response = "Upheld as a description clause: bookmarks_folders counts direct bookmarks; the search folder filter includes subfolders. Revision R-4."
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "design-wrong"
+response = "Upheld as a description clause: bookmarks_folders counts direct bookmarks; the search folder filter includes subfolders. Revision R-4."
+
+[[finding]]
+id = "F-10"
+status = "answered"
+severity = "minor"
+title = "Decoder overlap path, post-read size, and filename date validity (pi F10)"
+detail = "Sec 7: only the 857-byte real fixture exercises matches; overlapping match (offset < length) is untested by construction. Sec 2: stat-then-read lets a growing file pass the cap. The filename regexp accepts 9999-99-99, giving a NaN stale and a raw Error from the fail-closed header rather than a BookmarkSourceError."
+disposition = "design-wrong"
+response = "Upheld, widened by gpt 3 and gpt 5. Decoder: the real fixture's decoded bytes compared exactly against output produced once by an independent decoder (stored beside the fixture); tiny exact-output vectors for an overlapping match (offset 1, length >= 4), literal and match length extensions at the 15 and 255 boundaries (including a terminating zero byte), and a truncated extension (corrupt). Read: open once and read at most BACKUP_FILE_MAX_BYTES + 1 bytes, the extra byte meaning too_large; the stat stays as an early rejection. Picker: names whose date is not a real calendar date are ignored. Revision R-8."
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "design-wrong"
+response = "Upheld, all three, each cheap. A hand-built block fixture with an overlapping match (offset 1, length >= 4); after reading, re-check the byte length against the file cap; the picker ignores names whose date is not a real calendar date. Revision R-8."
+
+[[finding.turn]]
+act = "amend"
+role = "responder"
+note = "Deduped gpt findings 3 (decoder verification) and 5 (bounded read); gpt 5's bounded read replaces pi's post-read length check, since it bounds allocation."
+disposition = "design-wrong"
+response = "Upheld, widened by gpt 3 and gpt 5. Decoder: the real fixture's decoded bytes compared exactly against output produced once by an independent decoder (stored beside the fixture); tiny exact-output vectors for an overlapping match (offset 1, length >= 4), literal and match length extensions at the 15 and 255 boundaries (including a terminating zero byte), and a truncated extension (corrupt). Read: open once and read at most BACKUP_FILE_MAX_BYTES + 1 bytes, the extra byte meaning too_large; the stat stays as an early rejection. Picker: names whose date is not a real calendar date are ignored. Revision R-8."
+
+[[finding]]
+id = "F-11"
+status = "answered"
+severity = "nit"
+title = "Loose ends: MAIL_MAX_BYTES alias-or-switch, backupSource signature, abort signal, DaemonHandle count (pi F11)"
+detail = "Sec 4 leaves alias vs switch open; sec 2 backupSource(dir, fs) vs sec 5 backupSource(dir); read() takes no AbortSignal; DaemonHandle has mailTools but no bookmark count; VT-5 host assertion (test/toolsets.test.ts host baseline) changes when host gains bookmarks."
+disposition = "design-wrong"
+response = "Partly upheld. Adopt: mail switches to RESULT_MAX_BYTES (one name, DRY); backupSource(dir) with no fs parameter (tests use temp dirs); sec 7 states the host snapshot assertion moves to baseline + bookmarks. Rejected: AbortSignal on a local file read and a DaemonHandle bookmark count (YAGNI). Revision R-9."
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "design-wrong"
+response = "Partly upheld. Adopt: mail switches to RESULT_MAX_BYTES (one name, DRY); backupSource(dir) with no fs parameter (tests use temp dirs); sec 7 states the host snapshot assertion moves to baseline + bookmarks. Rejected: AbortSignal on a local file read and a DaemonHandle bookmark count (YAGNI). Revision R-9."
+
+[[finding]]
+id = "F-12"
+status = "answered"
+severity = "major"
+title = "Unbounded guid breaks the per-item size bound and the page-progress guarantee (gpt 1)"
+detail = "Design sec 2: place schema requires guid with no length or form; the caps list omits it. Sec 4 claims items are small and already capped and every nonempty page has >=1 item. GPT reproduction: a 60,000-char guid renders to 60,088 bytes via dataLine, over ITEMS_MAX_BYTES 49,152, while the backup stays far under the file caps. Verified by reading: guid is the only projected field without a cap."
+disposition = "design-wrong"
+route = "probe"
+response = "Upheld. Fix in the existing fail-closed schema: guid must match Firefox's form, 12 characters of A-Z a-z 0-9 _ and - (the root guids such as root________ fit); a violation makes the backup invalid. Probe: the item-size bound must hold against any field of any length inside a backup that passes the file caps and the schema; it need not hold against a backup the caps already refuse. Criterion: an oversized-guid fixture through the real backupSource yields invalid, and with every field at its cap one item renders within ITEMS_MAX_BYTES. Host phase needs the real source and render together. Sweep: guid was the only uncapped projected field; added and cut are derived and bounded. Revision R-10."
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "design-wrong"
+route = "probe"
+response = "Upheld. Fix in the existing fail-closed schema: guid must match Firefox's form, 12 characters of A-Z a-z 0-9 _ and - (the root guids such as root________ fit); a violation makes the backup invalid. Probe: the item-size bound must hold against any field of any length inside a backup that passes the file caps and the schema; it need not hold against a backup the caps already refuse. Criterion: an oversized-guid fixture through the real backupSource yields invalid, and with every field at its cap one item renders within ITEMS_MAX_BYTES. Host phase needs the real source and render together. Sweep: guid was the only uncapped projected field; added and cut are derived and bounded. Revision R-10."
+
+[[finding]]
+id = "F-13"
+status = "answered"
+severity = "major"
+title = "Projection drops the folder tree: empty and intermediate folders are lost (gpt 2)"
+detail = "Scope objective 2 (slice-008.md:44) requires the folder tree and tag inventory with counts. Sec 2 Snapshot holds only bookmarks; sec 3 bookmarks_folders groups bookmarks by folder. A folder with no direct bookmarks (empty, or holding only subfolders) never appears. Verified by reading design and scope."
+disposition = "design-wrong"
+route = "review"
+response = "Upheld. Fix: the projection's existing traversal also collects every container's path; Snapshot gains folders, each with its direct bookmark count (zero allowed); bookmarks_folders lists them all. VT: an empty folder and a parent holding only subfolders both appear with count 0. Combines with the R-4 description clause (counts are direct). Revision R-11."
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "design-wrong"
+route = "review"
+response = "Upheld. Fix: the projection's existing traversal also collects every container's path; Snapshot gains folders, each with its direct bookmark count (zero allowed); bookmarks_folders lists them all. VT: an empty folder and a parent holding only subfolders both appear with count 0. Combines with the R-4 description clause (counts are direct). Revision R-11."
+
+[[finding]]
+id = "F-14"
+status = "answered"
+severity = "minor"
+title = "Input clamping (Range, bounded, report) placed in the output-framing module (author, from R-1)"
+detail = "Rev 25 sec 4 lists Range, bounded, report, Clamp, clampsLine in src/untrusted-block.ts. bounded and report validate tool arguments; the module's other members measure, cut and wrap output. Two reasons to change in one module."
+disposition = "design-wrong"
+response = "Upheld. Operator chose the recommendation (Q2): new src/ranges.ts holds Range, Clamp, bounded, report; clampsLine stays in src/untrusted-block.ts; dependency framing -> ranges, one way. Revision R-14 applied."
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "design-wrong"
+response = "Upheld; my R-1 caused it. Recommended: a new src/ranges.ts holds the input side (Range, Clamp, bounded, report) and imports nothing from the framing module; clampsLine is a header line form and stays in src/untrusted-block.ts, which imports only the Clamp type. Dependency runs framing -> ranges, one way. This is a shared module outside DEC-054's text (DEC-054 covers untrusted blocks only), so it is held for the operator (Q2). Revision R-14, held."
+
+[[finding.turn]]
+act = "amend"
+role = "responder"
+note = """operator: "Q1,Q2,Q3 - these seem good recommendations, i'll take em""""
+disposition = "design-wrong"
+response = "Upheld. Operator chose the recommendation (Q2): new src/ranges.ts holds Range, Clamp, bounded, report; clampsLine stays in src/untrusted-block.ts; dependency framing -> ranges, one way. Revision R-14 applied."
+
+[[finding]]
+id = "F-15"
+status = "answered"
+severity = "minor"
+title = "Shared Clamp.name is mail's parameter union (author, from R-1)"
+detail = "Clamp.name is 'limit' | 'max_bytes' | 'offset' (src/mail/render.ts:232-235). Once shared, bookmarks' type admits max_bytes and every new family edits the shared union."
+disposition = "design-wrong"
+response = "Upheld. Clamp becomes generic: Clamp<N extends string> with name N; bounded and report take the name type from the caller. Mail instantiates its union, bookmarks 'limit' | 'offset'. The header still prints only code literals (fail-closed holds: names are type-checked literals, never input). Revision R-15."
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "design-wrong"
+response = "Upheld. Clamp becomes generic: Clamp<N extends string> with name N; bounded and report take the name type from the caller. Mail instantiates its union, bookmarks 'limit' | 'offset'. The header still prints only code literals (fail-closed holds: names are type-checked literals, never input). Revision R-15."
+
+[[finding]]
+id = "F-16"
+status = "answered"
+severity = "nit"
+title = "Shared count throws with a mail prefix (author, from R-1)"
+detail = "count throws 'mail header: <what> is not a count' (src/mail/render.ts:252). Shared, it names mail in bookmark failures. Not pinned by any test (grep of test/)."
+disposition = "design-wrong"
+response = "Upheld. Shared count throws 'header: <what> is not a count'; the mail-only next-cursor check keeps its mail prefix. No test pins the text (verified grep). Revision R-16."
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "design-wrong"
+response = "Upheld. Shared count throws 'header: <what> is not a count'; the mail-only next-cursor check keeps its mail prefix. No test pins the text (verified grep). Revision R-16."
+
+[[finding]]
+id = "F-17"
+status = "answered"
+severity = "nit"
+title = "Two accounts of the toolset delta in Verification (author, from R-9)"
+detail = "Rev 25 sec 7 Toolsets lists a delta test (interactive = baseline + bookmarks (+ threads)) and, separately, the host snapshot becomes baseline + bookmarks. In test/toolsets.test.ts:169-193 the host check is a line inside VT-5, the delta test."
+disposition = "design-wrong"
+response = "Upheld (one fact, two accounts). Merge into one bullet: VT-5 (the existing delta test, test/toolsets.test.ts:169) extends to room = baseline + threads + bookmarks and host = baseline + bookmarks. Revision R-17."
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "design-wrong"
+response = "Upheld (one fact, two accounts). Merge into one bullet: VT-5 (the existing delta test, test/toolsets.test.ts:169) extends to room = baseline + threads + bookmarks and host = baseline + bookmarks. Revision R-17."
+
+[[finding]]
+id = "F-18"
+status = "answered"
+severity = "nit"
+title = "Name of the generalised fill: fitWhole (author)"
+detail = "Rev 25 sec 4 names the generalised fitMailboxes fitWhole(values). Judge the name."
+disposition = "aligned"
+response = "Name accepted. Whole says what distinguishes it from mail's per-message fill: items are never cut, only included or left out; fit matches the family's fitItem and fitMailboxes. The design states its contract in one line: the longest prefix of whole data lines within ITEMS_MAX_BYTES. Revision R-16 carries that line."
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "aligned"
+response = "Name accepted. Whole says what distinguishes it from mail's per-message fill: items are never cut, only included or left out; fit matches the family's fitItem and fitMailboxes. Require a one-line doc comment saying it takes the longest prefix of whole lines within ITEMS_MAX_BYTES. Folded into R-14/R-15's module text; no separate revision."
+
+[[finding.turn]]
+act = "amend"
+role = "responder"
+note = "R-14 is held; moved the doc-line requirement to independent R-16."
+disposition = "aligned"
+response = "Name accepted. Whole says what distinguishes it from mail's per-message fill: items are never cut, only included or left out; fit matches the family's fitItem and fitMailboxes. The design states its contract in one line: the longest prefix of whole data lines within ITEMS_MAX_BYTES. Revision R-16 carries that line."
+
+[[finding]]
+id = "F-19"
+status = "answered"
+severity = "nit"
+title = "Snapshot.cutBookmarks is a derived header fact in the source port (author, from R-12)"
+detail = "Rev 27 design.md:43,89: Snapshot carries cutBookmarks, derivable from bookmarks[].cut; only the inventory headers use it (:186)."
+disposition = "design-wrong"
+response = "Upheld. The port carries data, not header facts. Drop Snapshot.cutBookmarks; a pure cutCount(bookmarks) in src/bookmarks/render.ts feeds the inventory headers. My R-12 caused it. Revision R-18."
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "design-wrong"
+response = "Upheld. The port carries data, not header facts. Drop Snapshot.cutBookmarks; a pure cutCount(bookmarks) in src/bookmarks/render.ts feeds the inventory headers. My R-12 caused it. Revision R-18."
+
+[[finding]]
+id = "F-20"
+status = "answered"
+severity = "minor"
+title = "Equal folder paths yield duplicate folder entries with split counts (author, from R-11)"
+detail = "Rev 27 design.md:42: Snapshot.folders has one entry per container. Two containers whose capped paths are equal (shared 256-byte prefix) appear twice, each with part of the count; the search folder filter matches both as one. Sibling (inference from Firefox allowing same-named siblings): two sibling folders with the same title collide without any cap."
+disposition = "design-wrong"
+response = "Upheld with a different fix. Capping is rare (p99 56 of 256 bytes), but same-titled sibling folders collide without any cap, so the class is real. Fix: Snapshot.folders is keyed by path: equal paths merge into one entry with summed counts. This matches the search folder filter, which already cannot tell them apart (consistency over exactness). No disambiguation by guid (YAGNI). Revision R-19."
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "design-wrong"
+response = "Upheld with a different fix. Capping is rare (p99 56 of 256 bytes), but same-titled sibling folders collide without any cap, so the class is real. Fix: Snapshot.folders is keyed by path: equal paths merge into one entry with summed counts. This matches the search folder filter, which already cannot tell them apart (consistency over exactness). No disambiguation by guid (YAGNI). Revision R-19."
+
+[[finding]]
+id = "F-21"
+status = "answered"
+severity = "minor"
+title = "One malformed guid makes the whole backup invalid (author, from R-10)"
+detail = "Rev 27 design.md:69-70: guid must match ^[A-Za-z0-9_-]{12}$ in the fail-closed schema; a single violation disables all three tools. Option: cap guid like the other fields instead."
+disposition = "aligned"
+response = "Kept as designed. Operator chose the recommendation (Q3): a guid outside Firefox's 12-character form makes the backup invalid (fail-closed, consistent with the rest of the schema). R-20 not applied. Firefox's guid form to be confirmed by the VA check on the live backup."
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "aligned"
+response = "Held for the operator (Q3); recommended keep. The guid check is one clause of a schema that already fails closed on any shape miss (missing uri, wrong type), so a per-field exception would be inconsistent. A guid outside Firefox's own form means the file is not what Firefox writes (recollection, unverified: Firefox validates guids to this same 12-character form). Capping would also break guid as the order tiebreak and the identity step 2 needs. The error is explicit, with the file's date. Amend to design-wrong if the operator chooses otherwise."
+
+[[finding.turn]]
+act = "amend"
+role = "responder"
+note = """operator: "Q1,Q2,Q3 - these seem good recommendations, i'll take em""""
+disposition = "aligned"
+response = "Kept as designed. Operator chose the recommendation (Q3): a guid outside Firefox's 12-character form makes the backup invalid (fail-closed, consistent with the rest of the schema). R-20 not applied. Firefox's guid form to be confirmed by the VA check on the live backup."
 
 # Findings are append-only `[[finding]]` tables, added by `review raise`.
 # Empty here at creation — a fresh review is Active, awaiting the raiser.

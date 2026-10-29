@@ -20,8 +20,16 @@ fresh-as-of: 2026-10-29 · design reviewing (RV-019 open) · 4560aa2 + this sess
 ### Learned
 - mem.fact.malebolge.firefox-bookmark-data — where tags live, locked DB, backup format.
 
+### Further review
+RV-019 concluded (pi + GPT passes, 21 findings answered, operator settled
+Q1–Q3). No further design pass needed: the findings narrowed to wording and
+module placement, and what remains is recipe-level — the LZ4 decoder's exact
+behaviour and Firefox's guid form — which the plan's red/green tests and the
+VA check on the live backup settle faster than another review. The next
+review belongs to the plan.
+
 ### Open
-- RV-019 — design review pass; operator chose /arbiter-review with GPT.
+- RV-019 — concluded; design locked on the operator's sign-off.
 - SL-007 overlap on `src/mail/render.ts` (DEC-054) — second to execute rebases.
 - New ASM (bookmark dir from configured path, jail-bound) and DEC-029 / RSK-002 /
   SL-005 / IMP-023 notes — due at reconcile (design sec-8).
