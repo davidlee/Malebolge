@@ -10,6 +10,14 @@ raiser    = "raiser"
 responder = "responder"
 rounds_base = 0
 contests_base = 0
+concluded = true
+
+[[review.turn]]
+act = "conclude"
+role = "raiser"
+note = """
+Conformance audit of SL-008 on main (phase commits 8c755fe..1d24b99, docs fix c045e59). Bootstrapped the source-delta registry and read slice conformance (27 conformant, 11 undeclared, 0 undelivered). Read src/bookmarks/*.ts, src/untrusted-block.ts and src/ranges.ts against design sec-2..sec-5; no behavioural divergence. Host gate `just check` green at 8ce8fa2 (104 files / 3542 tests); VA-1, VH-1 and RV-019 F-12/F-21 evidence checked in notes. Live-backup tag-case probe (host, counts only): 0 collisions. Rollout compared with docs and CHR-006; sec-8 governance obligations checked against DEC-029. Six findings, all verified; brief written.
+"""
 
 [target]                   # the outbound `reviews` edge: RV-NNN ──reviews──▶ <ref>
 ref   = "SL-008"

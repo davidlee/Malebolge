@@ -1,7 +1,7 @@
 id = 8
 slug = "bookmark-read-tools"
 title = "Bookmark read tools: SATAN finds and relates Firefox bookmarks"
-status = "started"
+status = "reconcile"
 created = "2026-10-29"
 updated = "2026-10-29"
 tags = ["bookmarks", "panopticon"]
