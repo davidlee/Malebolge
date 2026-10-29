@@ -1,0 +1,18 @@
+schema = "doctrine.observation"
+schema_version = 1
+uid = "01a18772-351f-75a2-85f4-357510f8dc1a"
+recorded_at = "2026-10-29T11:36:11.295565134Z"
+kind = "friction"
+summary = "pi runs fail: DeepSeek 402 Insufficient Balance"
+detail = "SL-009 PHASE-06 T1: run-20261029T113316136Z-51 and retry run-20261029T113554769Z-52 both ended state failed, cause error, stopReason error, errorMessage 402 litellm DeepseekException insufficient_balance_error. Account top-up needed before pi workers can run."
+
+[facets.execution]
+schema_version = 1
+interface = "cli"
+interface_origin = "automatic"
+product_surface = "doctrine"
+product_surface_origin = "automatic"
+command = "observation record"
+command_origin = "automatic"
+repository_context = "primary"
+repository_context_origin = "automatic"
