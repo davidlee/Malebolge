@@ -19,6 +19,20 @@ wanted, is left to phase-plan as checks against code, not design questions:
   cheap on a full page;
 - pi-ai's chat-model enumeration name for `refs`.
 
+## Implementation run
+<!-- written by the /super-orchestrator seat, 2026-10-29; charters point here -->
+
+- **Driver**: /super-orchestrator seat → `sub-orchestrator` charters (1–3 phases) → quotient pi workers. Main worktree. Halts before audit.
+- **Host gate**: `just check` from the session shell. Baseline 2026-10-29: 104 files / 3542 tests green. Emacs ERT: `just ert` (host only; emacs absent in the pi sandbox) — PHASE-05 and PHASE-07 run it on the host.
+- **quotient forms**: `write` runs every gate recipe (`fmt-check`, `lint`, `typecheck`, full `vitest run`) green; no form change needed. `fmt-check` prints 4 benign biome warnings (broken `.quotient/` symlinks, exit 0). Use the PATH `biome` (via `just fmt-check` / `just format`), not `npx biome`.
+- **Never run two `vitest run` at once in this root**: concurrent runs share `coverage/.tmp` and the loser fails with ENOENT on a coverage json (seen at preflight). Serialise full-suite runs; pi workers run targeted tests (`npx vitest run <file>`), the sub-orchestrator runs the full host gate.
+- **Other writers**: SL-009 (another session, in design), SL-008 audit (RV-024). Leave dirty: `.doctrine/slice/009/**`, `decision/092..093`, `review/023`, `review/024*`, `backlog/issue/004/*`, `.doctrine/memory/items/*` not written by this run, and `src/untrusted-block.ts` (foreign one-line comment fix, not an SL-010 file). Commit only SL-010 paths and the phase's source files, by path.
+- **Plan under concurrent review**: another agent is reviewing the plan (operator, 2026-10-29: "you can go on with 01 meantime"). Re-read `plan.toml` before each charter; if the review changes a later phase, the next charter follows the revised plan.
+- **PHASE-07 VH-1**: the operator's hand-run (Emacs + gateway) — leave open, don't attempt.
+- **Background tasks** enabled (`CLAUDE_CODE_DISABLE_BACKGROUND_TASKS` unset): spawns run in the background and wake the parent by notification.
+
+## Autonomy log
+
 ## Harvest
 <!-- single-copy: updated in place each harvest; ids only, never restated content -->
 fresh-as-of: 2026-10-29 · ready (PHASE-01..07 planned, none started) · cf7049a
