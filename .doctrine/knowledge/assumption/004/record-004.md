@@ -12,3 +12,19 @@ Basis, read in pi's source (`~/.local/src/pi/packages/coding-agent/src/core/`):
   user or assistant message (the DEC-065 residual).
 
 From SL-009 inquiry review r1, F-2.
+
+
+## Validation (SL-009 PHASE-01 EX-1, 2026-10-29)
+
+Probed against real pi 1.4.0 (source 936e5f40a), rpc mode, stub extension with a
+fake provider; evidence and rerun in `.doctrine/slice/009/probes/va1/` (`ex1`),
+summary in SL-009 notes.md § Probes. Scope as narrowed by DEC-090 (idle paths only):
+
+- `sendMessage(…, {triggerTurn:false})` while idle: the entry, with `details`, is in
+  `ctx.sessionManager.getEntries()` synchronously when sendMessage returns.
+- `sendMessage(…, {triggerTurn:true})` while idle: absent at return and after a
+  microtask; present, with `details`, at the consuming `turn_end`.
+
+Both within the claim ("once sendMessage returns, or at the latest by the consuming
+turn_end"). The busy paths (followUp, nextTurn) are out of scope under DEC-090: the
+extension never hands pi a message while it runs.

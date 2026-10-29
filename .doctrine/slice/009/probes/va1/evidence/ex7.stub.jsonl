@@ -1,0 +1,14 @@
+{"t":12,"ev":"session_start"}
+{"t":1278,"ev":"before_agent_start","idle":false,"running":false,"messageType":"user"}
+{"t":1279,"ev":"agent_start","idle":false}
+{"t":1280,"ev":"turn_start"}
+{"t":1283,"ev":"provider_call","text":"SLOW hello"}
+{"t":1596,"ev":"deliver","kind":"note","text":"buffered-note","idle":false,"running":true}
+{"t":1596,"ev":"buffered","n":1}
+{"t":1798,"ev":"turn_end"}
+{"t":1798,"ev":"entries","label":"turn_end","n":0,"entries":[],"idle":false,"pending":false}
+{"t":1798,"ev":"agent_end","idle":false,"last":"aborted"}
+{"t":1798,"ev":"agent_settled","aborted":true,"idle":true,"bufferN":1}
+{"t":1798,"ev":"pi.sendMessage","kind":"note","text":"buffered-note","triggerTurn":false}
+{"t":1798,"ev":"entries","label":"agent_settled:after-flush","n":1,"entries":[{"id":"ced3c3f0","type":"probe","content":"buffered-note","details":{"text":"buffered-note","kind":"note"}}],"idle":true,"pending":false}
+{"t":3325,"ev":"entries","label":"dump:final","n":1,"entries":[{"id":"ced3c3f0","type":"probe","content":"buffered-note","details":{"text":"buffered-note","kind":"note"}}],"idle":true,"pending":false}

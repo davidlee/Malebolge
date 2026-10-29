@@ -1,0 +1,5 @@
+#!/usr/bin/env node
+// EX-10: an extensionless executable importing a .ts module, no flags (node >= 23.6).
+import { capHeadTail } from "./wire.ts";
+const out = capHeadTail("x".repeat(40), 10);
+console.log(`sl009-wire ran on node ${process.version}: ${JSON.stringify(out)}`);

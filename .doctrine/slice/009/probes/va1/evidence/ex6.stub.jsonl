@@ -1,0 +1,17 @@
+{"t":13,"ev":"session_start"}
+{"t":1260,"ev":"before_agent_start","idle":false,"running":false,"messageType":"user"}
+{"t":1261,"ev":"agent_start","idle":false}
+{"t":1262,"ev":"turn_start"}
+{"t":1265,"ev":"provider_call","text":"FAILONCE hello"}
+{"t":1265,"ev":"turn_end"}
+{"t":1265,"ev":"entries","label":"turn_end","n":0,"entries":[],"idle":false,"pending":false}
+{"t":1266,"ev":"agent_end","idle":false,"last":"error"}
+{"t":1467,"ev":"agent_start","idle":false}
+{"t":1467,"ev":"turn_start"}
+{"t":1468,"ev":"provider_call","text":"FAILONCE hello"}
+{"t":1468,"ev":"turn_end"}
+{"t":1468,"ev":"entries","label":"turn_end","n":0,"entries":[],"idle":false,"pending":false}
+{"t":1468,"ev":"agent_end","idle":false,"last":"stop"}
+{"t":1469,"ev":"agent_settled","aborted":false,"idle":true,"bufferN":0}
+{"t":1469,"ev":"entries","label":"agent_settled:after-flush","n":0,"entries":[],"idle":true,"pending":false}
+{"t":2985,"ev":"entries","label":"dump:final","n":0,"entries":[],"idle":true,"pending":false}

@@ -1,0 +1,14 @@
+{"t":12,"ev":"session_start"}
+{"t":1272,"ev":"before_agent_start","idle":false,"running":false,"messageType":"user"}
+{"t":1771,"ev":"deliver","kind":"note","text":"during-window","idle":false,"running":false}
+{"t":1771,"ev":"buffered","n":1}
+{"t":2773,"ev":"before_agent_start:delay-done","idle":false,"running":false}
+{"t":2775,"ev":"agent_start","idle":false}
+{"t":2775,"ev":"turn_start"}
+{"t":2778,"ev":"turn_end"}
+{"t":2778,"ev":"entries","label":"turn_end","n":0,"entries":[],"idle":false,"pending":false}
+{"t":2778,"ev":"agent_end","idle":false,"last":"error"}
+{"t":2778,"ev":"agent_settled","aborted":true,"idle":true,"bufferN":1}
+{"t":2778,"ev":"pi.sendMessage","kind":"note","text":"during-window","triggerTurn":false}
+{"t":2779,"ev":"entries","label":"agent_settled:after-flush","n":1,"entries":[{"id":"cf9d5442","type":"probe","content":"during-window","details":{"text":"during-window","kind":"note"}}],"idle":true,"pending":false}
+{"t":3302,"ev":"entries","label":"dump:final","n":1,"entries":[{"id":"cf9d5442","type":"probe","content":"during-window","details":{"text":"during-window","kind":"note"}}],"idle":true,"pending":false}

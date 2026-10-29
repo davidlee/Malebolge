@@ -1,0 +1,1 @@
+{"retry":{"enabled":true,"maxRetries":3,"baseDelayMs":200},"defaultProvider":"fake","defaultModel":"fake-1"}

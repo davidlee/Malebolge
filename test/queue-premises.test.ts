@@ -5,6 +5,10 @@
  * and (c) withdrawing one queued post with `harness.abortSubmission` leaves its
  * queued siblings in place. No post code exists yet: these drive
  * `Conversation.submit` and `harness.abortSubmission` directly.
+ *
+ * It also holds ASM-006, SL-009's standing premise: a `write` carrying model
+ * content on an IDLE conversation appends its entry for the next run and starts
+ * no run itself, and the next input's run sees the entry.
  */
 
 import type { Message } from "@earendil-works/pi-ai";
@@ -12,6 +16,7 @@ import { describe, expect, it, vi } from "vitest";
 import { context } from "../src/context.ts";
 import {
   heldTurn,
+  only,
   type RecordedTurn,
   recordedTurn,
   submissionOf,
@@ -28,6 +33,27 @@ const POST = "post:44:";
 const NEXT_POST = "post:45:";
 /** Any other queued input, standing in for a `wake:...` one. */
 const SIBLING = "manual:second";
+
+/** ASM-006's write: a SATAN note, its text carried as model content the run must see. */
+const NOTE = "the build is green";
+/** The write's request id, as a bridge note's would be. */
+const NOTE_REQUEST = "bridge:note:1";
+/** The request id of the input submitted after the write. */
+const FOLLOWING = "bridge:turn:1";
+
+/**
+ * Every message's role and text the model is given, in order: a note's content
+ * is not a user message by right, so read every role rather than the user's.
+ */
+const spoken = (messages: readonly Message[]): string[] =>
+  messages.flatMap((message): string[] => {
+    const { content } = message;
+    const text =
+      typeof content === "string"
+        ? content
+        : content.map((block) => (block.type === "text" ? block.text : "")).join("");
+    return text === "" ? [] : [`${message.role}:${text}`];
+  });
 
 /** What the model was told as user input, in order: the context of one request. */
 const userTexts = (messages: readonly Message[]): string[] =>
@@ -122,5 +148,44 @@ describe("DEC-036 (c): withdrawing a queued post", () => {
     // The withdrawn post never reached the model; the sibling was placed and answered.
     expect(world.faux.state.callCount).toBe(2);
     expect(answered.seen.map(userTexts)).toEqual([["foreground", "sibling"]]);
+  });
+});
+
+describe("ASM-006: a write with model content on an idle conversation", () => {
+  it("appends the note without starting a run, and the next input's run sees it", async () => {
+    const world = wakeWorld();
+    const session = await world.open();
+    const turns = recordedTurn();
+    world.faux.setResponses(Array.from({ length: 4 }, () => turns.step));
+
+    // Idle: no run holds the conversation, so the write settles at once.
+    const write = await session.root.submit(
+      {
+        type: "write",
+        requestId: NOTE_REQUEST,
+        entry: {
+          kind: "satan.bridge",
+          data: { kind: "note", project: "malebolge" },
+          model: [{ role: "user", content: NOTE, timestamp: world.clock.now() }],
+        },
+      },
+      context,
+    );
+    expect((await write.wait(context)).status).toBe("done");
+
+    // Appending an entry asks the model nothing: the write started no run.
+    expect(world.faux.state.callCount).toBe(0);
+    expect(turns.seen).toEqual([]);
+
+    await (
+      await session.root.submit({ type: "input", content: "next", requestId: FOLLOWING }, context)
+    ).wait(context);
+
+    // The next input's run is the first request, and it was given the note first.
+    expect(world.faux.state.callCount).toBe(1);
+    const lines = spoken(only(turns.seen));
+    const note = lines.indexOf(`user:${NOTE}`);
+    expect(note).toBeGreaterThanOrEqual(0);
+    expect(lines.indexOf("user:next")).toBeGreaterThan(note);
   });
 });

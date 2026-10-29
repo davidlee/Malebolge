@@ -89,6 +89,9 @@ probe; notify-send in jail). A further pass, if one were run, would probe
 only `pi-bridge/state.ts`'s table against real pi event ordering — which
 the PHASE-01 probes cover directly.
 
+- PHASE-01 VT-1: pi `implement` (deepseek-flash), 36 requests, $0.035: ASM-006 test + negative control, green first pass. Miss: placed the block mid-file (moved to end); `npx biome` crashes in-form, used flake biome.
+- PHASE-01 VA-1: Claude Sonnet capsule-worker (host; pi/nix not in the quotient form): 5 real-pi rpc probes with a fake provider, all premises held; rerun by the orchestrator reproduced them.
+
 ## Implementation run (2026-10-29, super-orchestrator)
 
 Seat: super-orchestrator in the main worktree. Scope this run: PHASE-01
@@ -110,4 +113,102 @@ session; leave `.doctrine/slice/010/` and its src/ changes alone).
 - Other writers: SL-010's session (src/, `.doctrine/slice/010/`); untracked
   `.doctrine/review/024*` belong to SL-008's audit — not ours.
 
+## Probes (PHASE-01, 2026-10-29)
+
+pi probed: `~/.nix-profile/bin/pi` 1.4.0, source `~/.local/src/pi` @ 936e5f40a.
+Stubs and drivers live in `.doctrine/slice/009/probes/` (not src/, not
+pi-bridge/: EX-9); copy a directory to a scratch dir before running it, since
+the drivers write `work/` and logs beside themselves.
+
+### VA-1: host probes (agent-run)
+
+Rig (`probes/va1/`): `drive.mjs <probe>` spawns
+`pi --mode rpc --no-session -e stub.ts --provider fake --model fake-1 --offline`
+with `PI_CODING_AGENT_DIR=va1/agentdir` (operator's `~/.pi` neither read nor
+written; `agentdir/settings.json` sets `retry.baseDelayMs` 200). `stub.ts`
+registers a deterministic fake provider (`pi.registerProvider`), can delay in
+`before_agent_start`, fails once with `503 service unavailable (stub)` (pi's
+retryable pattern, `packages/ai/src/utils/retry.ts:33`), and implements DEC-090's
+buffer (deliver iff `ctx.isIdle()` and not running; else buffer; flush on
+`agent_settled`, turn as `triggerTurn: !aborted`). "Esc" = rpc `abort`.
+Rerun all: `sh run-all.sh`. Stub logs of the 2026-10-29 run:
+`probes/va1/evidence/<probe>.stub.jsonl`. Rerun by the sub-orchestrator
+reproduced every outcome.
+
+| EX | premise | outcome | decisive evidence |
+|---|---|---|---|
+| EX-1 | ASM-004 (idle paths) | validated | `triggerTurn:false`: entry + details present at return (n 0→1). `triggerTurn:true`: absent at return and after a microtask; present at the consuming `turn_end` (n=2) |
+| EX-5 | RV-021 F-1 | validated | `before_agent_start` delayed 1.5 s: there `isIdle()` false, running false; delivery buffered; rpc `get_state` `isStreaming:true, pendingMessageCount:0`; abort → `agent_settled {aborted:true}`; flush as note, one entry |
+| EX-6 | RV-021 F-9 | validated | rpc order `agent_end`(error) → `auto_retry_start` → `agent_start` → `auto_retry_end` → `agent_end`(stop) → `agent_settled`; `agent_settled` once, last, `aborted:false` |
+| EX-7 | DEC-090/079 abort probe | validated | busy note buffered, abort, settle: one entry, no new `agent_start`. `ex7b`: a buffered *turn* after abort lands as a note (`triggerTurn:false`, no run); without abort it starts one run and appears once |
+
+Observations for the design (none invalidates a premise):
+
+1. `sendMessage(triggerTurn:true)` while idle fires `before_agent_start` and
+   flips `ctx.isIdle()` false synchronously inside the call, while the
+   extension's own running flag (set on `agent_start`) is still false. The
+   `isIdle()` check is the load-bearing guard; the running flag alone is not.
+   Consistent with the RV-021 F-1 fix (check both at every deliver).
+2. An abort during a non-abortable `before_agent_start` handler takes effect
+   only when the handler returns; `agent_settled` then reports `aborted:true`
+   without calling the provider. The bridge's `before_agent_start` (posture
+   rendering) must stay fast.
+3. `sendMessage(triggerTurn:true)` inside an `agent_settled` handler is deferred
+   by pi (`_deferredSettledActions`) and starts a new run after settle, which
+   gets its own `agent_settled`. The flush-on-settle shape works as designed.
+4. ASM-004's validation plan also named "kill pi between queueing and
+   persistence; daemon redelivers": that is daemon behaviour (outbox resume),
+   covered by later phases' tests, not by EX-1.
+
+### VT-1: ASM-006 (agent-run)
+
+`test/queue-premises.test.ts` "ASM-006: a write with model content on an idle
+conversation": validated; negative control (the note sent as `input`) fails
+the zero-model-calls assertion. ASM-006 settled validated.
+
+### VH-1: operator in-jail probes (pending)
+
+Kit: `probes/vh1/sl009-probe/` (`index.ts` stub: TypeBox tool `sl009_echo`,
+bash replaced via `createBashTool` spawnHook setting `SL009_PROBE=1` and
+prepending the stub dir to PATH; `sl009-hello` bare executable; `sl009-wire`
+extensionless `#!/usr/bin/env node` script importing `./wire.ts`). Host smoke:
+the stub loads in pi 1.4.0 (typebox and `createBashTool` resolve under `-e`);
+`sl009-wire` runs on host node v24.21.0, no flags, from any cwd.
+
+Jail facts (read-only look at `~/flakes/agents/jailed-agents.nix`, ~/flakes
+@ 08c0f37d): persisted home `~/.local/share/jail.nix/home/<home>` is bound at
+`$HOME` (`agent` for specDev, `agent-research`, `agent-offline`, or a
+`persistedHome`); `commonPkgs` has `libnotify`, no `nodejs`; pi 1.4.0 is a
+compiled ELF and adds no `node` to PATH (malebolge's own jails get
+`nodejs_24` via `shellPkgs`; other projects' pi jails do not); no D-Bus bind
+and no `DBUS_SESSION_BUS_ADDRESS` (only `XDG_RUNTIME_DIR` with
+`satanMcpOptions`).
+
+Runbook (operator; `<H>` = the jail's persisted home on the host):
+
+0. EX-10 needs node in the jail: apply the proposed ~/flakes change (node in
+   pi jails) first, or run EX-10 in malebolge's own `jailed-pi`, which has
+   `nodejs_24` (that validates the script, not other projects' jails).
+1. Install: `cp -r .doctrine/slice/009/probes/vh1/sl009-probe <H>/.pi/agent/extensions/`
+   (remove it afterwards). Start the jailed pi; expect the notify
+   "sl009-probe loaded from …".
+2. EX-3 (ASM-007): ask pi to call `sl009_echo` with `hi`; expect `sl009:hi`.
+   Load failure (cannot resolve typebox) → invalidated.
+3. EX-4 (ASM-008, F-6): ask pi to run, via bash, `cd /tmp && echo $SL009_PROBE && sl009-hello && ls -d "$PWD" && echo ok >&2; exit 3`.
+   Expect `1`, `sl009-hello ran: SL009_PROBE=1 cwd=/tmp`, the stderr line and
+   exit status 3 reported (built-in behaviour kept).
+4. EX-10 (ASM-009): via bash, `cd /tmp && sl009-wire`; expect
+   `sl009-wire ran on node v2x…: {"text":"xxxxx…xxxxx","truncated":true}` and no
+   flag. `env: 'node': No such file` or a type-stripping error → invalidated.
+5. EX-2 (ASM-005): via bash, `notify-send sl009 "jail probe"`; record whether a
+   desktop notification shows or the error text (expected: fails, no bus).
+   Failure is acceptable (DEC-073); a bus bind would be a CHR-007 item.
+6. Report each outcome; the agent records ASM-005/007/008/009 and flips
+   PHASE-01 completed.
+
 ## Autonomy log
+
+- PHASE-01: probe stubs and drivers kept in `.doctrine/slice/009/probes/` (beside notes) instead of only the scratchpad, so VH-1 and reruns survive the session; outside src/ and pi-bridge/, unlinted, untested (EX-9 intent kept). Tier: decide.
+- PHASE-01: VA-1 probes used a stub-registered fake provider instead of a reachable model; deterministic, no credentials, retryable error forced as EX-6 allows. Tier: decide.
+- PHASE-01: EX-10 premise recorded as ASM-009 (held; host evidence only). Tier: decide.
+- PHASE-01: VH-1 needs node in non-malebolge pi jails: proposed ~/flakes diff handed back for operator assent, not applied (outward reach). Tier: escalate.

@@ -1,0 +1,2 @@
+#!/bin/sh
+echo "sl009-hello ran: SL009_PROBE=${SL009_PROBE:-unset} cwd=$(pwd)"

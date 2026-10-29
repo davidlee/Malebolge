@@ -1,0 +1,34 @@
+schema = "doctrine.knowledge"
+version = 1
+
+id = 9
+slug = "the-pi-jails-node-runs-an-executable-script-that-imports-a-ts-module-with-no-flags"
+title = "The pi jail's node runs an executable script that imports a .ts module with no flags"
+record_kind = "assumption"
+status = "held"
+created = "2026-10-29"
+updated = "2026-10-29"
+tags = []
+
+[facet]                         # every field typed; seeded empty (captured later)
+claim = "Inside a pi jail, an executable script with a '#!/usr/bin/env node' shebang (pi-bridge/malebolge-bridge) imports a .ts module (pi-bridge/wire.ts) and runs with no flags: the jail's node is on PATH and is >= 23.6, so type stripping is on by default (DEC-075)."
+confidence = "medium"
+basis = "design-inference"
+validation_plan = "SL-009 PHASE-01 EX-10 / VH-1: operator runs the kit's sl009-wire (extensionless, shebang to node, imports ./wire.ts) inside a pi jail from another cwd. Invalidated -> /consult (jiti shim or built .js), not a workaround."
+validated_by    = ""
+validated_on    = ""
+invalidated_by  = ""
+invalidated_on  = ""
+
+[evidence]                      # free-text citations (supports / contradicts / notes)
+supports    = []
+contradicts = []
+notes       = []
+
+[relationships]                 # verb-written edges (set by doctrine supersede)
+supersedes    = []   # record ids this one replaces (set by doctrine supersede)
+superseded_by = []   # set on superseded predecessor (verb-written)
+
+[[relation]]
+label = "shapes"
+target = "SL-009"

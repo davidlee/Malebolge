@@ -1,0 +1,3 @@
+Basis: `~/flakes/agents/jailed-agents.nix` commonPkgs carries no nodejs, and pi 1.4.0 is a compiled ELF (`libexec/pi/pi`) that brings no `node` onto PATH; malebolge's own jails add `nodejs_24` through `shellPkgs`, other projects' pi jails do not. The agents flake's nixpkgs has nodejs and nodejs_24 at 24.21.0. Host evidence (2026-10-29): the kit's `sl009-wire` runs on host node v24.21.0 with no flags and no warning, from its own dir and from `/`. The jail case is the premise; it holds only once the jail carries node (proposed ~/flakes change, operator assent pending).
+
+Shapes: SL-009 (PHASE-01 EX-10; DEC-075).
