@@ -1,0 +1,33 @@
+schema = "doctrine.knowledge"
+version = 1
+
+id = 72
+slug = "posture-is-delegate-or-consult-chosen-at-pair-fixed-for-the-pairing-rendered-as-prompt-text-on-both"
+title = "Posture is delegate or consult, chosen at pair, fixed for the pairing, rendered as prompt text on both sides"
+record_kind = "decision"
+status = "proposed"
+created = "2026-10-29"
+updated = "2026-10-29"
+tags = []
+
+[facet]                         # every field typed; seeded empty (captured later)
+context = "Operator: SATAN delegates (pi as hands) or operator-in-pi consults SATAN, by agreement. DEC-025 fixes mode at creation; DEC-040 puts conduct in corpus prose."
+choice = "pair carries posture; the pairing document stores it. SATAN's bridge section renders the posture's text from the corpus; the extension adds its own posture section to pi's system prompt in before_agent_start. Changing posture means a new pairing."
+alternatives = ["Posture as two modes: doubles the catalog for a prompt difference"]
+rationale = "Data on the pairing, prose in the prompt: no mode explosion, and DEC-040 holds."
+consequences = ["corpus gains two posture texts (satan-corpus, its own session)"]
+decided_by = "operator, 2026-10-29 session"
+decided_on = "2026-10-29"
+
+[evidence]                      # free-text citations (supports / contradicts / notes)
+supports    = []
+contradicts = []
+notes       = []
+
+[relationships]                 # verb-written edges (set by doctrine supersede)
+supersedes    = []   # record ids this one replaces (set by doctrine supersede)
+superseded_by = []   # set on superseded predecessor (verb-written)
+
+[[relation]]
+label = "shapes"
+target = "SL-009"

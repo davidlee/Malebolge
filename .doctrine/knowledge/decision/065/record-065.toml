@@ -1,0 +1,33 @@
+schema = "doctrine.knowledge"
+version = 1
+
+id = 65
+slug = "a-pairing-binds-one-pi-session-to-one-bridge-mode-conversation-by-a-token-the-newest-connection-wins"
+title = "A pairing binds one pi session to one bridge-mode conversation by a token; the newest connection wins"
+record_kind = "decision"
+status = "proposed"
+created = "2026-10-29"
+updated = "2026-10-29"
+tags = []
+
+[facet]                         # every field typed; seeded empty (captured later)
+context = "The daemon cannot reach into a jail, so pi dials out. Every jail is the same uid and shares one socket directory (research X3). Mode is fixed at creation (DEC-025)."
+choice = "pair {posture, project} creates a bridge-mode conversation in a topic named for the project root basename (created on first pair with toolset bridge; an existing topic is used, the conversation still gets toolset bridge) and a pairing document holding a hash of a random token; paired {conversation, token} replies. The extension stores {conversation, token} in its pi session (appendEntry) and sends resume {conversation, token} on every reconnect. A valid resume supersedes any live connection for that pairing (the old one is closed with a reason). end closes the pairing: later frames for it are refused; the conversation stays an ordinary transcript."
+alternatives = ["No token, pairing by conversation id alone: any session could resume any pairing by accident", "Token held in memory only: pairing would not survive a pi restart"]
+rationale = "Cheap reconnect and resume across pi restarts; the token stops a wrong session resuming a pairing by accident. The mount is the real boundary."
+consequences = ["Accepted residual (operator): session files live in the shared jail home, so a subverted jail could read another pairing's token; supervised agents, not worried", "project is a client assertion used only for naming; the topic name is validated"]
+decided_by = "operator, 2026-10-29 session"
+decided_on = "2026-10-29"
+
+[evidence]                      # free-text citations (supports / contradicts / notes)
+supports    = []
+contradicts = []
+notes       = []
+
+[relationships]                 # verb-written edges (set by doctrine supersede)
+supersedes    = []   # record ids this one replaces (set by doctrine supersede)
+superseded_by = []   # set on superseded predecessor (verb-written)
+
+[[relation]]
+label = "shapes"
+target = "SL-009"

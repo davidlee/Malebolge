@@ -1,0 +1,33 @@
+schema = "doctrine.knowledge"
+version = 1
+
+id = 73
+slug = "the-pi-extension-lives-in-pi-bridge-in-this-repo-and-is-mounted-read-only-into-the-jail-homes"
+title = "The pi extension lives in pi-bridge/ in this repo and is mounted read-only into the jail home's extensions directory"
+record_kind = "decision"
+status = "proposed"
+created = "2026-10-29"
+updated = "2026-10-29"
+tags = []
+
+[facet]                         # every field typed; seeded empty (captured later)
+context = "Operator: install into the persisted jail home, forever home in this repo. pi discovers ~/.pi/agent/extensions/<dir>/index.ts; jiti loads TypeScript without a build. Project extensions need project trust."
+choice = "pi-bridge/ holds the extension (index.ts), the malebolge-bridge command, and the wire types, which the daemon imports. The flakes combinator ro-binds it at ~/.pi/agent/extensions/malebolge-bridge. The extension opens its connection in session_start, closes it in session_shutdown, reconnects with backoff, shows state with setStatus, and registers bridge_post and /bridge (pair, end). It has no npm dependencies beyond what pi provides."
+alternatives = ["$PROJECT/.pi: per-project install and a project-trust prompt"]
+rationale = "One install, one version, immutable inside the jail."
+consequences = ["the daemon trusts nothing the client says: budget, framing and caps are daemon-side", "ASM: TypeBox resolves from pi's provided modules; verify in plan"]
+decided_by = "operator, 2026-10-29 session"
+decided_on = "2026-10-29"
+
+[evidence]                      # free-text citations (supports / contradicts / notes)
+supports    = []
+contradicts = []
+notes       = []
+
+[relationships]                 # verb-written edges (set by doctrine supersede)
+supersedes    = []   # record ids this one replaces (set by doctrine supersede)
+superseded_by = []   # set on superseded predecessor (verb-written)
+
+[[relation]]
+label = "shapes"
+target = "SL-009"

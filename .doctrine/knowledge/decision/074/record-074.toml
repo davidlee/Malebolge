@@ -1,0 +1,33 @@
+schema = "doctrine.knowledge"
+version = 1
+
+id = 74
+slug = "malebolge-owns-the-bridge-deployment-contract-flakes-implements-it-the-satan-launcher-is-unchanged"
+title = "malebolge owns the bridge deployment contract; ~/flakes implements it; the satan launcher is unchanged"
+record_kind = "decision"
+status = "proposed"
+created = "2026-10-29"
+updated = "2026-10-29"
+tags = []
+
+[facet]                         # every field typed; seeded empty (captured later)
+context = "DEC-059: transport is a deployment concern; malebolge's design owns the contract, other repos' sessions make their changes. The room daemon's jail already binds /run/user/1000/satan/durable/room read-write (satan flake.nix:486)."
+choice = "Contract: (1) the directory …/durable/room/bridge, created before a pi jail starts, ro-bound into pi jails; (2) MALEBOLGE_BRIDGE_SOCKET forwarded; (3) pi-bridge/ ro-bound at ~/.pi/agent/extensions/malebolge-bridge; (4) a read-only option for the project mount (--ro-bind). A ~/flakes backlog item carries it."
+alternatives = ["Change the satan launcher to create the directory: unnecessary, the daemon creates it inside its rw bind; the flakes combinator's host-side mkdir covers the before-start case"]
+rationale = "One owner per side; no cross-repo edits from this slice."
+consequences = ["CHR item for ~/flakes, like CHR-006"]
+decided_by = "operator, 2026-10-29 session"
+decided_on = "2026-10-29"
+
+[evidence]                      # free-text citations (supports / contradicts / notes)
+supports    = []
+contradicts = []
+notes       = []
+
+[relationships]                 # verb-written edges (set by doctrine supersede)
+supersedes    = []   # record ids this one replaces (set by doctrine supersede)
+superseded_by = []   # set on superseded predecessor (verb-written)
+
+[[relation]]
+label = "shapes"
+target = "SL-009"

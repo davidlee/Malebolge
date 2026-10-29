@@ -1,0 +1,33 @@
+schema = "doctrine.knowledge"
+version = 1
+
+id = 70
+slug = "a-per-pairing-budget-of-10-bridge-started-satan-turns-refilled-by-the-operators-input-on-either-side"
+title = "A per-pairing budget of 10 bridge-started SATAN turns, refilled by the operator's input on either side"
+record_kind = "decision"
+status = "proposed"
+created = "2026-10-29"
+updated = "2026-10-29"
+tags = []
+
+[facet]                         # every field typed; seeded empty (captured later)
+context = "DEC-036 allows loops and counts only satan.post tasks, so a two-agent ping-pong needs its own bound (research X5). Operator wants to revisit: full autonomy until compaction, or shorter drives."
+choice = "The pairing document counts SATAN turns started by bridge messages since the last refill. At the budget (BRIDGE_TURN_BUDGET = 10, a named constant) a turn-kind post is refused with reason budget exhausted, waiting on the operator; notes still pass. Operator input refills: a human input in the bridged conversation (seen by the daemon) or a human input in the pi session (reported by the extension as a refill frame)."
+alternatives = ["Only SATAN-side input refills: safe against a subverted client but forces the operator to Emacs in consult posture", "Hop or depth caps: not modelled anywhere; budget is simpler"]
+rationale = "Explicit refusal, one counter, cheap to resume."
+consequences = ["Accepted residual (operator): a subverted pi could fake refills", "budget policy is expected to change (autonomy modes); keep it one function over the document"]
+decided_by = "operator, 2026-10-29 session"
+decided_on = "2026-10-29"
+
+[evidence]                      # free-text citations (supports / contradicts / notes)
+supports    = []
+contradicts = []
+notes       = []
+
+[relationships]                 # verb-written edges (set by doctrine supersede)
+supersedes    = []   # record ids this one replaces (set by doctrine supersede)
+superseded_by = []   # set on superseded predecessor (verb-written)
+
+[[relation]]
+label = "shapes"
+target = "SL-009"

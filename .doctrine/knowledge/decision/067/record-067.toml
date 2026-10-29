@@ -1,0 +1,33 @@
+schema = "doctrine.knowledge"
+version = 1
+
+id = 67
+slug = "pis-messages-enter-the-bridged-conversation-as-one-direct-input-each-escaped-framed-as-data-capped"
+title = "pi's messages enter the bridged conversation as one direct input each, escaped, framed as data, capped, idempotent by sequence"
+record_kind = "decision"
+status = "proposed"
+created = "2026-10-29"
+updated = "2026-10-29"
+tags = []
+
+[facet]                         # every field typed; seeded empty (captured later)
+context = "A thread post is a durable task because its sender is another conversation's tool call (DEC-035). Here the sender is an external client the daemon answers directly. Post envelopes today interpolate unescaped (ISS-003)."
+choice = 'post {seq, text} submits one input to the bridged conversation, whenBusy followUp, entry kind satan.bridge, requestId bridge:<pairing>:<seq>, so a resend after reconnect is not duplicated; accepted {seq} replies after the commit, refused {seq, reason} on any refusal. The model reads <bridge from="pi" project="…" seq="n">…</bridge> with every value escaped and the body framed as untrusted data with provenance. Bodies are capped in bytes; truncation keeps head and tail and says so.'
+alternatives = ["A satan.post-style durable task per message: the task exists to carry a sender's commit, which an external client does not have"]
+rationale = "Simplest durable path: the submit commit is the durability point; the request id gives idempotence."
+consequences = ["uses SL-008's shared untrusted-block module (DEC-054) if built first, else escapeXml", "a new entry kind satan.bridge"]
+decided_by = "operator, 2026-10-29 session"
+decided_on = "2026-10-29"
+
+[evidence]                      # free-text citations (supports / contradicts / notes)
+supports    = []
+contradicts = []
+notes       = []
+
+[relationships]                 # verb-written edges (set by doctrine supersede)
+supersedes    = []   # record ids this one replaces (set by doctrine supersede)
+superseded_by = []   # set on superseded predecessor (verb-written)
+
+[[relation]]
+label = "shapes"
+target = "SL-009"

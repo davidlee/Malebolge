@@ -1,0 +1,33 @@
+schema = "doctrine.knowledge"
+version = 1
+
+id = 64
+slug = "the-bridge-is-a-second-daemon-listener-in-its-own-directory-with-its-own-first-line-table"
+title = "The bridge is a second daemon listener in its own directory, with its own first-line table"
+record_kind = "decision"
+status = "proposed"
+created = "2026-10-29"
+updated = "2026-10-29"
+tags = []
+
+[facet]                         # every field typed; seeded empty (captured later)
+context = "A read-only mount does not stop connect(): a jail that sees the room runtime dir can dial durable.sock, the full protocol (research X1). The daemon has one listener and one FIRST_LINE table (DEC-016)."
+choice = "The daemon serves $XDG_RUNTIME_DIR/satan/durable/room/bridge/bridge.sock (override MALEBOLGE_BRIDGE_SOCKET), directory 0700 and socket 0600, as a second listener with its own handler table and its own frame vocabulary, newline-delimited JSON as the main socket. First line: pair | resume | post-once. Bound: post, ack, end (client); paired, accepted, refused, deliver (daemon). inProfileDir gains a bridge variant (grandparent named for the profile). Room profile only."
+alternatives = ["A verb-filtered mode on the existing socket: more edits (per-connection capability through ServeOptions, act, laterLine) and weakens one-socket-one-protocol", "Socket beside durable.sock in the same directory: the mounted directory would expose durable.sock"]
+rationale = "Only the bridge directory is mounted into jails, so jails can reach only bridge verbs. A second serve with its own table is cheaper than filtering and leaves the full protocol untouched."
+consequences = ["src/config.ts profile-dir rule gains a bridge variant", "the directory must exist before a pi jail starts (try-readonly skips an absent path)", "modes only stop other uids; every jail is the same uid"]
+decided_by = "agent, operator agreed 2026-10-29"
+decided_on = "2026-10-29"
+
+[evidence]                      # free-text citations (supports / contradicts / notes)
+supports    = []
+contradicts = []
+notes       = []
+
+[relationships]                 # verb-written edges (set by doctrine supersede)
+supersedes    = []   # record ids this one replaces (set by doctrine supersede)
+superseded_by = []   # set on superseded predecessor (verb-written)
+
+[[relation]]
+label = "shapes"
+target = "SL-009"

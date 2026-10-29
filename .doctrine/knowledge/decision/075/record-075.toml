@@ -1,0 +1,33 @@
+schema = "doctrine.knowledge"
+version = 1
+
+id = 75
+slug = "malebolge-bridge-send-and-tee-post-stdin-as-one-note-through-a-one-shot-frame"
+title = "malebolge-bridge send and tee post stdin as one note through a one-shot frame"
+record_kind = "decision"
+status = "proposed"
+created = "2026-10-29"
+updated = "2026-10-29"
+tags = []
+
+[facet]                         # every field typed; seeded empty (captured later)
+context = "Operator: a tee-like binary so command output reaches SATAN without passing through pi's context."
+choice = "The extension sets MALEBOLGE_BRIDGE_CONVERSATION and MALEBOLGE_BRIDGE_TOKEN for the commands pi runs. malebolge-bridge send reads stdin to end and sends post-once {conversation, token, kind, text}, which the daemon answers once and closes (DEC-007), so it never displaces the extension's connection. Default kind note; --turn makes it a turn (counts against the budget). send prints only the ack; tee also copies stdin to stdout. Same caps and truncation as a post."
+alternatives = ["Stream chunks as they arrive: each would start or queue a turn", "Route through the extension: needs a second local channel"]
+rationale = "One message, bounded, no context double-handling."
+consequences = ["ASM: the extension can set env for pi's bash tool (bash-spawn-hook example); verify in plan"]
+decided_by = "operator, 2026-10-29 session"
+decided_on = "2026-10-29"
+
+[evidence]                      # free-text citations (supports / contradicts / notes)
+supports    = []
+contradicts = []
+notes       = []
+
+[relationships]                 # verb-written edges (set by doctrine supersede)
+supersedes    = []   # record ids this one replaces (set by doctrine supersede)
+superseded_by = []   # set on superseded predecessor (verb-written)
+
+[[relation]]
+label = "shapes"
+target = "SL-009"

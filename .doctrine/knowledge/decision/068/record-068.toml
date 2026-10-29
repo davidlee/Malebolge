@@ -1,0 +1,33 @@
+schema = "doctrine.knowledge"
+version = 1
+
+id = 68
+slug = "each-bridge-message-enters-each-sides-context-exactly-once"
+title = "Each bridge message enters each side's context exactly once"
+record_kind = "decision"
+status = "proposed"
+created = "2026-10-29"
+updated = "2026-10-29"
+tags = []
+
+[facet]                         # every field typed; seeded empty (captured later)
+context = "Operator: two agents cost twice; the relay must not double-handle, especially on the pi side."
+choice = """Post tools on both sides return a short ack ("sent #n"), never an echo of the text. Inbound messages are pushed once, never polled; there is no receive tool. pi injects an inbound message once as a custom message (customType malebolge-bridge). Nothing of SATAN's transcript or tool calls reaches pi except its bridge posts. malebolge-bridge send prints only an ack; tee passes output through, so pi sees it once and SATAN once."""
+alternatives = ["A receive tool: each poll costs a call and a result in context"]
+rationale = "Context is the dominant cost of two agents."
+consequences = ["tool-result text is part of the design contract and tested"]
+decided_by = "operator, 2026-10-29 session"
+decided_on = "2026-10-29"
+
+[evidence]                      # free-text citations (supports / contradicts / notes)
+supports    = []
+contradicts = []
+notes       = []
+
+[relationships]                 # verb-written edges (set by doctrine supersede)
+supersedes    = []   # record ids this one replaces (set by doctrine supersede)
+superseded_by = []   # set on superseded predecessor (verb-written)
+
+[[relation]]
+label = "shapes"
+target = "SL-009"

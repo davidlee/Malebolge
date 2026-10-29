@@ -1,0 +1,33 @@
+schema = "doctrine.knowledge"
+version = 1
+
+id = 66
+slug = "satans-messages-to-pi-wait-in-a-durable-outbox-in-the-bridged-conversations-own-document-pushed-and"
+title = "SATAN's messages to pi wait in a durable outbox in the bridged conversation's own document, pushed and acked by sequence"
+record_kind = "decision"
+status = "proposed"
+created = "2026-10-29"
+updated = "2026-10-29"
+tags = []
+
+[facet]                         # every field typed; seeded empty (captured later)
+context = "pi is a client, not a conversation, so the durable post path does not fit SATAN to pi (research X4). Operator chose a daemon-side outbox over an attach-style stream so pi never consumes SATAN's transcript."
+choice = "The pairing document (pi-durable defineDoc, conversation scope) holds the outbox: entries {seq, text}. bridge_post appends in the same commit as its tool result. While a client is bound the daemon sends deliver {seq, text} for every entry above the acked cursor, on bind and on each change; ack {seq} advances the cursor and drops delivered entries. The extension ignores a seq at or below the last one it injected."
+alternatives = ["Attach-style stream of the conversation: pi would read SATAN's whole transcript", "A separate store or table: a second persistence path for no gain"]
+rationale = "No new storage; atomic with the tool call; survives daemon restart and pi disconnects; at-least-once delivery made exactly-once in pi's context by the seq check."
+consequences = ["outbox growth while pi is away is bounded by the loop budget", "pi-durable watchDoc or the commit path drives pushes"]
+decided_by = "operator, 2026-10-29 session"
+decided_on = "2026-10-29"
+
+[evidence]                      # free-text citations (supports / contradicts / notes)
+supports    = []
+contradicts = []
+notes       = []
+
+[relationships]                 # verb-written edges (set by doctrine supersede)
+supersedes    = []   # record ids this one replaces (set by doctrine supersede)
+superseded_by = []   # set on superseded predecessor (verb-written)
+
+[[relation]]
+label = "shapes"
+target = "SL-009"
