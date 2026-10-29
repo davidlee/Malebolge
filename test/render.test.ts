@@ -6,6 +6,18 @@ const assistant = (text: string): JsonRecord => ({
   kind: "pi.assistant",
   model: [{ role: "assistant", content: [{ type: "text", text }] }],
 });
+/** An assistant turn the model failed: pi stores `stopReason: "error"` and the provider's words. */
+const failed = (errorMessage: string, text = ""): JsonRecord => ({
+  kind: "pi.assistant",
+  model: [
+    {
+      role: "assistant",
+      content: text === "" ? [] : [{ type: "text", text }],
+      stopReason: "error",
+      errorMessage,
+    },
+  ],
+});
 const user = (text: string): JsonRecord => ({
   kind: "pi.user",
   model: [{ role: "user", content: text }],
@@ -36,6 +48,44 @@ const renderAll = (
 };
 
 describe("renderer", () => {
+  // IMP-026 #1: a failed model turn printed nothing, so the operator saw only their prompt.
+  describe("a failed model turn", () => {
+    const start = { type: "message_start", message: { role: "assistant", content: [] } };
+
+    it("says the model's error when the turn ends", () => {
+      expect(
+        renderAll([start, { type: "message_end", entry: failed("429 no credits remaining") }]),
+      ).toBe("[model error: 429 no credits remaining]\n");
+    });
+
+    it("says it after whatever text streamed first", () => {
+      expect(
+        renderAll([
+          start,
+          {
+            type: "message_update",
+            changes: [{ type: "text_delta", contentIndex: 0, delta: "hel" }],
+          },
+          { type: "message_end", entry: failed("stream was interrupted", "hel") },
+        ]),
+      ).toBe("hel\n[model error: stream was interrupted]\n");
+    });
+
+    it("says it again when a snapshot replays the turn", () => {
+      expect(renderAll([snapshot([user("hi"), failed("400 no healthy deployments")])])).toBe(
+        "» hi\n[model error: 400 no healthy deployments]\n",
+      );
+    });
+
+    it("is a `[status]` line in emacs, live and replayed", () => {
+      const live = [start, { type: "message_end", entry: failed("429") }];
+      expect(renderAll(live, { presentation: "emacs" })).toBe("[status] model error: 429\n");
+      expect(renderAll([snapshot([failed("429")])], { presentation: "emacs" })).toBe(
+        "[status] model error: 429\n",
+      );
+    });
+  });
+
   it("replays the transcript of a snapshot, user turns marked", () => {
     expect(renderAll([snapshot([user("hi"), assistant("hello")])])).toBe("» hi\nhello\n");
   });

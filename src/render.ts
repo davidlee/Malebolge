@@ -268,6 +268,13 @@ function inputOf(entry: EntryRecord): InputRendering | undefined {
   return entry.kind === WAKE_KIND && isWakeEntry(data) ? wakeRendering(data) : undefined;
 }
 
+/** A failed model turn's notice, with the provider's words; nothing for any other message. */
+function modelError(p: PresentationTable, message: Message): string {
+  return message.role === "assistant" && message.stopReason === "error"
+    ? p.notice(`model error: ${message.errorMessage ?? "no message given"}`)
+    : "";
+}
+
 function transcriptLine(p: PresentationTable, entry: EntryRecord): string {
   const input = inputOf(entry);
   if (input !== undefined) {
@@ -278,7 +285,7 @@ function transcriptLine(p: PresentationTable, entry: EntryRecord): string {
     return p.userTurn(textOf(message));
   }
   if (message?.role === "assistant") {
-    return p.answer(textOf(message));
+    return p.answer(textOf(message)) + modelError(p, message);
   }
   return entry.kind === "pi.compaction" ? p.notice("compacted") : "";
 }
@@ -487,7 +494,7 @@ export function createRenderer(options: RendererOptions = {}): (event: Printable
       // The final text goes through the cue path, so an answer first seen whole
       // is headed or cued as if it had streamed in.
       const text = advance(p.finalText(textOf(message), shown));
-      const out = text + p.finish(printed, trailingNewlines(ended + text));
+      const out = text + p.finish(printed, trailingNewlines(ended + text)) + modelError(p, message);
       reset();
       return out;
     },

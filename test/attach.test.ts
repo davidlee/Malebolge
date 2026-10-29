@@ -358,6 +358,19 @@ describe("attach", () => {
     expect(s.printed()).toContain("[detached]");
   });
 
+  // IMP-026 #1: a failed model turn says why, rather than leaving only the prompt.
+  it("says a failed model turn's error", async () => {
+    test.faux.setResponses([
+      fauxAssistantMessage([], { stopReason: "error", errorMessage: "Invalid request" }),
+    ]);
+    const s = session(path);
+    await s.until(rootAttached());
+    s.input.write("go\n");
+    await s.until("[model error: Invalid request]\n");
+    s.input.end();
+    await s.done;
+  });
+
   describe("with an answer streamed in many commits", () => {
     // Slow enough to span several 100 ms progress commits, so the client sees
     // what a real provider produces: message_start carrying a partial, deltas,

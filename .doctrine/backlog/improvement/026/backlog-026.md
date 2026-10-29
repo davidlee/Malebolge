@@ -16,6 +16,14 @@ folded in as a duplicate).
    Unverified inference: pi-ai treats 429 as retryable and backs off quietly.
    Expected: a model error (or a long retry) surfaces in the transcript and the
    log. Predates SL-010.
+   **Transcript done 2026-10-29:** cause confirmed — pi stores a failed turn
+   as an assistant entry with `stopReason: "error"` and `errorMessage`, and
+   the renderer printed only its (empty) text; `run_end` carries no failure.
+   It now prints `[model error: …]` (`[status] model error: …` in Emacs),
+   live and on snapshot replay; the attach test proves it end to end over the
+   faux provider. A retryable error (429 matches pi-ai's retry pattern) also
+   gets pi-durable's existing `retry N:` notice. Still open: the daemon
+   journal logs nothing for a failed turn — no event observer exists there.
 2. **Connect status names only the id.** After `new` in a topic,
    `[status] Connected …` gives the conversation id, not its topic or model.
    The list reply already carries per-id `{topic, model}` (SL-010 PHASE-05).
