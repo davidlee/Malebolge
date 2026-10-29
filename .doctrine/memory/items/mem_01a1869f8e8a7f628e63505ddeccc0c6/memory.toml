@@ -1,0 +1,50 @@
+memory_uid = "mem_01a1869f8e8a7f628e63505ddeccc0c6"
+memory_key = "mem.fact.malebolge.root-indexed-in-default"
+schema_version = 1
+memory_type = "fact"
+status = "active"
+title = "Root is indexed in the default topic"
+summary = "Every non-task conversation without a parent, root included, gets index entry {topic: default}; root also carries toolset interactive. No conversation lists an empty topic."
+created = "2026-10-29"
+updated = "2026-10-29"
+
+[scope]
+paths = ["src/topics.ts", "src/conversations.ts"]
+globs = []
+commands = []
+tags = ["topics"]
+workspace = "default"
+repo = "github.com/davidlee/Malebolge"
+repo_id_kind = "remote"
+repo_id_confidence = "high"
+
+[git]
+anchor_kind = "checkout_state"
+commit = ""
+tree = "b12a5f9450f202df3ad7ba7aa8209c369b425edd"
+ref_name = "refs/heads/main"
+checkout_state_id = "3fdc0854752e1d6a43d201062b157ee4fa3d66e6133de0f7a0426f1e73aedff0"
+base_commit = "8ce8fa2f7f4b7ea288b9f50e6697af42cc0609ef"
+verified_sha = ""
+normalizer = "forget.checkout.v1"
+
+[review]
+verification_state = "unverified"
+reviewed = ""
+review_by = ""
+
+[trust]
+trust_level = "medium"
+
+[ranking]
+severity = "none"
+weight = 0
+
+[[source]]
+kind = "code"
+ref = "src/topics.ts:113"
+
+[[source]]
+kind = "test"
+ref = "test/topics.test.ts:62"
+
