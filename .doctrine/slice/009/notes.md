@@ -88,3 +88,26 @@ red/green tests and by the PHASE-01 probes (ASM-004..008; DEC-079/090 abort
 probe; notify-send in jail). A further pass, if one were run, would probe
 only `pi-bridge/state.ts`'s table against real pi event ordering — which
 the PHASE-01 probes cover directly.
+
+## Implementation run (2026-10-29, super-orchestrator)
+
+Seat: super-orchestrator in the main worktree. Scope this run: PHASE-01
+only; PHASE-02 waits for SL-010 on main (SL-010 being driven by another
+session; leave `.doctrine/slice/010/` and its src/ changes alone).
+
+- Host gate: `just check` (fmt-check, lint, typecheck, test) — green at
+  c4204c0. Commit only the paths a phase changed (`git commit <paths>`).
+- quotient forms (`.quotient/forms/{read,write}`): write form runs every
+  gate recipe and the full suite green (104 files / 3542 tests); network
+  available. **No `pi`, no `nix` in the form**: real-pi probes run on the
+  host (Claude workers), not pi workers.
+- Host pi: `~/.nix-profile/bin/pi` 1.4.0 (llm-agents package, same input
+  the jail uses); source at `~/.local/src/pi` @ 936e5f40a.
+- Jail: `~/flakes/agents/jailed-agents.nix`. Its `commonPkgs` has
+  libnotify but no nodejs. Operator ruling (2026-10-29): runtime deps the
+  bridge needs in the jail belong in ~/flakes' agents flake, not this
+  repo's flake. Flake edits need operator assent before they're made.
+- Other writers: SL-010's session (src/, `.doctrine/slice/010/`); untracked
+  `.doctrine/review/024*` belong to SL-008's audit — not ours.
+
+## Autonomy log
