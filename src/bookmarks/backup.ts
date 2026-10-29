@@ -133,7 +133,7 @@ interface Chosen {
 }
 
 /** Whether `date` (YYYY-MM-DD) is a real calendar date: 2026-02-30 and 9999-99-99 are not. */
-function isCalendarDate(date: string): boolean {
+export function isCalendarDate(date: string): boolean {
   const parsed = new Date(`${date}T00:00:00.000Z`);
   return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === date;
 }
