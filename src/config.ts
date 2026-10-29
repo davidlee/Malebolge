@@ -5,6 +5,7 @@
 // (design §4.2, DEC-077, DEC-078).
 
 import { basename, dirname, isAbsolute, join } from "node:path";
+import { bridgeSocketPath } from "../pi-bridge/wire.ts";
 import {
   onlyKeys,
   optionalRecord,
@@ -69,6 +70,8 @@ export interface Config {
   wakes: WakeSettings;
   /** Present exactly when the profile allows `mail` (the room). */
   screwtape?: ScrewtapePaths;
+  /** Present exactly when the profile is room: the bridge listener's socket (SL-009). */
+  bridgeSocket?: string;
   /**
    * MALEBOLGE_BOOKMARK_BACKUPS: Firefox's bookmarkbackups directory, absolute;
    * absent leaves the bookmark tools refusing (DEC-055).
@@ -156,12 +159,31 @@ export const attachSocket = (env: Env): string =>
     env["MALEBOLGE_PROFILE"] === undefined ? "room" : profileOf(env["MALEBOLGE_PROFILE"]),
   );
 
-/** `path`, unless its directory is named for another profile (a launcher misconfiguration). */
-function inProfileDir(name: string, path: string, profile: Profile): string {
-  if (basename(dirname(path)) !== profile) {
-    throw new Error(`${name} ${path} is not in a directory named ${profile}`);
+/**
+ * `path`, unless its directory is named for another profile (a launcher
+ * misconfiguration). `inner`, when given, names a directory the path must sit
+ * in first, as the bridge socket sits in `bridge/` inside the profile's own
+ * directory (SL-009 design sec-2).
+ */
+function inProfileDir(name: string, path: string, profile: Profile, inner?: string): string {
+  const directory = dirname(path);
+  if (inner === undefined) {
+    if (basename(directory) !== profile) {
+      throw new Error(`${name} ${path} is not in a directory named ${profile}`);
+    }
+    return path;
+  }
+  if (basename(directory) !== inner || basename(dirname(directory)) !== profile) {
+    throw new Error(`${name} ${path} is not in a ${inner} directory inside one named ${profile}`);
   }
   return path;
+}
+
+/** The room's bridge socket, checked to sit in its `bridge/` directory; nothing on the host. */
+function bridgeSocketOf(env: Env, profile: Profile): string | undefined {
+  return profile === "room"
+    ? inProfileDir("bridgeSocket", bridgeSocketPath(env), profile, "bridge")
+    : undefined;
 }
 
 /**
@@ -322,6 +344,7 @@ export function resolveConfig(env: Env, cwd: string, readFile: (path: string) =>
     {
       screwtape: screwtapeOf(env, profile, home),
       bookmarkBackups: bookmarkBackupsOf(env, profile),
+      bridgeSocket: bridgeSocketOf(env, profile),
     },
   );
 }

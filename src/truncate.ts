@@ -1,23 +1,10 @@
 // Truncation of text for the prompt and for tool output.
 
-const isContinuationByte = (byte: number): boolean => (byte & 0xc0) === 0x80;
+import { capUtf8 } from "../pi-bridge/wire.ts";
 
-/**
- * `text` cut to at most `maxBytes` UTF-8 bytes, on a character boundary: a
- * multi-byte character that would straddle the cap is dropped whole.
- */
-export const capUtf8 = (text: string, maxBytes: number): { text: string; truncated: boolean } => {
-  const bytes = Buffer.from(text, "utf8");
-  if (bytes.length <= maxBytes) {
-    return { text, truncated: false };
-  }
-  // Back off to the start of the character the cap falls in, unless it falls between two.
-  let end = maxBytes;
-  while (end > 0 && isContinuationByte(bytes[end] ?? 0)) {
-    end--;
-  }
-  return { text: bytes.subarray(0, end).toString("utf8"), truncated: true };
-};
+// `capUtf8` lives in the bridge wire, which the daemon shares with pi; it is
+// re-exported here so every daemon caller is unchanged (SL-009 design sec-4).
+export { capUtf8 };
 
 /** The head of a stream of text, up to a byte cap. */
 export interface HeadKeeper {

@@ -4,6 +4,7 @@
   "files": {
     "includes": [
       "src/**",
+      "pi-bridge/**",
       "test/**",
       "*.json",
       "!package-lock.json",

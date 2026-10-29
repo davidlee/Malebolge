@@ -1,7 +1,7 @@
 // SL-027 design §4.1: which modules may import which, asserted over the
-// source text file by file. Allowlists, not denylists: a new root module is
-// outside the runner's and the room's lists until it is added on purpose
-// (RFC-001 §1; RV-035 F-9).
+// source text file by file, src/ and the pi-bridge/ tree (loaded by pi's jiti)
+// alike. Allowlists, not denylists: a new root module is outside the runner's
+// and the room's lists until it is added on purpose (RFC-001 §1; RV-035 F-9).
 
 import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join, normalize } from "node:path";
@@ -46,6 +46,11 @@ const THREADS_READERS = ["daemon-extensions.ts", "daemon-start.ts", "render.ts"]
 const BOOKMARKS_DIR = "bookmarks/";
 const MAIL_DIR = "mail/";
 
+/** pi-bridge/ is loaded from the jail, so it imports itself and nothing of src/ (SL-009 design sec-2). */
+const BRIDGE_DIR = "../pi-bridge/";
+/** The one pi-bridge/ module src/ may import: the wire both sides share. */
+const BRIDGE_WIRE = `${BRIDGE_DIR}wire.ts`;
+
 /** Source text by path relative to src/. */
 type Sources = Readonly<Record<string, string>>;
 
@@ -87,6 +92,17 @@ function familyAllows(file: string, target: string): boolean {
   return !(file.startsWith(BOOKMARKS_DIR) && target.startsWith(MAIL_DIR));
 }
 
+/**
+ * Whether `file` may import `target` across the pi-bridge/src line (both
+ * src/-relative, a pi-bridge file keyed `../pi-bridge/<name>`): a pi-bridge
+ * module imports pi-bridge only, and src/ imports `wire.ts` alone.
+ */
+function bridgeAllows(file: string, target: string): boolean {
+  return file.startsWith(BRIDGE_DIR)
+    ? target.startsWith(BRIDGE_DIR)
+    : !target.startsWith(BRIDGE_DIR) || target === BRIDGE_WIRE;
+}
+
 /** `roots`, or a sibling tier in `tiers`: what a module of a confined tier may import. */
 const within =
   (tiers: readonly Tier[], roots: readonly string[]) =>
@@ -112,7 +128,8 @@ function violations(sources: Sources): string[] {
             !ALLOWS[tierOf(file)](target, file) ||
             (target === ROOM_DOOR && !ROOM_DOOR_READERS.includes(file)) ||
             !seamAllows(file, target) ||
-            !familyAllows(file, target),
+            !familyAllows(file, target) ||
+            !bridgeAllows(file, target),
         )
         .map((target) => `${file} -> ${target}`),
     )
@@ -120,6 +137,7 @@ function violations(sources: Sources): string[] {
 }
 
 const SRC = join(import.meta.dirname, "../src");
+const BRIDGE = join(import.meta.dirname, "../pi-bridge");
 
 function sourceTree(dir: string, prefix = ""): Record<string, string> {
   return Object.fromEntries(
@@ -131,9 +149,16 @@ function sourceTree(dir: string, prefix = ""): Record<string, string> {
   );
 }
 
+/** The pi-bridge/ tree, keyed src-relative as `../pi-bridge/<name>`. */
+function bridgeTree(): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(sourceTree(BRIDGE)).map(([name, source]) => [`${BRIDGE_DIR}${name}`, source]),
+  );
+}
+
 describe("module boundaries (design §4.1)", () => {
-  it("src/ imports only what each tier's allowlist names", () => {
-    expect(violations(sourceTree(SRC))).toEqual([]);
+  it("src/ and pi-bridge/ import only what each tier's allowlist names", () => {
+    expect(violations({ ...sourceTree(SRC), ...bridgeTree() })).toEqual([]);
   });
 });
 
@@ -245,5 +270,35 @@ describe("violations: the allowlist checker", () => {
       'import { Connection } from "@earendil-works/pi-env";',
     ].join("\n");
     expect(rejects("runner/run.ts", source)).toEqual([]);
+  });
+
+  // SL-009 PHASE-03 VT-4/EX-2: pi-bridge/ is loaded by pi's jiti from the jail,
+  // so it imports only itself and packages; src/ may import pi-bridge/wire.ts
+  // and no other pi-bridge module.
+  it("rejects a pi-bridge module importing src/", () => {
+    expect(
+      rejects("../pi-bridge/index.ts", 'import { capUtf8 } from "../src/truncate.ts";'),
+    ).toEqual(["../pi-bridge/index.ts -> ../src/truncate.ts"]);
+  });
+
+  it("accepts a pi-bridge module importing itself and packages", () => {
+    const source = [
+      'import { parseFrame } from "./wire.ts";',
+      'import { defineExtension } from "@earendil-works/pi-coding-agent";',
+    ].join("\n");
+    expect(rejects("../pi-bridge/index.ts", source)).toEqual([]);
+  });
+
+  it("accepts src/bridge importing pi-bridge/wire.ts, and truncate.ts re-exporting capUtf8", () => {
+    expect(
+      rejects("bridge/listener.ts", 'import { parseFrame } from "../../pi-bridge/wire.ts";'),
+    ).toEqual([]);
+    expect(rejects("truncate.ts", 'import { capUtf8 } from "../pi-bridge/wire.ts";')).toEqual([]);
+  });
+
+  it("rejects src/bridge importing a pi-bridge module other than wire.ts", () => {
+    expect(
+      rejects("bridge/listener.ts", 'import { extension } from "../../pi-bridge/index.ts";'),
+    ).toEqual(["bridge/listener.ts -> ../pi-bridge/index.ts"]);
   });
 });

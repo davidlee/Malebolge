@@ -366,3 +366,36 @@ describe("bookmark backups (VT-1)", () => {
     }
   });
 });
+
+// SL-009 PHASE-03 VT-3: the bridge listener's socket, set for the room alone
+// (design sec-2 "Path"; the path rule itself is pi-bridge/wire.ts's).
+describe("the bridge socket (VT-3)", () => {
+  const BRIDGE = "/run/u/satan/durable/room/bridge/bridge.sock";
+
+  it("room's bridgeSocket sits in bridge/ inside the room profile's directory", () => {
+    expect(resolve(room).bridgeSocket).toBe(BRIDGE);
+  });
+
+  it("takes MALEBOLGE_BRIDGE_SOCKET when it is in a bridge directory in the room", () => {
+    const path = "/srv/elsewhere/room/bridge/other.sock";
+    expect(resolve({ ...room, MALEBOLGE_BRIDGE_SOCKET: path }).bridgeSocket).toBe(path);
+  });
+
+  it.each([
+    "/srv/elsewhere/bridge/b.sock",
+    "/srv/elsewhere/room/other.sock",
+    "/srv/elsewhere/host/bridge/b.sock",
+  ])(
+    "refuses MALEBOLGE_BRIDGE_SOCKET %s outside a bridge directory inside one named room",
+    (path) => {
+      expect(refusal({ ...room, MALEBOLGE_BRIDGE_SOCKET: path })).toContain(
+        `bridgeSocket ${path} is not in a bridge directory inside one named room`,
+      );
+    },
+  );
+
+  it("host has no bridgeSocket key, even with MALEBOLGE_BRIDGE_SOCKET set", () => {
+    expect("bridgeSocket" in resolve(host)).toBe(false);
+    expect("bridgeSocket" in resolve({ ...host, MALEBOLGE_BRIDGE_SOCKET: BRIDGE })).toBe(false);
+  });
+});

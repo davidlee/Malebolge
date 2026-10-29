@@ -16,7 +16,7 @@ export default defineConfig({
     coverage: {
       enabled: true,
       provider: "v8",
-      include: ["src/**/*.ts"],
+      include: ["src/**/*.ts", "pi-bridge/**/*.ts"],
       exclude: ["src/*-main.ts"],
       thresholds: { lines: 85 },
     },

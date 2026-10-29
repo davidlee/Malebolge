@@ -124,7 +124,8 @@
       };
 
     # The patch-job runner, for the satan-runner user unit (~/flakes
-    # features/satan/runner.nix): the tree's src/ with production deps only.
+    # features/satan/runner.nix): the tree's src/ (and pi-bridge/wire.ts, which
+    # src/truncate.ts imports) with production deps only.
     runner = pkgs: let
       nodejs = pkgs.nodejs_24;
     in
@@ -133,9 +134,9 @@
         version = "0.0.0";
         src = pkgs.lib.fileset.toSource {
           root = ./.;
-          fileset = pkgs.lib.fileset.unions [./package.json ./package-lock.json ./src];
+          fileset = pkgs.lib.fileset.unions [./package.json ./package-lock.json ./src ./pi-bridge/wire.ts];
         };
-        npmDepsHash = "sha256-IUz0EKUu5lMhI0NWUNiMVwC6l/DgJgvBoMd0x08S0Dg=";
+        npmDepsHash = "sha256-RUK/giXNRp5e14W8fm1Qg0nN+EhTIrKRqij+WDesC48=";
         dontNpmBuild = true; # node strips the types at load
         nativeBuildInputs = [pkgs.makeWrapper];
         # Not npmInstallHook's lib/node_modules/malebolge: node refuses to strip
@@ -145,7 +146,7 @@
           npm prune --omit=dev --no-save
           find node_modules -type d -empty -delete
           mkdir -p $out/lib/malebolge
-          cp -r package.json src node_modules $out/lib/malebolge/
+          cp -r package.json src pi-bridge node_modules $out/lib/malebolge/
           makeWrapper ${nodejs}/bin/node $out/bin/satan-runner \
             --add-flags $out/lib/malebolge/src/runner-main.ts
           runHook postInstall
