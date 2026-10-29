@@ -392,6 +392,17 @@ so P4 reduces to `nix run .#jailed-pi-bridge`. Removed PHASE-01's
 - 8 (VA-1, RV-021 F-1): met. Operator: a SATAN `bridge_post` arrived during
   a long pi run; after Esc the message showed once, as a note, with no new
   turn ("pass").
+- 9 (VA-1, RV-021 F-10): met, read from pi's session file
+  (`…/sessions/--workspace-malebolge--/…01a18983….jsonl`, host path under the
+  jail home), not by asking pi to quote. The extension has no `context` hook,
+  so bridge messages reach pi's context only as `custom_message` entries.
+  Seqs 1–26 each appear once. After the operator's `/reload` and an `ok`
+  prompt (lines 284–285), nothing was re-injected. The session also spans the
+  09:02 daemon restart and resume with no repeats. Caveat: the file does not
+  show whether seq 26 entered as a note or a turn. Dedupe is keyed by seq
+  either way. pi had flagged the empty entries at lines 6 and 10–13 as
+  "duplicate-shaped": they are the pairing/unpaired `custom` records of two
+  re-pairs, by design.
 
 ## Autonomy log
 
