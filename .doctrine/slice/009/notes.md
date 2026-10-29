@@ -408,6 +408,15 @@ so P4 reduces to `nix run .#jailed-pi-bridge`. Removed PHASE-01's
   `unpaired` record at 09:23:47 (line 287), during the outage, and the
   daemon's pairing document for 3949 has no `ended` delta (only the base's
   `"ended":false`), so it was left as is.
+  Output: one error notice `malebolge bridge: connection closed; project
+  malebolge, pi session 01a18983-…, conversation 3949, topic
+  malebolge-bridge, socket …/bridge.sock`. `echo x | malebolge-bridge send;
+  echo $?` → `malebolge bridge: connect ECONNREFUSED …/bridge.sock; project
+  malebolge, conversation 3949, socket …/bridge.sock`, 1. `/bridge end` →
+  `malebolge bridge: pairing dropped here only; the daemon's pairing is left
+  as is`. Runbook overstated: the command's line is not "the same" as pi's
+  notice. It omits pi session and topic, since the command has only its env
+  (conversation, token, socket). Not a defect.
 
 ## Autonomy log
 
