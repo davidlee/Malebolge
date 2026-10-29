@@ -1,0 +1,33 @@
+schema = "doctrine.knowledge"
+version = 1
+
+id = 98
+slug = "both-sides-of-a-pairing-are-told-where-the-other-runs"
+title = "Both sides of a pairing are told where the other runs"
+record_kind = "decision"
+status = "accepted"
+created = "2026-10-29"
+updated = "2026-10-29"
+tags = []
+
+[facet]                         # every field typed; seeded empty (captured later)
+context = "SL-009 PHASE-10 real-jail run: pi and SATAN spent a long exchange reconciling repo views neither shares (the room's mirror pinned pre-bridge; pi's prompt carried only a placeholder), and SATAN answered pi in its own conversation, where pi never sees it."
+choice = "Posture-independent environment text on both sides: BRIDGE_ENVIRONMENT in SATAN's bridge section (bridged conversations, between the untrusted framing and the posture text) and PI_BRIDGE_ENVIRONMENT in pi's system prompt before the posture text. Each states where the other runs, that it cannot see the other's files, and that only bridge_post crosses."
+alternatives = ["Fold it into CHR-008's posture texts and keep exchanges short meanwhile"]
+rationale = "These are facts, not posture prose; without them each agent assumed a shared view and the exchange spun."
+consequences = ["design sec-3 section contents change (fold in at /reconcile)", "CHR-008 authors posture prose on top of these facts"]
+decided_by = "operator, 2026-10-30 session"
+decided_on = "2026-10-30"
+
+[evidence]                      # free-text citations (supports / contradicts / notes)
+supports    = []
+contradicts = []
+notes       = []
+
+[relationships]                 # verb-written edges (set by doctrine supersede)
+supersedes    = []   # record ids this one replaces (set by doctrine supersede)
+superseded_by = []   # set on superseded predecessor (verb-written)
+
+[[relation]]
+label = "shapes"
+target = "SL-009"

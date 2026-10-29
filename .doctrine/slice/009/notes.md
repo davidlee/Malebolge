@@ -6,22 +6,28 @@ disposable phase sheet (`.doctrine/state/.../phase-NN.md`) that must survive
 
 ## Harvest
 <!-- single-copy: updated in place each harvest; ids only, never restated content -->
-fresh-as-of: 2026-10-30 · PHASE-10 (VH pending) · 75f02bb
+fresh-as-of: 2026-10-30 · PHASE-10 completed (audit next) · HEADSHA
 
 ### Produced
 - PHASE-01 probes — ASM-004/006/007/008/009 validated, ASM-005 invalidated as EX-2 allows (c4430fc, 73a3263)
 - PHASE-02..09 — extractions, wire, bridge mode, pairing/listener, both message directions, pi state machine, shell + malebolge-bridge (ede54f3 .. af200b5; read-only resume fix 1ed42f6)
-- PHASE-10 docs + operator runbook (0df3e9e, 75f02bb); real-jail VH outstanding
-- ~/flakes node in pi jails (482256f0 there, unpushed); repo flake.nix runner hash + pi-bridge fileset (bdccd93)
-- minted: IMP-025 — jail notifications via filtered D-Bus proxy; CHR-008 — author the posture texts
-- audit flags: § Autonomy log (decided lines marked "flag"), incl. PHASE-09 range carrying SL-007 commits
+- PHASE-10 — docs (0df3e9e), runbook (75f02bb), real-jail VH/VA run met (notes § Probes, Outcomes + Result); fixes found in the run: `!` env + powerbar segment (0c86fb8), environment framing (f34d381)
+- PHASE-10 recorded range 0df3e9e^..HEAD carries SL-007 commits (b066d05..d8d2466, 4cd8c4e), as PHASE-09's did
+- ~/flakes node in pi jails (482256f0 there, unpushed); repo flake.nix runner hash + pi-bridge fileset (bdccd93); local uncommitted `jailed-pi-bridge` in flake.nix (runbook P3; to drop)
+- minted: IMP-025 — jail notifications via filtered D-Bus proxy; CHR-008 — author the posture texts (run inputs appended)
+- audit flags: § Autonomy log (lines marked flag / escalate), incl. PHASE-09/10 ranges carrying SL-007 commits
 
 ### Learned
 - mem.fact.pi.extension-idle-and-settle-timing — real-pi event timing the extension relies on
 - mem.pattern.malebolge.gate-on-committed-tree — gate a git-archive export when others dirty the tree
+- mem.fact.jail.pi-home-is-persisted-jail-home — jail ~ is the persisted jail home; pi transcripts readable from the host
+- mem.pattern.malebolge.settle-model-input-from-stored-record — check stored entries, not a model's report of its input
 
 ### Open
 - DEC-095 — /bridge end in outage unpairs locally; sec-7 row to fold in at /reconcile
+- DEC-096 — `!` commands get the bridge env (user_bash); sec-7 to fold in
+- DEC-097 — status mirrored as a powerbar segment; sec-7 to fold in
+- DEC-098 — environment framing on both sides; sec-3 to fold in
 - CHR-007 — ~/flakes bridge mounts (needs `mkdir -m 700` for bridge/)
 - CHR-008 — posture texts (DEC-040 placeholders)
 

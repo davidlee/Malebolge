@@ -1,0 +1,43 @@
+memory_uid = "mem_01a189e9d332741393b28af8f2213eb8"
+memory_key = "mem.fact.jail.pi-home-is-persisted-jail-home"
+schema_version = 1
+lifespan = "semantic"
+memory_type = "fact"
+status = "active"
+title = "Inside a pi jail, ~ is the persisted jail home, readable from the host"
+summary = "In a ~/flakes pi jail, ~ is the persisted jail home (host: ~/.local/share/jail.nix/home/agent), not the operator's home"
+created = "2026-10-29"
+updated = "2026-10-29"
+
+[scope]
+paths = []
+globs = ["pi-bridge/**"]
+commands = []
+tags = ["jail", "pi"]
+workspace = "default"
+repo = "github.com/davidlee/Malebolge"
+repo_id_kind = "remote"
+repo_id_confidence = "high"
+
+[git]
+anchor_kind = "checkout_state"
+commit = ""
+tree = "8bc0b8a790a62ce79cd9de58c7a07b9b1b442cf1"
+ref_name = "refs/heads/main"
+checkout_state_id = "ca6dd4be1f0adbd7994d555a4c8ec145283ddbed7f03e385a57c21d6c0f39e1a"
+base_commit = "e9ee58ad4b3ef66657d7ef7ca2cd31dc3f4a819d"
+verified_sha = ""
+normalizer = "forget.checkout.v1"
+
+[review]
+verification_state = "unverified"
+reviewed = ""
+review_by = ""
+
+[trust]
+trust_level = "high"
+
+[ranking]
+severity = "medium"
+weight = 0
+

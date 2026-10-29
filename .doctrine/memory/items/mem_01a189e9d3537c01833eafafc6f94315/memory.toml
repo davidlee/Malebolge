@@ -1,0 +1,43 @@
+memory_uid = "mem_01a189e9d3537c01833eafafc6f94315"
+memory_key = "mem.pattern.malebolge.settle-model-input-from-stored-record"
+schema_version = 1
+lifespan = "semantic"
+memory_type = "pattern"
+status = "active"
+title = "Settle what a model received from the stored record, not its account"
+summary = "Settle what a model received (escaping, duplication, delivery) from the stored record, never the model's own account"
+created = "2026-10-29"
+updated = "2026-10-29"
+
+[scope]
+paths = []
+globs = ["src/bridge/**", "pi-bridge/**"]
+commands = []
+tags = ["bridge"]
+workspace = "default"
+repo = "github.com/davidlee/Malebolge"
+repo_id_kind = "remote"
+repo_id_confidence = "high"
+
+[git]
+anchor_kind = "checkout_state"
+commit = ""
+tree = "8bc0b8a790a62ce79cd9de58c7a07b9b1b442cf1"
+ref_name = "refs/heads/main"
+checkout_state_id = "6c87387cb3421b1a75dc42ad3c1efb39221c06930851f680a17ad330ba280eff"
+base_commit = "e9ee58ad4b3ef66657d7ef7ca2cd31dc3f4a819d"
+verified_sha = ""
+normalizer = "forget.checkout.v1"
+
+[review]
+verification_state = "unverified"
+reviewed = ""
+review_by = ""
+
+[trust]
+trust_level = "high"
+
+[ranking]
+severity = "medium"
+weight = 0
+

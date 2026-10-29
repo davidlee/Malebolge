@@ -1,0 +1,4 @@
+- Jail `$HOME` (`/home/david` inside) = host `~/.local/share/jail.nix/home/agent` (profile's home; shared by every jail of that profile).
+- pi session transcripts: `~/.local/share/jail.nix/home/agent/.pi/agent/sessions/--workspace-<project>--/*.jsonl` on the host. Read them there to check what pi did; no need to ask pi.
+- A jailed agent writing to `~` lands there, not in the operator's home. Agents inside the jail misread this as "the operator's home is writable" (SL-009 PHASE-10).
+- Only `/workspace/<project>` is the project; a host path like `~/.local/src/pi` is absent inside unless mounted.

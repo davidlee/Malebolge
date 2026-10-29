@@ -1,0 +1,33 @@
+schema = "doctrine.knowledge"
+version = 1
+
+id = 97
+slug = "bridge-status-is-also-a-pi-powerbar-segment"
+title = "Bridge status is also a pi-powerbar segment"
+record_kind = "decision"
+status = "accepted"
+created = "2026-10-29"
+updated = "2026-10-29"
+tags = []
+
+[facet]                         # every field typed; seeded empty (captured later)
+context = "SL-009 PHASE-10 real-jail run: the operator's pi-powerbar extension replaces pi's footer with an empty one, so every setStatus line, the bridge's included, was invisible."
+choice = "Each status is also emitted as powerbar:update on pi's event bus (segment malebolge-bridge, registered at session_start); a cleared status removes the segment. No dependency on powerbar."
+alternatives = ["A one-time notice on bind", "Leave it: footer-replacing extensions are local setup"]
+rationale = "The status carries the bound/outage state the operator needs to see; the event bus costs no import."
+consequences = ["design sec-7 status effect gains the powerbar emit (fold in at /reconcile)", "the segment shows only where the operator enables it in powerbar's settings"]
+decided_by = "operator, 2026-10-30 session"
+decided_on = "2026-10-30"
+
+[evidence]                      # free-text citations (supports / contradicts / notes)
+supports    = []
+contradicts = []
+notes       = []
+
+[relationships]                 # verb-written edges (set by doctrine supersede)
+supersedes    = []   # record ids this one replaces (set by doctrine supersede)
+superseded_by = []   # set on superseded predecessor (verb-written)
+
+[[relation]]
+label = "shapes"
+target = "SL-009"

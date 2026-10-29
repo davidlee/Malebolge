@@ -1,0 +1,33 @@
+schema = "doctrine.knowledge"
+version = 1
+
+id = 96
+slug = "operator-commands-in-pi-get-the-bridge-env"
+title = "Operator ! commands in pi get the bridge env"
+record_kind = "decision"
+status = "accepted"
+created = "2026-10-29"
+updated = "2026-10-29"
+tags = []
+
+[facet]                         # every field typed; seeded empty (captured later)
+context = "SL-009 PHASE-10 real-jail run: the bridge env (PATH entry, conversation, token) reached only pi's bash tool through its spawn hook; pi runs an operator's ! command outside the tool (user_bash), so bare malebolge-bridge was not found there."
+choice = "A user_bash handler returns pi's local bash operations with bridgeEnv applied; the base env is process.env, since pi passes none."
+alternatives = ["Leave ! commands without the env; VH-2 covers the agent's bash only"]
+rationale = "send/tee exist to post output outside pi's context, and !! is how the operator does that by hand."
+consequences = ["! commands lose pi's own bin dir and a configured shellPath (bash tool unchanged)", "design sec-7 registrations gain user_bash (fold in at /reconcile)"]
+decided_by = "operator, 2026-10-30 session"
+decided_on = "2026-10-30"
+
+[evidence]                      # free-text citations (supports / contradicts / notes)
+supports    = []
+contradicts = []
+notes       = []
+
+[relationships]                 # verb-written edges (set by doctrine supersede)
+supersedes    = []   # record ids this one replaces (set by doctrine supersede)
+superseded_by = []   # set on superseded predecessor (verb-written)
+
+[[relation]]
+label = "shapes"
+target = "SL-009"

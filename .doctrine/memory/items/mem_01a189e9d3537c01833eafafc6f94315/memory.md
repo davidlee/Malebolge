@@ -1,0 +1,3 @@
+- A model reads `&lt;` as `<` and reports it that way; its printf-style "calibration" tests its output, not its input. A model's report is testimony, not evidence of its context (SL-009 PHASE-10: SATAN "received raw" text that was stored escaped).
+- Room side: `~/.local/state/satan/durable/room/session.sqlite`, table `entries`, `record` JSON `model[].content`; open it read-only (`sqlite3 "file:$DB?mode=ro"`).
+- pi side: the session `.jsonl` (see [[mem.fact.jail.pi-home-is-persisted-jail-home]]); bridge messages enter context only as `custom_message` entries (the extension has no `context` hook), so one entry per seq ⇔ in context once.
