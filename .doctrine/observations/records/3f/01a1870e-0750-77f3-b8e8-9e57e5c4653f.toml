@@ -1,0 +1,18 @@
+schema = "doctrine.observation"
+schema_version = 1
+uid = "01a1870e-0750-77f3-b8e8-9e57e5c4653f"
+recorded_at = "2026-10-29T09:46:45.96807694Z"
+kind = "friction"
+summary = "pi wait: grep for '^## Result' in transcript.md fired before the run settled"
+detail = "SL-009 PHASE-03 T2: the transcript-grep wait recommended by the sub-orchestrator prompt returned while the run was still running (pi_agent_wait then reported running); waiting on status.json state worked. Possibly a '## Result' heading inside quoted tool output."
+
+[facets.execution]
+schema_version = 1
+interface = "cli"
+interface_origin = "automatic"
+product_surface = "doctrine"
+product_surface_origin = "automatic"
+command = "observation record"
+command_origin = "automatic"
+repository_context = "primary"
+repository_context_origin = "automatic"
