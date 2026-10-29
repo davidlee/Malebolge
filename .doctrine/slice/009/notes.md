@@ -6,7 +6,7 @@ disposable phase sheet (`.doctrine/state/.../phase-NN.md`) that must survive
 
 ## Harvest
 <!-- single-copy: updated in place each harvest; ids only, never restated content -->
-fresh-as-of: 2026-10-29 · design re-locked (rev 55) · plan authored (10 phases) · 654d026 + plan revision
+fresh-as-of: 2026-10-29 · ready (plan PHASE-01..10, none started) · 8fca207
 
 ### Produced
 - Design run dr-01a185c0… locked (rev 45); `design.md` 9 sections;
