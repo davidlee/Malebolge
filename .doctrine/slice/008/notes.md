@@ -6,7 +6,7 @@ disposable phase sheet (`.doctrine/state/.../phase-NN.md`) that must survive
 
 ## Harvest
 <!-- single-copy: updated in place each harvest; ids only, never restated content -->
-fresh-as-of: 2026-10-29 · audit (RV-024) · 1b18a5d
+fresh-as-of: 2026-10-29 · close · 40a06f6
 
 ### Produced
 - Design locked (RV-019); plan approved; minted DEC-052..055, CHR-006.
@@ -24,9 +24,11 @@ fresh-as-of: 2026-10-29 · audit (RV-024) · 1b18a5d
 - mem.fact.malebolge.orchestrated-phases-skip-delta-registry — orchestrated phases leave conformance empty.
 
 ### Open
-- RV-024 brief — selectors, design sec-2..6, CHR-006, DEC-029, RSK-002, IMP-023,
-  SL-005, new ASM: /reconcile's writes.
-- CHR-006 — operator acts: push satan 95e40a8; `nix flake update satan` in ~/flakes.
+- Reconciled (RV-024 § Reconciliation Outcome, 40a06f6); slice closed `done`.
+- CHR-006 — operator act: `nix flake update satan` in ~/flakes.
+- IDE-008 — steps 2–3 (reorganisation plans, capture-on-demand) for later slices.
+- RV-019 — design ledger concluded but 21 findings sit `answered`, unverified by
+  the raiser; did not block close.
 - CHR-001 — `doctrine check gate` has no `just gate` recipe; `just check` is the gate.
 
 ## Implementation run
