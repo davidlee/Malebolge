@@ -1,0 +1,46 @@
+memory_uid = "mem_01a185a091057e52a07d71816fcc494a"
+memory_key = "mem.fact.malebolge.firefox-bookmark-data"
+schema_version = 1
+memory_type = "fact"
+status = "active"
+title = "Firefox bookmark data: where tags live, what is readable while Firefox runs"
+summary = "Tags only in places.sqlite and jsonlz4 backups (not the WebExtension API); live places.sqlite is locked; profile under ~/.config/mozilla"
+created = "2026-10-29"
+updated = "2026-10-29"
+
+[scope]
+paths = []
+globs = []
+commands = []
+tags = ["firefox", "bookmarks"]
+workspace = "default"
+repo = "github.com/davidlee/Malebolge"
+repo_id_kind = "remote"
+repo_id_confidence = "high"
+
+[git]
+anchor_kind = "checkout_state"
+commit = ""
+tree = "22a6225730a89777ed28dce4964b2165d33e3ca4"
+ref_name = "refs/heads/main"
+checkout_state_id = "075a9e2e26c935dd46c708506921d4d7e1f4c76a03e5cf91e4bd180d8dc955f0"
+base_commit = "4560aa263711ca47eb7736e99b7a0a8c0bf99ef1"
+verified_sha = ""
+normalizer = "forget.checkout.v1"
+
+[review]
+verification_state = "unverified"
+reviewed = ""
+review_by = ""
+
+[trust]
+trust_level = "high"
+
+[ranking]
+severity = "none"
+weight = 0
+
+[[source]]
+kind = "slice"
+ref = "SL-008"
+

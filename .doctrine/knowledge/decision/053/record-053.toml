@@ -1,0 +1,33 @@
+schema = "doctrine.knowledge"
+version = 1
+
+id = 53
+slug = "bookmark-metadata-carve-out"
+title = "Bookmark metadata is not Q0 page text: interactive conversations may read it, framed and capped"
+record_kind = "decision"
+status = "accepted"
+created = "2026-10-29"
+updated = "2026-10-29"
+tags = []
+
+[facet]                         # every field typed; seeded empty (captured later)
+context = "RSK-002 defines Q0 as raw mail and page text and Q1 as anything that has read Q0, contaminated for its lifetime. Bookmark titles are mostly page titles; SL-008 puts bookmark tools in the interactive toolset, the one talk set."
+choice = "Bookmark metadata (title, URL, tags, folder path) is not Q0. The interactive toolset reads it without becoming Q1. Controls: every field reaches the model inside an untrusted data block with a section saying it is data, never instruction; per-field caps in code, cut with an ellipsis and named in the item's cut list: title 200 bytes, URL 512 bytes, each tag 64 bytes, at most 20 tags, folder path 256 bytes. Page content and digests stay Q0/Q2 (IMP-023) and never join the interactive toolset through the bookmark tools."
+alternatives = ["A separate bookmarks toolset outside the talk set: safer, but the tools are wanted in ordinary conversations."]
+rationale = "Titles are short and largely operator-curated; tags and folders are wholly the operator's. Caps (measured p99: title 158, URL 256, tag 19, folder 56 bytes) rarely bite but bound an embedded instruction. Interactive already has host bash, so it is not a clean room."
+consequences = ["RSK-002 records this carve-out among its controls.", "A digest or page-content tool reached from a bookmark is out of scope for the interactive toolset (IMP-023)."]
+decided_by = "operator (david), 2026-10-29"
+decided_on = "2026-10-29"
+
+[evidence]                      # free-text citations (supports / contradicts / notes)
+supports    = []
+contradicts = []
+notes       = []
+
+[relationships]                 # verb-written edges (set by doctrine supersede)
+supersedes    = []   # record ids this one replaces (set by doctrine supersede)
+superseded_by = []   # set on superseded predecessor (verb-written)
+
+[[relation]]
+label = "shapes"
+target = "SL-008"

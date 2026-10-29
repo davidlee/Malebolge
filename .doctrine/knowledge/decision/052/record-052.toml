@@ -1,0 +1,33 @@
+schema = "doctrine.knowledge"
+version = 1
+
+id = 52
+slug = "bookmark-source-backup-file"
+title = "Bookmark tools read the newest Firefox bookmark backup file, not places.sqlite or the extension"
+record_kind = "decision"
+status = "accepted"
+created = "2026-10-29"
+updated = "2026-10-29"
+tags = []
+
+[facet]                         # every field typed; seeded empty (captured later)
+context = "SL-008 needs the operator's Firefox bookmarks with tags. Tags exist only in places.sqlite (folders under tags________) and in the daily bookmarkbackups/*.jsonlz4; the WebExtension bookmarks API has none. Live places.sqlite is exclusively locked while Firefox runs. The profile dir also holds history, logins.json and key4.db."
+choice = "Read the newest bookmarkbackups/bookmarks-YYYY-MM-DD_*.jsonlz4 (by filename date) from a configured absolute directory (on this host ~/.config/mozilla/firefox/<profile>/bookmarkbackups). The jail binds that directory read-only and nothing else of the profile."
+alternatives = ["Copy places.sqlite + WAL and query it: fresh, but binds live profile files (history) into the jail and couples to Firefox's internal schema (user_version 87).", "panopticon extension export: live, but no tags."]
+rationale = "Tags present, stable export format, a ~30-line decoder, and the narrowest jail bind; at most a day stale, stated in every result."
+consequences = ["Results can be up to ~1 day behind Firefox; the header names the backup date and flags staleness over 2 days.", "No panopticon change and no external program; DEC-028's exec rules do not apply.", "IDE-008 step 2 writes need a different channel (extension for folders; restore or offline write for tags)."]
+decided_by = "operator (david), 2026-10-29"
+decided_on = "2026-10-29"
+
+[evidence]                      # free-text citations (supports / contradicts / notes)
+supports    = []
+contradicts = []
+notes       = []
+
+[relationships]                 # verb-written edges (set by doctrine supersede)
+supersedes    = []   # record ids this one replaces (set by doctrine supersede)
+superseded_by = []   # set on superseded predecessor (verb-written)
+
+[[relation]]
+label = "shapes"
+target = "SL-008"

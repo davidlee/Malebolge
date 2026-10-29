@@ -1,0 +1,33 @@
+schema = "doctrine.knowledge"
+version = 1
+
+id = 55
+slug = "bookmark-config-optional"
+title = "MALEBOLGE_BOOKMARK_BACKUPS is optional: unset leaves the bookmark tools installed and each call refused"
+record_kind = "decision"
+status = "accepted"
+created = "2026-10-29"
+updated = "2026-10-29"
+tags = []
+
+[facet]                         # every field typed; seeded empty (captured later)
+context = "Interactive is allowed on both profiles (room, host); DEC-029(4) refuses startup when a static extension is not installed. Not every daemon (host, dev runs) has the bookmark directory."
+choice = "The bookmarks extension is always built and sits in the interactive list just before satan. MALEBOLGE_BOOKMARK_BACKUPS, an absolute directory, is read when the profile allows interactive. Unset: every bookmark tool call returns an explicit 'bookmarks are not configured' error. Set but not absolute: startup refuses. The operator sets it in ~/flakes, with the jail's read-only bind."
+alternatives = ["Required on every interactive profile: breaks host and dev daemons.", "Omit the extension when unset: the toolset list would vary with the environment, and the model would not learn why the tools are absent."]
+rationale = "Fixed toolset list (DEC-029) and explicit denial over silent absence (operator preference)."
+consequences = ["DEC-029's interactive list gains bookmarks before satan.", "Jail bind and env are an operator rollout in the satan flake / ~/flakes."]
+decided_by = "operator (david), 2026-10-29"
+decided_on = "2026-10-29"
+
+[evidence]                      # free-text citations (supports / contradicts / notes)
+supports    = []
+contradicts = []
+notes       = []
+
+[relationships]                 # verb-written edges (set by doctrine supersede)
+supersedes    = []   # record ids this one replaces (set by doctrine supersede)
+superseded_by = []   # set on superseded predecessor (verb-written)
+
+[[relation]]
+label = "shapes"
+target = "SL-008"

@@ -1,0 +1,33 @@
+schema = "doctrine.knowledge"
+version = 1
+
+id = 54
+slug = "shared-untrusted-block"
+title = "Untrusted data blocks share one module: measuring, cutting, header checks and the wrapper"
+record_kind = "decision"
+status = "accepted"
+created = "2026-10-29"
+updated = "2026-10-29"
+tags = []
+
+[facet]                         # every field typed; seeded empty (captured later)
+context = "Mail's measuring and cutting primitives (dataLine, renderedLength, cutRendered, shareOf, header/size assertions, the result wrapper) live in src/mail/render.ts beside mail-specific code. Bookmarks need the same."
+choice = 'Lift the generic primitives into src/untrusted-block.ts with the block tag as a parameter; mail imports them unchanged in behaviour; bookmarks use <bookmark-data untrusted="true">.'
+alternatives = ["Copy the primitives into src/bookmarks/: duplication.", "Import from src/mail/render.ts: couples bookmarks to mail."]
+rationale = "One framing and one size measure for every foreign-data family (DRY); small, behaviour-preserving move."
+consequences = ["Overlaps SL-007's src/mail/** surface; whichever executes second rebases onto the other.", "Mail tests must stay green unchanged."]
+decided_by = "operator (david), 2026-10-29"
+decided_on = "2026-10-29"
+
+[evidence]                      # free-text citations (supports / contradicts / notes)
+supports    = []
+contradicts = []
+notes       = []
+
+[relationships]                 # verb-written edges (set by doctrine supersede)
+supersedes    = []   # record ids this one replaces (set by doctrine supersede)
+superseded_by = []   # set on superseded predecessor (verb-written)
+
+[[relation]]
+label = "shapes"
+target = "SL-008"

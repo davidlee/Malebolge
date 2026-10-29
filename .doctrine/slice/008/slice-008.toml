@@ -12,27 +12,59 @@ after = []                      # slice→work soft sequence: { to, rank }
 
 [[selector]]
 selector = "src/bookmarks/**"
-intent = "scope-relevant"
+intent = "design-target"
 
 [[selector]]
 selector = "src/toolsets.ts"
-intent = "scope-relevant"
+intent = "design-target"
 
 [[selector]]
 selector = "src/daemon-extensions.ts"
-intent = "scope-relevant"
+intent = "design-target"
 
 [[selector]]
 selector = "src/mail/render.ts"
-intent = "scope-relevant"
+intent = "design-target"
 
 [[selector]]
 selector = "test/bookmarks/**"
-intent = "scope-relevant"
+intent = "design-target"
 
 [[selector]]
 selector = "docs/**"
 intent = "scope-relevant"
+
+[[selector]]
+selector = "src/untrusted-block.ts"
+intent = "design-target"
+
+[[selector]]
+selector = "src/config.ts"
+intent = "design-target"
+
+[[selector]]
+selector = "src/daemon-start.ts"
+intent = "design-target"
+
+[[selector]]
+selector = "test/toolsets.test.ts"
+intent = "design-target"
+
+[[selector]]
+selector = "test/daemon-start.test.ts"
+intent = "design-target"
+
+[[selector]]
+selector = "test/daemon-sections.test.ts"
+intent = "design-target"
+
+[[selector]]
+selector = "docs/internals.md"
+intent = "design-target"
+
+[[selector]]
+selector = "README.md"
+intent = "design-target"
 
 [[relation]]
 label = "fulfils"

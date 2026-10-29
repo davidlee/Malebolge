@@ -45,10 +45,12 @@ Facts from the preflight (2026-10-29):
      reason about structure).
 3. **Bounds in code.** Count and byte caps per result; truncation stated in
    the result, never silent.
-4. **Untrusted framing.** Bookmark titles are mostly web page titles: they
-   reach the model framed as data with provenance (source, snapshot time),
-   reusing the mail framing rather than a second one.
-5. **Toolset placement** decided in design (OQ-2): interactive set or not.
+4. **Untrusted framing and field caps.** Bookmark titles are mostly web page
+   titles: they reach the model framed as data with provenance (source,
+   backup date), with per-field caps (DEC-053). The framing primitives move
+   out of `src/mail/` into a shared module mail also uses (DEC-054).
+5. **Interactive toolset** (OQ-2, operator 2026-10-29), under the RSK-002
+   carve-out DEC-053. Optional config, explicit refusal when unset (DEC-055).
 
 ## Non-Goals
 
@@ -60,6 +62,11 @@ Facts from the preflight (2026-10-29):
 - Retiring satan's `content_read` (IMP-023).
 
 ## Open Questions
+
+All settled in design (2026-10-29): OQ-1 → DEC-052 (backup file); OQ-2 →
+interactive, DEC-053; OQ-3 dissolved (no external program); OQ-4 → bind
+`bookmarkbackups/` only, operator rollout (DEC-055).
+
 
 - **OQ-1 Data path.** (a) read the newest `bookmarkbackups/*.jsonlz4`
   (no Firefox coupling; up to a day stale; needs an lz4 decoder);
