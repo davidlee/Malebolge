@@ -548,6 +548,40 @@ describe("conversations", () => {
     expect(await indexOf(session.harness)).toEqual(before);
   });
 
+  it("topicInit with only require refuses a mismatched toolset inside the creating commit and creates nothing (VT-2)", async () => {
+    const session = await passive();
+    const api = apiOf(session);
+    await writeTopicRecord(session.harness, "mail", { toolset: "mail" });
+    const before = await indexOf(session.harness);
+    const listed = (await api.list({ kind: "all" })).ids;
+    const refused = createConversation(
+      session.harness,
+      topicInit("room", "mail", FAUX_CATALOG, FAUX_MODEL, {
+        require: (toolset) => {
+          requireSameTalkSet("room", "interactive", toolset, "topic mail");
+        },
+      }),
+    );
+    await expect(refused).rejects.toThrow(
+      "topic mail (toolset mail) is outside this conversation's talk set (interactive)",
+    );
+    expect((await api.list({ kind: "all" })).ids).toEqual(listed);
+    expect(await indexOf(session.harness)).toEqual(before);
+  });
+
+  it("topicInit with neither hook creates as before (VT-2)", async () => {
+    const session = await passive();
+    const api = apiOf(session);
+    await api.setTopic({ name: "work" });
+    const created = await createConversation(
+      session.harness,
+      topicInit("room", "work", FAUX_CATALOG, FAUX_MODEL),
+    );
+    const entry = (await indexOf(session.harness)).conversations[String(created.id)];
+    expect(entry).toEqual({ topic: "work", toolset: "interactive" });
+    expect(Object.hasOwn(entry ?? {}, "startedBy")).toBe(false);
+  });
+
   it("starts one conversation when two attaches race on an empty topic", async () => {
     const session = await passive();
     const api = apiOf(session);

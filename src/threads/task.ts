@@ -13,7 +13,6 @@ import {
   type JsonObject,
   type NextTaskState,
   type RunningTask,
-  type SettledSubmissionRecord,
   type SubmissionRecord,
   type Task,
   type TaskId,
@@ -22,6 +21,7 @@ import {
   type Tx,
 } from "@earendil-works/pi-durable";
 import { isRecord } from "../json.ts";
+import { type Ending, endingOf } from "../submission-ending.ts";
 import { notifyBestEffort, reasonOf, scheduledKey } from "../task-support.ts";
 import type { SweptKind } from "../task-sweep.ts";
 import { isOrigin, type Origin, originKey } from "./origin.ts";
@@ -134,24 +134,7 @@ const entryOf = (taskId: TaskId<PostResult>, input: PostInput): JsonObject => ({
 type Runtime = TaskRuntime<PostInput, PostState, PostResult, object>;
 type Post = RunningTask<PostInput, PostState, PostResult>;
 
-/** How a post's input ended: delivered, withdrawn (never placed), or placed but unanswered. */
-type Ending =
-  | { kind: "delivered" }
-  | { kind: "withdrawn"; reason: string }
-  | { kind: "delivered-incomplete"; reason: string };
-
 type Failure = Exclude<Ending, { kind: "delivered" }>;
-
-/** What a settled record means (DEC-045): done is delivered; else its entry decides. */
-const endingOf = (record: SettledSubmissionRecord): Ending => {
-  if (record.status === "done") {
-    return { kind: "delivered" };
-  }
-  const reason = `unanswered (${record.reason})`;
-  return record.type === "input" && record.entry !== undefined
-    ? { kind: "delivered-incomplete", reason }
-    : { kind: "withdrawn", reason };
-};
 
 /** Open the recipient, submit the input once, and wait for its turn, unbounded. */
 const placed = async (runtime: Runtime, input: PostInput, ctx: Context): Promise<Ending> => {

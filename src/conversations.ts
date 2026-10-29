@@ -8,8 +8,9 @@
 // are its topic's, else the daemon's creation-time defaults, and its stored agent
 // settings are never rewritten; a conversation id names a conversation only inside
 // this profile's store; a topic's directory and model are read once, at creation,
-// and written only into that conversation (D1, DEC-083); no frame ever creates a
-// topic implicitly (DEC-016);
+// and written only into that conversation (D1, DEC-083); no attach frame ever
+// creates a topic implicitly (DEC-016), though a bridge `pair` creates its
+// `<project>-bridge` topic explicitly (DEC-093);
 // `cwd` is an opaque string handed to pi, confinement being the jail's (DEC-107,
 // CON-005).
 
@@ -182,30 +183,30 @@ async function resolveExisting(session: Session, id: ConversationId): Promise<Co
 }
 
 /**
- * The `thread_start` caller's standing (design sec-12): the conversation whose
- * thread_start created the one being made, and the judgement on the toolset the
- * creating commit chose.
+ * A hook `topicInit` runs for a creation that is not a plain one: `startedBy`
+ * marks a `thread_start`'s child, and `require` judges the toolset the creating
+ * commit chose. Either may be absent.
  */
-export interface StartedThread {
+export interface CreationHooks {
   /** The calling conversation, written as the entry's startedBy. */
-  startedBy: ConversationId;
-  /** Refuses a chosen toolset outside the caller's talk set, inside the creating commit. */
-  require: (toolset: DaemonToolset) => void;
+  startedBy?: ConversationId;
+  /** Refuses a chosen toolset, inside the creating commit, so nothing is created. */
+  require?: (toolset: DaemonToolset) => void;
 }
 
 /**
  * The `init` every create passes (design sec-3, sec-4): the topic's toolset and model,
  * else the profile's and the daemon's defaults, checked against `policy` and selected in
  * the creating commit — the entry it writes and the model and selection it configures
- * are one read. A `thread` makes it a thread_start's child: its `require` judges the
- * toolset chosen inside the commit, so a refusal throws there and nothing is created.
+ * are one read. A `require` hook judges the toolset chosen inside the commit, so a
+ * refusal throws there and nothing is created; `startedBy` marks a thread_start's child.
  */
 export function topicInit(
   profile: Profile,
   topic: string | undefined,
   catalog: ModelCatalog,
   fallback: ModelRef,
-  thread?: StartedThread,
+  hooks: CreationHooks = {},
 ): ConversationInit {
   const policy = PROFILE_TOOLSETS[profile];
   return async (tx, conversationId) => {
@@ -216,10 +217,10 @@ export function topicInit(
       (record) => {
         const chosen = record?.toolset ?? policy.default;
         requireAllowed(chosen, profile, policy);
-        thread?.require(chosen);
+        hooks.require?.(chosen);
         return chosen;
       },
-      thread?.startedBy,
+      hooks.startedBy,
     );
     await configure(tx, conversationId, {
       extensions: selectionOf(toolsetList(toolset, profile)),

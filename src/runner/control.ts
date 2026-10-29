@@ -6,12 +6,15 @@
 // is logged and the connection dropped, unanswered (the code set is closed).
 // Nothing here writes a real repo (I3): `RepoReader` only reads.
 
-import { chmod, mkdir, stat } from "node:fs/promises";
 import type { Socket } from "node:net";
-import { dirname } from "node:path";
 import type { JsonRecord } from "../json.ts";
 import { encodeLine, lineSplitter } from "../ndjson.ts";
-import { SocketInUse, serveUnix, type UnixServer } from "../unix-socket.ts";
+import {
+  PrivateDirectoryRefused,
+  SocketInUse,
+  servePrivateUnix,
+  type UnixServer,
+} from "../unix-socket.ts";
 import type { RunnerConfig } from "./config.ts";
 import { type Conversations, ensureConversation } from "./conversations.ts";
 import { isRunnerError, messageOf, RunnerError, StartRefused } from "./errors.ts";
@@ -311,40 +314,23 @@ function serveConnection(deps: ControlDeps, socket: Socket): void {
 
 // --- the socket ------------------------------------------------------------------
 
-/** The socket's directory, made 0700 if absent; refused unless ours and closed to others. */
-async function prepareDirectory(dir: string): Promise<void> {
-  await mkdir(dir, { recursive: true, mode: 0o700 });
-  const { uid, mode } = await stat(dir);
-  if (uid !== process.getuid?.() || (mode & 0o077) !== 0) {
-    throw new StartRefused(
-      `${dir} must be owned by this user and closed to group and other (mode ${(mode & 0o777).toString(8)}, uid ${String(uid)})`,
-    );
-  }
-}
-
 /**
  * Serves the control socket at `socketPath`. Refuses (StartRefused) when its
  * directory is open to others or another server answers there; a stale
- * socket file is replaced. The 0700 directory closes the window before chmod.
+ * socket file is replaced.
  */
 export async function serveControl(deps: ControlDeps, socketPath: string): Promise<UnixServer> {
-  await prepareDirectory(dirname(socketPath));
-  let server: UnixServer;
   try {
-    server = await serveUnix(socketPath, (socket) => {
+    return await servePrivateUnix(socketPath, (socket) => {
       serveConnection(deps, socket);
     });
   } catch (error) {
+    if (error instanceof PrivateDirectoryRefused) {
+      throw new StartRefused(error.message, { cause: error });
+    }
     if (error instanceof SocketInUse) {
       throw new StartRefused(`a runner already serves ${socketPath}`, { cause: error });
     }
     throw error;
   }
-  try {
-    await chmod(socketPath, 0o600);
-  } catch (error) {
-    await server.close();
-    throw error;
-  }
-  return server;
 }

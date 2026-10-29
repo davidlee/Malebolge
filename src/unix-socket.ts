@@ -1,8 +1,9 @@
 // Promise wrappers for unix socket connect and listen, and the generic half of
 // a unix socket server: claiming the path, connection tracking, close.
 
-import { rm } from "node:fs/promises";
+import { chmod, mkdir, rm, stat } from "node:fs/promises";
 import { connect, createServer, type Server, type Socket } from "node:net";
+import { dirname } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 
 /** Connect to `path`; rejects if nothing accepts there. */
@@ -106,6 +107,14 @@ async function claimUnix(server: Server, path: string): Promise<void> {
   await listenUnix(server, path);
 }
 
+/** A socket's directory is not ours alone: not owned by this uid, or open to group or other. */
+export class PrivateDirectoryRefused extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "PrivateDirectoryRefused";
+  }
+}
+
 export interface UnixServer {
   /** Destroys every open connection and stops listening; idempotent. */
   close: () => Promise<void>;
@@ -142,4 +151,35 @@ export async function serveUnix(
       return closing;
     },
   };
+}
+
+/** The socket's directory, made 0700 if absent; refused unless ours and closed to others. */
+async function preparePrivateDirectory(dir: string): Promise<void> {
+  await mkdir(dir, { recursive: true, mode: 0o700 });
+  const { uid, mode } = await stat(dir);
+  if (uid !== process.getuid?.() || (mode & 0o077) !== 0) {
+    throw new PrivateDirectoryRefused(
+      `${dir} must be owned by this user and closed to group and other (mode ${(mode & 0o777).toString(8)}, uid ${String(uid)})`,
+    );
+  }
+}
+
+/**
+ * Serves `path` privately: refused (PrivateDirectoryRefused) unless its directory
+ * is ours and closed to others, and the socket itself is left 0600. The 0700
+ * directory closes the window before chmod.
+ */
+export async function servePrivateUnix(
+  path: string,
+  onConnection: (socket: Socket) => void,
+): Promise<UnixServer> {
+  await preparePrivateDirectory(dirname(path));
+  const server = await serveUnix(path, onConnection);
+  try {
+    await chmod(path, 0o600);
+  } catch (error) {
+    await server.close();
+    throw error;
+  }
+  return server;
 }

@@ -1,12 +1,27 @@
 import { chmod, stat, writeFile } from "node:fs/promises";
+import type { Socket } from "node:net";
 import { join } from "node:path";
-import { describe, expect, it, onTestFinished } from "vitest";
-import { connectUnix, SocketInUse, serveUnix, type UnixServer } from "../src/unix-socket.ts";
-import { rejection, socketPath, staleSocket } from "./fixtures.ts";
+import { describe, expect, it, onTestFinished, vi } from "vitest";
+import {
+  connectUnix,
+  PrivateDirectoryRefused,
+  servePrivateUnix,
+  serveUnix,
+  SocketInUse,
+  type UnixServer,
+} from "../src/unix-socket.ts";
+import { rejection, socketPath, staleSocket, tempDir } from "./fixtures.ts";
 
 /** Serves `path`, writing "hi" to each connection; closed when the test ends. */
 async function serve(path: string): Promise<UnixServer> {
   const server = await serveUnix(path, (socket) => socket.end("hi"));
+  onTestFinished(server.close);
+  return server;
+}
+
+/** Serves `path` privately (0700 directory, 0600 socket); closed when the test ends. */
+async function servePrivate(path: string): Promise<UnixServer> {
+  const server = await servePrivateUnix(path, (socket: Socket) => socket.end("hi"));
   onTestFinished(server.close);
   return server;
 }
@@ -62,5 +77,50 @@ describe("serveUnix: listening is the claim (design §4.4)", () => {
       syscall: "connect",
     });
     expect((await stat(path)).ino).toBe(ino);
+  });
+});
+
+describe("servePrivateUnix: the directory is closed before the socket exists (VT-1)", () => {
+  it("creates an absent directory 0o700 and leaves the socket 0o600", async () => {
+    const { dir, cleanup } = await tempDir();
+    onTestFinished(cleanup);
+    const directory = join(dir, "private");
+    const path = join(directory, "s.sock");
+    await servePrivate(path);
+    expect((await stat(directory)).mode & 0o777).toBe(0o700);
+    expect((await stat(path)).mode & 0o777).toBe(0o600);
+    expect(await greeting(path)).toBe("hi");
+  });
+
+  it("refuses a directory open to group and other, creating no socket", async () => {
+    const { dir, cleanup } = await tempDir();
+    onTestFinished(cleanup);
+    await chmod(dir, 0o750);
+    const path = join(dir, "s.sock");
+    const { uid, mode } = await stat(dir);
+    const refused = await rejection(servePrivateUnix(path, () => undefined));
+    expect(refused).toBeInstanceOf(PrivateDirectoryRefused);
+    expect(refused).toMatchObject({
+      message: `${dir} must be owned by this user and closed to group and other (mode ${(mode & 0o777).toString(8)}, uid ${String(uid)})`,
+    });
+    await expect(stat(path)).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("refuses a directory owned by another uid, creating no socket", async () => {
+    const { dir, cleanup } = await tempDir();
+    onTestFinished(cleanup);
+    const realUid = process.getuid?.() ?? 0;
+    const spy = vi.spyOn(process, "getuid").mockReturnValue(realUid + 1);
+    onTestFinished(() => {
+      spy.mockRestore();
+    });
+    const path = join(dir, "s.sock");
+    const { uid, mode } = await stat(dir);
+    const refused = await rejection(servePrivateUnix(path, () => undefined));
+    expect(refused).toBeInstanceOf(PrivateDirectoryRefused);
+    expect(refused).toMatchObject({
+      message: `${dir} must be owned by this user and closed to group and other (mode ${(mode & 0o777).toString(8)}, uid ${String(uid)})`,
+    });
+    await expect(stat(path)).rejects.toMatchObject({ code: "ENOENT" });
   });
 });

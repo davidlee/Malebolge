@@ -6,9 +6,10 @@
 
 import type { Socket } from "node:net";
 import type { AgentEventStream, Conversation, ConversationId } from "@earendil-works/pi-durable";
+import { answer, errorMessage, fail, write, writeError } from "./connection-reply.ts";
 import { context } from "./context.ts";
 import { type ConversationPage, type Conversations } from "./conversations.ts";
-import { encodeLine, lineSplitter } from "./ndjson.ts";
+import { lineSplitter } from "./ndjson.ts";
 import {
   type AttachMessage,
   type ClientMessage,
@@ -56,46 +57,10 @@ interface Connection {
   queue: Promise<void>;
 }
 
-const errorMessage = (error: unknown): ErrorMessage => ({
-  type: "error",
-  message: error instanceof Error ? error.message : String(error),
-});
-
 const alreadyAttached = (conversation: Conversation): ErrorMessage => ({
   type: "error",
   message: `already attached to conversation ${String(conversation.id)}`,
 });
-
-function write(state: Connection, value: unknown): void {
-  if (state.socket.writable) {
-    state.socket.write(encodeLine(value));
-  }
-}
-
-function writeError(state: Connection, error: unknown): void {
-  write(state, errorMessage(error));
-}
-
-/**
- * This connection is over: an optional final frame, the socket ended, and the
- * lines queued behind it dropped. The only daemon-side close, with an error or
- * without one.
- */
-function finish(state: Connection, value?: unknown): void {
-  if (state.ended) {
-    return;
-  }
-  state.ended = true;
-  if (value !== undefined) {
-    write(state, value);
-  }
-  state.socket.end();
-}
-
-/** This connection is over: one error, the socket ended, the lines queued behind it dropped. */
-function fail(state: Connection, error: unknown): void {
-  finish(state, errorMessage(error));
-}
 
 /** One input's turn: the daemon's gate, then the draft built from the validated fields. */
 async function submitInput(
@@ -237,25 +202,6 @@ async function listAnswer(
     return topicsReply(conversations, await conversations.topics());
   }
   return listReply(await conversations.list(query));
-}
-
-/**
- * Answer a first-line frame with the one reply `produce` builds, then close cleanly:
- * no binding, nothing created, no durable state (DEC-007). A rejection goes through
- * `fail`, because an error left on an open connection strands the client.
- */
-async function answer(
-  state: Connection,
-  produce: () => Promise<ConversationsMessage | ModelsMessage | TopicsMessage>,
-): Promise<void> {
-  let reply: ConversationsMessage | ModelsMessage | TopicsMessage;
-  try {
-    reply = await produce();
-  } catch (error) {
-    fail(state, error);
-    return;
-  }
-  finish(state, reply);
 }
 
 /** One row of `FIRST_LINE`: what one first-line frame does to this connection. */
