@@ -206,7 +206,7 @@ Outcomes (operator, 2026-10-29; recorded on the ASMs):
 - EX-2 / ASM-005 invalidated, as EX-2 allows: notify-send exit 1, no D-Bus
   (glib machine-id missing). DEC-073 floor stands; no /consult needed.
 
-### PHASE-10 VH: real-jail exchange (operator; pending)
+### PHASE-10 VH: real-jail exchange (operator; done 2026-10-30)
 
 Covers PHASE-10 VH-1, VH-2 and VA-1 (RV-021 F-1/F-6/F-10). Docs: 0df3e9e
 (`docs/internals.md` § Bridge, README § Pairing a jailed pi). Facts below
@@ -417,6 +417,23 @@ so P4 reduces to `nix run .#jailed-pi-bridge`. Removed PHASE-01's
   as is`. Runbook overstated: the command's line is not "the same" as pi's
   notice. It omits pi session and topic, since the command has only its env
   (conversation, token, socket). Not a defect.
+- 11: met. pi paired with consult posture at 09:24:48 (conversation 4524).
+  pi→SATAN: three `bridge_post`s → `sent`. SATAN→pi: seq 1–3 on 4524 arrived
+  as bridge messages and each started a pi turn. SATAN now replies over the
+  bridge on its own (BRIDGE_ENVIRONMENT working). The operator's host client
+  "didn't move" until it was quit and reattached. Cause: it was relaunched
+  after step 10's restart and before the consult pair, so `--topic` resolved
+  to 3949, the newest at that moment. Reattaching picked 4524. Runbook
+  ordering trap (pair, then attach), not a defect.
+
+**Result**: VH-1 (pair; delegate and consult each exchange both ways; ro mount
+refuses writes; connect failure notifies in pi), VH-2 (`send`/`tee` bare from
+pi's bash, and from `!` after the fix) and VA-1 (steps 8, 9) met. Found and
+fixed during the run: `!` commands lacked the bridge env (0c86fb8); the
+status was invisible under pi-powerbar (0c86fb8); neither side knew the
+other's environment (f34d381). Caveat on VH-1's connect-failure clause: the
+notice reaches the operator only inside pi. The desktop notification cannot
+fire, since the jail has no D-Bus (ASM-005, DEC-073 floor).
 
 ## Autonomy log
 
