@@ -11,3 +11,5 @@ came from its project's packages, not from the agents flake, so node's
 presence in an arbitrary project's pi jail remains a ~/flakes deployment
 concern (proposed `lib.optional piInJail pkgs.nodejs_24`, operator assent
 pending; CHR-007 scope), not a premise failure.
+
+Update 2026-10-29: operator assented to the ~/flakes change; `lib.optional piInJail pkgs.nodejs_24` is applied in `~/flakes/agents/jailed-agents.nix` with a test (node on PATH exactly where pi is), uncommitted there pending the operator.
