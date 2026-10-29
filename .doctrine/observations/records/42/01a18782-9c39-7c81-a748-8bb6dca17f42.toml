@@ -1,0 +1,18 @@
+schema = "doctrine.observation"
+schema_version = 1
+uid = "01a18782-9c39-7c81-a748-8bb6dca17f42"
+recorded_at = "2026-10-29T11:54:06.265174989Z"
+kind = "friction"
+summary = "revision change add refuses DEC targets; reconcile skill routes DEC amendments to REV"
+detail = "SL-010 reconcile: RV-025 brief put DEC-016/017/034/039/082 amendment notes under Governance/spec (REV). revises targets are SPEC/PRD/REQ/ADR/POL/STD only, so REV-002 was abandoned empty and the notes landed via knowledge edit --body-mode append. The audit brief template / reconcile skill should route knowledge-record amendments to knowledge edit."
+
+[facets.execution]
+schema_version = 1
+interface = "cli"
+interface_origin = "automatic"
+product_surface = "doctrine"
+product_surface_origin = "automatic"
+command = "observation record"
+command_origin = "automatic"
+repository_context = "primary"
+repository_context_origin = "automatic"
