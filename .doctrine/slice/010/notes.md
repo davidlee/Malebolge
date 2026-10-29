@@ -103,6 +103,7 @@ wanted, is left to phase-plan as checks against code, not design questions:
 
 VH-1 (operator, live gateway): set a topic to `gateway/openai-david/gpt-6.1-terra` from Emacs, create a conversation in it from the chooser, see the model on its chooser line, and get a reply from that model.
 
+0. Reload the elisp on this build: `M-x load-file RET ~/dev/malebolge/emacs/malebolge.el RET` (a daemon restart does not reload it, and `dl-satan.el`'s `:commands` autoloads only attach/start/stop — operator hit `malebolge-set-topic-model` undefined at step 3, 2026-10-29).
 1. Restart the daemon on this build (`M-x malebolge-stop`, `M-x malebolge-start`); `node src/attach-main.ts --models` should list `gateway/openai-david/gpt-6.1-terra`.
 2. Have a non-default topic (e.g. `node src/attach-main.ts --set-topic work`).
 3. `M-x malebolge-set-topic-model` → `work` → `gateway/openai-david/gpt-6.1-terra`; expect `malebolge: topic work now uses gateway/openai-david/gpt-6.1-terra`. (`--topics` shows it in the fourth field.)
