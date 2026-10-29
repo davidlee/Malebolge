@@ -32,6 +32,7 @@ wanted, is left to phase-plan as checks against code, not design questions:
 - **Background tasks** enabled (`CLAUDE_CODE_DISABLE_BACKGROUND_TASKS` unset): spawns run in the background and wake the parent by notification.
 
 ## Autonomy log
+- PHASE-07 · VH-1 run against gateway/chatgpt/gpt-6.1-terra, not the plan's openai-david ref (account out of credit) · operator's choice · decided
 
 - PHASE-01 · ModelCatalog members are function-typed properties (`require: (ref) => ModelRef`), not method signatures as design sec-2 writes them · typescript-eslint `unbound-method` refuses passing `catalog.require` unbound, which design sec-4's `creationModel(..., catalog.require)` does; names/types unchanged · decided (local design correction; flag for audit)
 - PHASE-01 · `startDaemon`'s first three preflight calls extracted into a `preflight` helper (same calls, order, errors) · `max-lines-per-function` (80) was saturated and the catalog check needs two lines · decided (adjacent refactor)
@@ -111,6 +112,10 @@ VH-1 (operator, live gateway): set a topic to `gateway/openai-david/gpt-6.1-terr
 5. Send a prompt (draft, `C-c C-c`); a reply arrives from that model.
 6. `C-u M-x malebolge-attach` again: the new conversation's chooser line reads `ID<TAB>work<TAB>gateway/openai-david/gpt-6.1-terra`.
 7. Record the outcome (pass, or what failed) for the agent to mark VH-1 and flip PHASE-07 `completed`.
+
+### VH-1 result (2026-10-29, operator)
+
+Passed (reply "yes"): topic `dwarf` set to `gateway/chatgpt/gpt-6.1-terra` via `M-x malebolge-set-topic-model`; new conversation 2738 from the chooser; `--list` line `2738<TAB>dwarf<TAB>gateway/chatgpt/gpt-6.1-terra`; reply received. Ref substituted for the plan's `openai-david` (that account returned 429, no credit) — operator's choice. Needed a home-manager switch (`~/flakes`) so the daemon's catalog listed `chatgpt/*`, and `llm-gateway` chatgpt sign-in. Rough edges hit: elisp not reloaded after update; `Topic:` RET defaults to `default` (first attempt landed in 2672/default); silent model failure (ISS-005); connect status lacks topic/model (IMP-026).
 
 ## PHASE-05 EN-2 measurement (VA-1)
 
