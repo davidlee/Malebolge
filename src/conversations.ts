@@ -230,8 +230,12 @@ export function topicInit(
   };
 }
 
-/** A new ownerless conversation: model, cwd, the topic entry and its selection in one commit. */
-function create(
+/**
+ * A new ownerless conversation: model, cwd, the topic entry and its selection in one
+ * commit. Exported for the bridge listener, whose `pair` creates one with its own init
+ * (SL-009 design sec-3, DEC-093).
+ */
+export function create(
   session: Session,
   defaults: ConversationDefaults,
   cwd: string,

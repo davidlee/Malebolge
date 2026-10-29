@@ -1,5 +1,6 @@
-// The daemon's one startup path: one instance per profile, the socket claimed
-// before the store is opened, SATAN's tools refreshed before the session resumes.
+// The daemon's one startup path: one instance per profile, its sockets claimed
+// before the store is opened (the room's private bridge listener too, DEC-064),
+// SATAN's tools refreshed before the session resumes.
 
 import { mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -10,6 +11,7 @@ import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite
 import { backupSource, unconfiguredSource } from "./bookmarks/backup.ts";
 import { bookmarksExtension } from "./bookmarks/extension.ts";
 import { orientationOf } from "./boot-context.ts";
+import { type BridgeHost, serveBridge } from "./bridge/listener.ts";
 import type { Config, Profile, ScrewtapePaths } from "./config.ts";
 import { context } from "./context.ts";
 import { type ConversationDefaults, type Conversations, conversations } from "./conversations.ts";
@@ -36,6 +38,7 @@ import { loadSkills, type Skill } from "./skills.ts";
 import { sweepBlockedTasks } from "./task-sweep.ts";
 import { type ThreadDeps, threadBinding, threadsExtension } from "./threads/extension.ts";
 import { postSweptKind, postTask } from "./threads/task.ts";
+import type { UnixServer } from "./unix-socket.ts";
 import {
   type EarlyWakeDeps,
   tasksExtension,
@@ -249,6 +252,47 @@ const serveOptionsOf = (
   modelRefs: catalog.refs,
 });
 
+/** What the bridge listener reads: the session's one harness and the daemon's own ports (SL-009 sec-2). */
+const bridgeHostOf = (
+  session: Session,
+  conversations: Conversations,
+  defaults: ConversationDefaults,
+  config: Config,
+  catalog: ModelCatalog,
+): BridgeHost => ({
+  session,
+  conversations,
+  defaults,
+  profile: config.execution.profile,
+  catalog,
+});
+
+/**
+ * The daemon's one stop, in reverse of the start: its sockets, the store, the
+ * environment, SATAN and the lock last. A second call returns the same promise.
+ */
+const stopOf = (
+  daemon: Daemon,
+  bridge: UnixServer | undefined,
+  session: Session,
+  environment: DaemonEnv,
+  satan: SatanTools,
+  lock: { release: () => void },
+): (() => Promise<void>) => {
+  let stopping: Promise<void> | undefined;
+  return () => {
+    stopping ??= (async (): Promise<void> => {
+      await daemon.close();
+      await bridge?.close();
+      await session.harness.close(context);
+      environment.close();
+      await satan.close();
+      lock.release();
+    })();
+    return stopping;
+  };
+};
+
 /**
  * Start the profile's daemon: lock, claim the socket, refresh SATAN's tools,
  * then open and resume the session. A failure undoes what preceded it in
@@ -282,6 +326,7 @@ export async function startDaemon(config: Config, deps: StartDeps): Promise<Daem
   // Construction never connects, so nothing here can fail before the `try`.
   const satan = satanTools(config.mcpSocket, registry, log, { idleMs: config.satanIdleMs });
   let daemon: Daemon | undefined;
+  let bridge: UnixServer | undefined;
   let session: Session | undefined;
   try {
     mkdirSync(dirname(config.daemonSocket), { recursive: true });
@@ -289,7 +334,13 @@ export async function startDaemon(config: Config, deps: StartDeps): Promise<Daem
     threads.bindEarly({ profile: config.execution.profile, defaults, catalog, now, log, satan });
     // Resolved in `beforeResume`, so a client's continuation runs after `resume()`.
     const conversationsReady = Promise.withResolvers<Conversations>();
+    // The bridge listener's host, resolved beside it (SL-009 design sec-2).
+    const bridgeHost = Promise.withResolvers<BridgeHost>();
     daemon = await serve(serveOptionsOf(config, satan, conversationsReady.promise, catalog));
+    // Room only: `config.bridgeSocket` exists on no other profile's Config.
+    if (config.bridgeSocket !== undefined) {
+      bridge = await serveBridge({ path: config.bridgeSocket, host: bridgeHost.promise });
+    }
     // Before the session resumes, so a turn's SATAN call runs, not `tool_unavailable`.
     await satan.refresh();
     session = await openBoundSession(config, log, {
@@ -304,12 +355,14 @@ export async function startDaemon(config: Config, deps: StartDeps): Promise<Daem
         wakes.bindLate({ harness: opened.harness, conversations: shared });
         threads.bindLate({ harness: opened.harness });
         conversationsReady.resolve(shared);
+        bridgeHost.resolve(bridgeHostOf(opened, shared, defaults, config, catalog));
       },
     });
     await startRoomTasks(config.execution.profile, wakes.deps, threads.deps, session, task);
   } catch (error) {
     // In reverse, the lock last: a session that resumed may already run wakes.
     await session?.harness.close(context);
+    await bridge?.close();
     await daemon?.close();
     await satan.close();
     environment.close();
@@ -317,17 +370,7 @@ export async function startDaemon(config: Config, deps: StartDeps): Promise<Daem
     throw error;
   }
 
-  let stopping: Promise<void> | undefined;
-  const stop = (): Promise<void> => {
-    stopping ??= (async (): Promise<void> => {
-      await daemon.close();
-      await session.harness.close(context);
-      environment.close();
-      await satan.close();
-      lock.release();
-    })();
-    return stopping;
-  };
+  const stop = stopOf(daemon, bridge, session, environment, satan, lock);
 
   return {
     stop,

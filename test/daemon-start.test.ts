@@ -24,7 +24,14 @@ import { SocketInUse, serveUnix } from "../src/unix-socket.ts";
 import { tasksExtension, wakeBinding } from "../src/wake/extension.ts";
 import { liveWakes, type WakeInput } from "../src/wake/task.ts";
 import { bookmarksPart } from "./bookmarks/bookmark-fixtures.ts";
-import { type FakeTool, fakeMcpServer, rejection, staleSocket, tempDir } from "./fixtures.ts";
+import {
+  type FakeTool,
+  fakeMcpServer,
+  lineClient,
+  rejection,
+  staleSocket,
+  tempDir,
+} from "./fixtures.ts";
 import {
   callThenAnswer,
   FAUX_MODEL,
@@ -437,6 +444,25 @@ async function seededBlockedPost(w: World): Promise<number> {
     await harness.close(context);
   }
 }
+
+describe("startDaemon bridge listener (SL-009 PHASE-05 EX-5)", () => {
+  it("a room daemon serves bridge.sock, refusing attach, and removes the socket on stop", async () => {
+    const w = await roomWorld({ enabled: false });
+    const path = join(dirname(w.cwd), "run", "satan", "durable", "room", "bridge", "bridge.sock");
+    w.config.bridgeSocket = path;
+    const handle = await started(w);
+    expect(existsSync(path)).toBe(true);
+
+    const client = await lineClient<unknown>(path, (value) => value);
+    onTestFinished(client.close);
+    client.send({ type: "attach", target: { kind: "root" } });
+    expect(await client.next(() => true)).toMatchObject({ type: "refused" });
+    await client.closed();
+
+    await handle.stop();
+    expect(existsSync(path)).toBe(false);
+  });
+});
 
 describe("startDaemon wakes", () => {
   it("VT-3 a: a fresh room start creates one recurring heartbeat in the wake topic, and a restart none", async () => {
