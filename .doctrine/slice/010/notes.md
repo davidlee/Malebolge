@@ -131,20 +131,21 @@ Passed (reply "yes"): topic `dwarf` set to `gateway/chatgpt/gpt-6.1-terra` via `
 
 ## Harvest
 <!-- single-copy: updated in place each harvest; ids only, never restated content -->
-fresh-as-of: 2026-10-29 · audit concluded (RV-025) · status reconcile
+fresh-as-of: 2026-10-29 · done (closed) · reconcile 3c82306
 
 ### Produced
 - PHASE-01..07 done (8aa02d9, c4542f8, 866a88c, 78856d0, 77ac080, a873454, 2538398); VH-1 passed by the operator (substituted ref, RV-025 F-10)
 - design run dr-01a18627 locked rev 38 (eddc7d9); DEC-082..DEC-089, DEC-091; ISS-004
-- RV-025 audit: 19 findings, all verified; Reconciliation Brief in review-025.md; F-16 comment/doc fixes and IMP-026 item 4 landed with the audit commit
+- RV-025 audit (e278e55): 19 findings, all terminal; reconcile (3c82306): selectors, design sec-2/4/7, amendment notes on DEC-016/017/034/039/082; REV-002 abandoned (REV cannot target DECs; observation 42)
+- IMP-018 resolved at close; IMP-026 opened (hand-run rough edges)
 
 ### Learned
 - mem.fact.malebolge.model-ref-provider-is-gateway
 - mem.fact.malebolge.root-indexed-in-default
+- mem_01a184e953277a629410134b8743b405 (concurrent vitest coverage collision) — already recorded
+- rejected for memory: per-phase `slice record-delta` skipped by sub-orchestrators (already a memory: mem.fact.malebolge.orchestrated-phases-skip-delta-registry); catalog-vs-gateway drift lives in ~/flakes, not here (IMP-026 notes it)
 
 ### Open
-- RV-025 Reconciliation Brief — per-slice: selectors + design sec-2/sec-4/sec-7; governance: DEC-016, DEC-017, DEC-034, DEC-039, DEC-082 (for /reconcile)
-- IMP-018 — resolve at /close (RV-025 F-19)
 - IMP-026 — Emacs/transcript rough edges, incl. `Topic:` default (amends DEC-089 if changed)
-- CHR-001 — `doctrine check gate` has no `just gate` recipe
+- CHR-001 — `doctrine check gate` has no `just gate` recipe; close gate run as `just check` (SL-010 files green; 18 failures all in SL-009's uncommitted bridge/daemon-sections tests)
 - ISS-004 — SL-009 follow-ups (other session)

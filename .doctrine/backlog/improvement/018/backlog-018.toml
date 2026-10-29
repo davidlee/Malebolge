@@ -5,10 +5,10 @@ id = 18
 slug = "emacs-client-create-a-conversation-in-a-named-topic"
 title = "Emacs client: create a conversation in a named topic"
 kind = "improvement"
-status = "open"
-resolution = ""                 # seeded empty so `backlog edit` sets it in place
+status = "resolved"
+resolution = "done"
 created = "2026-10-28"
-updated = "2026-10-28"
+updated = "2026-10-29"
 tags = []
 
 # outbound-only. Cross-kind structural edges (e.g. references with a role
