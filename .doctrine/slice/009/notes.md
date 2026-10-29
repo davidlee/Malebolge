@@ -225,3 +225,4 @@ Outcomes (operator, 2026-10-29; recorded on the ASMs):
 - PHASE-01: VH-1 needs node in non-malebolge pi jails: proposed ~/flakes diff handed back for operator assent, not applied (outward reach). Tier: escalate.
 - PHASE-01: ASM-005 invalidated but pre-ruled acceptable by PHASE-01 EX-2 and DEC-073; PHASE-01 closed without /consult. decided
 - PHASE-01: ~/flakes agents/jailed-agents.nix gains `lib.optional piInJail pkgs.nodejs_24` (+ test in jailed-agents-test.nix, red-checked); operator assent 2026-10-29 ("you can make this edit"); left uncommitted in ~/flakes for the operator. decided
+- PHASE-02 EN-2: operator 2026-10-29 "it's ready for audit after a VH" — SL-010 code complete on main (2538398); topicInit, ModelCatalog, ModelsMessage, modelRefs present. SL-010's audit may still touch src/; treat its edits as another writer. decided
