@@ -370,7 +370,17 @@ so P4 reduces to `nix run .#jailed-pi-bridge`. Removed PHASE-01's
   The host attach client had to be relaunched (its socket closed).
 - 6: met. `send` → `accepted`, 0, no SATAN turn; `tee --turn` → `hi`, 0,
   SATAN turn started (operator: "both pass").
-- 7 (partial): pi's write into `/workspace/malebolge` failed with EROFS.
+- 7: met. Earlier, pi's own write into `/workspace/malebolge` failed with
+  EROFS. Then `touch /workspace/malebolge/sl009-ro; echo $?` → `touch: cannot
+  touch '/workspace/malebolge/sl009-ro': Read-only file system`, 1; pi's write
+  tool on the same path → `EROFS: read-only file system, open
+  '/workspace/malebolge/sl009-ro'`.
+- Host client (operator raised: terminal attach vs Emacs attach may differ).
+  Not a confound for bridge semantics: both send `input` messages into the
+  same `submitInput` (`src/daemon.ts:73-85`), with Emacs adding an optional
+  `requestId`. Terminal gotcha only: each typed or pasted line is a separate
+  input (`src/attach.ts:81-101`), so a multi-line paste starts or queues
+  several turns.
 
 ## Autonomy log
 
