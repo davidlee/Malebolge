@@ -74,6 +74,16 @@ intent = "design-target"
 selector = "emacs/malebolge.el"
 intent = "design-target"
 
+[[selector]]
+selector = "README.md"
+intent = "design-target"
+note = "RV-025 F-2: user/internals docs for the new flags, models query, --topics/--list line shapes"
+
+[[selector]]
+selector = "docs/internals.md"
+intent = "design-target"
+note = "RV-025 F-2: user/internals docs for the new flags, models query, --topics/--list line shapes"
+
 [[relation]]
 label = "references"
 role = "concerns"

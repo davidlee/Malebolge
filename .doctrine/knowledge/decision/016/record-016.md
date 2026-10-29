@@ -3,3 +3,5 @@
 <!-- Knowledge record body — context, detail, links. The structured, queried
      fields live in the sister `record-NNN.toml`; this prose is free-form and is
      never structurally parsed (the storage rule). -->
+
+Amended by DEC-086 (SL-010; RV-025 F-15, 2026-10-29): the topic frame and topics reply gain a `model` key (a ref string; null clears), alongside cwd and toolset.

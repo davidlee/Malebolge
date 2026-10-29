@@ -57,3 +57,35 @@ Sources worth reading: `doctrine show DEC-083` (refusal rule the creation paths 
 ### Close-time (for /close, not a reconcile write)
 - **IMP-018 (F-19):** resolve, delivered by SL-010 PHASE-07.
 - Off-surface, recorded only: plan PHASE-07 VH-1 passed against `gateway/chatgpt/gpt-6.1-terra` (F-10) — plan criteria are immutable; no edit.
+
+## Reconciliation Outcome
+
+### Direct edits applied
+- Selector registry (F-2): `README.md`, `docs/internals.md` added to SL-010 with
+  intent `design-target`. `doctrine slice conformance 10` now reads 37
+  conformant, 0 undelivered, 1 undeclared (`notes.md`, tolerated F-3).
+- design.md sec-7 (F-2): code-impact row for `README.md`, `docs/internals.md`.
+- design.md sec-2 (F-4): `ModelCatalog` members written as function-typed
+  properties, with the unbound-`catalog.require` reason; the DEC-082 refinement
+  bullet reads "member of a two-member port".
+- design.md sec-2 (F-14): the dead `src/daemon-start.ts:55` cite replaced:
+  `require` replaced `requireKnownModel` (deleted from `src/daemon-start.ts`).
+- design.md sec-4 (F-5): `ModelSources.topic?: string | undefined`.
+- design.md sec-4 (F-7): paragraph stating that `thread_start` surfaces an
+  unknown topic model as its refusal result (`isError`, naming the model)
+  through the `attempted` mapping; nothing is created (DEC-083).
+
+### Governance (F-15, F-4)
+- REV-002 (`reconcile-sl-010`): abandoned with no rows. `revision change add`
+  refuses DEC targets (SPEC/PRD/REQ/ADR/POL/STD only). Narrative in
+  revision-002.md.
+- Landed instead as knowledge-record body notes (`doctrine knowledge edit
+  --body-mode append`, the DEC-029 / RV-024 F-6 precedent): DEC-016 and
+  DEC-017 amended by DEC-086; DEC-034 amended by DEC-084; DEC-039 amended by
+  DEC-087. DEC-082's refinement note: "Pending the user's section review"
+  dropped, port written with function-typed properties.
+
+### Left for /close
+- IMP-018 (F-19): resolve, delivered by SL-010 PHASE-07.
+
+Reconcile pass complete — handoff to /close.

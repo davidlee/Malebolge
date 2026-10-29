@@ -33,16 +33,18 @@ model, and `new` asks for a topic. Scope: `slice-010.md`. Evidence:
 /** What conversation code knows of the gateway catalog. */
 export interface ModelCatalog {
   /** The ref parsed, or an `UnknownModel` naming it: `unknown model <ref>`. */
-  require(ref: string): ModelRef;
+  require: (ref: string) => ModelRef;
   /** Every chat model's ref, `provider/modelId`, sorted. */
-  refs(): string[];
+  refs: () => string[];
 }
 export function modelCatalog(models: Models): ModelCatalog;
 export function refOf(model: ModelRef): string; // provider/modelId, parseModel's inverse
 ```
 
-- `require` is today's `requireKnownModel` (`src/daemon-start.ts:55`), moved
-  and taking a string: `parseModel`, then `getModelOfType("chat", …)`.
+- The members are function-typed properties, not methods: callers pass
+  `catalog.require` unbound (lint `unbound-method`).
+- `require` replaced `requireKnownModel` (deleted from `src/daemon-start.ts`),
+  taking a string: `parseModel`, then `getModelOfType("chat", …)`.
   Either refusal, an unparseable ref (no slash) or one the catalog lacks,
   throws `UnknownModel` naming the ref, so one class covers both.
   `UnknownModel` is a new `Error` subclass in `src/models.ts`, as other
@@ -54,7 +56,7 @@ export function refOf(model: ModelRef): string; // provider/modelId, parseModel'
   there is one checker; `modelsFor` keeps returning `Models` for
   `openBoundSession`.
 - This refines DEC-082: the "one requireModel function" is the `require`
-  method of a two-method port, because DEC-088 needs the refs from the same
+  member of a two-member port, because DEC-088 needs the refs from the same
   source. Tests stub the port with a literal object.
 
 <!-- doctrine:section sec-3 -->
@@ -84,7 +86,7 @@ One pure function owns precedence and refusal:
 /** Where a new conversation's model may come from, highest precedence first. */
 export interface ModelSources {
   /** The topic's stored model, if it has one. */
-  topic?: string;
+  topic?: string | undefined;
   /** The daemon default. */
   fallback: ModelRef;
 }
@@ -127,6 +129,10 @@ The heartbeat row is the one place a refusal does not fail its caller:
 `startRoomTasks` (`src/daemon-start.ts:102`) catches `UnknownModel` only around
 `ensureHeartbeat`, logs, and the daemon serves without a heartbeat (DEC-083:
 the daemon still starts). Every other heartbeat failure still aborts the start.
+
+On `thread_start` an unknown topic model surfaces as the tool's refusal result
+(`isError`, naming the model) through the thread tools' `attempted` mapping, as
+a `Refusal` does; nothing is created (DEC-083).
 
 <!-- doctrine:section sec-5 -->
 ## 5. Listing: summaries and models (DEC-087, DEC-088)
@@ -207,6 +213,7 @@ restart hint (`SKEWED_KEYS`).
 | `src/attach-invocation.ts`, `src/attach-main.ts` | `--model`, `--no-model`, `--models`; a `models` mode in `RequestInvocation` and its exhaustive switches (`hereOf`, …) |
 | `src/request.ts` | `ReplyMessage`, `requestFrameOf`, `replyTypeOf`; `SKEWED_KEYS` gains `model` and `models` |
 | `src/render.ts` | `--list` and `--topics` lines; models lines |
+| `README.md`, `docs/internals.md` | the new flags, the models list query, the `--topics`/`--list` line shapes |
 | `emacs/malebolge.el` | `malebolge--client`, candidate regex, topic on `new`, `malebolge-set-topic-model`, `malebolge--target-label` |
 | tests | `test/models.test.ts`, `topics.test.ts`, `conversations.test.ts`, `daemon.test.ts`, `request.test.ts`, `attach-invocation.test.ts`, `render.test.ts`, `threads-*.test.ts`, `malebolge-ert.el`, `emacs-attach-smoke.ts`; a catalog fixture with a slashed id |
 

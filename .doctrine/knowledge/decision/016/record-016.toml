@@ -7,7 +7,7 @@ title = "Topic protocol: a topic frame, list gains topic and topics keys, attach
 record_kind = "decision"
 status = "accepted"
 created = "2026-10-24"
-updated = "2026-10-24"
+updated = "2026-10-29"
 tags = []
 
 [facet]                         # every field typed; seeded empty (captured later)

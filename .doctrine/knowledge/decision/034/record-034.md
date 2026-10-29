@@ -6,3 +6,5 @@
 
 
 Refined 2026-10-29 by DEC-043 (design review r1, Sol F-3): an interrupted thread_start or thread_fork after its creating commit is ambiguous to the caller; receipts are IMP-020.
+
+Amended by DEC-084 (SL-010; RV-025 F-15, 2026-10-29): a started thread takes its topic's model, else the daemon default, rather than the defaults' model; an unknown topic model refuses thread_start (DEC-083).

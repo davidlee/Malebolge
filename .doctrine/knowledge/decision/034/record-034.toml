@@ -7,7 +7,7 @@ title = "Threads start through two tools, thread_start and thread_fork, each tak
 record_kind = "decision"
 status = "accepted"
 created = "2026-10-28"
-updated = "2026-10-28"
+updated = "2026-10-29"
 tags = []
 
 [facet]                         # every field typed; seeded empty (captured later)

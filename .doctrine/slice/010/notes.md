@@ -54,6 +54,7 @@ wanted, is left to phase-plan as checks against code, not design questions:
 - PHASE-07 · client failure wording `malebolge: malebolge-attach ARGS failed: OUTPUT` / `… did not answer in N seconds; the outcome is unknown` · design sec-6 fixes only "verb-neutral, names the args" · decided
 - PHASE-07 · README `--list` line description corrected to `ID<TAB>TOPIC<TAB>MODEL[<TAB>MARK]` · PHASE-05 changed the lines and left README's old `id[<TAB>mark]` text · decided (doc correction; flag for audit)
 - PHASE-07 · phase left `in_progress`, VH-1 awaiting operator · charter: do not mark VH-1 met; `completed` would misstate it · decided
+- reconcile · REV-002 abandoned empty; RV-025 F-15 DEC amendment notes landed via `knowledge edit --body-mode append` · REVs cannot target DECs; DEC-029 precedent · decided
 
 ## PHASE-01 run log
 
