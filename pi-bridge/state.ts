@@ -120,6 +120,8 @@ export type Notice =
   | { kind: "busy"; phase: "pairing" | "resuming" | "outage" | "ending" }
   | { kind: "end unanswered" }
   | { kind: "ended" }
+  /** `/bridge end` in an outage: unpaired here only; the daemon's pairing is left as is. */
+  | { kind: "ended locally" }
   | { kind: "not paired" };
 
 /** What `setStatus` shows. */
@@ -681,11 +683,20 @@ function pairEvent(state: BridgeState, event: EventOf<"pair">): Step {
   return askEnd(state, phase, { then: posture });
 }
 
-/** sec-7 `end`: a bound pairing is asked to end; anything else is busy or not paired. */
+/**
+ * sec-7 `end`: a bound pairing is asked to end; an outage unpairs locally
+ * (operator ruling 2026-10-30: no frame, the daemon's pairing is left as is);
+ * anything else is busy or not paired.
+ */
 function endEvent(state: BridgeState): Step {
   const phase = state.phase;
   if (phase.name === "unpaired") {
     return tells(state, "info", { kind: "not paired" });
+  }
+  if (phase.name === "outage") {
+    return followedBy(unpair(state, phase.paired), [
+      { type: "notify", level: "info", notice: { kind: "ended locally" } },
+    ]);
   }
   if (phase.name !== "bound") {
     return busy(state, phase.name);

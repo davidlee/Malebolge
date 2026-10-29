@@ -290,14 +290,10 @@ describe("step(state, event): the sec-7 table (VT-1)", () => {
       expect(next).toEqual(boundEnding({}));
     });
 
-    it("pairing, resuming, outage, bound-ending | end -> same (busy)", () => {
-      const cases: readonly (readonly [
-        BridgeState,
-        "pairing" | "resuming" | "outage" | "ending",
-      ])[] = [
+    it("pairing, resuming, bound-ending | end -> same (busy)", () => {
+      const cases: readonly (readonly [BridgeState, "pairing" | "resuming" | "ending"])[] = [
         [pairingPhase(), "pairing"],
         [resuming(), "resuming"],
-        [outage(), "outage"],
         [boundEnding({}), "ending"],
       ];
       for (const [start, phase] of cases) {
@@ -305,6 +301,23 @@ describe("step(state, event): the sec-7 table (VT-1)", () => {
         expect(effects).toEqual([notify("error", { kind: "busy", phase })]);
         expect(next).toEqual(start);
       }
+    });
+
+    // Operator ruling 2026-10-30: an outage's end unpairs locally; no frame, the daemon's pairing is left as is.
+    it("outage | end -> unpaired locally (marker, no frame)", () => {
+      const { state: next, effects } = step(outage(2, { pending: [pendingPost("p1")] }), {
+        type: "end",
+      });
+      expect(effects).toEqual([
+        unknown("p1"),
+        CANCEL,
+        close(1),
+        append({ kind: "unpaired" }),
+        env(null),
+        notify("info", { kind: "ended locally" }),
+        status("unpaired"),
+      ]);
+      expect(next).toEqual(initial({ conn: 1 }));
     });
 
     it("unpaired | end -> same (not paired)", () => {
