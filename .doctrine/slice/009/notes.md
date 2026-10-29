@@ -381,6 +381,14 @@ so P4 reduces to `nix run .#jailed-pi-bridge`. Removed PHASE-01's
   `requestId`. Terminal gotcha only: each typed or pasted line is a separate
   input (`src/attach.ts:81-101`), so a multi-line paste starts or queues
   several turns.
+- Escaping (raised by pi: SATAN reported a probe's `<bracketed> & "quoted"`
+  arriving raw, suspecting a hole in `escapeXml`). Refuted at rest: entry 4360
+  (conversation 3949, `satan.bridge`, kind turn) holds the model content
+  `&lt;bracketed&gt; &amp; &quot;quoted&quot;` inside `<bridge from="pi" …>`.
+  SATAN's report described its reading, not its input: a model reads
+  entities as the characters they stand for, and its printf check tested its
+  output, not its context. The stale-process hypothesis was also false: the
+  daemon started 00:55 Oct 30, after dd6ae25 (Oct 29 23:33).
 
 ## Autonomy log
 
