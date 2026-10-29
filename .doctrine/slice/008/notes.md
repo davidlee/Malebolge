@@ -62,6 +62,10 @@ review belongs to the plan.
 - PHASE-01 · `renderResult` kept as mail's one-line use of `renderBlock("mail-data", …)`; failure text now `mail-data result is over N bytes` · EX-3; no test pins the old text · decided
 - PHASE-01 · `src/mail/extension.ts` MAIL_SECTION prose still names `<mail-data untrusted="true">` · it is the prompt rule describing the block, not a copy of the wrapper (EX-3 read as wrapper text); design keeps MAIL_SECTION in mail · decided
 - PHASE-01 · `MAIL_MAX_BYTES` renamed inside three `it(...)` titles in test/mail/render.test.ts · titles are not assertions; the rename is EX-5's · decided
+- PHASE-02 · `biome.json` excludes `test/bookmarks/fixtures/**` (file not named in the plan) · `biome format --write` reformatted the committed decoder output; fixtures must stay byte-exact (EX-2) · decided
+- PHASE-02 · added a spy test: `Buffer.alloc`/`allocUnsafe` not called on too_large · the 0xFFFFFFFF header test passes even alloc-first (Linux overcommit), so it did not guard "before any allocation" (EX-1); negative control run red · decided
+- PHASE-02 · decoder file 80 lines, not ~30 · ~40-line decode body; the rest is header comment, error class, fixed messages and 12 refusal sites (EX-4 "plus its refusals") · decided
 
 ## Review passes
 - PHASE-01 · pi `implement` (deepseek-flash), 2 runs in one session: T1 red ($0.020), T2+T3 green/refactor ($0.044). Clean: followed spec, flagged the extra project.ts edit itself. Miss: none; noted `npx biome` broken in sandbox, used PATH biome. Gateway restart window: probe answered, no runs lost.
+- PHASE-02 · pi `implement` (deepseek-flash), 3 runs: T1 red tests + helpers ($0.047; checked its vectors with a throwaway reference decoder; flagged biome reformatting the fixture and restored it byte-exact), T2 green ($0.018; correct, 156 lines, over-factored), T3 refactor to 80 lines + alloc-spy negative control ($0.025; ran the control red). Misses: none functional.

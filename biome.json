@@ -8,6 +8,7 @@
       "*.json",
       "!package-lock.json",
       "!test/mail/fixtures/**",
+      "!test/bookmarks/fixtures/**",
       "!.mcp.json",
       "!!**/.direnv"
     ]
