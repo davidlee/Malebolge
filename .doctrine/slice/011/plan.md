@@ -47,9 +47,11 @@ PHASE-01 attached set ──► PHASE-02 pair binds by id / attached ──► P
   and the reconcile log must land together: removing `bridge` from `Toolset`
   without the stored type and the narrowing does not typecheck. It is the
   largest phase because test fixtures that built `bridge`-toolset
-  conversations move to interactive. If its phase sheet finds it too big, the
-  split point is fixtures-and-catalogue vs stored-type narrowing, keeping
-  `just check` green at each step.
+  conversations move to interactive. If too big, split (a) `StoredToolset`,
+  `StoredTopicRecord`, `liveToolset`, `retired` and the session log, with
+  `bridge` still in `Toolset` (VT-2, VT-3); then (b) retire the toolset,
+  persona arm, fixtures and list change (VT-1, VT-4). The other cut does not
+  typecheck: `DaemonToolset` derives from `Toolset`.
 - **Framing after retirement.** The DEC-107 rule needs no code change
   (`bridgeSectionText` already renders `BRIDGE_UNTRUSTED` alone when not
   bridged), but it only covers every room interactive conversation once the
@@ -76,5 +78,5 @@ PHASE-01 attached set ──► PHASE-02 pair binds by id / attached ──► P
   request. It replaces the posture-only payloads of the pair event, the
   pairing phase and `ending.then`, and one builder makes the pair frame where
   two inline copies exist today.
-- Test titles carry their `RV-029 F-n` where the plan's VT keywords name one;
-  that is how the VT gate finds them.
+- Test titles carry their `RV-029 F-n` so the VT keyword gate, which greps
+  file text, finds them; keep each keyword on one line.

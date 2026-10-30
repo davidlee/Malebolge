@@ -37,8 +37,9 @@ entrance_criteria = [
 exit_criteria = [
   { id = "EX-1", text = "src/daemon.ts `serve` keeps the set of live Connections (added in startConnection, removed on socket close). `Daemon` is `UnixServer & { attached(): readonly ConversationId[] }`; attached() returns the distinct bound ids of live, not-ended connections." },
   { id = "EX-2", text = "A listing connection binds nothing and does not count; root counts once bound; an ended or closed connection drops out." },
-  { id = "EX-3", text = "`BridgeHost` gains `attached: () => readonly ConversationId[]`; src/daemon-start.ts passes `() => daemon.attached()` into bridgeHostOf (mirroring onOperatorInput)." },
+  { id = "EX-3", text = "`BridgeHost` gains `attached: () => readonly ConversationId[]` (mirroring onOperatorInput). src/daemon-start.ts binds `const socket = await serve(...)`, assigns `daemon = socket`, and passes `() => socket.attached()` into bridgeHostOf (`daemon` is `Daemon | undefined` there and non-null assertions are lint-banned)." },
   { id = "EX-4", text = "`just check` green." },
+  { id = "EX-5", text = "test/bridge-fixture.ts's BridgeHost literal gains `attached`, backed by a fixture-owned mutable list, empty by default; PHASE-02 gives it its default target." },
 ]
 verification = [
   { id = "VT-1", expects = "attached(): a listing connection does not count; root counts once bound; two clients on one conversation count once; a closed connection drops out", test_file = "test/daemon.test.ts", keywords = ["attached()"], waived = false },
@@ -55,17 +56,17 @@ entrance_criteria = [
 ]
 exit_criteria = [
   { id = "EX-1", text = "pi-bridge/wire.ts: `PairFrame` gains `conversation?: string`; `FIRST_LINE_FRAMES.pair` gains `conversation: optional(text)`." },
-  { id = "EX-2", text = "pairRow follows design sec-4 'Target': token minted before any commit; the id from `conversationKeyOf` (refuse `not a conversation id: X`) or from attachedTarget (refuse `no operator client is attached; name a conversation`, or `several conversations are attached (N, M); name one`, ids ascending); in one commit, refuse `no conversation N` or `conversation N has toolset T, not interactive`, else openPairing; then bindAndFollow. A refusal writes nothing." },
+  { id = "EX-2", text = "pairRow follows design sec-4 'Target': token minted before any commit; the id from `conversationKeyOf` (refuse `not a conversation id: X`) or from attachedTarget (refuse `no operator client is attached; name a conversation`, or `several conversations are attached (N, M); name one`, ids ascending); in one commit, refuse `no conversation N` or `conversation N has toolset T, not interactive`, else openPairing; then bindAndFollow. A refusal writes nothing. An index entry with no toolset (unreconciled) is refused `no conversation N`, as storedEntry reads it." },
   { id = "EX-3", text = "pair refuses a project over 255 bytes as `project longer than 255 bytes`, before the commit (RV-029 F-12)." },
   { id = "EX-4", text = "createBridged, bridgedInit, requireBridge and the topic creation are deleted. BridgeHost loses conversations, defaults, catalog and profile; bridgeHostOf stops passing them; their unused imports go (RV-029 F-8). src/conversations.ts's header comment says no frame ever creates a topic implicitly (DEC-093 superseded)." },
-  { id = "EX-5", text = "test/bridge-fixture.ts's pair() helper takes a target conversation and an attached set. The create-in-topic cases in test/bridge-pairing.test.ts's 'pair, through the listener' block are replaced by socket-level cases in test/bridge-listener.test.ts (RV-029 F-6)." },
+  { id = "EX-5", text = "bridgeHost()/bridgeWorld() create one interactive conversation at setup, with a reconciled index entry (toolset interactive), and the fixture's attached list defaults to [it]. pair(options?) keeps its zero-arg form, which pairs with no id and so binds that target via the attached set; options `{conversation?, attached?}` serve only the new cases. Existing callers (bridge-listener, bridge-inbound, bridge-pairing, and pi-bridge-shell's direct `/bridge pair delegate` end-to-end cases) keep working unchanged. The create-in-topic block in test/bridge-pairing.test.ts ('pair, through the listener') moves to socket-level cases in test/bridge-listener.test.ts (RV-029 F-6); its project-name-rule case is replaced by the 255-byte case." },
   { id = "EX-6", text = "A fork of an interactive conversation can be paired." },
   { id = "EX-7", text = "`just check` green. Stored `bridge`-toolset conversations are refused as not interactive until PHASE-04 retires the toolset; existing pairings on them still resume." },
 ]
 verification = [
   { id = "VT-1", expects = "pair by id binds an existing interactive conversation and answers paired with a token, creating no topic or conversation; refuses an unknown id, a non-decimal id, a mail conversation and an over-long project, writing nothing", test_file = "test/bridge-listener.test.ts", keywords = ["not a conversation id", "not interactive", "project longer than 255 bytes"], waived = false },
   { id = "VT-2", expects = "pair without id: one attached conversation is bound; none or several are refused, naming the ids", test_file = "test/bridge-listener.test.ts", keywords = ["no operator client is attached", "several conversations are attached"], waived = false },
-  { id = "VT-3", expects = "pair binds a fork of an interactive conversation", test_file = "test/bridge-listener.test.ts", keywords = ["fork"], waived = false },
+  { id = "VT-3", expects = "pair binds a fork of an interactive conversation", test_file = "test/bridge-listener.test.ts", keywords = ["fork of an interactive conversation"], waived = false },
   { id = "VA-1", text = "`rg 'createBridged|bridgedInit|requireBridge' src test` is empty; `rg 'topicInit' src/bridge` is empty." },
 ]
 specs        = []
@@ -80,7 +81,7 @@ entrance_criteria = [
 ]
 exit_criteria = [
   { id = "EX-1", text = "openPairing resets token, posture, project, ended, outbox and spent, and keeps nextSeq (DEC-106, RV-029 F-15)." },
-  { id = "EX-2", text = "bind takes its close reason from its caller: pairRow passes `superseded by a new pairing`, resumeRow `superseded by a newer connection`. resumeRow keeps its existing token check." },
+  { id = "EX-2", text = "bind takes its close reason from its caller: pairRow passes `superseded by a new pairing`, resumeRow `superseded by a newer connection`. resumeRow keeps its existing token check. bindAndFollow carries the close reason and the token hash to bind (it is bind's only caller)." },
   { id = "EX-3", text = "A connection records the token hash it bound under (pair: the minted token; resume: the presented one). boundLine compares it with the pairing snapshot it already reads, beside the ended check; on a mismatch it refuses `superseded by a new pairing`, finishes the connection and mutates nothing (RV-029 F-16)." },
   { id = "EX-4", text = "The operator-input refill path (operatorRefill, refillBridged) is unchanged." },
   { id = "EX-5", text = "`just check` green." },
@@ -88,7 +89,7 @@ exit_criteria = [
 verification = [
   { id = "VT-1", expects = "openPairing over a used pairing resets token, outbox and budget and keeps nextSeq (the 'resets a used document to a fresh pairing' case, retitled to say it keeps nextSeq)", test_file = "test/bridge-pairing.test.ts", keywords = ["keeps nextSeq"], waived = false },
   { id = "VT-2", expects = "re-pair replaces: the old connection gets `superseded by a new pairing`; the old token resumes `bad token`; the first message under the new pairing has the seq after the old pairing's last (RV-029 F-15)", test_file = "test/bridge-listener.test.ts", keywords = ["superseded by a new pairing", "RV-029 F-15"], waived = false },
-  { id = "VT-3", expects = "a line on a bound connection after its pairing was reopened under a new token is refused `superseded by a new pairing`, the connection finished, nothing mutated (RV-029 F-16; no pause seam, no ordering matrix)", test_file = "test/bridge-listener.test.ts", keywords = ["RV-029 F-16"], waived = false },
+  { id = "VT-3", expects = "a line on a bound connection after its pairing was reopened under a new token is refused `superseded by a new pairing`, the connection finished, nothing mutated (RV-029 F-16; no pause seam, no ordering matrix)", test_file = "test/bridge-listener.test.ts", keywords = ["RV-029 F-16", "nothing mutated"], waived = false },
 ]
 specs        = []
 requirements = []
@@ -105,7 +106,7 @@ exit_criteria = [
   { id = "EX-1", text = "src/toolsets.ts per design sec-2: Toolset loses `bridge`, CATALOG.bridge deleted, CATALOG.interactive gains `bridge` between `bookmarks` and SATAN, ROOM_ONLY gains `bridge`, PROFILE_TOOLSETS.room.allowed is [interactive, mail], TALK_SETS unchanged. src/persona.ts's `bridge` arm and its comment go." },
   { id = "EX-2", text = "src/topics.ts per design sec-3: IndexDoc holds StoredEntry and a new StoredTopicRecord, both with `toolset?: StoredToolset` (`DaemonToolset | \"bridge\"`); TopicRecord, NamedTopic, TopicChange and IndexEntry keep DaemonToolset. One pure `liveToolset` is the narrowing, used by entryToolsets (which writes changed values back) and by storedEntry, storedTopic, topicsOf and indexConversation's fork copy; no cast (RV-029 F-1)." },
   { id = "EX-3", text = "entryToolsets stays log-free and also returns `retired`, the names of topics it rewrote; src/session.ts logs `topic NAME: toolset bridge retired, now interactive` for each. A rewritten entry is logged by the existing step-3 path. A second start rewrites nothing (RV-029 F-9)." },
-  { id = "EX-4", text = "Tests that built `bridge`-toolset conversations (bridge-fixture, bridge-extension, daemon-sections, daemon-start, wake-tools, persona, pi-bridge-shell where it applies) build interactive ones; the persona `bridge` case goes; wake-tools' bridge-self-only case is replaced by a bridged conversation passing the talk-set check." },
+  { id = "EX-4", text = "Tests that built `bridge`-toolset conversations (bridge-fixture, bridge-extension, daemon-sections, daemon-start, wake-tools, persona, pi-bridge-shell where it applies) build interactive ones; the persona `bridge` case goes. In test/wake-tools.test.ts, the bridge-caller-waking-another-topic refusal case is deleted with no successor, and the two bridge-self cases become one bridged-interactive case passing the talk-set check (VT-4)." },
   { id = "EX-5", text = "`just check` green." },
 ]
 verification = [
@@ -132,8 +133,8 @@ exit_criteria = [
   { id = "EX-4", text = "`just check` green." },
 ]
 verification = [
-  { id = "VT-1", expects = "section: never bridged → BRIDGE_UNTRUSTED alone; bridged → three parts; ended → still three parts", test_file = "test/daemon-sections.test.ts", keywords = ["never bridged", "BRIDGE_ENVIRONMENT"], waived = false },
-  { id = "VT-2", expects = "fork a bridged conversation after a bridge entry: the fork's prompt carries BRIDGE_UNTRUSTED; its pairing is unpaired (RV-029 F-17)", test_file = "test/bridge-extension.test.ts", keywords = ["BRIDGE_UNTRUSTED", "RV-029 F-17"], waived = false },
+  { id = "VT-1", expects = "section: never bridged → BRIDGE_UNTRUSTED alone; bridged → three parts; ended → still three parts", test_file = "test/daemon-sections.test.ts", keywords = ["never bridged", "three parts"], waived = false },
+  { id = "VT-2", expects = "fork a bridged conversation after a bridge entry: the fork's prompt carries BRIDGE_UNTRUSTED; its pairing is unpaired (RV-029 F-17)", test_file = "test/daemon-sections.test.ts", keywords = ["BRIDGE_UNTRUSTED", "RV-029 F-17"], waived = false },
 ]
 specs        = []
 requirements = []
@@ -167,14 +168,14 @@ exit_criteria = [
   { id = "EX-1", text = "pi-bridge/shell.ts accepts one or two words after `pair`; the second must be decimal digits, else usage. BRIDGE_USAGE is `usage: /bridge pair delegate|consult [conversation], or /bridge end`." },
   { id = "EX-2", text = "pi-bridge/state.ts: `PairRequest = Pick<PairFrame, \"posture\" | \"conversation\">`, derived from the wire frame rather than restated. It is the pair command event's payload, the pairing phase's content and the bound phase's `ending.then`; one pure function builds the pair frame from a PairRequest and state.project, replacing the two inline constructions (pairEvent, terminalRefusal's re-pair) (RV-029 F-11)." },
   { id = "EX-3", text = "TERMINAL_REASONS gains `superseded by a new pairing`. A bound `/bridge pair` ends its own pairing first, so pi never meets its own supersede." },
-  { id = "EX-4", text = "Notices: topicOf and Ends.topic go; ends name the conversation id when known. pairFailedText's created clause becomes `the daemon may have paired conversation N` (or `the attached conversation` with no id) when the pair timed out after sending." },
+  { id = "EX-4", text = "Notices: topicOf and Ends.topic go; ends name the conversation id when known. pairFailedText's created clause becomes `the daemon may have paired conversation N` (or `the attached conversation` with no id) when the pair timed out after sending. The `pair failed` notice gains `conversation?: string`, taken from the pairing phase's PairRequest (EX-2), for pairFailedText to render; `mayHaveCreated` is renamed `mayHavePaired`." },
   { id = "EX-5", text = "After a re-pair of the same conversation, pi delivers the new pairing's first message: its seq follows the old pairing's last, so pi's conversation-and-seq dedupe does not drop it (DEC-106, RV-029 F-15)." },
   { id = "EX-6", text = "`just check` green." },
 ]
 verification = [
   { id = "VT-1", expects = "`/bridge pair consult 12` sends conversation \"12\"; a non-decimal second word or a third word prints the new usage", test_file = "test/pi-bridge-shell.test.ts", keywords = ["/bridge pair consult 12", "[conversation]"], waived = false },
-  { id = "VT-2", expects = "`superseded by a new pairing` is terminal (unpairs); `/bridge pair consult 12` while bound ends then re-pairs with conversation 12", test_file = "test/pi-bridge-state.test.ts", keywords = ["superseded by a new pairing", "conversation: \"12\""], waived = false },
-  { id = "VT-3", expects = "a pi session re-pairs the same conversation and receives the new pairing's first message (RV-029 F-15)", test_file = "test/pi-bridge-state.test.ts", keywords = ["RV-029 F-15"], waived = false },
+  { id = "VT-2", expects = "`superseded by a new pairing` is terminal (unpairs); `/bridge pair consult 12` while bound ends then re-pairs with conversation 12; a timed-out pair's notice names conversation 12, or the attached conversation with no id", test_file = "test/pi-bridge-state.test.ts", keywords = ["superseded by a new pairing", "conversation: \"12\""], waived = false },
+  { id = "VT-3", expects = "a pi session re-pairs the same conversation and receives the new pairing's first message (RV-029 F-15)", test_file = "test/pi-bridge-state.test.ts", keywords = ["RV-029 F-15", "injects"], waived = false },
 ]
 specs        = []
 requirements = []
