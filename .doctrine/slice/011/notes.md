@@ -37,3 +37,24 @@ Evidence: `research/research.md` (gitignored; raw thread output beside it).
 **Assumptions**
 - The live room store may hold `bridge`-mode conversations from SL-009's
   VH run (3949, 4524). Not checked; the remap must handle any number.
+
+## Harvest
+<!-- single-copy: updated in place each harvest; ids only, never restated content -->
+fresh-as-of: 2026-10-30 · design reviewing (run rev 21, RV-029 opened) · cbd01c3
+
+### Produced
+- scope (158dfd2); research round, two quotient threads → `research/research.md` (gitignored)
+- design inquiry: DEC-099..105; supersede DEC-065/071/092/093; amend refs DEC-025/029/032/036/065/076 (b02017d)
+- design drafted sec-1..10, design-target selectors, materialised (cbd01c3)
+- minted IDE-010 — end a pairing from the attach side
+- rough edge: materialise orders by id as text, so sec-10 renders second in design.md (fold into sec-9 or accept at review)
+- found: bridge-started turns inherit the prior origin today (`originOf` ignores `satan.bridge`); DEC-105 fixes it in this slice
+- no code changed; gate not applicable yet
+
+### Learned
+- mem.fact.pi-durable.section-render-undefined-omits
+- mem.pattern.malebolge.vh-through-the-operators-client
+
+### Open
+- design review: policy not chosen (human / adversarial-then-human / adversarial); user was asked, no answer yet
+- IDE-010 — attach-side end (out of scope)

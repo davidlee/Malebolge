@@ -1,0 +1,46 @@
+memory_uid = "mem_01a18b402c7676639cec8985ac94e49b"
+memory_key = "mem.pattern.malebolge.vh-through-the-operators-client"
+schema_version = 1
+memory_type = "pattern"
+status = "active"
+title = "Run attach-facing VH through Emacs malebolge-attach, the operator's real client"
+summary = "SL-009's VH attached from the terminal with --topic and missed that Emacs attaches root, which could never gain the bridge"
+created = "2026-10-30"
+updated = "2026-10-30"
+
+[scope]
+paths = []
+globs = ["emacs/**", "src/bridge/**", "pi-bridge/**"]
+commands = []
+tags = ["vh", "emacs", "attach"]
+workspace = "default"
+repo = "github.com/davidlee/Malebolge"
+repo_id_kind = "remote"
+repo_id_confidence = "high"
+
+[git]
+anchor_kind = "checkout_state"
+commit = ""
+tree = "e63fecc06127e4c093df6f695ae8e9df41bcc137"
+ref_name = "refs/heads/main"
+checkout_state_id = "6a741f806fcf6c8c5550168a72d71420c66d1b7059102ed298db2f25e6c834ce"
+base_commit = "cbd01c3be8831ca42d1d0cbea5eac3b8f9bc3f89"
+verified_sha = ""
+normalizer = "forget.checkout.v1"
+
+[review]
+verification_state = "unverified"
+reviewed = ""
+review_by = ""
+
+[trust]
+trust_level = "high"
+
+[ranking]
+severity = "none"
+weight = 0
+
+[[source]]
+kind = "doc"
+ref = "SL-011"
+

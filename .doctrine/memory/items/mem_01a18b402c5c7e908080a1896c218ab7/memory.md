@@ -1,0 +1,3 @@
+- `PromptSection.render(input, context): string | undefined | Promise<…>` (`dist/harness/types.d.ts`). `undefined` → the section is left out entirely, tag included (`dist/harness/prompt.js`, `renderSections`).
+- A render that throws is reported, and the section keeps the text it last showed (`shown.get(key)`), unless the request is aborted. So a dynamic section that reads a document fails safe: a failed read never strips text already in the prompt.
+- Consequence used by SL-011 (DEC-102): the bridge section renders `undefined` when a conversation was never bridged, and a failed pairing read cannot drop the untrusted framing.

@@ -1,0 +1,46 @@
+memory_uid = "mem_01a18b402c5c7e908080a1896c218ab7"
+memory_key = "mem.fact.pi-durable.section-render-undefined-omits"
+schema_version = 1
+memory_type = "fact"
+status = "active"
+title = "pi-durable: a section render returning undefined omits it; a throw keeps the last shown text"
+summary = "PromptSection.render may return undefined (no section, no tag); a render that throws keeps the section text last shown"
+created = "2026-10-30"
+updated = "2026-10-30"
+
+[scope]
+paths = []
+globs = ["src/**/extension.ts"]
+commands = []
+tags = ["pi-durable", "prompt"]
+workspace = "default"
+repo = "github.com/davidlee/Malebolge"
+repo_id_kind = "remote"
+repo_id_confidence = "high"
+
+[git]
+anchor_kind = "checkout_state"
+commit = ""
+tree = "e63fecc06127e4c093df6f695ae8e9df41bcc137"
+ref_name = "refs/heads/main"
+checkout_state_id = "1a86ff44122f2ef60ae2c6f26f03e3e5768805488ee228e1a73503bf56311838"
+base_commit = "cbd01c3be8831ca42d1d0cbea5eac3b8f9bc3f89"
+verified_sha = ""
+normalizer = "forget.checkout.v1"
+
+[review]
+verification_state = "unverified"
+reviewed = ""
+review_by = ""
+
+[trust]
+trust_level = "high"
+
+[ranking]
+severity = "none"
+weight = 0
+
+[[source]]
+kind = "file"
+ref = "node_modules/@earendil-works/pi-durable/dist/harness/prompt.js"
+

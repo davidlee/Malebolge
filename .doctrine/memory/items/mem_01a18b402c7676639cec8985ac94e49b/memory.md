@@ -1,0 +1,3 @@
+- The operator attaches with `M-x malebolge-attach` (root) or `C-u M-x malebolge-attach` (chooser), not `node src/attach-main.ts --topic …`.
+- SL-009's live run used the terminal client with `--topic <project>-bridge`, landing on the bridge-mode conversation. The operator's Emacs attach lands on root, an interactive conversation that could never gain `bridge_post` (mode fixed at creation, DEC-025). The bridge looked done and was unusable in practice; SL-011 was the fix.
+- How to apply: a VH for anything the operator reaches through attach (which conversation, tools, prompt) runs at least one step through Emacs, starting from plain `M-x malebolge-attach`. Ask "which conversation does the operator's client land on?" during design.
