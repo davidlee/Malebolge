@@ -7,7 +7,7 @@ status = "active"
 title = "Inside a pi jail, ~ is the persisted jail home, readable from the host"
 summary = "In a ~/flakes pi jail, ~ is the persisted jail home (host: ~/.local/share/jail.nix/home/agent), not the operator's home"
 created = "2026-10-29"
-updated = "2026-10-29"
+updated = "2026-10-30"
 
 [scope]
 paths = []
@@ -26,12 +26,12 @@ tree = "8bc0b8a790a62ce79cd9de58c7a07b9b1b442cf1"
 ref_name = "refs/heads/main"
 checkout_state_id = "ca6dd4be1f0adbd7994d555a4c8ec145283ddbed7f03e385a57c21d6c0f39e1a"
 base_commit = "e9ee58ad4b3ef66657d7ef7ca2cd31dc3f4a819d"
-verified_sha = ""
+verified_sha = "9d244bb961040911d7cb08a33301eb90653a8f04"
 normalizer = "forget.checkout.v1"
 
 [review]
-verification_state = "unverified"
-reviewed = ""
+verification_state = "verified"
+reviewed = "2026-10-30"
 review_by = ""
 
 [trust]
