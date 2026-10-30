@@ -109,6 +109,10 @@ Seat preflight, read by every charter:
 - PHASE-04: `liveToolset` is `t === "bridge" ? "interactive" : t`, no `RETIRED` table: a `Partial<Record>` lookup `RETIRED[t] ?? t` cannot narrow without a cast, and a one-entry table read only after the comparison adds nothing. Same behaviour as design sec-3; flag for audit. decided
 - PHASE-04: pi also rewrote the unlisted toolsets VT-2 case pinning `bookmarks` before satan on both profiles (now `bridge` on the room): forced by EX-1, not weakened. decided
 - PHASE-04: fixed a stale comment in src/wake/tools.ts ("bridge wakes only bridge"), outside the phase's four src files; comment only. decided
+- PHASE-05: no test pins bridge_post's new description clause (EX-3 has no VT; operator rule against prompt-phrase tests); verified by reading the diff. decided
+- PHASE-05/06: ran concurrently (file-disjoint: daemon-sections/extension vs threads-admission/origin/admission); one host `just check` covered both, commits per phase by path. decided
+- PHASE-06: a `satan.bridge` entry with no readable `data.kind` opens no origin (skipped like a note), not a breach: only a turn is known to be an input. Within design sec-6; flag for audit. decided
+- PHASE-06: tests pin callerOrigin (the origin a post carries) rather than an end-to-end thread post, as SL-006's origin tests do; plus a post round-tripping a bridge origin (EX-1, no VT keyword covers it). decided
 
 ## Review passes (pi runs)
 
@@ -120,3 +124,6 @@ Seat preflight, read by every charter:
 - PHASE-03 code, green (implement, $0.026, 30 req): tests unedited, all checks clean; one fail-open helper simplified by me. Negative control (restore `nextSeq = 1`): VT-2 fails `[1]` vs `[3]`. f9753d9.
 - PHASE-04 tests, red (implement, $0.047 + $0.008 continuation, 56+6 req): hit the request ceiling while linting; tried `git stash` (git-guard refused). Six red for the right reasons, tsc red on the two expected errors; left two eslint-disable comments for the missing export (removed by me after green).
 - PHASE-04 code, green (implement, $0.051, 39 req): tests unedited, all checks clean, VA-1 greps clean; flagged the stale wake comment. I simplified `liveToolset`. Negative control (drop the topic write-back): VT-2 fails `bridge` vs `interactive`. 01ef085.
+- PHASE-05 tests + clause (implement, $0.026, 32 req): pin tests passed first run by design; negative control (ended -> untrusted alone) fails the ended case. Clean. 0c762be.
+- PHASE-06 tests, red (implement, $0.012, 16 req, concurrent with PHASE-05): 3 red for the right reasons, F-4 case green. Clean.
+- PHASE-06 code, green (implement, $0.008, 13 req): tests unedited, no import cycle, no other Origin.kind reader affected. 18342c0.
