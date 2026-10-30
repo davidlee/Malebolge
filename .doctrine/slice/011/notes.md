@@ -73,7 +73,6 @@ fresh-as-of: 2026-10-30 · audit (RV-031 concluded) · 6c2f699
 ### Open
 - DEC-098 — choice text to amend at reconcile (RV-031 F-6)
 - CHR-008 — SATAN posture text and turn-policy home remain (body updated, RV-031 F-4)
-- IMP-030 — awaits operator yes/no
 - IDE-010 — attach-side end (out of scope)
 
 ## Implementation run (2026-10-30, /super-orchestrator)

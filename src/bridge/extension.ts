@@ -34,7 +34,8 @@ export const BRIDGE_UNTRUSTED =
 export const BRIDGE_ENVIRONMENT =
   "The pi session runs on the operator's host, jailed in the project's own checkout. " +
   "You run in the room, a separate machine: you cannot see pi's files, and any copy of the project here is an older, unrelated snapshot. " +
-  "Do not compare files or commits with pi; ask it to read or run what you need. " +
+  "A path and line from pi are a shared reference only when pi names its commit (and you have it); " +
+  "otherwise, or when the answer depends on current code, ask pi to read or run what you need rather than reasoning from your copy. " +
   "Your replies here do not reach pi; only bridge_post does.";
 
 /** The section text for a stored pairing (undefined = never written): BRIDGE_UNTRUSTED, then, when bridged, the environment and the posture's text. */

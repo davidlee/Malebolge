@@ -151,7 +151,7 @@ Operator agreed to items A–D on 2026-10-30 ("agreed").
 
 ### Not reconciled here
 - F-4: fixed in the audit commit (440963b).
-- F-5: IMP-030, operator decision.
+- F-5: IMP-030, operator decision. Resolved after reconcile: the operator chose SATAN's text, now in `BRIDGE_ENVIRONMENT`; design sec-7 updated; IMP-030 resolved (fixed).
 - F-7, F-8: tolerated. F-9, F-10: aligned.
 
 Reconcile pass complete. Hand off to /close.

@@ -274,7 +274,9 @@ entries serialise `origin.kind` into their data (`src/threads/task.ts`
   `PI_POSTURE_TEXT` carries the operator's texts (consult: a sounding board;
   delegate: a representative with bounded authority). Per DEC-072, pi's
   posture section is the extension's own, so these stay code. SATAN's side
-  of the shared-reference rule is IMP-030.
+  of the shared-reference rule: `BRIDGE_ENVIRONMENT` (`src/bridge/extension.ts`)
+  treats a path and line as shared only when pi names its commit and SATAN
+  has it; otherwise SATAN asks pi to read or run (IMP-030, operator text).
 <!-- doctrine:section sec-8 -->
 ## 8. Code impact
 
