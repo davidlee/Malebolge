@@ -1,0 +1,52 @@
+id = 11
+slug = "bridge-existing-conversations"
+title = "Bridge existing conversations: pair pi with an interactive conversation by id"
+status = "design"
+created = "2026-10-30"
+updated = "2026-10-30"
+tags = []
+
+[relationships]
+needs = []                      # slice→work hard prerequisite
+after = []                      # slice→work soft sequence: { to, rank }
+
+[[selector]]
+selector = "src/toolsets.ts"
+intent = "scope-relevant"
+
+[[selector]]
+selector = "src/bridge/**"
+intent = "scope-relevant"
+
+[[selector]]
+selector = "src/session.ts"
+intent = "scope-relevant"
+
+[[selector]]
+selector = "src/conversations.ts"
+intent = "scope-relevant"
+
+[[selector]]
+selector = "pi-bridge/**"
+intent = "scope-relevant"
+
+[[selector]]
+selector = "emacs/malebolge.el"
+intent = "scope-relevant"
+
+[[selector]]
+selector = "test/**"
+intent = "scope-relevant"
+
+[[relation]]
+label = "related"
+target = "SL-009"
+
+# STRUCTURAL relations are uniform `[[relation]]` rows, never a typed
+# `[relationships]` axis. Slices carry no typed STRUCTURAL
+# relation axes — the `[relationships]` table above holds only the dep/seq payload
+# (`needs`/`after`). Author a structural edge with the `doctrine link` verb
+# — it validates the (source, label) pair and resolves the target:
+#   doctrine link SL-NNN specs SPEC-NNN
+#   doctrine link SL-NNN governed_by ADR-NNN
+# `doctrine inspect SL-NNN` renders the inbound + outbound edges.
