@@ -136,6 +136,7 @@ Seat preflight, read by every charter:
 - PHASE-07 tests, red (implement, $0.067, 47 req): 13 red for the right reasons, VT-3 green as expected with an in-test dedupe control (seq 3 after re-pair is re-acked, not injected). One sound deviation (F-3 `-bridge`). Clean.
 - PHASE-07 code, green (implement, $0.035, 24 req): tests unedited (diff hash checked), tsc/lint clean, every pairFailed caller passes the conversation; two conditional builders simplified by me. acbc325.
 - PHASE-08 docs (implement, $0.027, 19 req): README and internals rewritten from the facts brief, accurate to the code; four phrasings tightened by me; `just check` green. 934722f.
+- PHASE-08 (pre-VH-1, operator-directed): `PI_BRIDGE_ENVIRONMENT` now names the `malebolge-bridge send|tee [--turn]` command; it said only bridge_post reaches SATAN. Prompt text outside the design; no wording test (by rule). Flag for audit/reconcile. decided
 
 ## VH-1 operator checklist
 

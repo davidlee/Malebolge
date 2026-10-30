@@ -13,7 +13,9 @@ export const PI_BRIDGE_ENVIRONMENT =
   "You are paired over the malebolge bridge with SATAN, an agent on a separate machine (the operator's room). " +
   "It cannot see your files, checkout or environment, and its copies of any repository are older snapshots. " +
   "Send it content, not paths or commit ids. " +
-  "Only bridge_post reaches it; its messages arrive here as bridge messages.";
+  "Only bridge_post and the malebolge-bridge command reach it; its messages arrive here as bridge messages. " +
+  "In bash, `malebolge-bridge send` posts its stdin and `cmd | malebolge-bridge tee` also passes it through; " +
+  "both post a note SATAN reads on its next turn, and `--turn` starts that turn now.";
 
 /**
  * sec-7 `before_agent_start`: `systemPrompt` with the bridge environment and the
