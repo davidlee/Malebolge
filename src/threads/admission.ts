@@ -11,6 +11,7 @@ import {
   type Tx,
   UserEntry,
 } from "@earendil-works/pi-durable";
+import { BRIDGE_ENTRY_KIND } from "../bridge/inbound.ts";
 import type { Profile } from "../config.ts";
 import { isRecord } from "../json.ts";
 import { type DaemonToolset, requireSameTalkSet } from "../toolsets.ts";
@@ -61,7 +62,10 @@ const dataOf = <T>(entry: EntryRecord, key: string, is: (value: unknown) => valu
   return value;
 };
 
-/** The origin `entry` opens, or `undefined` when it is not an input entry. */
+/**
+ * The origin `entry` opens, or `undefined` when it is not an input entry: a bridge
+ * note is a write (DEC-069), so it opens nothing (DEC-105).
+ */
 const originOf = (entry: EntryRecord, caller: ConversationId): Origin | undefined => {
   if (UserEntry.is(entry) || ResetEntry.is(entry)) {
     return { conversation: caller, entry: entry.id, kind: "human" };
@@ -70,13 +74,18 @@ const originOf = (entry: EntryRecord, caller: ConversationId): Origin | undefine
     const episodeClass = dataOf(entry, "episodeClass", isEpisodeClass);
     return { conversation: caller, entry: entry.id, kind: "wake", episodeClass };
   }
+  if (entry.kind === BRIDGE_ENTRY_KIND) {
+    const kind = isRecord(entry.data) ? entry.data["kind"] : undefined;
+    // Only a bridge turn is an input; a note (or an entry with no readable kind) is not.
+    return kind === "turn" ? { conversation: caller, entry: entry.id, kind: "bridge" } : undefined;
+  }
   return entry.kind === POST_KIND ? dataOf(entry, "origin", isOrigin) : undefined;
 };
 
 /**
  * The origin of `caller`'s turn: its newest input entry's origin (design § The
- * origin). Scans newest first, paged, skipping assistant, tool-result and notice
- * entries; a conversation with no input entry refuses.
+ * origin). Scans newest first, paged, skipping assistant, tool-result, notice and
+ * bridge-note entries; a conversation with no input entry refuses.
  */
 export async function callerOrigin(tx: Tx, caller: ConversationId): Promise<Origin> {
   let cursor: Cursor | undefined;

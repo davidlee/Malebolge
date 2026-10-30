@@ -13,6 +13,7 @@ import {
   UserEntry,
 } from "@earendil-works/pi-durable";
 import { describe, expect, it } from "vitest";
+import { BRIDGE_ENTRY_KIND } from "../src/bridge/inbound.ts";
 import { context } from "../src/context.ts";
 import { callerOrigin, Refusal } from "../src/threads/admission.ts";
 import type { Origin } from "../src/threads/origin.ts";
@@ -131,5 +132,68 @@ describe("the caller's origin (PHASE-05 VT-1)", () => {
     const call = originIn(harness, caller.id);
     await expect(call).rejects.not.toThrow(Refusal);
     await expect(call).rejects.toThrow(`entry ${String(post.id)} (satan.post) carries no origin`);
+  });
+});
+
+describe("a bridge-started turn's origin (PHASE-06, DEC-105)", () => {
+  it('a bridge turn opens origin kind: "bridge"', async () => {
+    const { harness } = await openIndexedHarness();
+    const caller = await createConversation(harness);
+    await append(harness, caller.id, UserEntry.kind);
+    const turn = await append(harness, caller.id, BRIDGE_ENTRY_KIND, {
+      kind: "turn",
+      project: "proj",
+    });
+
+    await expect(originIn(harness, caller.id)).resolves.toEqual({
+      conversation: caller.id,
+      entry: turn.id,
+      kind: "bridge",
+    });
+  });
+
+  it("a post round-trips a bridge origin (DEC-105 EX-1)", async () => {
+    const { harness } = await openIndexedHarness();
+    const caller = await createConversation(harness);
+    const inherited = { conversation: caller.id, entry: 41, kind: "bridge" };
+    await append(harness, caller.id, POST_KIND, {
+      letter: "post",
+      to: caller.id,
+      from: caller.id,
+      topic: "research",
+      origin: inherited,
+      intent: "Summarise the failing test runs",
+    });
+
+    await expect(originIn(harness, caller.id)).resolves.toEqual(inherited);
+  });
+
+  it("a bridge note keeps the human origin (RV-029 F-4)", async () => {
+    const { harness } = await openIndexedHarness();
+    const caller = await createConversation(harness);
+    const input = await append(harness, caller.id, UserEntry.kind);
+    await append(harness, caller.id, BRIDGE_ENTRY_KIND, { kind: "note", project: "proj" });
+
+    await expect(originIn(harness, caller.id)).resolves.toEqual({
+      conversation: caller.id,
+      entry: input.id,
+      kind: "human",
+    });
+  });
+
+  it("a bridge note keeps the bridge turn's origin", async () => {
+    const { harness } = await openIndexedHarness();
+    const caller = await createConversation(harness);
+    const turn = await append(harness, caller.id, BRIDGE_ENTRY_KIND, {
+      kind: "turn",
+      project: "proj",
+    });
+    await append(harness, caller.id, BRIDGE_ENTRY_KIND, { kind: "note", project: "proj" });
+
+    await expect(originIn(harness, caller.id)).resolves.toEqual({
+      conversation: caller.id,
+      entry: turn.id,
+      kind: "bridge",
+    });
   });
 });

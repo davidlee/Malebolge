@@ -11,8 +11,8 @@ export interface Origin {
   conversation: ConversationId;
   /** That input's entry. pi-durable mints entry ids from one store-wide sequence, so a higher id is younger. */
   entry: number;
-  kind: "human" | "wake";
-  /** A wake origin's episode class; absent for a human origin. Recorded only (DEC-036 addendum). */
+  kind: "human" | "wake" | "bridge";
+  /** A wake origin's episode class; absent for a human or a bridge origin. Recorded only (DEC-036 addendum). */
   episodeClass?: EpisodeClass;
 }
 
@@ -28,7 +28,7 @@ const isConversationId = (value: unknown): value is ConversationId =>
 export const isEpisodeClass = (value: unknown): value is EpisodeClass =>
   value === "attend" || value === "seclude";
 
-/** Whether `value` reads as an origin: a wake origin carries its episode class. */
+/** Whether `value` reads as an origin: only a wake origin carries an episode class, and it must. */
 export const isOrigin = (value: unknown): value is Origin => {
   if (!isRecord(value)) {
     return false;
@@ -37,6 +37,8 @@ export const isOrigin = (value: unknown): value is Origin => {
   return (
     isConversationId(value["conversation"]) &&
     typeof value["entry"] === "number" &&
-    (kind === "human" || (kind === "wake" && isEpisodeClass(value["episodeClass"])))
+    (kind === "human" ||
+      kind === "bridge" ||
+      (kind === "wake" && isEpisodeClass(value["episodeClass"])))
   );
 };
