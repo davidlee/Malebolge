@@ -113,6 +113,9 @@ Seat preflight, read by every charter:
 - PHASE-05/06: ran concurrently (file-disjoint: daemon-sections/extension vs threads-admission/origin/admission); one host `just check` covered both, commits per phase by path. decided
 - PHASE-06: a `satan.bridge` entry with no readable `data.kind` opens no origin (skipped like a note), not a breach: only a turn is known to be an input. Within design sec-6; flag for audit. decided
 - PHASE-06: tests pin callerOrigin (the origin a post carries) rather than an end-to-end thread post, as SL-006's origin tests do; plus a post round-tripping a bridge origin (EX-1, no VT keyword covers it). decided
+- PHASE-07: pairing phase is `{ name: "pairing" } & PairRequest` and the pair event `{ type: "pair" } & PairRequest` (flat, not a nested `request` field); EX-2's "content"/"payload" read as the same fields. Flag for audit. decided
+- PHASE-07: F-3 shell case asserts `not.toContain(`${PROJECT}-bridge`)` rather than `-bridge`: the fake daemon's socket dir is `malebolge-bridge-*`, which every notice names. Test-strength unchanged for what EX-4 removes. decided
+- PHASE-07: simplified pi's pairFrame / pairingPhaseOf to spreads (exactOptionalPropertyTypes guarantees a PairRequest never holds `conversation: undefined`). Same behaviour. decided
 
 ## Review passes (pi runs)
 
@@ -127,3 +130,5 @@ Seat preflight, read by every charter:
 - PHASE-05 tests + clause (implement, $0.026, 32 req): pin tests passed first run by design; negative control (ended -> untrusted alone) fails the ended case. Clean. 0c762be.
 - PHASE-06 tests, red (implement, $0.012, 16 req, concurrent with PHASE-05): 3 red for the right reasons, F-4 case green. Clean.
 - PHASE-06 code, green (implement, $0.008, 13 req): tests unedited, no import cycle, no other Origin.kind reader affected. 18342c0.
+- PHASE-07 tests, red (implement, $0.067, 47 req): 13 red for the right reasons, VT-3 green as expected with an in-test dedupe control (seq 3 after re-pair is re-acked, not injected). One sound deviation (F-3 `-bridge`). Clean.
+- PHASE-07 code, green (implement, $0.035, 24 req): tests unedited (diff hash checked), tsc/lint clean, every pairFailed caller passes the conversation; two conditional builders simplified by me. acbc325.
