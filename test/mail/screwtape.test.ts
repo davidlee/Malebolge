@@ -1391,6 +1391,26 @@ describe("classify", () => {
           ]);
         },
       );
+
+      // Only a non-zero exit reads stderr's error line: a too_large is cached, so a
+      // transient ending must never be taken for one (RV-028 F-3).
+      const notExited = cases.filter(([name]) => !name.startsWith("exit"));
+      const stderrs: [string, string][] = [
+        [
+          "jev_context at input[k]",
+          errorLine({ error: "limit_exceeded", bound: "jev_context", cursor: cursorOf("MsgB") }),
+        ],
+        ["credential", errorLine({ error: "credential" })],
+      ];
+      describe.each(stderrs)("with a %s stderr line", (_line, stderr) => {
+        it.each(notExited)("%s after k lines still fails the rest", async (_name, script) => {
+          const { result } = classifyRun({ ids: IDS, classify: { ...script, stderr } });
+          await expect(result).resolves.toEqual([
+            { id: "MsgA", classified: classifyDataOf("MsgA") },
+            ...unclassifiedOutcomes(["MsgB", "MsgC"], "failed"),
+          ]);
+        });
+      });
     });
 
     describe("the ending after all n lines does not matter", () => {

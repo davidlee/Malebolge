@@ -166,30 +166,35 @@ slips are left to red/green tests; the next review is of the plan.
 - PHASE-06 · 2 implement runs (red, green), ~$0.10 · red pinned `required: ["id"]` for mail_report (wrong); green stopped and reported it instead of widening the schema (good); green coupled the log line to MAIL_ERROR_PREFIX and mis-cited one comment (fixed)
 - PHASE-07 · 3 implement runs (fixtures refactor, red, green), ~$0.22 · clean; green stopped on a stale 32768 clamp pin and reported it (good); I folded the projectNew/projectRead duplication into `readParts` and applied the Opus review
 
+## Audit (RV-028, 2026-10-30)
+
+- audit · RV-028 opened, conformance mode, primary tree at 38a3c8a; PHASE-01..07 audited; F-1 (VH-1 unrun) held open by operator choice ("Hold audit open") · decided by operator
+- audit · F-2, F-3 fixed red/green in the audit (uncommitted): `mail_read` max_bytes schema text from READ_MAX_BYTES; classify `stopReason` reads stderr only on a non-zero exit (a transient ending can no longer cache `too_large`) · `just check` 4177/4177 · decided
+- audit · home-switch deployed 2026-10-30 10:39: unit loads `jev`, jail sets MALEBOLGE_SCREWTAPE_CREDENTIALS and carries socat, daemon starts with 6 mail tools; **unit reports LimitCORE=infinity, DEC-081 needs 0** (flakes IMP-055 incomplete). The running daemon predates the audit fixes; restart after they land to test them live · open for the operator
+
+- PHASE-08 · VH-1 step 2 PASS (operator, 2026-10-30 ~11:05): self-sent mail `StlnQ8D167U-` ("important", david@davlee.com) shown by mail_list withheld `{"reason":"hostile","detail":"agent_directive","score":0.99}`, body held back; SATAN reported it to the operator. Classify reached Jev from the jail (bridge + credential live), so step 1's path holds; jev on shown items still to confirm · operator-observed
+- PHASE-08 · first attempts saw nothing: the mail arrived 10:46, after the 10:45 sync (window: inbox, 30 days, 15-min timer), and SATAN filtered `from` on a wrong address and paged mail_new from the window's oldest end. Not defects; mail_list or `since` reaches new mail · decided
+- PHASE-08 · VH-1 steps 1 and 3 PASS (operator): every shown item carries jev scores; mail_report StlnRSkM1m_J kind=phishing logged (journal 11:00:46) and the message withheld as reported afterwards. The journal line doubled its prefix → RV-028 F-10, fixed · operator-observed
+- PHASE-08 · VH-1 step 4 not observable as written: killing the jail's :4000 socat also took down the room model (gateway-models.json baseUrl http://127.0.0.1:4000/v1; wake 1976 model_error). Operator choice (a): accept VT coverage of the degraded mapping; the design is corrected at /reconcile (RV-028 F-11). Room restarted 11:04 with the audit fixes · decided by operator
+- PHASE-08 · deploy notes for satan IMP-060: the launcher starts the :4000 socat twice (the second fails "Address already in use" and stays a zombie); for flakes IMP-055: unit LimitCORE=infinity, DEC-081 needs 0 · open for the operator
+
 ## Harvest
 <!-- single-copy: updated in place each harvest; ids only, never restated content -->
-fresh-as-of: 2026-10-29 · re-locked (design run rev 70, DEC-094); planned, 8 phases; slice ready · a4461f9 (SL-007 planning uncommitted)
+fresh-as-of: 2026-10-30 · reconcile (RV-028 done) · 38a3c8a + audit commit
 
 ### Produced
-- design.md drafted, reviewed (RV-020: pi first pass, GPT critical pass, pi verify-only; F-1..F-18 answered) and locked
-- minted: DEC-077 — screwtape owns Jev's window (refines DEC-048, DEC-050); DEC-081 — classify crash dumps off (refines DEC-059)
-- minted: IMP-024 — drop `preview` from every mail view; screwtape IMP-006 — classify raw-byte bounds, every address list, `seen`
-- lock notes (inq-8) on DEC-026..030, DEC-050, DEC-060, DEC-061; ASM-001 claim and RSK-002 controls edited; relation edges added
-- slice-007.md scope reconciled; selectors match § Code impact (incl. src/untrusted-block.ts)
-- uncommitted: all SL-007 .doctrine/ work in malebolge, plus satan, flakes and screwtape items (operator has not asked to commit); no code changed, no gate run needed
+- PHASE-01..07 done (commits 616f2ec..d8d2466, /proc fix cc52b22); PHASE-08 VH-1 run live 2026-10-30 (steps 1–3 pass, step 4 by VT)
+- RV-028 audit: F-2, F-3, F-10 fixed; reconciliation brief for design.md § Preconditions, § One tool call, § Reaching Jev, § Verification, slice-007.md risks, DEC-049
+- minted: IMP-028 — default mail_new reports a max_bytes clamp
 
-- design reopened and re-locked: screwtape SL-005 landed seen as the window text (mail-2); minted DEC-094 (agent sender text from seen; refines DEC-077, DEC-048, DEC-050); sec-1, sec-6..15 revised; RV-020 re-review waived by operator
-- plan.toml / plan.md authored; phase sheets PHASE-01..08 materialised
 ### Learned
-- mem.fact.malebolge.screwtape-classify-window — classify strips PII before its byte cut; growth up to 1.5x
-- mem.pattern.malebolge.own-the-window-upstream — have the upstream report what it saw rather than mirroring it
+- mem.fact.malebolge.screwtape-classify-window — classify strips PII before its byte cut
+- mem.pattern.malebolge.own-the-window-upstream — upstream reports what it saw
 - mem.fact.malebolge.pi-tool-output-bound — pi bounds tool results to 50 KiB
 - mem.fact.malebolge.screwtape-classify-failure-line — a classify error line carries a cursor
 
 ### Open
-- ASM-002 — gateway client socket serves Jev's path like the relay (first-phase VA)
-- ASM-003 — the satan launcher can wrap the daemon (satan IMP-060; fallback in DEC-059)
-- screwtape SL-005 (carries IMP-006) — in audit; PHASE-07 (text from seen) and PHASE-08 follow its close
-- satan IMP-060, flakes IMP-055 — gate PHASE-08 (VH)
-- RV-026 — empty design-review pass opened by the reopen; disposition waived
-- inq-9 — applied in plan.toml (VT/VA-1 probe/VH-1)
+- satan IMP-060 (doubled socat), flakes IMP-055 (LimitCORE=0 not live) — deployment residue
+- ASM-003 — launcher wraps the daemon (satan IMP-060)
+- IMP-024 — drop `preview`; IMP-028 — default clamp report
+- RV-020, RV-026 — design-review ledgers awaiting raiser conclusion

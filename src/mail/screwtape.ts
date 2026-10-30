@@ -531,11 +531,25 @@ function limitExceededAt(
   );
 }
 
+/** Whether the child ended by its own non-zero exit: the one ending whose stderr is read. */
+function exitedFailing(spawned: Spawned): boolean {
+  return (
+    spawned.breach === undefined &&
+    spawned.outcome.kind === "exited" &&
+    spawned.outcome.exitCode !== 0
+  );
+}
+
 /**
  * Why the ids after the checked prefix have no classification: DEC-056's table,
- * read from stderr's one error line and nothing else of the child's text.
+ * read from stderr's one error line and nothing else of the child's text. A
+ * timeout, spawn failure or breach is `failed` whatever stderr holds, since a
+ * cached `too_large` must never come from a transient ending.
  */
 function stopReason(spawned: Spawned, current: ReadData | undefined): Unclassified {
+  if (!exitedFailing(spawned)) {
+    return "failed";
+  }
   const diagnostic = firstDiagnostic(spawned.stderr);
   if (limitExceededAt(diagnostic, current?.cursor)) {
     return "too_large";

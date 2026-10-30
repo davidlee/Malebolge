@@ -1,0 +1,380 @@
+id    = 28
+slug  = "reconciliation-review-of-sl-007"
+title = "reconciliation review of SL-007"
+# no status — a review's status is DERIVED from its findings, so
+# it is never stored (the storage rule forbids derived data in authored files).
+
+[review]
+facet     = "reconciliation"     # scope|design|plan|phase-plan|implementation|code-review|reconciliation
+raiser    = "auditor"
+responder = "author"
+rounds_base = 0
+contests_base = 0
+concluded = true
+
+[[review.turn]]
+act = "conclude"
+role = "raiser"
+note = """
+Conformance audit of SL-007 PHASE-01..07 against design run rev 71: the trust boundary (seen-only sender text, the withheld shape), the DEC-056 failure table and cache, the pre-filter order, CON-001, the preconditions, framing, and the cursor before screening. Also: slice conformance (12/12 delivered), verify-vt (21/21), just check (4177/4177 after the F-2/F-3 fixes). F-1 (VH-1) stays open until PHASE-08 runs, by operator choice.
+"""
+
+[[review.turn]]
+act = "conclude"
+role = "raiser"
+note = """
+Conformance audit of SL-007 PHASE-01..08 against design run rev 71. Checked: the trust boundary (seen-only sender text, the withheld shape), the DEC-056 failure table and cache, the pre-filter order, CON-001, preconditions, framing, and the cursor before screening. Mechanical: slice conformance 12/12, verify-vt 21/21, just check 4177/4177 after the F-2/F-3/F-10 fixes. Live: VH-1 in the deployed room, steps 1–3 pass; step 4 is covered by VT, by operator choice (F-11).
+"""
+
+[target]                   # the outbound `reviews` edge: RV-NNN ──reviews──▶ <ref>
+ref   = "SL-007"
+
+[[finding]]
+id = "F-1"
+status = "verified"
+severity = "major"
+title = "Expected the VH-1 live check (PHASE-08) before audit; observed PHASE-08 planned, 7/8 phases"
+detail = """
+Expected: slice-007.md § Verification and design § Verification name a VH by the operator in a room mail conversation (jev on items; a self-sent agent-directed mail withheld and named; mail_report journal line then withheld; bridge stopped -> unclassified, withheld, reason in header). plan.toml PHASE-08 EX-1: VH-1 passed, or each failure recorded with a backlog item.
+Observed: `doctrine slice status 7` -> started, phases 7/8; PHASE-08 status planned. Its EN-2 is unmet: satan IMP-060 and flakes IMP-055 are both `open` (doctrine show in ~/dev/satan, ~/flakes). No deployed path from the jail to Jev exists yet.
+Consequence: the end-to-end path (bridge, credential, /proc/net/dev under the real jail, LimitCORE) is unverified. Unit coverage (VT PHASE-01..07, all PASS) does not reach it. The only live evidence is ASM-002 (VA-1, host socat probe).
+"""
+disposition = "fix-now"
+response = """
+VH-1 ran live on 2026-10-30 in the deployed room (home-switch at 10:39; restarted 11:04 with the audit fixes):
+(1) every shown item carried jev with scores (operator);
+(2) the self-sent agent-directed mail StlnQ8D167U- was withheld {"reason":"hostile","detail":"agent_directive","score":0.99}, and SATAN named it;
+(3) mail_report StlnRSkM1m_J kind=phishing wrote a journal line (11:00:46), and the message was withheld as reported afterwards (operator);
+(4) not observable as written, because the bridge is shared with the model (F-11). The operator accepted VT coverage of the degraded mapping (choice (a)).
+PHASE-08 EX-1 is met: steps 1–3 passed, and step 4's divergence is recorded in notes.md and on this ledger (F-11, design-wrong → reconcile) rather than as a backlog item, since it is a design correction, not work.
+Deployment residue, outside this slice's code: the doubled socat start (satan IMP-060) and LimitCORE=infinity vs DEC-081's 0 (flakes IMP-055). Both stay on those items.
+"""
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+response = """
+VH-1 ran live on 2026-10-30 in the deployed room (home-switch at 10:39; restarted 11:04 with the audit fixes):
+(1) every shown item carried jev with scores (operator);
+(2) the self-sent agent-directed mail StlnQ8D167U- was withheld {"reason":"hostile","detail":"agent_directive","score":0.99}, and SATAN named it;
+(3) mail_report StlnRSkM1m_J kind=phishing wrote a journal line (11:00:46), and the message was withheld as reported afterwards (operator);
+(4) not observable as written, because the bridge is shared with the model (F-11). The operator accepted VT coverage of the degraded mapping (choice (a)).
+PHASE-08 EX-1 is met: steps 1–3 passed, and step 4's divergence is recorded in notes.md and on this ledger (F-11, design-wrong → reconcile) rather than as a backlog item, since it is a design correction, not work.
+Deployment residue, outside this slice's code: the doubled socat start (satan IMP-060) and LimitCORE=infinity vs DEC-081's 0 (flakes IMP-055). Both stay on those items.
+"""
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+
+[[finding]]
+id = "F-2"
+status = "verified"
+severity = "minor"
+title = "Expected mail_read's max_bytes description to state 1024-16384; observed 1024-32768"
+detail = """
+Expected: design § Jev's window: "mail_read's max_bytes stays at most 16,384"; READ_MAX_BYTES = { min: 1024, max: 16384 } (src/mail/tools.ts:59).
+Observed: READ_PARAMETERS (src/mail/tools.ts, `max_bytes: Count("Bytes of body (1024-32768)")`) still advertises 32768. READ_DESCRIPTION is computed from READ_MAX_BYTES and is right, so the tool's description and its parameter schema disagree. A call above 16384 is clamped and reported, so the effect is a misleading schema and a clamp line, not a wrong bound.
+Fix: derive the parameter text from READ_MAX_BYTES as READ_DESCRIPTION does.
+"""
+disposition = "fix-now"
+response = """
+Fixed in this audit: READ_PARAMETERS' max_bytes text is now built from READ_MAX_BYTES, as READ_DESCRIPTION is. Red then green: test/mail/tools.test.ts "mail_read's max_bytes parameter states READ_MAX_BYTES (RV-028 F-2)" (asserts against the constant, not a pinned number).
+"""
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+response = """
+Fixed in this audit: READ_PARAMETERS' max_bytes text is now built from READ_MAX_BYTES, as READ_DESCRIPTION is. Red then green: test/mail/tools.test.ts "mail_read's max_bytes parameter states READ_MAX_BYTES (RV-028 F-2)" (asserts against the constant, not a pinned number).
+"""
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+
+[[finding]]
+id = "F-3"
+status = "verified"
+severity = "minor"
+title = "Expected too_large/unavailable only on a non-zero exit (design table); observed stderr read for any ending"
+detail = """
+Expected: design § One classify(ids) call, step 4 table: `too_large` (jev_context at input[k]) and `unavailable` (config / credential) rows require "exit != 0"; "any other exit, timeout, spawn failure, stdout breach" -> input[k..n) failed.
+Observed: src/mail/screwtape.ts stopReason(spawned, current) reads firstDiagnostic(spawned.stderr) without checking spawned.outcome. A timeout, spawn failure or breach whose stderr holds an error line `limit_exceeded`/`jev_context` naming input[k]'s cursor maps input[k] to too_large. too_large is cached (classifications.ts cacheable), so a transient failure would withhold that message until restart. With `config`/`credential` it would map to unavailable instead of failed (harmless, uncached).
+Tests: test/mail/screwtape.test.ts "any other ending" covers timeout/spawn_error/breach only with empty stderr, so the gap is untested.
+Likelihood is low (screwtape writes the error line and then exits), but the fix is one guard: read stderr only when outcome is exited with a non-zero code.
+"""
+disposition = "fix-now"
+response = """
+Fixed in this audit: src/mail/screwtape.ts stopReason reads stderr only when exitedFailing(spawned), meaning no breach and exited with a non-zero code. Every other ending is `failed`, as the design table says. Red then green: test/mail/screwtape.test.ts "any other ending > with a <jev_context at input[k] | credential> stderr line" x timeout / spawn_error / breach, 6 cases (all 6 failed before the fix).
+"""
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+response = """
+Fixed in this audit: src/mail/screwtape.ts stopReason reads stderr only when exitedFailing(spawned), meaning no breach and exited with a non-zero code. Every other ending is `failed`, as the design table says. Red then green: test/mail/screwtape.test.ts "any other ending > with a <jev_context at input[k] | credential> stderr line" x timeout / spawn_error / breach, 6 cases (all 6 failed before the fix).
+"""
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+
+[[finding]]
+id = "F-4"
+status = "verified"
+severity = "minor"
+title = "Expected design § Preconditions and DEC-049 to name the check as built; observed /sys/class/net in both, /proc/net/dev in code"
+detail = """
+Expected: canon describes the network precondition as implemented.
+Observed: commit cc52b22 (operator ruling 2026-10-30, notes.md autonomy log "seat · operator ruling") reads interface names from /proc/net/dev (src/daemon-start.ts networkInterfaces, src/mail/extension.ts interfaceNamesOf), because a sysfs bound into a --unshare-net jail lists the host's interfaces. design.md § Preconditions (table "checked from" row and the mailPart paragraph: readdirSync("/sys/class/net")) and DEC-049's choice ("reads /sys/class/net once") still name sysfs. The design run was locked, so the fix commit left the text for /reconcile (notes.md "fix · design drift for /reconcile").
+Also: the empty-list rule (an empty /proc/net/dev listing is "cannot list", since every netns holds lo) is in code but not in the design.
+plan.toml PHASE-04 EX-3 also names /sys/class/net; plan criteria are immutable, so it stays as history.
+"""
+disposition = "design-wrong"
+response = """
+The code is right (an operator ruling, 2026-10-30). Canon lags. Reconcile: design.md § Preconditions (table row and mailPart paragraph) -> /proc/net/dev via interfaceNamesOf, plus the empty-list rule. DEC-049's choice -> /proc/net/dev, with the reason (a sysfs bound into a --unshare-net jail reflects the host netns). plan.toml PHASE-04 EX-3 stays as immutable history. See the Reconciliation Brief.
+"""
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "design-wrong"
+response = """
+The code is right (an operator ruling, 2026-10-30). Canon lags. Reconcile: design.md § Preconditions (table row and mailPart paragraph) -> /proc/net/dev via interfaceNamesOf, plus the empty-list rule. DEC-049's choice -> /proc/net/dev, with the reason (a sysfs bound into a --unshare-net jail reflects the host netns). plan.toml PHASE-04 EX-3 stays as immutable history. See the Reconciliation Brief.
+"""
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+
+[[finding]]
+id = "F-5"
+status = "verified"
+severity = "nit"
+title = "Expected projectWithheld's signature as designed; observed size passed in flags"
+detail = """
+Expected: design § One tool call: projectWithheld(item, outcome, withheld, flags: { heldBack?, inStore? }), "`size` only when `item` is a read".
+Observed: src/mail/project.ts projectWithheld takes flags { heldBack?, inStore?, size? }; tools.ts passes size for mail_new and mail_read. Decided in PHASE-05 after an Opus review (notes.md: "projectWithheld takes flags.size instead of sniffing 'bodies' in item"). The behaviour is the same and the code is simpler. Only the design text lags.
+"""
+disposition = "design-wrong"
+response = """
+The implementation's signature is the simpler one, adopted from review in PHASE-05. Reconcile: design.md § One tool call's projectWithheld signature -> flags { heldBack?, inStore?, size? }, with size passed by the tools that read a message. See the Reconciliation Brief.
+"""
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "design-wrong"
+response = """
+The implementation's signature is the simpler one, adopted from review in PHASE-05. Reconcile: design.md § One tool call's projectWithheld signature -> flags { heldBack?, inStore?, size? }, with size passed by the tools that read a message. See the Reconciliation Brief.
+"""
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+
+[[finding]]
+id = "F-6"
+status = "verified"
+severity = "minor"
+title = "Expected a default mail_new call to report no clamp; observed every default call reports max_bytes clamped (IMP-028)"
+detail = """
+Expected: SL-005 behaviour: defaults (limit 10, max_bytes 4096) report no clamp. The design § Rendering's joint-clamp deduction gives figures for limit 20 and 5 only.
+Observed: at limit 10, floor(40960/10) - 288 = 3808 < 4096, so every default mail_new reports a max_bytes clamp. PHASE-05 rewrote eight tests to the computed jointBound and captured IMP-028. Not a safety issue: the bound is enforced and reported.
+"""
+disposition = "follow-up"
+response = """
+Already captured as IMP-028 (PHASE-05). The joint-clamp deduction is as designed and enforced; the clamp report on default calls is a usability papercut, not a correctness or safety defect. The candidate fixes (lower the default, or not reporting a clamp the caller never asked past) are a behaviour choice for the operator. This is code-facing, not a governance item, so follow-up is the right route.
+"""
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "follow-up"
+response = """
+Already captured as IMP-028 (PHASE-05). The joint-clamp deduction is as designed and enforced; the clamp report on default calls is a usability papercut, not a correctness or safety defect. The candidate fixes (lower the default, or not reporting a clamp the caller never asked past) are a behaviour choice for the operator. This is code-facing, not a governance item, so follow-up is the right route.
+"""
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+
+[[finding]]
+id = "F-7"
+status = "verified"
+severity = "nit"
+title = "Expected doctrine check gate to run the project gate; observed no 'gate' recipe"
+detail = """
+Expected: /audit runs `doctrine check gate`.
+Observed: "error: justfile does not contain recipe `gate`". `just check` was run instead: fmt-check, lint (0 warnings), tsc, vitest 115 files / 4170 tests passed, exit 0 (2026-10-30, HEAD 38a3c8a). Already tracked as CHR-001.
+"""
+disposition = "follow-up"
+response = """
+Already tracked as CHR-001 (add a `just gate` recipe). The equivalent `just check` ran green. This is a project tooling chore, not SL-007's surface.
+"""
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "follow-up"
+response = """
+Already tracked as CHR-001 (add a `just gate` recipe). The equivalent `just check` ran green. This is a project tooling chore, not SL-007's surface.
+"""
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+
+[[finding]]
+id = "F-8"
+status = "verified"
+severity = "nit"
+title = "Conformance: 23 undeclared paths; expected only tests and doctrine records outside design-target"
+detail = """
+`doctrine slice conformance 7`: undelivered 0, conformant 12 (every src path in design § Code impact), undeclared 23. The 23 are test/** files (design § Code impact: "every path above except the tests" are design-target), .doctrine/slice/007/notes.md, and IMP-028's backlog files. No undeclared src path. Checked against each listed test file: all are test files design § Code impact names or test helpers PHASE notes record (test/bookmarks/* header helper, test/config.test.ts, test/untrusted-block.test.ts for the UNTRUSTED line).
+"""
+disposition = "aligned"
+response = """
+Every undeclared path is a test, notes.md, or IMP-028's record. design § Code impact excludes tests from design-target by intent. No src path is undeclared and none is undelivered.
+"""
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "aligned"
+response = """
+Every undeclared path is a test, notes.md, or IMP-028's record. design § Code impact excludes tests from design-target by intent. No src path is undeclared and none is undelivered.
+"""
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+
+[[finding]]
+id = "F-9"
+status = "verified"
+severity = "nit"
+title = "Expected WRAPPER_BYTES to follow the longest tag in use; observed a hand-named LONGEST_TAG"
+detail = """
+Observed: src/untrusted-block.ts charges the UNTRUSTED line at LONGEST_TAG = "bookmark-data", a literal. A future tag longer than 13 bytes would undercharge the wrapper by the difference. renderBlock's assertWithin(result, RESULT_MAX_BYTES) still throws on overflow, so the failure is loud, not a silent overrun. Two tags exist today (mail-data, bookmark-data).
+"""
+disposition = "tolerated"
+response = """
+There are two tags today, and the literal is the longer one. A longer future tag fails loudly at renderBlock's assertWithin; it never overruns silently. Deriving the bound from a tag registry would add a registry for two strings (YAGNI). Revisit when a third foreign-data family is added.
+"""
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "tolerated"
+response = """
+There are two tags today, and the literal is the longer one. A longer future tag fails loudly at renderBlock's assertWithin; it never overruns silently. Deriving the bound from a tag registry would add a registry for two strings (YAGNI). Revisit when a third foreign-data family is added.
+"""
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+
+[[finding]]
+id = "F-10"
+status = "verified"
+severity = "minor"
+title = "Expected one 'malebolge: ' prefix on the mail_report journal line; observed it doubled"
+detail = """
+Expected: design § mail_report: the journal line is `malebolge: mail_report conversation=<n> id=<id> kind=<kind> jev=<jev>`.
+Observed (VH-1 step 3, journal 2026-10-30 11:00:46): `malebolge: malebolge: mail_report conversation=2187 id=StlnRSkM1m_J kind=phishing jev={…}`. The daemon's log writes the prefix (src/daemon-main.ts:11), and reportLine (src/mail/tools.ts) wrote it again. The unit test pinned the injected line with the prefix, so it could not see the doubling. `journalctl … | grep mail_report` still matches, so this is cosmetic.
+"""
+disposition = "fix-now"
+response = """
+Fixed in this audit: reportLine emits `mail_report …` and the daemon's log adds the one prefix. Red then green: test/mail/tools.test.ts VT-1 mail_report now expects the unprefixed line (248/248). Live once the room restarts.
+"""
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+response = """
+Fixed in this audit: reportLine emits `mail_report …` and the daemon's log adds the one prefix. Red then green: test/mail/tools.test.ts VT-1 mail_report now expects the unprefixed line (248/248). Live once the room restarts.
+"""
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+
+[[finding]]
+id = "F-11"
+status = "verified"
+severity = "minor"
+title = "Expected 'bridge stopped' to fail only classification (VH-1 step 4); observed it takes the room's model down too"
+detail = """
+Expected: design § Reaching Jev from the jail: "A dead bridge … degrades to unavailable/failed items, withheld and counted in the header". VH-1 step 4: "with the bridge stopped, items are unclassified and withheld".
+Observed (2026-10-30 11:02): killing the jail's socat (TCP 127.0.0.1:4000 → gateway client socket) made the room's own model calls fail ("model error: connection error"; journal: wake 1976 failed: unanswered (model_error)). /home/david/.config/malebolge/gateway-models.json has baseUrl http://127.0.0.1:4000/v1: the room model and Jev share the one bridge. The bridge also predates SL-007 (an old instance's socat exits in the 10:39:55 journal).
+Consequence: step 4 cannot be observed as written, because with the bridge down there is no agent left to call a mail tool. The design's diagram and the "Malebolge knows nothing of the bridge" framing present the bridge as Jev's transport only. A dead bridge is a room outage, not a degraded mail state. The degraded mapping itself (classify failure → unavailable/failed → withheld, counted) is covered by VT: PHASE-02 VT-2, PHASE-05 VT-2.
+"""
+disposition = "design-wrong"
+response = """
+The code is right; the design's model of the bridge is wrong. Reconcile design.md § Reaching Jev from the jail: the jail's 127.0.0.1:4000 bridge carries the room model's traffic (gateway-models.json baseUrl) as well as Jev's, and it predates SL-007. So a dead bridge is a room outage, not a degraded mail state. The degraded state the design means is "Jev unreachable while the model is up", which yields unavailable/failed items, withheld and counted. Also correct § Verification VH step 4 to that wording (observed by VT, PHASE-02 VT-2 and PHASE-05 VT-2) and the slice's risk line accordingly. Operator choice (a), 2026-10-30: steps 1–3 pass live, and step 4 rests on VT.
+"""
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "design-wrong"
+response = """
+The code is right; the design's model of the bridge is wrong. Reconcile design.md § Reaching Jev from the jail: the jail's 127.0.0.1:4000 bridge carries the room model's traffic (gateway-models.json baseUrl) as well as Jev's, and it predates SL-007. So a dead bridge is a room outage, not a degraded mail state. The degraded state the design means is "Jev unreachable while the model is up", which yields unavailable/failed items, withheld and counted. Also correct § Verification VH step 4 to that wording (observed by VT, PHASE-02 VT-2 and PHASE-05 VT-2) and the slice's risk line accordingly. Operator choice (a), 2026-10-30: steps 1–3 pass live, and step 4 rests on VT.
+"""
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+
+# Findings are append-only `[[finding]]` tables, added by `review raise`.
+# Empty here at creation — a fresh review is Active, awaiting the raiser.

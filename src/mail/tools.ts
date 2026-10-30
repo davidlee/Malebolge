@@ -261,7 +261,9 @@ const NEW_PARAMETERS = Type.Object({
 
 const READ_PARAMETERS = Type.Object({
   id: Id("The message id"),
-  max_bytes: Type.Optional(Count("Bytes of body (1024-32768)")),
+  max_bytes: Type.Optional(
+    Count(`Bytes of body (${String(READ_MAX_BYTES.min)}-${String(READ_MAX_BYTES.max)})`),
+  ),
 });
 
 const THREAD_PARAMETERS = Type.Object({
@@ -306,8 +308,9 @@ interface MailToolSpec {
 }
 
 /**
- * One report's journal line, exactly as design § mail_report gives it: every
- * value is validated, typed or classifier-produced, so no sender text reaches it.
+ * One report's journal line as design § mail_report gives it, less the `malebolge: `
+ * prefix the daemon's log adds: every value is validated, typed or
+ * classifier-produced, so no sender text reaches it.
  */
 function reportLine(fields: {
   readonly conversationId: string;
@@ -315,7 +318,7 @@ function reportLine(fields: {
   readonly kind: ReportKind;
   readonly jev: string;
 }): string {
-  return `malebolge: mail_report conversation=${fields.conversationId} id=${fields.id} kind=${fields.kind} jev=${fields.jev}`;
+  return `mail_report conversation=${fields.conversationId} id=${fields.id} kind=${fields.kind} jev=${fields.jev}`;
 }
 
 /** The cached item's jev as the data line renders it, or `none` when it is uncached. */

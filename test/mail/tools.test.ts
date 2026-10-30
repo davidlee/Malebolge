@@ -1047,6 +1047,16 @@ describe("VT-3 shape, replay and descriptions", () => {
       );
     });
 
+    it("mail_read's max_bytes parameter states READ_MAX_BYTES (RV-028 F-2)", () => {
+      const schema: unknown = toolNamed(tools, "mail_read").parameters;
+      const properties =
+        isRecord(schema) && isRecord(schema["properties"]) ? schema["properties"] : {};
+      const maxBytes = properties["max_bytes"];
+      expect(isRecord(maxBytes) ? maxBytes["description"] : undefined).toContain(
+        `${String(READ_MAX_BYTES.min)}-${String(READ_MAX_BYTES.max)}`,
+      );
+    });
+
     it("mail_read and mail_mailboxes say what they return", () => {
       expect(descriptionOf("mail_read")).toContain("Read one message by id");
       expect(descriptionOf("mail_mailboxes")).toContain("List the mailboxes");
@@ -1873,6 +1883,8 @@ const fullSet = (): Map<string, ReportKind> =>
   new Map(HELD_IDS.map((id): [string, ReportKind] => [id, "other"]));
 
 describe("VT-1 mail_report: one journal line, the reported set, the refusals (SL-007 PHASE-06)", () => {
+  // The daemon's log writes the "malebolge: " prefix itself (src/daemon-main.ts): the
+  // line carries none, or the journal doubles it (RV-028 F-10).
   it("mail_report logs exactly one line, with the cached jev and none when uncached", async () => {
     const cached = { id: REPORTED_ID, classified: classificationOf(REPORTED_ID) };
     const cache = classificationCache();
@@ -1881,7 +1893,7 @@ describe("VT-1 mail_report: one journal line, the reported set, the refusals (SL
     const withCache = await report({ id: REPORTED_ID, kind: REPORT_KIND }, { cache });
     expect(withCache.outcome.isError).toBe(false);
     expect(withCache.lines).toEqual([
-      `malebolge: mail_report conversation=${CONVERSATION} id=${REPORTED_ID} kind=${REPORT_KIND} jev=${jev}`,
+      `mail_report conversation=${CONVERSATION} id=${REPORTED_ID} kind=${REPORT_KIND} jev=${jev}`,
     ]);
     const uncached = await report(
       { id: REPORTED_ID, kind: REPORT_KIND },
@@ -1889,7 +1901,7 @@ describe("VT-1 mail_report: one journal line, the reported set, the refusals (SL
     );
     expect(uncached.outcome.isError).toBe(false);
     expect(uncached.lines).toEqual([
-      `malebolge: mail_report conversation=${CONVERSATION} id=${REPORTED_ID} kind=${REPORT_KIND} jev=none`,
+      `mail_report conversation=${CONVERSATION} id=${REPORTED_ID} kind=${REPORT_KIND} jev=none`,
     ]);
   });
 

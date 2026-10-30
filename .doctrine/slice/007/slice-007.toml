@@ -1,9 +1,9 @@
 id = 7
 slug = "classified-mail"
 title = "Classified mail: mail tools carry screwtape classify answers"
-status = "started"
+status = "reconcile"
 created = "2026-10-29"
-updated = "2026-10-29"
+updated = "2026-10-30"
 tags = ["jev", "mail", "screwtape"]
 
 [relationships]
