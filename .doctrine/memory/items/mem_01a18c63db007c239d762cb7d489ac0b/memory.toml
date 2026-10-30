@@ -1,0 +1,46 @@
+memory_uid = "mem_01a18c63db007c239d762cb7d489ac0b"
+memory_key = "mem.fact.malebolge.pi-jails-carry-bridge"
+schema_version = 1
+memory_type = "fact"
+status = "active"
+title = "Since CHR-007 every pi-carrying jail mounts the malebolge bridge; no separate pi-bridge jail"
+summary = "agents lib (~/flakes/agents/jailed-agents.nix piBridgeOptions, applied when piInJail) mounts the bridge socket dir and ~/dev/malebolge/pi-bridge into jailed-pi and any jail with pi as subagent; piBridgeOptions is not exported, so a project flake must not reference jailLib.piBridgeOptions"
+created = "2026-10-30"
+updated = "2026-10-30"
+
+[scope]
+paths = []
+globs = []
+commands = []
+tags = ["jail", "bridge", "flake"]
+workspace = "default"
+repo = "github.com/davidlee/Malebolge"
+repo_id_kind = "remote"
+repo_id_confidence = "high"
+
+[git]
+anchor_kind = "commit"
+commit = "e9698dc3e09e631337ddbf8839e537841a181e66"
+tree = "c437624f6efc9bd3527d02fc1a17a83281075ecf"
+ref_name = "refs/heads/main"
+checkout_state_id = ""
+base_commit = "e9698dc3e09e631337ddbf8839e537841a181e66"
+verified_sha = ""
+normalizer = ""
+
+[review]
+verification_state = "unverified"
+reviewed = ""
+review_by = ""
+
+[trust]
+trust_level = "high"
+
+[ranking]
+severity = "medium"
+weight = 0
+
+[[source]]
+kind = "commit"
+ref = "deck_of_dwarf@753c28fc"
+
