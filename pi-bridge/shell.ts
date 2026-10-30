@@ -34,6 +34,7 @@ import {
   initialState,
   type MessageKey,
   type Paired,
+  type PairRequest,
   type Phase,
   type PostOutcome,
   step,
@@ -52,7 +53,7 @@ const CONVERSATION_VAR = "MALEBOLGE_BRIDGE_CONVERSATION";
 const TOKEN_VAR = "MALEBOLGE_BRIDGE_TOKEN";
 
 /** What `/bridge` answers with when it is given anything else. */
-const BRIDGE_USAGE = "usage: /bridge pair delegate|consult, or /bridge end";
+const BRIDGE_USAGE = "usage: /bridge pair delegate|consult [conversation], or /bridge end";
 
 export interface ShellOptions {
   /** The environment the socket path is read from (bridgeSocketPath). */
@@ -492,7 +493,7 @@ function registerUserBash(shell: Shell): void {
   shell.pi.on("user_bash", () => ({ operations }));
 }
 
-/** sec-7 Registrations: `/bridge pair delegate|consult` and `/bridge end`. */
+/** sec-7 Registrations: `/bridge pair delegate|consult [conversation]` and `/bridge end`. */
 function registerCommand(shell: Shell): void {
   shell.pi.registerCommand("bridge", {
     description: "Pair with the operator's malebolge bridge, or end the pairing",
@@ -511,16 +512,32 @@ function bridgeCommand(shell: Shell, args: string, ctx: ExtensionCommandContext)
     .split(/\s+/u)
     .filter((word): boolean => word !== "");
   const [verb, ...rest] = words;
-  const posture = postureOf(rest[0]);
   if (verb === "end" && words.length === 1) {
     dispatch(shell, { type: "end" });
     return;
   }
-  if (verb === "pair" && posture !== undefined && rest.length === 1) {
-    dispatch(shell, { type: "pair", posture });
+  const request = verb === "pair" ? pairRequest(rest) : undefined;
+  if (request !== undefined) {
+    dispatch(shell, { type: "pair", ...request });
     return;
   }
   ctx.ui.notify(BRIDGE_USAGE, "error");
+}
+
+/**
+ * sec-7 Registrations: the pair request `/bridge pair`'s words ask for.
+ * A posture, then at most one conversation id (decimal digits); anything else is usage.
+ */
+function pairRequest(words: readonly string[]): PairRequest | undefined {
+  const [postureWord, conversation, ...extra] = words;
+  const posture = postureOf(postureWord);
+  if (posture === undefined || extra.length > 0) {
+    return undefined;
+  }
+  if (conversation === undefined) {
+    return { posture };
+  }
+  return /^\d+$/u.test(conversation) ? { posture, conversation } : undefined;
 }
 
 /** sec-7 `bridge_post`: register the call's resolver, then ask step for the post. */
@@ -590,7 +607,6 @@ function endsOf(shell: Shell): Ends {
     socket: socketText(shell.options.env),
     ...(session === "" ? {} : { session }),
     ...(paired === undefined ? {} : { conversation: paired.pairing.conversation }),
-    ...(project === "" ? {} : { topic: `${project}-bridge` }),
   };
 }
 

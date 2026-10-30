@@ -9,9 +9,13 @@ import {
   type DaemonFrame,
   type DeliverFrame,
   type FirstLineFrame,
+  type PairFrame,
   type Posture,
   type RefusedFrame,
 } from "./wire.ts";
+
+/** What a `/bridge pair` asks for (sec-7): the posture, and the conversation when one was named. */
+export type PairRequest = Pick<PairFrame, "posture" | "conversation">;
 
 /** What a pairing entry in pi's session records (appendEntry), and what resume needs. */
 export interface Pairing {
@@ -50,11 +54,12 @@ export interface Paired {
 
 export type Phase =
   | { name: "unpaired" }
-  | { name: "pairing"; posture: Posture }
+  /** `pairing`: the postures (and conversation, when asked for) the pair frame carried. */
+  | ({ name: "pairing" } & PairRequest)
   /** `outage`: the attempts failed so far in the current outage; 0 when not after an outage. */
   | { name: "resuming"; paired: Paired; outage: number }
-  /** `ending`: a `/bridge end` is awaiting its answer; `then` is the posture a `/bridge pair` will pair with once it is answered. */
-  | { name: "bound"; paired: Paired; ending?: { then?: Posture } }
+  /** `ending`: a `/bridge end` is awaiting its answer; `then` is the pair request (`/bridge pair`'s posture and conversation) a re-pair uses once it is answered. */
+  | { name: "bound"; paired: Paired; ending?: { then?: PairRequest } }
   | { name: "outage"; paired: Paired; attempt: number };
 
 export interface BridgeState {
@@ -84,7 +89,7 @@ export type BridgeEvent =
       messages: readonly MessageKey[];
     }
   | { type: "session_shutdown" }
-  | { type: "pair"; posture: Posture }
+  | ({ type: "pair" } & PairRequest)
   | { type: "end" }
   /** A daemon frame other than `deliver` on connection `conn`. */
   | { type: "frame"; conn: number; frame: Exclude<DaemonFrame, DeliverFrame> }
@@ -114,7 +119,7 @@ export type PostOutcome =
 export type Notice =
   | { kind: "outage"; reason: string }
   | { kind: "recovered" }
-  | { kind: "pair failed"; reason: string; mayHaveCreated: boolean }
+  | { kind: "pair failed"; reason: string; mayHavePaired: boolean; conversation?: string }
   | { kind: "refused"; reason: string }
   | { kind: "forked pairing" }
   | { kind: "busy"; phase: "pairing" | "resuming" | "outage" | "ending" }
@@ -186,8 +191,8 @@ type StepHandler = (state: BridgeState, event: BridgeEvent) => Step;
 /** The phases a `busy` report can name (sec-7 `busy`). */
 type BusyPhase = Extract<Notice, { kind: "busy" }>["phase"];
 
-/** A refusal that ends the pairing (sec-7 general rules). */
-const TERMINAL_REASONS = ["pairing ended", "bad token"];
+/** A refusal that ends the pairing (sec-7 general rules, sec-4 `superseded by a new pairing`). */
+const TERMINAL_REASONS = ["pairing ended", "bad token", "superseded by a new pairing"];
 
 /** The daemon's word for a sibling connection taking the conversation (sec-7). */
 const SUPERSEDED = "superseded by a newer connection";
@@ -316,13 +321,17 @@ function endUnanswered(state: BridgeState, paired: Paired): Step {
 function pairFailed(
   state: BridgeState,
   reason: string,
-  mayHaveCreated: boolean,
+  mayHavePaired: boolean,
   open: boolean,
+  conversation?: string,
 ): Step {
   const notice: Effect = {
     type: "notify",
     level: "error",
-    notice: { kind: "pair failed", reason, mayHaveCreated },
+    notice:
+      conversation === undefined
+        ? { kind: "pair failed", reason, mayHavePaired }
+        : { kind: "pair failed", reason, mayHavePaired, conversation },
   };
   return next(
     state,
@@ -363,6 +372,16 @@ const resumeFrame = (pairing: Pairing): FirstLineFrame => ({
   token: pairing.token,
 });
 
+/** sec-7 `pair`: the first line a PairRequest sends; the `conversation` key is absent when none was asked for. */
+const pairFrame = (request: PairRequest, project: string): FirstLineFrame => ({
+  type: "pair",
+  project,
+  ...request,
+});
+
+/** sec-7 `pairing`: the pairing phase a PairRequest enters, keeping the conversation it named. */
+const pairingPhaseOf = (request: PairRequest): PairingPhase => ({ name: "pairing", ...request });
+
 // --- sec-7's bound rows ------------------------------------------------------
 
 /** sec-7 bound `accepted`: a pending post is sent; any other answer is ignored. */
@@ -391,9 +410,8 @@ function terminalRefusal(
   if (!ended || then === undefined) {
     return out;
   }
-  const pair: FirstLineFrame = { type: "pair", posture: then, project: state.project };
   return precededBy(
-    connect(out.state, { name: "pairing", posture: then }, pair, "pair"),
+    connect(out.state, pairingPhaseOf(then), pairFrame(then, state.project), "pair"),
     out.effects,
   );
 }
@@ -492,7 +510,7 @@ function pairingFrame(state: BridgeState, phase: PairingPhase, frame: DaemonRepl
   if (frame.type === "paired") {
     const token = frame.token;
     if (token === undefined) {
-      return pairFailed(state, "paired without a token", false, true);
+      return pairFailed(state, "paired without a token", false, true, phase.conversation);
     }
     const pairing: Pairing = {
       session: state.session,
@@ -508,7 +526,7 @@ function pairingFrame(state: BridgeState, phase: PairingPhase, frame: DaemonRepl
   if (frame.type !== "refused") {
     return unchanged(state);
   }
-  return pairFailed(state, frame.reason, false, true);
+  return pairFailed(state, frame.reason, false, true, phase.conversation);
 }
 
 // --- sec-7's delivery rows (DEC-090) ----------------------------------------
@@ -660,7 +678,7 @@ function shutdownEvent(state: BridgeState): Step {
 }
 
 /** sec-7 `/bridge end` (and the first half of a bound `/bridge pair`): send `end`, await its answer. */
-const askEnd = (state: BridgeState, phase: BoundPhase, ending: { then?: Posture }): Step =>
+const askEnd = (state: BridgeState, phase: BoundPhase, ending: { then?: PairRequest }): Step =>
   next(state, { phase: { name: "bound", paired: phase.paired, ending } }, [
     { type: "send", conn: state.conn, frame: { type: "end" } },
     { type: "deadline", key: { conn: state.conn, request: "end" } },
@@ -668,11 +686,13 @@ const askEnd = (state: BridgeState, phase: BoundPhase, ending: { then?: Posture 
 
 /** sec-7 `pair`: unpaired pairs now; bound asks its pairing to end first; anything else is busy. */
 function pairEvent(state: BridgeState, event: EventOf<"pair">): Step {
-  const { posture } = event;
+  const request: PairRequest =
+    event.conversation === undefined
+      ? { posture: event.posture }
+      : { posture: event.posture, conversation: event.conversation };
   const phase = state.phase;
   if (phase.name === "unpaired") {
-    const pair: FirstLineFrame = { type: "pair", posture, project: state.project };
-    return connect(state, { name: "pairing", posture }, pair, "pair");
+    return connect(state, pairingPhaseOf(request), pairFrame(request, state.project), "pair");
   }
   if (phase.name !== "bound") {
     return busy(state, phase.name);
@@ -680,7 +700,7 @@ function pairEvent(state: BridgeState, event: EventOf<"pair">): Step {
   if (phase.ending !== undefined) {
     return busy(state, "ending");
   }
-  return askEnd(state, phase, { then: posture });
+  return askEnd(state, phase, { then: request });
 }
 
 /**
@@ -732,7 +752,7 @@ function closedEvent(state: BridgeState, event: EventOf<"closed">): Step {
   }
   const phase = state.phase;
   if (phase.name === "pairing") {
-    return pairFailed(state, event.reason, false, false);
+    return pairFailed(state, event.reason, false, false, phase.conversation);
   }
   if (phase.name === "resuming") {
     return outageStep(state, phase.paired, phase.outage, event.reason);
@@ -762,7 +782,7 @@ function postDeadline(state: BridgeState, id: string): Step {
 function requestDeadline(state: BridgeState, request: "pair" | "resume" | "end"): Step {
   const phase = state.phase;
   if (request === "pair" && phase.name === "pairing") {
-    return pairFailed(state, "no reply", true, true);
+    return pairFailed(state, "no reply", true, true, phase.conversation);
   }
   if (request === "resume" && phase.name === "resuming") {
     return outageStep(state, phase.paired, phase.outage, "no reply");

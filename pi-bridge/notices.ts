@@ -12,7 +12,6 @@ export interface Ends {
   /** pi's session id. */
   session?: string;
   conversation?: string;
-  topic?: string;
 }
 
 /** Best-effort desktop notification (ASM-005: may fail in the jail; never throws). */
@@ -35,16 +34,8 @@ function endsText(ends: Ends): string {
   if (ends.conversation !== undefined && ends.conversation !== "") {
     parts.push(`conversation ${ends.conversation}`);
   }
-  if (ends.topic !== undefined && ends.topic !== "") {
-    parts.push(`topic ${ends.topic}`);
-  }
   parts.push(`socket ${ends.socket}`);
   return parts.join(", ");
-}
-
-/** The conversation this project's pairing would live in, when the ends do not name it. */
-function topicOf(ends: Ends): string {
-  return ends.topic ?? `${ends.project}-bridge`;
 }
 
 /** The text of an outage or a not-bound call: names every known end; `reason` when one is known. */
@@ -104,7 +95,7 @@ export function noticeText(notice: Notice, ends: Ends): string {
     return outageText(ends, notice.reason);
   }
   if (notice.kind === "pair failed") {
-    return pairFailedText(notice.reason, notice.mayHaveCreated, ends);
+    return pairFailedText(notice, ends);
   }
   if (notice.kind === "refused") {
     return oneLine(`${OUTAGE_SUMMARY}: refused: ${notice.reason}`);
@@ -117,12 +108,26 @@ export function noticeText(notice: Notice, ends: Ends): string {
   return quietText(notice, ends);
 }
 
-/** A failed pairing: the reason, and whether the daemon may have kept what it made. */
-function pairFailedText(reason: string, mayHaveCreated: boolean, ends: Ends): string {
-  const created = mayHaveCreated
-    ? `; a conversation may have been created in ${topicOf(ends)}`
+/** A `pair failed` notice: the reason, and whether the daemon may have kept a pairing it made. */
+type PairFailed = Extract<Notice, { kind: "pair failed" }>;
+
+/** The conversation a failed pair may have left the daemon paired with: by id when known. */
+function pairedConversation(notice: PairFailed): string {
+  return notice.conversation === undefined || notice.conversation === ""
+    ? "the attached conversation"
+    : `conversation ${notice.conversation}`;
+}
+
+/**
+ * A failed pairing: the reason, and whether the daemon may have kept a pairing.
+ * Pair creates nothing now (DEC-104), so the clause names what it may have
+ * paired, never a conversation it may have created.
+ */
+function pairFailedText(notice: PairFailed, ends: Ends): string {
+  const paired = notice.mayHavePaired
+    ? `; the daemon may have paired ${pairedConversation(notice)}`
     : "";
-  return oneLine(`${OUTAGE_SUMMARY}: pairing failed: ${reason}${created}; ${endsText(ends)}`);
+  return oneLine(`${OUTAGE_SUMMARY}: pairing failed: ${notice.reason}${paired}; ${endsText(ends)}`);
 }
 
 /** `notify-send summary body`, detached; a missing binary or failure is swallowed. */

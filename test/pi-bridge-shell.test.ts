@@ -257,7 +257,7 @@ describe("reply deadlines (VT-1 RV-021 F-3)", () => {
     expect(resultText(result)).toContain("outcome unknown");
   });
 
-  it("F-3: an unanswered pair names the topic and closes the daemon's connection", async () => {
+  it("F-3: an unanswered pair names the attached conversation and closes the daemon's connection", async () => {
     const daemon = await fakeDaemon();
     const fake = await piWith(daemon.path);
     await fake.command("bridge", "pair delegate");
@@ -270,8 +270,10 @@ describe("reply deadlines (VT-1 RV-021 F-3)", () => {
 
     await vi.advanceTimersByTimeAsync(BRIDGE_POST_WAIT_MS);
     const notice = only(errorNotices(fake));
-    expect(notice.text).toContain("may have been created");
-    expect(notice.text).toContain(`${PROJECT}-bridge`);
+    expect(notice.text).toContain("the daemon may have paired the attached conversation");
+    expect(notice.text).not.toContain("may have been created");
+    // The socket's own path holds "malebolge-bridge", so check the topic clause that went: proj-bridge.
+    expect(notice.text).not.toContain(`${PROJECT}-bridge`);
     await conn.closed;
   });
 
@@ -291,6 +293,44 @@ describe("reply deadlines (VT-1 RV-021 F-3)", () => {
     const notice = only(errorNotices(fake));
     expect(notice.text).toContain(daemon.path);
     await conn.closed;
+  });
+});
+
+// --- VT-1: the pair arguments, and the conversation they may carry -----------
+
+describe("the /bridge pair arguments (VT-1)", () => {
+  /** What `/bridge` answers anything else with (BRIDGE_USAGE, shell.ts). */
+  const USAGE = "usage: /bridge pair delegate|consult [conversation], or /bridge end";
+
+  it("/bridge pair consult 12 sends the conversation in the pair frame", async () => {
+    const daemon = await fakeDaemon();
+    const fake = await piWith(daemon.path);
+    await fake.command("bridge", "pair consult 12");
+    const conn = await daemon.nextConnection();
+    expect(await conn.nextLine()).toStrictEqual({
+      type: "pair",
+      posture: "consult",
+      project: PROJECT,
+      conversation: "12",
+    });
+
+    conn.reply({ type: "paired", conversation: "12", token: TOKEN });
+    await waitUntil(() => latestBridge(fake)?.kind === "pairing", "the pairing entry");
+  });
+
+  it("a pair argument that is not a [conversation] is usage, and dials nothing", async () => {
+    const daemon = await fakeDaemon();
+    const fake = await piWith(daemon.path);
+    await fake.command("bridge", "pair consult x1");
+    await fake.command("bridge", "pair consult 12 13");
+    expect(errorNotices(fake).map((notice) => notice.text)).toEqual([USAGE, USAGE]);
+    // Let any dial reach the daemon before saying that none did.
+    for (let tick = 0; tick < 20; tick += 1) {
+      await new Promise<void>((resolve) => {
+        setImmediate(resolve);
+      });
+    }
+    expect(daemon.connections()).toHaveLength(0);
   });
 });
 

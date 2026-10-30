@@ -4,6 +4,7 @@
 // effect shapes come from pi-bridge/state.ts; frame shapes from wire.ts.
 
 import { describe, expect, it } from "vitest";
+import { noticeText } from "../pi-bridge/notices.ts";
 import {
   type BridgeEntry,
   type BridgeEvent,
@@ -14,6 +15,7 @@ import {
   type Notice,
   type Paired,
   type Pairing,
+  type PairRequest,
   type PendingPost,
   type Phase,
   type PostOutcome,
@@ -39,6 +41,9 @@ const PAIRING = {
 
 const SUPERSEDED = "superseded by a newer connection";
 
+/** The daemon's word for another client taking the conversation (SL-011 sec-4: terminal). */
+const SUPERSEDED_PAIRING = "superseded by a new pairing";
+
 const initial = (overrides: Partial<BridgeState> = {}): BridgeState => ({
   phase: { name: "unpaired" },
   running: false,
@@ -61,7 +66,7 @@ const bound = (overrides: Partial<Paired> = {}, rest: Partial<BridgeState> = {})
   initial({ conn: 1, phase: { name: "bound", paired: paired(overrides) }, ...rest });
 
 const boundEnding = (
-  ending: { then?: Posture },
+  ending: { then?: PairRequest },
   overrides: Partial<Paired> = {},
   rest: Partial<BridgeState> = {},
 ): BridgeState =>
@@ -84,7 +89,13 @@ const outage = (
 const pairingPhase = (
   posture: Posture = "delegate",
   rest: Partial<BridgeState> = {},
-): BridgeState => initial({ conn: 1, phase: { name: "pairing", posture }, ...rest });
+  conversation?: string,
+): BridgeState =>
+  initial({
+    conn: 1,
+    phase: { name: "pairing", posture, ...(conversation === undefined ? {} : { conversation }) },
+    ...rest,
+  });
 
 const unpairedAt = (
   session: string = PAIRING.session,
@@ -149,6 +160,21 @@ function run(
     effects.push(...next.effects);
   }
   return { state, effects };
+}
+
+/** The one notice a step's effects report. */
+function noticeOf(effects: readonly Effect[]): Notice {
+  const notices: Notice[] = [];
+  for (const effect of effects) {
+    if (effect.type === "notify") {
+      notices.push(effect.notice);
+    }
+  }
+  const [one] = notices;
+  if (one === undefined || notices.length !== 1) {
+    throw new Error(`expected one notice, got ${String(notices.length)}`);
+  }
+  return one;
 }
 
 function freezeState(state: BridgeState): BridgeState {
@@ -256,13 +282,72 @@ describe("step(state, event): the sec-7 table (VT-1)", () => {
       expect(next).toEqual(initial({ conn: 1, phase: { name: "pairing", posture: "consult" } }));
     });
 
+    it("unpaired | pair sends no conversation key unless one was asked for", () => {
+      const bare = step(unpairedAt(), { type: "pair", posture: "delegate" });
+      expect(bare.effects).toStrictEqual([
+        connect(1, { type: "pair", posture: "delegate", project: "proj" }),
+        deadline({ conn: 1, request: "pair" }),
+        status("pairing"),
+      ]);
+      const frames = bare.effects.filter((effect) => effect.type === "connect");
+      for (const effect of frames) {
+        expect("conversation" in effect.frame).toBe(false);
+      }
+
+      const asked = step(unpairedAt(), {
+        type: "pair",
+        posture: "consult",
+        conversation: "12",
+      });
+      expect(asked.effects).toStrictEqual([
+        connect(1, { type: "pair", posture: "consult", project: "proj", conversation: "12" }),
+        deadline({ conn: 1, request: "pair" }),
+        status("pairing"),
+      ]);
+      expect(asked.state).toEqual(
+        initial({ conn: 1, phase: { name: "pairing", posture: "consult", conversation: "12" } }),
+      );
+    });
+
     it("bound | /bridge pair -> bound, ending then pairing", () => {
       const { state: next, effects } = step(bound({ pending: [pendingPost("p1")] }), {
         type: "pair",
         posture: "consult",
       });
       expect(effects).toEqual([send(1, { type: "end" }), deadline({ conn: 1, request: "end" })]);
-      expect(next).toEqual(boundEnding({ then: "consult" }, { pending: [pendingPost("p1")] }));
+      expect(next).toEqual(
+        boundEnding({ then: { posture: "consult" } }, { pending: [pendingPost("p1")] }),
+      );
+    });
+
+    it('bound | pair with conversation: "12" -> ending, then pairing in it', () => {
+      const asked = step(bound(), { type: "pair", posture: "consult", conversation: "12" });
+      expect(asked.effects).toEqual([
+        send(1, { type: "end" }),
+        deadline({ conn: 1, request: "end" }),
+      ]);
+      expect(asked.state).toEqual(
+        boundEnding({ then: { posture: "consult", conversation: "12" } }),
+      );
+
+      const answered = step(asked.state, {
+        type: "frame",
+        conn: 1,
+        frame: { type: "refused", reason: "pairing ended" },
+      });
+      expect(answered.effects).toEqual([
+        CANCEL,
+        close(1),
+        append({ kind: "unpaired" }),
+        env(null),
+        notify("info", { kind: "ended" }),
+        connect(2, { type: "pair", posture: "consult", project: "proj", conversation: "12" }),
+        deadline({ conn: 2, request: "pair" }),
+        status("pairing"),
+      ]);
+      expect(answered.state).toEqual(
+        initial({ conn: 2, phase: { name: "pairing", posture: "consult", conversation: "12" } }),
+      );
     });
 
     it("pairing, resuming, outage, bound-ending | pair -> same (busy)", () => {
@@ -364,7 +449,7 @@ describe("step(state, event): the sec-7 table (VT-1)", () => {
         notify("error", {
           kind: "pair failed",
           reason: "paired without a token",
-          mayHaveCreated: false,
+          mayHavePaired: false,
         }),
         status("unpaired"),
       ]);
@@ -379,7 +464,7 @@ describe("step(state, event): the sec-7 table (VT-1)", () => {
       });
       expect(effects).toEqual([
         close(1),
-        notify("error", { kind: "pair failed", reason: "bad posture", mayHaveCreated: false }),
+        notify("error", { kind: "pair failed", reason: "bad posture", mayHavePaired: false }),
         status("unpaired"),
       ]);
       expect(next).toEqual(initial({ conn: 1 }));
@@ -571,6 +656,43 @@ describe("step(state, event): the sec-7 table (VT-1)", () => {
       expect(next).toEqual(initial({ conn: 1 }));
     });
 
+    it("bound | frame refused superseded by a new pairing -> unpaired (terminal)", () => {
+      const { state: next, effects } = step(bound({ pending: [pendingPost("p1")] }), {
+        type: "frame",
+        conn: 1,
+        frame: { type: "refused", reason: SUPERSEDED_PAIRING },
+      });
+      expect(effects).toEqual([
+        unknown("p1"),
+        CANCEL,
+        close(1),
+        append({ kind: "unpaired" }),
+        env(null),
+        notify("error", { kind: "refused", reason: SUPERSEDED_PAIRING }),
+        status("unpaired"),
+      ]);
+      expect(next).toEqual(initial({ conn: 1 }));
+      expect(effects.some((effect) => effect.type === "connect")).toBe(false);
+    });
+
+    it("bound (ending) | superseded by a new pairing -> unpaired, no re-pair", () => {
+      const { state: next, effects } = step(boundEnding({ then: { posture: "consult" } }), {
+        type: "frame",
+        conn: 1,
+        frame: { type: "refused", reason: SUPERSEDED_PAIRING },
+      });
+      expect(effects).toEqual([
+        CANCEL,
+        close(1),
+        append({ kind: "unpaired" }),
+        env(null),
+        notify("error", { kind: "refused", reason: SUPERSEDED_PAIRING }),
+        status("unpaired"),
+      ]);
+      expect(next).toEqual(initial({ conn: 1 }));
+      expect(effects.some((effect) => effect.type === "connect")).toBe(false);
+    });
+
     it("bound | frame refused (no pending id) -> bound (notify)", () => {
       const start = bound();
       const { state: next, effects } = step(start, {
@@ -604,7 +726,7 @@ describe("step(state, event): the sec-7 table (VT-1)", () => {
         reason: "connect refused",
       });
       expect(effects).toEqual([
-        notify("error", { kind: "pair failed", reason: "connect refused", mayHaveCreated: false }),
+        notify("error", { kind: "pair failed", reason: "connect refused", mayHavePaired: false }),
         status("unpaired"),
       ]);
       expect(next).toEqual(initial({ conn: 1 }));
@@ -651,7 +773,7 @@ describe("step(state, event): the sec-7 table (VT-1)", () => {
     });
 
     it("bound (ending) | closed -> unpaired (end unanswered, no pair)", () => {
-      const { state: next, effects } = step(boundEnding({ then: "consult" }), {
+      const { state: next, effects } = step(boundEnding({ then: { posture: "consult" } }), {
         type: "closed",
         conn: 1,
         reason: "connection reset",
@@ -676,17 +798,48 @@ describe("step(state, event): the sec-7 table (VT-1)", () => {
   });
 
   describe("deadline", () => {
-    it("F-11: pairing | deadline pair -> unpaired (pair failed, may have created)", () => {
+    it("F-11: pairing | deadline pair -> unpaired (pair failed, may have paired)", () => {
       const { state: next, effects } = step(pairingPhase(), {
         type: "deadline",
         key: { conn: 1, request: "pair" },
       });
       expect(effects).toEqual([
         close(1),
-        notify("error", { kind: "pair failed", reason: "no reply", mayHaveCreated: true }),
+        notify("error", { kind: "pair failed", reason: "no reply", mayHavePaired: true }),
         status("unpaired"),
       ]);
       expect(next).toEqual(initial({ conn: 1 }));
+    });
+
+    it("pairing | deadline pair -> pair failed naming the conversation", () => {
+      const ends = { project: "proj", socket: "/tmp/bridge-test.sock" };
+      const asked = step(pairingPhase("consult", {}, "12"), {
+        type: "deadline",
+        key: { conn: 1, request: "pair" },
+      });
+      expect(asked.effects).toEqual([
+        close(1),
+        notify("error", {
+          kind: "pair failed",
+          reason: "no reply",
+          mayHavePaired: true,
+          conversation: "12",
+        }),
+        status("unpaired"),
+      ]);
+      expect(noticeText(noticeOf(asked.effects), ends)).toContain(
+        "the daemon may have paired conversation 12",
+      );
+
+      const bare = step(pairingPhase(), { type: "deadline", key: { conn: 1, request: "pair" } });
+      expect(bare.effects).toStrictEqual([
+        close(1),
+        notify("error", { kind: "pair failed", reason: "no reply", mayHavePaired: true }),
+        status("unpaired"),
+      ]);
+      const text = noticeText(noticeOf(bare.effects), ends);
+      expect(text).toContain("the daemon may have paired the attached conversation");
+      expect(text).not.toContain("may have been created");
     });
 
     it("resuming | deadline resume -> outage (no reply notifies once)", () => {
@@ -1220,6 +1373,29 @@ describe("step(state, event): the sec-7 table (VT-1)", () => {
       expect(
         effects.filter((effect) => effect.type === "send" && effect.frame.type === "post"),
       ).toEqual([]);
+    });
+
+    it("RV-029 F-15: a re-pair of the same conversation injects its first message", () => {
+      const { state: next, effects } = run(
+        bound({}, { inSession: [keyOf(1), keyOf(2), keyOf(3)] }),
+        { type: "pair", posture: "consult", conversation: PAIRING.conversation },
+        { type: "frame", conn: 1, frame: { type: "refused", reason: "pairing ended" } },
+        {
+          type: "frame",
+          conn: 2,
+          frame: { type: "paired", conversation: PAIRING.conversation, token: "token-b" },
+        },
+        { type: "deliver", conn: 2, delivery: delivery(4), idle: true },
+      );
+      expect(effects.filter((effect) => effect.type === "inject")).toEqual([
+        inject(delivery(4), true),
+      ]);
+      expect(next.phase.name).toBe("bound");
+
+      // The dedupe is real (DEC-106): a seq the session already holds is re-acked, never injected.
+      const seen = step(next, { type: "deliver", conn: 2, delivery: delivery(3), idle: true });
+      expect(seen.effects.filter((effect) => effect.type === "inject")).toEqual([]);
+      expect(seen.effects).toEqual([send(2, { type: "ack", seq: 3 })]);
     });
   });
 
