@@ -1,7 +1,7 @@
 id = 12
 slug = "mail-action-plans"
 title = "Mail action plans: the mail agent proposes, the operator executes in Gnus"
-status = "design"
+status = "ready"
 created = "2026-10-30"
 updated = "2026-10-30"
 tags = []
