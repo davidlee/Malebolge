@@ -6,16 +6,18 @@ disposable phase sheet (`.doctrine/state/.../phase-NN.md`) that must survive
 
 ## Harvest
 <!-- single-copy: updated in place each harvest; ids only, never restated content -->
-fresh-as-of: 2026-10-30 · reconcile (RV-027 concluded) · e3cf8ff
+fresh-as-of: 2026-10-30 · close (SL-009 done)
 
 ### Produced
 - PHASE-01 probes — ASM-004/006/007/008/009 validated, ASM-005 invalidated as EX-2 allows (c4430fc, 73a3263)
 - PHASE-02..09 — extractions, wire, bridge mode, pairing/listener, both message directions, pi state machine, shell + malebolge-bridge (ede54f3 .. af200b5; read-only resume fix 1ed42f6)
 - PHASE-10 — docs (0df3e9e), runbook (75f02bb), real-jail VH/VA run met (notes § Probes, Outcomes + Result); fixes found in the run: `!` env + powerbar segment (0c86fb8), environment framing (f34d381)
 - PHASE-10 recorded range 0df3e9e^..HEAD carries SL-007 commits (b066d05..d8d2466, 4cd8c4e), as PHASE-09's did
-- ~/flakes node in pi jails (482256f0 there, unpushed); repo flake.nix runner hash + pi-bridge fileset (bdccd93); local uncommitted `jailed-pi-bridge` in flake.nix (runbook P3; to drop)
+- ~/flakes node in pi jails (482256f0 there, unpushed); repo flake.nix runner hash + pi-bridge fileset (bdccd93); `jailed-pi-bridge` in flake.nix committed at close (74ebded; operator ruling 2026-10-30), until CHR-007
 - minted: IMP-025 — jail notifications via filtered D-Bus proxy; CHR-008 — author the posture texts (run inputs appended)
 - RV-027 — audit: 14 findings, F-10 withdrawn; reconciliation brief (design sec-2/3/7/8/9, selectors); fix-now done in audit: docs for DEC-096..098, RV-023 concluded, operatorRefillOf comment
+- reconcile — design.md sec-2/3/7/8/9 + selector registry per RV-027 brief; outcome on RV-027; no REV (no governance item)
+- memories verified at close: mem.fact.jail.pi-home-is-persisted-jail-home, mem.pattern.malebolge.settle-model-input-from-stored-record
 
 ### Learned
 - mem.fact.pi.extension-idle-and-settle-timing — real-pi event timing the extension relies on
@@ -24,10 +26,9 @@ fresh-as-of: 2026-10-30 · reconcile (RV-027 concluded) · e3cf8ff
 - mem.pattern.malebolge.settle-model-input-from-stored-record — check stored entries, not a model's report of its input
 
 ### Open
-- RV-027 brief — design.md + selector edits for /reconcile (F-1..F-6, F-8)
-- DEC-095..098 — operator rulings; design folds them in via RV-027 F-1/F-2
 - CHR-007 — ~/flakes bridge mounts (needs `mkdir -m 700` for bridge/)
 - CHR-008 — posture texts (DEC-040 placeholders)
+- IMP-025 — jail notifications via filtered D-Bus proxy
 
 ## Design triage (2026-10-29, exploring)
 

@@ -7,7 +7,7 @@ status = "active"
 title = "Settle what a model received from the stored record, not its account"
 summary = "Settle what a model received (escaping, duplication, delivery) from the stored record, never the model's own account"
 created = "2026-10-29"
-updated = "2026-10-29"
+updated = "2026-10-30"
 
 [scope]
 paths = []
@@ -26,12 +26,12 @@ tree = "8bc0b8a790a62ce79cd9de58c7a07b9b1b442cf1"
 ref_name = "refs/heads/main"
 checkout_state_id = "6c87387cb3421b1a75dc42ad3c1efb39221c06930851f680a17ad330ba280eff"
 base_commit = "e9ee58ad4b3ef66657d7ef7ca2cd31dc3f4a819d"
-verified_sha = ""
+verified_sha = "f5c6895e79d10e8bbd122d5aab650b3b5de17fbd"
 normalizer = "forget.checkout.v1"
 
 [review]
-verification_state = "unverified"
-reviewed = ""
+verification_state = "verified"
+reviewed = "2026-10-30"
 review_by = ""
 
 [trust]
