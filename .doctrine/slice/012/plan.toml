@@ -1,0 +1,203 @@
+# Implementation plan for SL-012 — the authored, durable phase plan.
+#
+# This is the single source of each phase's objective, criteria, verification,
+# and links. Runtime status lives separately under .doctrine/state/ (phase
+# tracking) — never record progress here. Hand-edit freely: the tool reads this
+# file but does not rewrite it.
+schema  = "doctrine.plan.overview"
+version = 1
+slice   = "SL-012"
+
+# Canonical spec/requirement links — cite ids, never restate what they say. The
+# plan reader does not model these yet, so nothing downstream consumes them.
+[specs]
+primary       = []
+collaborators = []
+
+[requirements]
+targets      = []
+dependencies = []
+
+# One [[phase]] per ordered phase, in execution order — the authored array order
+# IS the order; never sort by id. Ids are PHASE-NN (zero-padded), immutable and
+# never reused once authored — edits append, they never renumber, so the id
+# sequence goes non-monotonic after a split and that is expected. Criterion ids
+# are local to their phase, bare, and equally immutable
+# (`lib:reference/glossary.md` § reference forms). The prefix is
+# the only mode marker; there is no mode field. Reference a criterion from
+# another phase phase-qualified (PHASE-03/EX-8) — bare EX-8 is ambiguous.
+[[phase]]
+id        = "PHASE-01"
+name      = "Live probe in the operator's Gnus"
+objective = "Settle the five Gnus/Fastmail assumptions the design carries (design sec-11 'Live probe first', inq-10) before any code that depends on them. Each answer either confirms the named function's first version or changes that function; a different shape goes back through /consult."
+entrance_criteria = [
+  { id = "EN-1", text = "Design SL-012 locked (run revision 41)." },
+  { id = "EN-2", text = "The operator's Gnus is running against Fastmail (nnimap server `fastmail`, or the name they use)." },
+]
+exit_criteria = [
+  { id = "EX-1", text = "A probe script (scratch elisp, not shipped) exists that the operator evaluates in their running Emacs; it creates a throwaway folder and test message only with the operator's go-ahead and cleans up after." },
+  { id = "EX-2", text = ".doctrine/slice/012/research/live-probe.md records, per design sec-11 probe row, the observed answer, the raw evidence (return values, IMAP log excerpts) and the consequence: (1) multi-way `message-id:a or message-id:b or ...` scoped to several groups returns exactly the expected (group, uid) set; (2) `B m` from an nnselect summary UID-MOVEs a message to a folder and back; (3) a child of the inbox is `INBOX/<name>` over IMAP; (4) `malebolge-mail--pushing` (a let-binding around `nnselect-push-info`) is in effect when `gnus-after-set-mark-hook` runs on `q`; (5) `gnus-activate-group` returns nil for a missing group." },
+  { id = "EX-3", text = "Every failed answer names the function it changes (`malebolge-mail--query`, `imapPathOf`, the mark-capture advice, `malebolge-mail-move` step 2) and the change; if a failure changes the design's shape, /consult was run and its outcome is recorded before PHASE-02 starts." },
+]
+verification = [
+  { id = "VH-1", text = "Operator ran the probe in their own Gnus and confirms the recorded answers match what they saw." },
+  { id = "VA-1", text = "research/live-probe.md has an answer, evidence and consequence for all five rows; any non-confirming answer is carried into the EN criteria of the phase that owns the named function." },
+]
+specs        = []
+requirements = []
+
+[[phase]]
+id        = "PHASE-02"
+name      = "Pure plan functions and the shared text rules (TS)"
+objective = "src/mail/plans.ts: PLAN_ACTIONS, LineAction, caps, Plan/PlanLine/PlanMessage, planInputOf, messageIdUsable, imapPathOf, targetOf, snapshotOf, foreignLine, buildPlan, planIdOf, all pure (design sec-2, sec-3, sec-5). test/fixtures/text-rules.json is the shared source of truth for foreignLine and messageIdUsable."
+entrance_criteria = [
+  { id = "EN-1", text = "PHASE-01 completed; its INBOX-child answer fixes imapPathOf's inbox rule." },
+  { id = "EN-2", text = "Re-grep: `message_id`, `MailSourceError`, the mailbox schema (`role`, `parent_id`) in src/mail/source.ts; `Withheld` in src/mail/policy.ts; `idOf` and `MailInputError` where tools.ts takes them." },
+]
+exit_criteria = [
+  { id = "EX-1", text = "planInputOf refuses every shape class in design sec-2's table with the table's text, naming the line by 1-based index and never repeating an agent value." },
+  { id = "EX-2", text = "imapPathOf joins names root-first with `/`, spells a role-inbox mailbox `INBOX` anywhere in the chain (per PHASE-01's answer), and throws MailSourceError(\"contract\", ...) on a missing parent or a cycle." },
+  { id = "EX-3", text = "foreignLine and messageIdUsable implement design sec-5's rules over code points; test/fixtures/text-rules.json holds the full case set (bidi override, Cc/Cf/Zl/Zp runs, whitespace collapse, truncation with `…`, every Message-ID refusal: empty, over 998, whitespace, `<`, `>`, `\"`, `\\`, leading `/`, non-ASCII) in the shape design sec-5 gives." },
+  { id = "EX-4", text = "snapshotOf builds a PlanMessage from a screwtape read alone: header text through foreignLine with caps 128/254/200, first `from` or null, withheld as {reason, detail} with no score. buildPlan assembles the Plan (agent lines in order, the `none` line last when present); planIdOf gives `<conversation>-<YYYYMMDD>T<HHMMSSmmm>Z` UTC and throws on a conversation outside [A-Za-z0-9_-]." },
+  { id = "EX-5", text = "`just check` green, coverage gate included." },
+]
+verification = [
+  { id = "VT-1", expects = "planInputOf refusal classes, imapPathOf (sec-3's four rows, missing parent, cycle), snapshotOf, buildPlan, planIdOf", test_file = "test/mail/plans.test.ts", keywords = ["planInputOf", "imapPathOf", "snapshotOf", "buildPlan", "planIdOf"], waived = false },
+  { id = "VT-2", expects = "foreignLine and messageIdUsable iterate every case in the shared fixture", test_file = "test/mail/plans.test.ts", keywords = ["text-rules.json", "foreignLine", "messageIdUsable"], waived = false },
+  { id = "VA-1", text = "src/mail/plans.ts imports no I/O (`rg -n 'node:fs|node:child_process' src/mail/plans.ts` is empty)." },
+]
+specs        = []
+requirements = []
+
+[[phase]]
+id        = "PHASE-03"
+name      = "Plan store and the plans directory setting"
+objective = "src/mail/plan-store.ts writes a plan create-exclusively (write tmp, link, unlink); src/config.ts reads MALEBOLGE_MAIL_PLANS and refuses relative paths and paths under a SATAN read root (design sec-4, DEC-110)."
+entrance_criteria = [
+  { id = "EN-1", text = "PHASE-02 completed (Plan type exists)." },
+  { id = "EN-2", text = "Re-grep: `screwtapeOf`, `corpusRoot`, `Config` in src/config.ts; where the satan state root (~/.local/state/satan) is already named, if anywhere, so mailPlansOf reuses it rather than restating it." },
+]
+exit_criteria = [
+  { id = "EX-1", text = "planStore(dir).write(plan): mkdir -p 0700; write `.<id>.json.tmp` with flag wx, mode 0600, whole JSON + newline; link to `<id>.json` (EEXIST fails, never replaces); unlink the tmp also on failure; any failure is MailSourceError(\"failed\", \"plan store: <errno code>\")." },
+  { id = "EX-2", text = "mailPlansOf(env, profile, satanRoots): unset or empty → undefined; relative → throws; equal to or under any SATAN root (lexical) → throws `MALEBOLGE_MAIL_PLANS must be outside SATAN's read roots`; a profile without mail → undefined regardless. Config gains `mailPlans?: string`." },
+  { id = "EX-3", text = "`just check` green." },
+]
+verification = [
+  { id = "VT-1", expects = "planStore against a temp dir: whole file, mode 0600, no tmp left behind; a second write of the same id fails and leaves the first unchanged", test_file = "test/mail/plan-store.test.ts", keywords = ["planStore", "0o600", "EEXIST"], waived = false },
+  { id = "VT-2", expects = "mailPlansOf: unset, empty, relative, under each SATAN root, outside, profile without mail", test_file = "test/config.test.ts", keywords = ["mailPlansOf", "MALEBOLGE_MAIL_PLANS"], waived = false },
+]
+specs        = []
+requirements = []
+
+[[phase]]
+id        = "PHASE-04"
+name      = "The mail_propose tool and withheld tracking"
+objective = "The seventh mail tool: validation in design sec-2's order, resolution through the source, withheld mail added on a `none` line (DEC-117), one plan written through the PlanStore, a result and journal line with no agent text, replay unsafe. Wired in the daemon."
+entrance_criteria = [
+  { id = "EN-1", text = "PHASE-03 completed." },
+  { id = "EN-2", text = "Re-grep: `MailDeps`, `MailToolSpec`, `mailTool` (its hard-coded `replay: \"safe\"`), `screened`, the four read `*Text` functions and `mail_report`'s use of `api` in src/mail/tools.ts; `fakeMailDeps` in test/mail/mail-fixtures.ts; `mailPart` in src/daemon-start.ts." },
+]
+exit_criteria = [
+  { id = "EX-1", text = "MailDeps gains `plans: PlanStore | undefined` and `shownWithheld: Map<string, ShownWithheld>`; `screened` takes the conversation and records each withheld id via `noteWithheld` (capped at SHOWN_WITHHELD_MAX, overflow counted); mail_new/read/thread/list pass `api` to their text functions; mail_report records the reported id the same way." },
+  { id = "EX-2", text = "mail_propose follows design sec-2's flowchart: deps.refusal, then plans undefined (`mail_propose refused: MALEBOLGE_MAIL_PLANS is not set`), planInputOf, one mailboxes() call, one read({maxBytes: 0}) per agent id, the withheld line, the shared-Message-ID check, nothing-to-propose, one classificationsOf call, buildPlan, store.write, journal line `mail_propose conversation=<c> plan=<id> lines=<n> messages=<m> withheld=<w>`, result `plan <id>: N lines, M messages, W withheld`. Any refusal stores nothing." },
+  { id = "EX-3", text = "MailToolSpec gains `replay`; mail_propose is \"unsafe\", the six others \"safe\". Its description ends with MAIL_DESCRIPTION_SUFFIX; MAIL_SECTION gains propose guidance (wording not pinned); the extension's header comment says seven tools." },
+  { id = "EX-4", text = "src/daemon-start.ts mailPart passes `plans: config.mailPlans === undefined ? undefined : planStore(config.mailPlans)` and `shownWithheld: new Map()`." },
+  { id = "EX-5", text = "test/toolsets.test.ts VT-3 pins exactly seven mail tools in order, mail_propose last, and its title says seven; the catalog guard still excludes coding, SATAN and write tools." },
+  { id = "EX-6", text = "`just check` green." },
+]
+verification = [
+  { id = "VT-1", expects = "every refusal class in design sec-11's first vitest bullet stores nothing and repeats no agent value; config and precondition refusals", test_file = "test/mail/tools.test.ts", keywords = ["mail_propose", "nothing to propose", "MALEBOLGE_MAIL_PLANS is not set"], waived = false },
+  { id = "VT-2", expects = "a valid call writes one plan whose identities, snapshot and pre-state come from the source fake; result and journal hold no agent text; replay unsafe", test_file = "test/mail/tools.test.ts", keywords = ["mail_propose", "replay", "unsafe"], waived = false },
+  { id = "VT-3", expects = "withheld: shown in conversation A appears on A's none line and not B's; no repeat of an agent-line id; withheld_missing and withheld_overflow count", test_file = "test/mail/tools.test.ts", keywords = ["withheld_missing", "withheld_overflow", "shownWithheld"], waived = false },
+  { id = "VT-4", expects = "exactly seven mail tools in order, mail_propose included", test_file = "test/toolsets.test.ts", keywords = ["mail_propose", "seven"], waived = false },
+]
+specs        = []
+requirements = []
+
+[[phase]]
+id        = "PHASE-05"
+name      = "Elisp: validating reader, text rules, renderer, plan mode, act log, line status"
+objective = "emacs/malebolge-mail.el, feature `malebolge-mail`, without Gnus: settings, the two shared text rules over test/fixtures/text-rules.json, the org rule, the validating reader, the act record and append, line status, the pure renderer, malebolge-mail-plan-mode with malebolge-mail-plan / follow / g / dismiss (design sec-5, sec-6, sec-8 record and status)."
+entrance_criteria = [
+  { id = "EN-1", text = "PHASE-02 completed (text-rules.json exists). PHASE-04 need not be complete: the elisp reads fixture plans." },
+  { id = "EN-2", text = "Re-grep: the ERT conventions of test/malebolge-ert.el and the justfile `ert` recipe; `org-link-make-string`, `org-gnus-follow-link` in the installed Org." },
+]
+exit_criteria = [
+  { id = "EX-1", text = "malebolge-mail--foreign-line and malebolge-mail--message-id-p pass every case in test/fixtures/text-rules.json; malebolge-mail--org-safe applies design sec-5's three substitutions; malebolge-mail--imap-path-p implements the path rule." },
+  { id = "EX-2", text = "malebolge-mail--plan-of refuses wrong format/version, unknown action, bad line numbering, every Message-ID fixture case, a bad path, a bad id/conversation, and an id not equal to the file stem, signalling malebolge-mail-invalid-plan; malebolge-mail-plan skips an invalid newest plan for the next newest and lists only `*.json` not starting with `.`, outside dismissed/." },
+  { id = "EX-3", text = "malebolge-mail--render PLAN ACTS SERVER is pure and produces design sec-6's first version: risk order, counts, ⟪…⟫ rationale after both rules, sender grouping past 10 with withheld rows apart, flag/unflag notes, plan notes for withheld_missing/overflow; links only via org-link-make-string with `malebolge-mail:<line>.<n>` targets carrying the `malebolge-mail-link` property." },
+  { id = "EX-4", text = "malebolge-mail-plan-mode is derived from org-mode, read-only, visits no file, keeps the plan and plan file buffer-local; RET is bound to a placeholder that PHASE-06 replaces; C-c C-o and mouse-1 run malebolge-mail-follow, which refuses any link without the property; `g` re-renders keeping the line; `d` renames malebolge-mail--plan-file into dismissed/ and appends a `dismissed` record." },
+  { id = "EX-5", text = "malebolge-mail--act-record is pure; malebolge-mail--append-act uses write-region append and display-warning on failure; malebolge-mail--line-status gives not_applied / applied / failed / varied with design sec-8's precedence and companion-record rule." },
+  { id = "EX-6", text = "The justfile `ert` recipe loads test/malebolge-mail-ert.el and byte-compiles emacs/malebolge-mail.el with warnings as errors; `just ert` green." },
+]
+verification = [
+  { id = "VT-1", expects = "text rules over the shared fixture; org rule over [[elisp:(x)]], a|b, leading * and #", test_file = "test/malebolge-mail-ert.el", keywords = ["text-rules.json", "malebolge-mail--foreign-line", "malebolge-mail--org-safe"], waived = false },
+  { id = "VT-2", expects = "validating reader refusals and newest-valid selection", test_file = "test/malebolge-mail-ert.el", keywords = ["malebolge-mail--plan-of", "malebolge-mail-invalid-plan"], waived = false },
+  { id = "VT-3", expects = "renderer from a fixture plan: order, grouping, rationale quoting, links carry the property, sender/subject from the snapshot never the rationale, buffer visits no file", test_file = "test/malebolge-mail-ert.el", keywords = ["malebolge-mail--render", "malebolge-mail-link", "malebolge-mail-follow"], waived = false },
+  { id = "VT-4", expects = "line status across not_applied, applied, failed, varied and the companion records; dismiss renames and appends", test_file = "test/malebolge-mail-ert.el", keywords = ["malebolge-mail--line-status", "malebolge-mail-dismiss"], waived = false },
+]
+specs        = []
+requirements = []
+
+[[phase]]
+id        = "PHASE-06"
+name      = "Elisp: staging a line in Gnus and capturing acts"
+objective = "Open a plan line as an ephemeral nnselect summary, stage its actions by Message-ID, provide malebolge-mail-move, and log moves and pushed marks from staged summaries through Gnus's hooks (design sec-7, sec-8 capture), as PHASE-01's answers adjusted."
+entrance_criteria = [
+  { id = "EN-1", text = "PHASE-01 and PHASE-05 completed; any probe answer that changes `malebolge-mail--query`, the mark-capture advice or `malebolge-mail-move` step 2 is applied here." },
+  { id = "EN-2", text = "Re-grep the installed Gnus for the cited sites: gnus-group-read-ephemeral-group and the nnselect specs gnus-group-read-ephemeral-search-group builds, nnselect-article-group/-number, nnselect-push-info, gnus-summary-article-move-hook, gnus-after-set-mark-hook; and ~/.config/emacs/lisp/test/dl-gnus-test.el's cl-letf stubbing pattern." },
+]
+exit_criteria = [
+  { id = "EX-1", text = "malebolge-mail--query and the group spec are pure, from a line's Message-IDs and mailboxes." },
+  { id = "EX-2", text = "malebolge-mail-open-line follows design sec-7 steps 1-7: requires gnus-alive-p; opens `malebolge-<plan id>-<line>`; limits to exact Message-IDs; stages only an article in one of the message's snapshot groups with no same-group duplicate; records malebolge-mail--staged; reports and logs not_found; reports ambiguous without logging. RET in the plan document runs it." },
+  { id = "EX-3", text = "Staging sets design sec-7's table of marks per article via the staged table; move lines get the process mark; the summary line shows the staged action through gnus-user-format-function-M." },
+  { id = "EX-4", text = "malebolge-mail-move (first binding `B M` in staged summaries) refuses outside a move/archive/delete staged group and when gnus-activate-group fails, moves with malebolge-mail--via bound, and logs every process-marked article not logged ok as failed." },
+  { id = "EX-5", text = "The move hook logs ok moves from staged groups (via malebolge or gnus); :around advice on nnselect-push-info binds malebolge-mail--pushing; the set-mark hook logs one record per UID per mapped add/del mark only inside that binding." },
+  { id = "EX-6", text = "`just ert` green, byte-compile clean." },
+]
+verification = [
+  { id = "VT-1", expects = "query and group spec from a fixture line", test_file = "test/malebolge-mail-ert.el", keywords = ["malebolge-mail--query"], waived = false },
+  { id = "VT-2", expects = "with Gnus stubbed: open-line stages by Message-ID and logs not_found; extra same-group and out-of-snapshot matches stage neither", test_file = "test/malebolge-mail-ert.el", keywords = ["malebolge-mail-open-line", "malebolge-mail--staged", "not_found"], waived = false },
+  { id = "VT-3", expects = "move hook logs ok with via gnus or malebolge; a stub-failed malebolge move logs failed; set-mark hook logs only inside malebolge-mail--pushing, ignoring set deltas", test_file = "test/malebolge-mail-ert.el", keywords = ["malebolge-mail-move", "malebolge-mail--pushing", "failed"], waived = false },
+]
+specs        = []
+requirements = []
+
+[[phase]]
+id        = "PHASE-07"
+name      = "Jail bind, docs, persona draft, live run"
+objective = "Make it reachable in the real room: the jail binds and sets MALEBOLGE_MAIL_PLANS (design sec-4, sec-9), docs correct the tool count and describe the plans directory, the persona sentence is drafted for the operator, and the operator runs the end-to-end check (design sec-11 'Live')."
+entrance_criteria = [
+  { id = "EN-1", text = "PHASE-04 and PHASE-06 completed." },
+  { id = "EN-2", text = "Re-grep `mkJailedMalebolge` in ~/dev/satan/flake.nix and the malebolge feature in ~/flakes/features/satan/malebolge.nix; the operator agrees to the cross-repo edits before they are made." },
+]
+exit_criteria = [
+  { id = "EX-1", text = "~/dev/satan flake.nix binds the plans directory read-write into the room jail and sets MALEBOLGE_MAIL_PLANS; ~/flakes passes the directory (suggested ~/.local/state/malebolge/mail-plans). Each committed in its own repo." },
+  { id = "EX-2", text = "README.md and docs/internals.md say seven mail tools (fixing the pre-existing `five`), that one writes plans outside every SATAN root, document MALEBOLGE_MAIL_PLANS, the jail bind, and loading `malebolge-mail` with malebolge-mail-plans-directory." },
+  { id = "EX-3", text = "The persona replacement sentence (design sec-9) is handed to the operator for ~/satan-corpus prompts/mail.txt; this slice does not edit the corpus." },
+  { id = "EX-4", text = "VH-1 passed; a failure re-enters the owning phase." },
+]
+verification = [
+  { id = "VA-1", text = "`rg -n 'five .?mail_|six mail' README.md docs/internals.md` is empty; `rg -n MALEBOLGE_MAIL_PLANS README.md docs/internals.md` hits both." },
+  { id = "VH-1", text = "Operator: after rebuilding the room, attach a mail conversation from Emacs (`M-x malebolge-attach` on a mail topic), ask for a plan over real mail, open it with `M-x malebolge-mail-plan`, commit one line as proposed and override one line with a stock Gnus command. acts.jsonl shows both, and the plan document tags read `applied` and `varied`." },
+]
+specs        = []
+requirements = []
+
+[[phase]]
+id        = "PHASE-08"
+name      = "UI tuning with the operator"
+objective = "Tune design sec-6's and sec-7's phase-tuned points against real plans with the operator: columns, the grouping threshold, folding versus re-rendering, the keys, and whether opening and staging are one key."
+entrance_criteria = [
+  { id = "EN-1", text = "PHASE-07 completed; real plans exist in the plans directory." },
+]
+exit_criteria = [
+  { id = "EX-1", text = "Each tuned point's outcome is recorded in notes.md; code and the ERT suite reflect it; `just ert` green." },
+  { id = "EX-2", text = "No change crosses the design's invariants: links only from the renderer, untrusted text through both rules, staging never reaches the server." },
+]
+verification = [
+  { id = "VH-1", text = "Operator signs off the plan document and staged summary as tuned." },
+  { id = "VA-1", text = "The PHASE-05 and PHASE-06 VT rows still pass after tuning (`doctrine slice verify-vt 12`)." },
+]
+specs        = []
+requirements = []

@@ -8,6 +8,14 @@ title = "design review of SL-012"
 facet     = "design"     # scope|design|plan|phase-plan|implementation|code-review|reconciliation
 raiser    = "raiser"
 responder = "responder"
+rounds_base = 0
+contests_base = 0
+concluded = true
+
+[[review.turn]]
+act = "conclude"
+role = "raiser"
+note = "Informal arbiter pass over the SL-012 design draft: pi first pass (F-1..F-8), GPT gpt-6.1-sol adversarial pass (G-1..G-3), Opus disposer/author, pi verify-only pass. Findings were dispositioned and folded into the draft off-ledger; record in .doctrine/slice/012/notes.md § Design review (2026-10-30). Residual questions are live-probe items for PHASE-01."
 
 [target]                   # the outbound `reviews` edge: RV-NNN ──reviews──▶ <ref>
 ref   = "SL-012"
