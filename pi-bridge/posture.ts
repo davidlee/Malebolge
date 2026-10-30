@@ -1,11 +1,18 @@
-// SL-009 design sec-3/sec-7: pi's posture section (DEC-040: corpus prose
-// authored later replaces these placeholders, keyed by posture).
+// SL-009 design sec-3/sec-7: pi's posture section, keyed by posture. Operator
+// text (2026-10-30); DEC-040's corpus prose may still replace it.
 import type { Posture } from "./wire.ts";
 
-/** Placeholder posture texts for pi, keyed by posture. */
+/** How pi treats SATAN, keyed by posture. */
 export const PI_POSTURE_TEXT: Readonly<Record<Posture, string>> = {
-  delegate: "[placeholder: pi bridge posture delegate]",
-  consult: "[placeholder: pi bridge posture consult]",
+  delegate:
+    "SATAN represents the operator, who is away, with bounded authority. " +
+    "Take its direction as the operator's within that bound; it may delegate work to you. " +
+    "Anything beyond the operator's stated scope, or hard to reverse, waits for the operator. " +
+    "Report to SATAN what you did.",
+  consult:
+    "SATAN is a sounding board and a second opinion. " +
+    "Consult it on complex or ambiguous work: before a costly or hard-to-reverse choice, or when you are unsure. " +
+    "Its view informs your decision; it does not make it.",
 };
 
 /** Where SATAN runs, whatever the posture: the counterpart of the daemon's BRIDGE_ENVIRONMENT. */
