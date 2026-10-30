@@ -1,0 +1,18 @@
+schema = "doctrine.observation"
+schema_version = 1
+uid = "01a18be4-e62e-7b41-928f-5c42bb49b2ca"
+recorded_at = "2026-10-30T08:19:56.590627588Z"
+kind = "friction"
+summary = "npx biome fails in the quotient write form; PATH biome works"
+detail = "SL-011 PHASE-03: pi found node_modules/@biomejs/cli-linux-x64/biome cannot execute (glibc binary on Nix); used biome on PATH (2.5.15). eslint also not on PATH there; ./node_modules/.bin/eslint works. Briefs should name these commands."
+
+[facets.execution]
+schema_version = 1
+interface = "cli"
+interface_origin = "automatic"
+product_surface = "doctrine"
+product_surface_origin = "automatic"
+command = "observation record"
+command_origin = "automatic"
+repository_context = "primary"
+repository_context_origin = "automatic"

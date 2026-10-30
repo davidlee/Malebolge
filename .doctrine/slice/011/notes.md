@@ -80,6 +80,8 @@ Seat preflight, read by every charter:
   (guarded), eslint, tsc, vitest; network works; `write` root is writable.
   Every `check` sub-recipe (fmt-check, lint, typecheck, test) passes in `write`.
   `emacs` and `nix` are absent: `just ert` and `just smoke` are host-only (not in `check`).
+  In `write`, `npx biome` fails (npm binary needs a glibc the form lacks): briefs name
+  `biome` (PATH) and `./node_modules/.bin/eslint` (PHASE-03 friction).
 - **No sandbox-only failures.** Full suite is green in both.
 - **Never run two full `vitest run`s at once** (host and pi, or two pi workers):
   they share `coverage/` and the coverage provider crashes. One full suite at a
