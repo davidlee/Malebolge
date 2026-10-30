@@ -6,7 +6,7 @@ import { defineExtension, type Extension } from "@earendil-works/pi-durable";
 import type { Profile } from "./config.ts";
 
 /** A run kind. The daemon builds its own; the runner selects `job` in code. */
-export type Toolset = "interactive" | "mail" | "bridge" | "job";
+export type Toolset = "interactive" | "mail" | "job";
 
 /** What a daemon may install, profile by profile. */
 export type DaemonToolset = Exclude<Toolset, "job">;
@@ -33,19 +33,6 @@ const CATALOG: Readonly<Record<Toolset, readonly string[]>> = {
     "tasks",
     "threads",
     "bookmarks",
-    SATAN,
-  ],
-  // Interactive's list without `threads`, with `bridge` before SATAN (design sec-6; DEC-071).
-  bridge: [
-    "persona",
-    "project_context",
-    "skills",
-    "cwd",
-    "conversation",
-    "coding-tools",
-    "grep",
-    "tasks",
-    "bookmarks",
     "bridge",
     SATAN,
   ],
@@ -54,10 +41,12 @@ const CATALOG: Readonly<Record<Toolset, readonly string[]>> = {
 };
 
 /**
- * Room only: `tasks` and `threads`, which a host never installs (W10). `bookmarks`
- * is not here: it is installed on both profiles, refusing when unconfigured (DEC-055).
+ * Room only: `tasks` and `threads`, which a host never installs (W10), and `bridge`: the
+ * bridge extension is the room's, and a host never installs it or builds-and-requires it
+ * (SL-011 sec-2; DEC-100). `bookmarks` is not here: it is installed on both profiles,
+ * refusing when unconfigured (DEC-055).
  */
-const ROOM_ONLY: ReadonlySet<string> = new Set(["tasks", "threads"]);
+const ROOM_ONLY: ReadonlySet<string> = new Set(["tasks", "threads", "bridge"]);
 
 /** `toolset`'s extension names on `profile`, in system prompt and tool order. */
 export function toolsetList(toolset: "job"): readonly string[];
@@ -78,7 +67,7 @@ export function selectionOf(names: readonly string[]): Extension[] {
 
 /** Each profile's default toolset and the ones it may use. */
 export const PROFILE_TOOLSETS: Readonly<Record<Profile, ProfileToolsets>> = {
-  room: { default: "interactive", allowed: ["interactive", "mail", "bridge"] },
+  room: { default: "interactive", allowed: ["interactive", "mail"] },
   host: { default: "interactive", allowed: ["interactive"] },
 };
 

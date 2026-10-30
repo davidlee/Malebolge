@@ -773,48 +773,24 @@ describe("wake tools (SL-034 sec-13)", () => {
 });
 
 // SL-009 PHASE-04 VT-2: a wake reaches only conversations inside the caller's
-// talk set, and only conversations the index knows (DEC-076).
+// talk set, and only conversations the index knows (DEC-076). SL-011 retires the
+// bridge toolset: a bridged conversation is interactive, so it wakes as one.
 describe("wake reach (SL-009 VT-2)", () => {
-  it("a bridge caller waking another topic is refused, and creates no wake", async () => {
+  // Expected to pass before and after SL-011: an interactive caller already passes the
+  // talk-set check, and a bridged conversation is now an interactive one.
+  it("a wake from a bridged conversation passes the talk-set check", async () => {
     const world = wakeWorld();
     const session = await world.open();
-    const bridge = await topicConversation(session, "bridgework", "bridge");
-    await topicConversation(session, "work", "interactive");
-    const result = await callTool(world, session, bridge, "wake_schedule", {
+    // A former bridge topic, now interactive: it carries the bridge extension on the room.
+    const bridged = await topicConversation(session, "bridgework", "interactive");
+    const work = await topicConversation(session, "work", "interactive");
+    const result = await callTool(world, session, bridged, "wake_schedule", {
       intent: "the work topic",
       episode_class: "attend",
       topic: "work",
     });
-    expect(result.isError).toBe(true);
-    expect(result.text).toBe("toolset bridge has no talk set on profile room");
-    expect(await liveWakesOf(session)).toEqual([]);
-  });
-
-  it("a bridge caller with no topic wakes itself", async () => {
-    const world = wakeWorld();
-    const session = await world.open();
-    const bridge = await topicConversation(session, "bridgework", "bridge");
-    const result = await callTool(world, session, bridge, "wake_schedule", {
-      intent: "my own turn",
-      episode_class: "seclude",
-      after_minutes: 30,
-    });
     expect(result.isError).toBe(false);
-    expect(numberOf(result.json, "conversation")).toBe(bridge.id);
-    await asleepById(session.harness, numberOf(result.json, "id"));
-  });
-
-  it("a bridge caller naming its own topic wakes itself", async () => {
-    const world = wakeWorld();
-    const session = await world.open();
-    const bridge = await topicConversation(session, "bridgework", "bridge");
-    const result = await callTool(world, session, bridge, "wake_schedule", {
-      intent: "my own topic",
-      episode_class: "seclude",
-      topic: "bridgework",
-    });
-    expect(result.isError).toBe(false);
-    expect(numberOf(result.json, "conversation")).toBe(bridge.id);
+    expect(numberOf(result.json, "conversation")).toBe(work.id);
     await asleepById(session.harness, numberOf(result.json, "id"));
   });
 

@@ -134,7 +134,7 @@ export const wakeSchedule = (
       const wake = deps();
       const caller = api.conversationId;
       // A self-wake reaches only itself, whatever the toolset; a topic target must share
-      // the caller's talk set, so bridge wakes only bridge and nothing wakes into it.
+      // the caller's talk set, so mail wakes only itself and nothing wakes into it.
       if (target.kind === "topic" && target.id !== caller) {
         const refused = reachRefusal(wake.profile, target.index, caller, target.id, target.topic);
         if (refused !== undefined) {

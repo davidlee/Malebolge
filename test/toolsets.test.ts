@@ -7,6 +7,7 @@ import { readFileSync } from "node:fs";
 import type { Extension } from "@earendil-works/pi-durable";
 import { describe, expect, it } from "vitest";
 import { BOOKMARKS_SECTION } from "../src/bookmarks/extension.ts";
+import { BRIDGE_UNTRUSTED } from "../src/bridge/extension.ts";
 import type { Profile } from "../src/config.ts";
 import { daemonExtensions } from "../src/daemon-extensions.ts";
 import { isRecord } from "../src/json.ts";
@@ -22,6 +23,7 @@ import {
   SATAN,
   TALK_SETS,
   type TalkSet,
+  type Toolset,
   toolsetList,
 } from "../src/toolsets.ts";
 import { tasksExtension, wakeBinding } from "../src/wake/extension.ts";
@@ -39,7 +41,7 @@ import { fakeMailDeps } from "./mail/mail-fixtures.ts";
 const PROFILES: readonly Profile[] = ["room", "host"];
 
 /** The toolsets a daemon installs; the runner's `job` is selected elsewhere. */
-const DAEMON_TOOLSETS: readonly DaemonToolset[] = ["interactive", "mail", "bridge"];
+const DAEMON_TOOLSETS: readonly DaemonToolset[] = ["interactive", "mail"];
 
 /**
  * One profile's frozen baseline. It also records `registry`, the names the
@@ -128,11 +130,11 @@ const extensionsOf = (profile: Profile): Extension[] => {
 };
 
 /**
- * The extensions `profile` installs, less the two the baseline predates: threads
- * (PHASE-05) and bookmarks (PHASE-07).
+ * The extensions `profile` installs, less the three the baseline predates: threads
+ * (PHASE-05), bookmarks (PHASE-07) and bridge (SL-011).
  */
 const withoutPostBaseline = (extensions: readonly Extension[]): Extension[] =>
-  extensions.filter(({ name }) => name !== "threads" && name !== "bookmarks");
+  extensions.filter(({ name }) => name !== "threads" && name !== "bookmarks" && name !== "bridge");
 
 /** What a new interactive conversation offers on `profile`. */
 const snapshotOf = (profile: Profile): Promise<InteractiveSnapshot> =>
@@ -164,41 +166,48 @@ const unionOf = (profile: Profile): string[] => {
 describe("toolset catalogue", () => {
   it("VT-1: a new interactive conversation is the frozen baseline, profile for profile", async () => {
     for (const profile of PROFILES) {
-      // The baseline predates threads (PHASE-05) and bookmarks (PHASE-07): compare without them.
+      // The baseline predates threads (PHASE-05), bookmarks (PHASE-07) and bridge (SL-011).
       const snapshot = await interactiveSnapshot(withoutPostBaseline(extensionsOf(profile)));
       expect(snapshot).toEqual(expectedSnapshot(BASELINE.profiles[profile]));
-      // SATAN's tools arrive by discovery, and the baseline predates those two extensions.
+      // SATAN's tools arrive by discovery, and the baseline predates those three extensions.
       expect(snapshot.extensions).toEqual(
         toolsetList("interactive", profile).filter(
-          (name) => name !== SATAN && name !== "threads" && name !== "bookmarks",
+          (name) =>
+            name !== SATAN && name !== "threads" && name !== "bookmarks" && name !== "bridge",
         ),
       );
     }
   });
 
-  it("VT-5: the room snapshot is the baseline plus exactly what threads and bookmarks add", async () => {
+  it("VT-5: the room snapshot is the baseline plus what threads, bookmarks and bridge add, bridge_post last", async () => {
     const baseline = BASELINE.profiles.room;
     const afterTasks = baseline.extensions.indexOf("tasks") + 1;
     expect(afterTasks).toBeGreaterThan(0);
     const extensions = [...baseline.extensions];
     extensions.splice(afterTasks, 0, "threads");
-    extensions.push("bookmarks");
+    extensions.push("bookmarks", "bridge");
     const baselineKeys = Object.keys(promptSections(baseline));
 
     const room = await snapshotOf("room");
-    // Key order is prompt order, which toEqual ignores: threads then bookmarks come last.
-    expect(Object.keys(promptSections(room))).toEqual([...baselineKeys, "threads", "bookmarks"]);
+    // Key order is prompt order, which toEqual ignores: threads, bookmarks, bridge come last.
+    expect(Object.keys(promptSections(room))).toEqual([
+      ...baselineKeys,
+      "threads",
+      "bookmarks",
+      "bridge",
+    ]);
     expect(room).toEqual({
       extensions,
-      // Catalogue order puts the tagged section after every earlier extension's.
+      // Catalogue order puts the tagged sections after every earlier extension's; bridge's is untagged.
       sections: [
         {
           ...promptSections(baseline),
           threads: `<threads>\n${THREADS_SECTION}\n</threads>`,
           bookmarks: `<bookmarks>\n${BOOKMARKS_SECTION}\n</bookmarks>`,
+          bridge: BRIDGE_UNTRUSTED,
         },
       ],
-      // The wake tools are the baseline's last; the thread tools follow them, bookmarks last.
+      // The wake tools are the baseline's last; the thread tools follow, then bookmarks, then bridge_post.
       tools: [
         ...baseline.tools,
         "thread_post",
@@ -207,6 +216,7 @@ describe("toolset catalogue", () => {
         "bookmarks_search",
         "bookmarks_tags",
         "bookmarks_folders",
+        "bridge_post",
       ],
     });
 
@@ -267,12 +277,12 @@ describe("toolset catalogue", () => {
     ]);
   });
 
-  it("VT-2: satan is last in interactive and bookmarks is the name before it; only the room installs tasks and threads", () => {
+  it("VT-2: satan is last in interactive and bridge precedes it on the room, bookmarks on the host; only the room installs tasks and threads", () => {
     for (const profile of PROFILES) {
       const names = toolsetList("interactive", profile);
       expect(names.at(-1)).toBe(SATAN);
-      // Catalogue order, pinned: bookmarks sits immediately before SATAN on both profiles.
-      expect(names.at(-2)).toBe("bookmarks");
+      // Catalogue order, pinned: bridge on the room (which installs it), bookmarks on the host.
+      expect(names.at(-2)).toBe(profile === "room" ? "bridge" : "bookmarks");
     }
     const room = toolsetList("interactive", "room");
     expect(room).toContain("tasks");
@@ -282,26 +292,23 @@ describe("toolset catalogue", () => {
     expect(toolsetList("interactive", "host")).not.toContain("threads");
   });
 
-  it("SL-009 VT-1: bridge is interactive's list without threads, bridge spliced before satan", () => {
-    for (const profile of PROFILES) {
-      const interactive = toolsetList("interactive", profile);
-      const expected = interactive.filter((name) => name !== "threads");
-      expected.splice(expected.indexOf(SATAN), 0, "bridge");
-      expect(toolsetList("bridge", profile)).toEqual(expected);
-      expect(toolsetList("bridge", profile)).not.toContain("threads");
-      // Catalogue order, pinned: the bridge extension sits between bookmarks and satan.
-      expect(toolsetList("bridge", profile).slice(-3)).toEqual(["bookmarks", "bridge", SATAN]);
-    }
+  it("SL-009 VT-1: the room interactive list ends bookmarks, bridge, satan, and the host installs no bridge", () => {
+    // Catalogue order, pinned: the bridge extension sits between bookmarks and satan.
+    expect(toolsetList("interactive", "room").slice(-3)).toEqual(["bookmarks", "bridge", SATAN]);
+    expect(toolsetList("interactive", "host")).not.toContain("bridge");
   });
 
-  it("SL-009 VT-1: the room allows bridge and the host does not", () => {
-    expect(PROFILE_TOOLSETS.room.allowed).toEqual(["interactive", "mail", "bridge"]);
+  it("SL-009 VT-1: the room allows interactive and mail, and the host is unchanged", () => {
+    expect(PROFILE_TOOLSETS.room.allowed).toEqual(["interactive", "mail"]);
     expect(PROFILE_TOOLSETS.host.allowed).toEqual(["interactive"]);
   });
 
-  it("SL-009 VT-1: allowedNames gains bridge last on the room, and never on the host", () => {
-    // The union is deduplicated in allowed order, so bridge is the one name it appends.
-    expect(allowedNames("room").at(-1)).toBe("bridge");
+  it("SL-009 VT-1: bridge is no toolset, and allowedNames names it once on the room only", () => {
+    // @ts-expect-error bridge is no toolset
+    const retired: Toolset = "bridge";
+    expect(retired).toBe("bridge");
+    // The room installs it through the interactive list, once; the host filters it out.
+    expect(allowedNames("room").filter((name) => name === "bridge")).toHaveLength(1);
     expect(allowedNames("host")).not.toContain("bridge");
   });
 
@@ -356,11 +363,6 @@ describe("talk sets", () => {
     expect(TALK_SETS.host).toEqual({});
   });
 
-  it("SL-009 VT-1: bridge belongs to no talk set on either profile", () => {
-    expect(TALK_SETS.room.bridge).toBeUndefined();
-    expect(TALK_SETS.host.bridge).toBeUndefined();
-  });
-
   describe("VT-2: requireSameTalkSet refuses mail, host and mixed sets", () => {
     it("caller mail has no talk set on profile room", () => {
       expect(() => requireSameTalkSet("room", "mail", "interactive", "conversation 13")).toThrow(
@@ -383,18 +385,6 @@ describe("talk sets", () => {
     it("a mail target is outside the interactive set, named as a topic", () => {
       expect(() => requireSameTalkSet("room", "interactive", "mail", "topic inbox")).toThrow(
         "topic inbox (toolset mail) is outside this conversation's talk set (interactive)",
-      );
-    });
-
-    it("SL-009 a bridge caller has no talk set on profile room", () => {
-      expect(() => requireSameTalkSet("room", "bridge", "interactive", "topic work")).toThrow(
-        "toolset bridge has no talk set on profile room",
-      );
-    });
-
-    it("SL-009 a bridge target is outside the interactive set", () => {
-      expect(() => requireSameTalkSet("room", "interactive", "bridge", "topic bridgework")).toThrow(
-        "topic bridgework (toolset bridge) is outside this conversation's talk set (interactive)",
       );
     });
 

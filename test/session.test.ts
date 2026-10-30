@@ -456,6 +456,42 @@ describe("startup reconcile", () => {
     await third.harness.close(context);
   });
 
+  it("a stored bridge entry and topic: toolset bridge retired, now interactive, the list re-derived, a second start quiet", async () => {
+    const { path, dir } = await store();
+    const raw = await rawStore(path);
+    const rootId = raw.root.id;
+    // What SL-009 stored: a bridge entry, a bridge topic, and the old bridge list (interactive
+    // without threads). The retirement rewrites both and re-derives the entry's list.
+    const bridgeList = toolsetList("interactive", "room").filter((name) => name !== "threads");
+    await raw.root.configure({ extensions: selectionOf(bridgeList) }, context);
+    await raw.harness.commit(async (tx) => {
+      const index = await tx.doc(IndexDocument);
+      index.conversations[String(rootId)] = { topic: "default", toolset: "bridge" };
+      index.topics["proj-bridge"] = { toolset: "bridge" };
+    }, context);
+    await raw.harness.close(context);
+
+    const retired = vi.fn<Log>();
+    const second = await open(path, dir, "room", retired);
+    expect(await entryToolset(second.harness, rootId)).toBe("interactive");
+    expect((await readIndex(second.harness)).topics["proj-bridge"]?.toolset).toBe("interactive");
+    expect(await storedExtensions(second.harness, rootId)).toEqual([
+      ...toolsetList("interactive", "room"),
+    ]);
+    expect(retired).toHaveBeenCalledWith(
+      "topic proj-bridge: toolset bridge retired, now interactive",
+    );
+    expect(retired).toHaveBeenCalledWith(
+      `conversation ${String(rootId)}: toolset interactive list changed`,
+    );
+    await second.harness.close(context);
+
+    const quiet = vi.fn<Log>();
+    const third = await open(path, dir, "room", quiet);
+    expect(quiet).not.toHaveBeenCalled();
+    await third.harness.close(context);
+  });
+
   it("refuses a topic whose toolset the profile does not allow", async () => {
     const { path, dir } = await store();
     const raw = await rawStore(path);

@@ -29,6 +29,12 @@ import { DEFAULT_TOPIC, type ThreadMark } from "./protocol.ts";
 import type { DaemonToolset } from "./toolsets.ts";
 
 /**
+ * What storage may hold for a toolset: a daemon toolset, or the `bridge` toolset SL-009
+ * stored, which SL-011's reconcile retires to `interactive` (design sec-3; DEC-101).
+ */
+export type StoredToolset = DaemonToolset | "bridge";
+
+/**
  * One conversation's place in the index; `parent` is the conversation it was forked
  * from, `startedBy` the one whose `thread_start` created it, and `toolset` the set its
  * extensions are derived from (design sec-3, sec-12).
@@ -45,13 +51,16 @@ export type IndexEntry = {
  * which carries no toolset, or one written before this slice. The reconcile's
  * step 1 writes the toolset; every reader after it sees an `IndexEntry`.
  */
-type StoredEntry = Omit<IndexEntry, "toolset"> & { toolset?: DaemonToolset };
+type StoredEntry = Omit<IndexEntry, "toolset"> & { toolset?: StoredToolset };
 
 /**
  * What a topic carries: its directory (D3), the toolset its conversations take, and the
  * model they take (design sec-3).
  */
 export type TopicRecord = { cwd?: string; toolset?: DaemonToolset; model?: string };
+
+/** A topic as storage holds it: as `TopicRecord`, with the toolset the reconcile retires. */
+export type StoredTopicRecord = Omit<TopicRecord, "toolset"> & { toolset?: StoredToolset };
 
 /** A topic write: an absent key is unchanged, `null` clears it, a value sets it. */
 export type TopicChange = {
@@ -63,7 +72,7 @@ export type TopicChange = {
 
 /** The whole index, one session-scoped document. */
 export type IndexDoc = {
-  topics: Record<string, TopicRecord>;
+  topics: Record<string, StoredTopicRecord>;
   conversations: Record<string, StoredEntry>;
 };
 
@@ -127,7 +136,7 @@ export async function indexConversation(tx: Tx, record: ConversationRecord): Pro
   writeEntry(index, record.id, {
     topic: entry.topic,
     parent: parent.conversationId,
-    toolset: entry.toolset,
+    toolset: liveToolset(entry.toolset),
   });
 }
 
@@ -157,6 +166,24 @@ export async function writeCreated(
 }
 
 /**
+ * `t` as the live daemon toolset it is: the `bridge` toolset SL-009 stored is retired
+ * to `interactive`, every other one is itself (design sec-3; DEC-101). The comparison
+ * narrows the union, so no cast is needed (VA-1).
+ */
+export function liveToolset(t: StoredToolset): DaemonToolset {
+  return t === "bridge" ? "interactive" : t;
+}
+
+/**
+ * `record` as a live topic record: a retired toolset reads as its live one, and every
+ * other key it carries is kept (design sec-3; DEC-101).
+ */
+function liveTopic(record: StoredTopicRecord): TopicRecord {
+  const { toolset, ...rest } = record;
+  return toolset === undefined ? rest : { ...rest, toolset: liveToolset(toolset) };
+}
+
+/**
  * What every read of the index needs: a session's snapshots, unchanged, so an
  * `EnvTarget`'s reader (or a stub) passes as it is.
  */
@@ -176,9 +203,10 @@ export function isKnownTopic(index: IndexDoc, name: string): boolean {
   return name === DEFAULT_TOPIC || storedTopic(index, name) !== undefined;
 }
 
-/** `name`'s stored record, or undefined when nobody wrote it. */
+/** `name`'s stored record, or undefined when nobody wrote it; a retired toolset reads live. */
 export function storedTopic(index: IndexDoc, name: string): TopicRecord | undefined {
-  return ownKey(index.topics, name);
+  const record = ownKey(index.topics, name);
+  return record === undefined ? undefined : liveTopic(record);
 }
 
 /**
@@ -189,10 +217,11 @@ export function storedTopic(index: IndexDoc, name: string): TopicRecord | undefi
  */
 export function storedEntry(index: IndexDoc, id: ConversationId): IndexEntry | undefined {
   const entry = ownKey(index.conversations, String(id));
-  if (entry?.toolset === undefined) {
+  const toolset = entry?.toolset;
+  if (entry === undefined || toolset === undefined) {
     return undefined;
   }
-  return { ...entry, toolset: entry.toolset };
+  return { ...entry, toolset: liveToolset(toolset) };
 }
 
 /**
@@ -319,10 +348,12 @@ async function unbackfilled(tx: Tx, index: IndexDoc): Promise<readonly Conversat
 /**
  * The reconcile's read of the entries `ids` name (design sec-3, steps 1-2): an
  * entry that carries no toolset takes `fallback`, written here — the backfill of
- * a store written before this slice — and every id's toolset comes back with
- * every stored topic. A missing entry is an invariant breach (an ownerless
- * conversation is indexed by its creating commit), and the allowed checks are
- * the caller's.
+ * a store written before this slice — and a stored `bridge` toolset is retired to
+ * the live one it reads as, on entries and topics alike (DEC-101). Both rewrites
+ * land in this commit. Every id's toolset comes back with every stored topic and
+ * the names of the topics it retired, in name order; a missing entry is an
+ * invariant breach (an ownerless conversation is indexed by its creating commit),
+ * and the allowed checks are the caller's.
  */
 export async function entryToolsets(
   tx: Tx,
@@ -331,6 +362,7 @@ export async function entryToolsets(
 ): Promise<{
   entries: readonly { id: ConversationId; toolset: DaemonToolset }[];
   topics: readonly NamedTopic[];
+  retired: readonly string[];
 }> {
   const index = await tx.doc(IndexDocument);
   const entries = ids.map((id) => {
@@ -338,13 +370,35 @@ export async function entryToolsets(
     if (entry === undefined) {
       throw new Error(`conversation ${String(id)} has no index entry`);
     }
-    const toolset = entry.toolset ?? fallback;
-    if (entry.toolset === undefined) {
+    const stored = entry.toolset;
+    const toolset = stored === undefined ? fallback : liveToolset(stored);
+    if (toolset !== stored) {
       writeEntry(index, id, { topic: entry.topic, toolset });
     }
     return { id, toolset };
   });
-  return { entries, topics: topicsOf(index).slice(1) };
+  // Retire first, so the topics read below already see the live toolsets as written.
+  const retired = retireTopics(index);
+  return { entries, topics: topicsOf(index).slice(1), retired };
+}
+
+/**
+ * The same retirement for the stored topics (design sec-3; DEC-101): each one whose
+ * toolset is retired takes the live toolset, written back beside the keys it already
+ * carries, and comes back by name, so the caller's log follows no insertion order.
+ */
+function retireTopics(index: IndexDoc): readonly string[] {
+  const retired: string[] = [];
+  for (const [name, record] of Object.entries(index.topics)) {
+    const stored = record.toolset;
+    if (stored === undefined || liveToolset(stored) === stored) {
+      continue;
+    }
+    index.topics[name] = { ...record, toolset: liveToolset(stored) };
+    retired.push(name);
+  }
+  // Code-unit order, as `byName` compares: never a locale's.
+  return retired.sort();
 }
 
 /** Topic names in code-unit order, so a listing never depends on a locale. */
@@ -355,10 +409,10 @@ function byName(a: NamedTopic, b: NamedTopic): number {
   return a.name < b.name ? -1 : 1;
 }
 
-/** Every topic a listing shows: `default` first, then by name. */
+/** Every topic a listing shows: `default` first, then by name; a retired toolset reads live. */
 export function topicsOf(index: IndexDoc): readonly NamedTopic[] {
   const stored = Object.entries(index.topics)
-    .map(([name, record]): NamedTopic => ({ name, ...record }))
+    .map(([name, record]): NamedTopic => ({ name, ...liveTopic(record) }))
     .sort(byName);
   return [{ name: DEFAULT_TOPIC }, ...stored];
 }

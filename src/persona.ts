@@ -21,10 +21,7 @@ export function personaFiles(
 ): string[] {
   const file = (path: string): string => join(corpusRoot, path);
   switch (toolset) {
-    // Bridge shares the interactive files: its catalogue installs the same `persona`
-    // extension, and its own prose is a section of the bridge extension (design sec-6).
     case "interactive":
-    case "bridge":
       return [
         file("system/scaffold.txt"),
         file("prompts/interactive.txt"),

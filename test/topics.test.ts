@@ -20,6 +20,7 @@ import {
   type IndexEntry,
   isThread,
   latestIn,
+  liveToolset,
   markOf,
   readIndex,
   topicsOf,
@@ -490,4 +491,13 @@ it("restores a backfilled fork's missing parent, keeping its topic and every oth
     parent,
     toolset: "interactive",
   });
+});
+
+// SL-011 DEC-101: the one narrowing from a stored toolset to a daemon toolset, so a
+// stored `bridge` reads as the interactive conversation it now is.
+it("liveToolset maps bridge to interactive and every daemon toolset to itself", () => {
+  expect(liveToolset("bridge")).toBe("interactive");
+  for (const toolset of ["interactive", "mail"] as const) {
+    expect(liveToolset(toolset)).toBe(toolset);
+  }
 });

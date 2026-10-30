@@ -4,8 +4,9 @@
 //
 // The startup reconcile (design sec-3) is what makes a stored conversation's
 // extensions a function of its toolset: it refuses a fork without a toolset or a
-// task-owned conversation, backfills an entry written without a toolset, refuses a
-// toolset the profile does not allow, and re-derives every list that drifted.
+// task-owned conversation, backfills an entry written without a toolset, retires a
+// stored `bridge` toolset to `interactive` (DEC-101), refuses a toolset the profile
+// does not allow, and re-derives every list that drifted.
 // It runs in one commit, so a refusal rolls back the backfill with it.
 
 import type { Models } from "@earendil-works/pi-ai/models";
@@ -68,7 +69,10 @@ export interface SessionOptions {
   env: NonNullable<HarnessOptions["env"]>;
   /** The execution profile this store serves: which toolsets its conversations may use. */
   profile: Profile;
-  /** Logs the reconcile's changes: one line per conversation whose list it rewrote. */
+  /**
+   * Logs the reconcile's changes: one line per conversation whose list it rewrote, and
+   * one per topic whose stored `bridge` toolset it retired (DEC-101).
+   */
   log: Log;
   /** The harness clock (pi-durable's `HarnessOptions.now`); a wake's env reads the same function. */
   now?: () => number;
@@ -143,8 +147,9 @@ function allowedToolsets(
 
 /**
  * Startup reconcile (design sec-3), in one commit: every conversation read before
- * any write, then the entry toolset backfill, the profile's refusals, and the
- * re-derivation of each list. A throw takes the backfill down with it.
+ * any write, then the entry toolset backfill and the `bridge` retirement (DEC-101),
+ * the profile's refusals, and the re-derivation of each list. A throw takes the
+ * backfill down with it.
  */
 async function reconcileToolsets(
   harness: Harness,
@@ -158,12 +163,18 @@ async function reconcileToolsets(
     // The index is a document read, which `ReadAfterWrite` does not cover.
     refuseUnsupported(records, await readIndexDoc(tx));
 
-    // Steps 1-2: an entry written without a toolset takes the profile's default, then the checks.
-    const { entries, topics } = await entryToolsets(
+    // Steps 1-2: an entry written without a toolset takes the profile's default, a stored
+    // `bridge` one is retired to interactive (DEC-101), then the checks.
+    const { entries, topics, retired } = await entryToolsets(
       tx,
       records.map((record) => record.id),
       policy.default,
     );
+    // Step 1's retirement, logged as it happened: `retired` names the topics it rewrote,
+    // and the rewrite is always the same pair (`liveToolset`).
+    for (const name of retired) {
+      log(`topic ${name}: toolset bridge retired, now interactive`);
+    }
     // Step 3: each list that drifted from its toolset's is rewritten and logged.
     for (const each of allowedToolsets(entries, topics, profile, policy)) {
       if (sameNames((await tx.doc(AgentDoc, each.id)).extensions, each.list)) {
