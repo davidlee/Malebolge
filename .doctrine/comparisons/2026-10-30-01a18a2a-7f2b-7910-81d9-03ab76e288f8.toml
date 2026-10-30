@@ -1,0 +1,19 @@
+schema = "doctrine.comparison-session"
+version = 3
+tombstone = []
+
+[session]
+uid = "01a18a2a-7f2b-7910-81d9-03ab76e288f8"
+date = "2026-10-30"
+
+[[judgement]]
+uid = "01a18a2a-7f2b-7910-81d9-03bf58e63439"
+seq = 0
+a = "ISS-001"
+b = "ISS-002"
+response = "prefer-b"
+domain = "value"
+frame = "equal-effort"
+form = "order"
+rater = "human"
+date = "2026-10-30"

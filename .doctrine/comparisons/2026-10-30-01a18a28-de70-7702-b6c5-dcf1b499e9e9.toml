@@ -1,0 +1,20 @@
+schema = "doctrine.comparison-session"
+version = 3
+tombstone = []
+
+[session]
+uid = "01a18a28-de70-7702-b6c5-dcf1b499e9e9"
+date = "2026-10-30"
+
+[[judgement]]
+uid = "01a18a28-de70-7702-b6c5-dd0712174445"
+seq = 0
+a = "IMP-024"
+b = "IMP-028"
+response = "equal"
+domain = "value"
+frame = "equal-effort"
+form = "order"
+rater = "human"
+note = "operator: both near-zero value"
+date = "2026-10-30"

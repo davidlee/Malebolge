@@ -24,3 +24,23 @@ The pi jail combinator in `~/flakes/agents/jailed-agents.nix`:
 
 Optional, only if the operator wants desktop notifications from the jail: bind
 the D-Bus session socket (see the notify-send ASM).
+
+## Done (2026-10-30)
+
+~/flakes 311a0c27, `agents/jailed-agents.nix` `piBridgeOptions`, applied
+wherever pi is in the jail (agent or subagent):
+
+1. `(umask 077 && mkdir -p /run/user/1000/satan/durable/room/bridge)` on the
+   host before launch, then `--ro-bind-try` that directory only.
+2. `MALEBOLGE_BRIDGE_SOCKET` forwarded when set; `XDG_RUNTIME_DIR` too, since
+   `bridgeSocketPath` derives the default from it and throws without it.
+3. `--ro-bind-try "$HOME/dev/malebolge/pi-bridge"` at
+   `~/.pi/agent/extensions/malebolge-bridge`, after the persisted-home bind.
+4. `makeJailedAgent { readOnlyLaunchDir = true; }` binds the project with
+   `--ro-bind`; no jail uses it yet.
+
+Tests in `agents/jailed-agents-test.nix` (launched argv under a fake bwrap;
+none of it in non-pi jails); `just gate` green.
+
+Rollout (operator): push nix-config, then update the `agents` input in each
+project whose pi jail should pair (`nix flake update agents`).

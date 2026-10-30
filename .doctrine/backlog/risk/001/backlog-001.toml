@@ -12,8 +12,8 @@ updated = "2026-10-24"
 tags = []
 
 [facet]                         # risk only — every field typed; seeded empty
-likelihood = ""                 # low | medium | high | critical
-impact     = ""                 # low | medium | high | critical
+likelihood = "low"
+impact = "medium"
 origin     = ""
 controls   = []
 
