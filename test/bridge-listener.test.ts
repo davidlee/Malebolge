@@ -1,19 +1,23 @@
 // SL-009 PHASE-05 VT-2 (resume, end, supersede, private socket) and VT-3 (the
 // bridge parser's reach: no attach, refusals, unfilled rows), through the real
 // listener on a private socket; PHASE-06 VT-2 adds the push (deliver) and the
-// per-entry ack. Written red first against
-// .doctrine/state/slice/009/briefs/phase-05-contract.md and
-// .doctrine/state/slice/009/briefs/phase-06-contract.md.
+// per-entry ack. SL-011 PHASE-02 adds pair binding an existing conversation
+// (VT-1 to VT-3), written red first against
+// .doctrine/state/slice/011/phase-02-brief-tests.md.
 
 import { chmod, stat } from "node:fs/promises";
 import { dirname, join } from "node:path";
+import type { ConversationId } from "@earendil-works/pi-durable";
 import { describe, expect, it, onTestFinished, vi } from "vitest";
 import { BRIDGE_LINE_MAX_BYTES, type DaemonFrame, type MessageKind } from "../pi-bridge/wire.ts";
 import { serveBridge } from "../src/bridge/listener.ts";
-import { appendOutbox } from "../src/bridge/pairing.ts";
+import { appendOutbox, hashToken } from "../src/bridge/pairing.ts";
+import { context } from "../src/context.ts";
+import { IndexDocument } from "../src/topics.ts";
 import { PrivateDirectoryRefused } from "../src/unix-socket.ts";
 import { type BridgeWorld, bridgeHost, bridgeWorld, type PiClient } from "./bridge-fixture.ts";
 import { rejection, tempDir } from "./fixtures.ts";
+import { forkConversation } from "./harness-fixture.ts";
 
 const refused = (reason: string): object => ({ type: "refused", reason });
 
@@ -375,5 +379,208 @@ describe("deliver and ack (VT-2)", () => {
       { type: "deliver", seq: 1, kind: "turn", text: "after the supersede" },
     ]);
     expect(deliveredSeqs(first.client)).toEqual([]);
+  });
+});
+
+// --- pair binds an existing conversation (SL-011 PHASE-02, VT-1 to VT-3) ------
+
+/** The conversations and topics a pair attempt must leave exactly as they were. */
+interface StoreShape {
+  ids: number[];
+  topics: string[];
+}
+
+/** The store as a refusal must leave it. */
+const shapeOf = async (world: BridgeWorld): Promise<StoreShape> => ({
+  ids: await world.allIds(),
+  topics: await world.topicNames(),
+});
+
+/** The attached set the bridge's port reports from now on. */
+const attach = (world: BridgeWorld, ids: readonly ConversationId[]): void => {
+  world.attached.splice(0, world.attached.length, ...ids);
+};
+
+/** One pair first line, its refusal asserted exactly, and the connection it closed. */
+async function refusesPair(world: BridgeWorld, frame: object, reason: string): Promise<void> {
+  const { client, reply } = await world.firstLine(frame);
+  expect(reply).toEqual({ type: "refused", reason });
+  await client.closed;
+}
+
+/** A refusal writes nothing: no conversation, no topic, and `conversation` still unpaired. */
+async function expectNoWrite(
+  world: BridgeWorld,
+  before: StoreShape,
+  conversation: string,
+): Promise<void> {
+  expect(await world.allIds()).toEqual(before.ids);
+  expect(await world.topicNames()).toEqual(before.topics);
+  expect(await world.storedPairing(conversation)).toBeUndefined();
+}
+
+describe("pair binds an existing conversation", () => {
+  it("answers paired with the conversation's id and a token, stored only as its hash", async () => {
+    const world = await bridgeWorld();
+    const target = String(world.target);
+    const before = await shapeOf(world);
+    const { client, conversation, token } = await world.pair("consult", "alpha", {
+      conversation: target,
+    });
+    expect(client.received()).toEqual([{ type: "paired", conversation: target, token }]);
+    expect(conversation).toBe(target);
+    const doc = await world.pairingOf(target);
+    expect(doc).toMatchObject({
+      tokenHash: hashToken(token),
+      posture: "consult",
+      project: "alpha",
+      ended: false,
+      nextSeq: 1,
+      outbox: [],
+      spent: 0,
+    });
+    expect(JSON.stringify(doc)).not.toContain(token);
+    // The one write is the pairing document: pair creates no topic and no conversation.
+    expect(await world.allIds()).toEqual(before.ids);
+    expect(await world.topicNames()).toEqual(before.topics);
+  });
+
+  it("stores the posture the frame carries on the bound conversation", async () => {
+    const world = await bridgeWorld();
+    const { conversation } = await world.pair("consult");
+    expect(conversation).toBe(String(world.target));
+    expect((await world.pairingOf(conversation)).posture).toBe("consult");
+  });
+
+  it("pairs a project of exactly 255 bytes, which is under the limit", async () => {
+    const world = await bridgeWorld();
+    // 127 é are 254 bytes; the trailing "a" makes 255, the longest project pair accepts.
+    const project = `${"é".repeat(127)}a`;
+    expect(Buffer.byteLength(project, "utf8")).toBe(255);
+    const { conversation } = await world.pair("delegate", project);
+    expect(conversation).toBe(String(world.target));
+    expect((await world.pairingOf(conversation)).project).toBe(project);
+  });
+
+  it("refuses an id with trailing text as not a conversation id, writing nothing", async () => {
+    const world = await bridgeWorld();
+    const before = await shapeOf(world);
+    await refusesPair(
+      world,
+      { type: "pair", posture: "delegate", project: "proj", conversation: "12x" },
+      "not a conversation id: 12x",
+    );
+    await expectNoWrite(world, before, String(world.target));
+  });
+
+  it("refuses an id no conversation answers to as no conversation 99999, writing nothing", async () => {
+    const world = await bridgeWorld();
+    const before = await shapeOf(world);
+    await refusesPair(
+      world,
+      { type: "pair", posture: "delegate", project: "proj", conversation: "99999" },
+      "no conversation 99999",
+    );
+    await expectNoWrite(world, before, String(world.target));
+  });
+
+  it("refuses a mail conversation as not interactive, writing nothing", async () => {
+    const world = await bridgeWorld();
+    await world.conversations.setTopic({ name: "inbox", toolset: "mail" });
+    const mail = String(
+      (await world.conversations.open({ kind: "topic", name: "inbox", new: false })).id,
+    );
+    const before = await shapeOf(world);
+    await refusesPair(
+      world,
+      { type: "pair", posture: "delegate", project: "proj", conversation: mail },
+      `conversation ${mail} has toolset mail, not interactive`,
+    );
+    await expectNoWrite(world, before, mail);
+  });
+
+  it("refuses an unreconciled index entry (no toolset) as no conversation N, writing nothing", async () => {
+    const world = await bridgeWorld();
+    const legacy = await world.plainConversation();
+    // What a store indexed before the reconcile backfilled toolsets holds: a topic, no toolset.
+    await world.test.harness.commit(async (tx) => {
+      const index = await tx.doc(IndexDocument);
+      index.conversations[legacy] = { topic: "default" };
+    }, context);
+    // The premise: no toolset reads as no entry at all, which is what the reconcile backfills.
+    expect(await world.entryOf(legacy)).toBeUndefined();
+    const before = await shapeOf(world);
+    await refusesPair(
+      world,
+      { type: "pair", posture: "delegate", project: "proj", conversation: legacy },
+      `no conversation ${legacy}`,
+    );
+    await expectNoWrite(world, before, legacy);
+  });
+
+  it("refuses a project longer than 255 bytes, writing nothing", async () => {
+    const world = await bridgeWorld();
+    const before = await shapeOf(world);
+    // 128 é are 128 characters but 256 bytes of UTF-8: over the limit byte-wise only.
+    await refusesPair(
+      world,
+      { type: "pair", posture: "delegate", project: "é".repeat(128) },
+      "project longer than 255 bytes",
+    );
+    await expectNoWrite(world, before, String(world.target));
+  });
+
+  it("binds the single attached conversation when the frame names none", async () => {
+    const world = await bridgeWorld();
+    const { conversation, token } = await world.pair();
+    expect(conversation).toBe(String(world.target));
+    expect(typeof token).toBe("string");
+    expect((await world.pairingOf(conversation)).posture).toBe("delegate");
+  });
+
+  it("refuses when no operator client is attached, writing nothing", async () => {
+    const world = await bridgeWorld();
+    attach(world, []);
+    const before = await shapeOf(world);
+    await refusesPair(
+      world,
+      { type: "pair", posture: "delegate", project: "proj" },
+      "no operator client is attached; name a conversation",
+    );
+    await expectNoWrite(world, before, String(world.target));
+  });
+
+  it("refuses when several conversations are attached, listing their ids ascending", async () => {
+    const world = await bridgeWorld();
+    const other = (await world.conversations.open({ kind: "new" })).id;
+    // The higher id first: the refusal names them ascending whatever order they arrive in.
+    attach(world, [other, world.target]);
+    const ascending = [other, world.target]
+      .sort((left, right) => left - right)
+      .map(String)
+      .join(", ");
+    const before = await shapeOf(world);
+    await refusesPair(
+      world,
+      { type: "pair", posture: "delegate", project: "proj" },
+      `several conversations are attached (${ascending}); name one`,
+    );
+    await expectNoWrite(world, before, String(world.target));
+  });
+
+  it("pairs the fork of an interactive conversation", async () => {
+    const world = await bridgeWorld();
+    const parent = await world.openDurable(String(world.target));
+    const fork = await forkConversation(world.test.harness, parent);
+    // The premise: a fork copies its parent's entry, toolset included, so it is interactive.
+    expect(await world.entryOf(String(fork.id))).toMatchObject({ toolset: "interactive" });
+    const { conversation } = await world.pair("delegate", "proj", {
+      conversation: String(fork.id),
+    });
+    expect(conversation).toBe(String(fork.id));
+    expect(await world.pairingOf(conversation)).toMatchObject({
+      posture: "delegate",
+      ended: false,
+    });
   });
 });

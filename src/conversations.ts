@@ -8,9 +8,8 @@
 // are its topic's, else the daemon's creation-time defaults, and its stored agent
 // settings are never rewritten; a conversation id names a conversation only inside
 // this profile's store; a topic's directory and model are read once, at creation,
-// and written only into that conversation (D1, DEC-083); no attach frame ever
-// creates a topic implicitly (DEC-016), though a bridge `pair` creates its
-// `<project>-bridge` topic explicitly (DEC-093);
+// and written only into that conversation (D1, DEC-083); no frame ever creates a
+// topic implicitly (DEC-016);
 // `cwd` is an opaque string handed to pi, confinement being the jail's (DEC-107,
 // CON-005).
 
@@ -234,10 +233,9 @@ export function topicInit(
 
 /**
  * A new ownerless conversation: model, cwd, the topic entry and its selection in one
- * commit. Exported for the bridge listener, whose `pair` creates one with its own init
- * (SL-009 design sec-3, DEC-093).
+ * commit.
  */
-export function create(
+function create(
   session: Session,
   defaults: ConversationDefaults,
   cwd: string,

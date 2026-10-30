@@ -6,13 +6,7 @@
 // directory, a 0600 socket) and the token is never stored or logged, only its hash.
 
 import type { Socket } from "node:net";
-import type {
-  Conversation,
-  ConversationId,
-  ConversationInit,
-  DocumentWatch,
-  SubmissionId,
-} from "@earendil-works/pi-durable";
+import type { ConversationId, DocumentWatch, SubmissionId } from "@earendil-works/pi-durable";
 import {
   BOUND_FRAMES,
   type BoundFrame,
@@ -20,29 +14,17 @@ import {
   FIRST_LINE_FRAMES,
   type FirstLineFrame,
   type PairedFrame,
-  type Posture,
   parseFrame,
   type RefusedFrame,
 } from "../../pi-bridge/wire.ts";
-import type { Profile } from "../config.ts";
 import { finish, write } from "../connection-reply.ts";
 import { context } from "../context.ts";
-import {
-  type ConversationDefaults,
-  type Conversations,
-  create,
-  isConversationKey,
-  topicCwd,
-  topicInit,
-} from "../conversations.ts";
+import { isConversationKey } from "../conversations.ts";
 import { messageOf } from "../message-of.ts";
-import type { ModelCatalog } from "../models.ts";
 import { boundedLineSplitter } from "../ndjson.ts";
-import { topicNameOf } from "../protocol.ts";
 import type { Log, SatanTools } from "../satan-tools.ts";
 import type { Session } from "../session.ts";
-import type { DaemonToolset } from "../toolsets.ts";
-import { isKnownTopic, readIndex } from "../topics.ts";
+import { readIndexDoc, storedEntry } from "../topics.ts";
 import { servePrivateUnix, type UnixServer } from "../unix-socket.ts";
 import { refillBridged, submitInbound } from "./inbound.ts";
 import {
@@ -62,12 +44,6 @@ import {
 export interface BridgeHost {
   /** The daemon's one session: its harness, the read and the commits. */
   session: Session;
-  /** The one topic write a `pair` makes; the conversations' other rows are not the bridge's. */
-  conversations: Pick<Conversations, "setTopic">;
-  /** The daemon's creation defaults: its model and cwd (DEC-092). */
-  defaults: ConversationDefaults;
-  profile: Profile;
-  catalog: ModelCatalog;
   /** The daemon's satan-mcp port: `notifyBestEffort`'s, for a notice that cannot be appended. */
   satan: Pick<SatanTools, "call">;
   /** The daemon's log: one line per failure the bridge swallows rather than refuses. */
@@ -232,75 +208,84 @@ const conversationKeyOf = (text: string): ConversationId | undefined => {
   return /^[0-9]+$/.test(text) && isConversationKey(id) ? id : undefined;
 };
 
-// --- pair (DEC-065, DEC-092, DEC-093) ----------------------------------------
+// --- pair (DEC-065, DEC-099, DEC-104) ---------------------------------------
 
-/** The `require` hook `pair` hands `topicInit`: the topic's chosen toolset must be the bridge's. */
-const requireBridge =
-  (name: string) =>
-  (toolset: DaemonToolset): void => {
-    if (toolset !== "bridge") {
-      throw new Error(`topic ${name} has toolset ${toolset}, not bridge`);
-    }
-  };
+/** The longest project a pairing may name: a basename's 255 bytes (`NAME_MAX`). */
+const NAME_MAX = 255;
 
 /**
- * pair's creating init: the topic's conversation (its stored model, else the daemon
- * default, and no `startedBy`), then the pairing, in the one creating commit — so a
- * refusal throws there and nothing is created.
+ * The conversation `frame` binds, or the refusal: the one it names (strict decimal),
+ * else the one operator client attached (DEC-104). Every check here comes before the
+ * commit, so a refusal writes nothing.
  */
-function bridgedInit(
+function pairTarget(
   host: BridgeHost,
-  name: string,
-  posture: Posture,
-  project: string,
-  token: string,
-): ConversationInit {
-  const topic = topicInit(host.profile, name, host.catalog, host.defaults.model, {
-    require: requireBridge(name),
-  });
-  return async (tx, conversation) => {
-    await topic(tx, conversation);
-    openPairing(await pairingDoc(tx, conversation), posture, project, token);
-  };
-}
-
-/**
- * The conversation `pair` creates: its `<project>-bridge` topic written first if the
- * index lacks it (its own commit, no cwd and no model, and an existing topic is never
- * rewritten), then one ownerless conversation in it, in the topic's directory.
- */
-async function createBridged(
-  host: BridgeHost,
-  name: string,
-  posture: Posture,
-  project: string,
-  token: string,
-): Promise<Conversation> {
-  const index = await readIndex(host.session.harness);
-  if (!isKnownTopic(index, name)) {
-    await host.conversations.setTopic({ name, toolset: "bridge" });
+  frame: Extract<FirstLineFrame, { type: "pair" }>,
+): ConversationId {
+  if (Buffer.byteLength(frame.project, "utf8") > NAME_MAX) {
+    throw new Error(`project longer than ${String(NAME_MAX)} bytes`);
   }
-  const cwd = topicCwd(index, name, host.defaults);
-  return create(host.session, host.defaults, cwd, bridgedInit(host, name, posture, project, token));
+  if (frame.conversation !== undefined) {
+    const named = conversationKeyOf(frame.conversation);
+    if (named === undefined) {
+      throw new Error(`not a conversation id: ${frame.conversation}`);
+    }
+    return named;
+  }
+  // Ascending, so the refusal names them in one order whatever order they arrived in.
+  const attached = [...new Set(host.attached())].sort((left, right) => left - right);
+  const [only, ...rest] = attached;
+  if (only === undefined) {
+    throw new Error("no operator client is attached; name a conversation");
+  }
+  if (rest.length > 0) {
+    throw new Error(
+      `several conversations are attached (${attached.map(String).join(", ")}); name one`,
+    );
+  }
+  return only;
 }
 
-/** pair: name the project's topic, create the conversation, bind it, answer with its one token. */
+/**
+ * Open the pairing on `id` in one commit: refuse a conversation the index does not
+ * list (an unreconciled entry reads as none), and one born on another toolset — so
+ * `pair` binds an interactive conversation and nothing else (DEC-099).
+ */
+async function openPairOn(
+  host: BridgeHost,
+  id: ConversationId,
+  frame: Extract<FirstLineFrame, { type: "pair" }>,
+  token: string,
+): Promise<void> {
+  await host.session.harness.commit(async (tx) => {
+    const entry = storedEntry(await readIndexDoc(tx), id);
+    if (entry === undefined) {
+      throw new Error(`no conversation ${String(id)}`);
+    }
+    if (entry.toolset !== "interactive") {
+      throw new Error(`conversation ${String(id)} has toolset ${entry.toolset}, not interactive`);
+    }
+    openPairing(await pairingDoc(tx, id), frame.posture, frame.project, token);
+  }, context);
+}
+
+/** pair: bind the conversation it names, or the single attached one, and answer with its token. */
 async function pairRow(
   turn: FirstTurn,
   frame: Extract<FirstLineFrame, { type: "pair" }>,
 ): Promise<void> {
   const { state, host } = turn;
-  // Minted before the commit, so a refused pair creates nothing and tells nothing.
+  // Minted before the commit, so a refused pair writes nothing and tells nothing.
   const token = mintToken();
-  let conversation: Conversation;
+  let id: ConversationId;
   try {
-    const name = topicNameOf(`${frame.project}-bridge`);
-    conversation = await createBridged(host, name, frame.posture, frame.project, token);
+    id = pairTarget(host, frame);
+    await openPairOn(host, id, frame, token);
   } catch (error) {
     finish(state, refused(messageOf(error)));
     return;
   }
-  await bindAndFollow(state, host, conversation.id, token);
+  await bindAndFollow(state, host, id, token);
 }
 
 // --- resume and end (DEC-065) ------------------------------------------------

@@ -22,11 +22,15 @@ export type MessageKind = "turn" | "note";
 
 // --- the client's first line -------------------------------------------------
 
-/** Pair a fresh session with the project's conversation. */
+/**
+ * Pair this session with an existing conversation: the one `conversation` names, or
+ * the one operator client attached when the frame names none (SL-011, DEC-104).
+ */
 export interface PairFrame {
   type: "pair";
   posture: Posture;
   project: string;
+  conversation?: string;
 }
 
 /** Rebind a session to a conversation it paired with before. */
@@ -169,7 +173,7 @@ const optional = <V>(spec: KeySpec<V>): KeySpec<V> => ({ ...spec, optional: true
 
 /** The first line's vocabulary (design sec-2's tables). */
 export const FIRST_LINE_FRAMES: Vocabulary<FirstLineFrame> = {
-  pair: { posture: oneOf(POSTURES), project: text },
+  pair: { posture: oneOf(POSTURES), project: text, conversation: optional(text) },
   resume: { conversation: text, token: text },
   "post-once": { conversation: text, token: text, kind: oneOf(KINDS), text },
 };

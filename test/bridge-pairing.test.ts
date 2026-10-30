@@ -32,19 +32,16 @@ import {
 import { context } from "../src/context.ts";
 import { conversations, isConversationKey } from "../src/conversations.ts";
 import { serve } from "../src/daemon.ts";
-import { writeTopicRecord } from "../src/topics.ts";
-import { bridgeHost, bridgeWorld, DEFAULT_REF, GHOST_REF } from "./bridge-fixture.ts";
+import { bridgeHost, bridgeWorld } from "./bridge-fixture.ts";
 import { lineClient, tempDir } from "./fixtures.ts";
 import {
   createConversation,
   FAUX_CATALOG,
   FAUX_MODEL,
   forkConversation,
-  NAME_RULE,
   openIndexedHarness,
   type TestHarness,
 } from "./harness-fixture.ts";
-import { FLASH_REF } from "./model-fixture.ts";
 import { WAIT } from "./wake-fixture.ts";
 
 /** The document's initial value, as the contract spells it: no pairing. */
@@ -300,132 +297,6 @@ describe("endPairing (VT-4)", () => {
     endPairing(doc);
     endPairing(doc);
     expect(doc.ended).toBe(true);
-  });
-});
-
-describe("pair, through the listener (VT-1)", () => {
-  it("creates a conversation in <project>-bridge on the bridge toolset", async () => {
-    const world = await bridgeWorld();
-    const { conversation } = await world.pair("delegate", "alpha");
-    expect(await world.entryOf(conversation)).toMatchObject({
-      topic: "alpha-bridge",
-      toolset: "bridge",
-    });
-    expect(await world.idsInTopic("alpha-bridge")).toEqual([Number(conversation)]);
-  });
-
-  it("answers paired with the conversation id and a token, stored only as its hash", async () => {
-    const world = await bridgeWorld();
-    const { client, conversation, token } = await world.pair("consult", "alpha");
-    expect(client.received()).toEqual([{ type: "paired", conversation, token }]);
-    expect(typeof conversation).toBe("string");
-    const doc = await world.pairingOf(conversation);
-    expect(doc).toMatchObject({
-      tokenHash: hashToken(token),
-      posture: "consult",
-      project: "alpha",
-      ended: false,
-      nextSeq: 1,
-      outbox: [],
-      spent: 0,
-    });
-    expect(JSON.stringify(doc)).not.toContain(token);
-  });
-
-  it("writes an absent topic with the bridge toolset, no model and no directory", async () => {
-    const world = await bridgeWorld();
-    await world.pair("delegate", "alpha");
-    expect(await world.topicRecord("alpha-bridge")).toEqual({ toolset: "bridge" });
-  });
-
-  it("takes the daemon default model when the topic names none", async () => {
-    const world = await bridgeWorld();
-    const { conversation } = await world.pair("delegate", "alpha");
-    expect(await world.modelOf(conversation)).toBe(DEFAULT_REF);
-  });
-
-  it("takes the topic's model when it names one", async () => {
-    const world = await bridgeWorld();
-    await world.conversations.setTopic({
-      name: "alpha-bridge",
-      toolset: "bridge",
-      model: FLASH_REF,
-    });
-    const { conversation } = await world.pair("delegate", "alpha");
-    expect(await world.modelOf(conversation)).toBe(FLASH_REF);
-  });
-
-  it("reuses an existing bridge topic without rewriting it, and a second pairing is a second conversation", async () => {
-    const world = await bridgeWorld();
-    await world.conversations.setTopic({
-      name: "alpha-bridge",
-      toolset: "bridge",
-      cwd: "/work/alpha",
-      model: FLASH_REF,
-    });
-    const first = await world.pair("delegate", "alpha");
-    const second = await world.pair("consult", "alpha");
-    expect(second.conversation).not.toBe(first.conversation);
-    expect(second.token).not.toBe(first.token);
-    expect(await world.idsInTopic("alpha-bridge")).toHaveLength(2);
-    expect(await world.topicRecord("alpha-bridge")).toEqual({
-      toolset: "bridge",
-      cwd: "/work/alpha",
-      model: FLASH_REF,
-    });
-  });
-
-  it("refuses a stored model the catalog lacks, creating no conversation", async () => {
-    const world = await bridgeWorld();
-    // Written past setTopic's own catalog check, as an older store might hold it.
-    await writeTopicRecord(world.test.harness, "alpha-bridge", {
-      toolset: "bridge",
-      model: GHOST_REF,
-    });
-    const before = await world.allIds();
-    const { client, reply } = await world.firstLine({
-      type: "pair",
-      posture: "delegate",
-      project: "alpha",
-    });
-    expect(reply).toEqual({ type: "refused", reason: `unknown model ${GHOST_REF}` });
-    await client.closed;
-    expect(await world.idsInTopic("alpha-bridge")).toEqual([]);
-    expect(await world.allIds()).toEqual(before);
-  });
-
-  it("refuses a topic of that name on another toolset, creating nothing and rewriting nothing", async () => {
-    const world = await bridgeWorld();
-    await world.conversations.setTopic({ name: "alpha-bridge", toolset: "interactive" });
-    const before = await world.allIds();
-    const { client, reply } = await world.firstLine({
-      type: "pair",
-      posture: "delegate",
-      project: "alpha",
-    });
-    expect(reply).toEqual({
-      type: "refused",
-      reason: "topic alpha-bridge has toolset interactive, not bridge",
-    });
-    await client.closed;
-    expect(await world.topicRecord("alpha-bridge")).toEqual({ toolset: "interactive" });
-    expect(await world.idsInTopic("alpha-bridge")).toEqual([]);
-    expect(await world.allIds()).toEqual(before);
-  });
-
-  it("refuses a project that breaks the topic rule, creating no topic", async () => {
-    const world = await bridgeWorld();
-    const topicsBefore = await world.topicNames();
-    const before = await world.allIds();
-    const { client, reply } = await world.firstLine({
-      type: "pair",
-      posture: "delegate",
-      project: "Bad Project",
-    });
-    expect(reply).toEqual({ type: "refused", reason: NAME_RULE });
-    await client.closed;
-    expect(await world.topicNames()).toEqual(topicsBefore);
-    expect(await world.allIds()).toEqual(before);
   });
 });
 

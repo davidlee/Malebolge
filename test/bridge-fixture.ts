@@ -43,9 +43,6 @@ export const DEFAULT_REF = refOf(FAUX_MODEL);
 /** The refs the catalog stub knows; any other is `unknown model <ref>`. */
 export const BRIDGE_CATALOG = catalogOf(DEFAULT_REF, FLASH_REF);
 
-/** A ref the catalog stub lacks. */
-export const GHOST_REF = "gateway/ghost";
-
 const DEFAULTS: ConversationDefaults = { model: FAUX_MODEL, cwd: process.cwd() };
 
 /** One satan-mcp call the bridge made, as `notifyBestEffort` passes its port. */
@@ -65,8 +62,13 @@ export interface BridgeHostWorld {
   /** Every line the bridge logged, in order. */
   logLines: readonly string[];
   /**
+   * The interactive conversation `pair` binds when the frame names none (SL-011):
+   * created here, reconciled, so a test starts from the shape a real store has.
+   */
+  target: ConversationId;
+  /**
    * The conversations operator clients are attached to, as the bridge's `attached`
-   * port reads it: fixture-owned and mutable, empty until a test fills it.
+   * port reads it: fixture-owned and mutable, the one target until a test says otherwise.
    */
   attached: ConversationId[];
 }
@@ -79,8 +81,11 @@ export async function bridgeHost(): Promise<BridgeHostWorld> {
   const clock = fakeClock(1_790_000_000_000);
   const satanCalls: BridgeSatanCall[] = [];
   const logLines: string[] = [];
+  // The one interactive conversation every pair test starts from (SL-011): a new
+  // ownerless conversation on the room profile, so its index entry says interactive.
+  const target = await made.open({ kind: "new" });
   // No daemon socket stands behind these tests: the attached set is theirs to set.
-  const attached: ConversationId[] = [];
+  const attached: ConversationId[] = [target.id];
   const log: Log = (text): void => {
     logLines.push(text);
   };
@@ -92,16 +97,12 @@ export async function bridgeHost(): Promise<BridgeHostWorld> {
   };
   const host: BridgeHost = {
     session: test,
-    conversations: made,
-    defaults: DEFAULTS,
-    profile: "room",
-    catalog: BRIDGE_CATALOG,
     satan,
     log,
     now: clock.now,
     attached: () => attached,
   };
-  return { test, conversations: made, host, satanCalls, logLines, attached };
+  return { test, conversations: made, host, satanCalls, logLines, target: target.id, attached };
 }
 
 /** A fake pi: frames out, daemon frames in (each checked against the daemon vocabulary). */
@@ -159,6 +160,18 @@ export interface FirstReply {
   reply: DaemonFrame;
 }
 
+/**
+ * What a `pair` may depart from the fixture's default in (SL-011): the frame's own
+ * `conversation`, and the attached set the bridge's port reads. Without either, the
+ * frame names no conversation and the one target is attached.
+ */
+export interface PairOptions {
+  /** The `conversation` key the frame carries; absent sends none at all. */
+  conversation?: string;
+  /** The attached set, replacing the fixture's contents before the frame is sent. */
+  attached?: readonly ConversationId[];
+}
+
 export interface BridgeWorld extends BridgeHostWorld {
   /** `<tmp>/room/bridge/bridge.sock`: the daemon creates the two directories. */
   socketPath: string;
@@ -167,7 +180,7 @@ export interface BridgeWorld extends BridgeHostWorld {
   /** Connect, send `frame` as the first line, and read the first answer. */
   firstLine: (frame: object | string) => Promise<FirstReply>;
   /** A successful `pair`: the connection, the conversation id and the token. */
-  pair: (posture?: Posture, project?: string) => Promise<Pairing>;
+  pair: (posture?: Posture, project?: string, options?: PairOptions) => Promise<Pairing>;
   /** A `resume` first line and its answer. */
   resume: (conversation: string, token: string) => Promise<FirstReply>;
   /** The pairing document of `conversation`, read in a commit. */
@@ -205,7 +218,7 @@ function conversationIdOf(conversation: string): ConversationId {
 /** The listener on a fresh private socket, with inspection helpers; all closed when the test ends. */
 export async function bridgeWorld(): Promise<BridgeWorld> {
   const base = await bridgeHost();
-  const { test, host } = base;
+  const { test, host, attached } = base;
   const { dir, cleanup } = await tempDir();
   onTestFinished(cleanup);
   const socketPath = join(dir, "room", "bridge", "bridge.sock");
@@ -228,8 +241,15 @@ export async function bridgeWorld(): Promise<BridgeWorld> {
     socketPath,
     connect,
     firstLine,
-    pair: async (posture = "delegate", project = "proj"): Promise<Pairing> => {
-      const { client, reply } = await firstLine({ type: "pair", posture, project });
+    pair: async (posture = "delegate", project = "proj", options = {}): Promise<Pairing> => {
+      if (options.attached !== undefined) {
+        attached.splice(0, attached.length, ...options.attached);
+      }
+      const frame =
+        options.conversation === undefined
+          ? { type: "pair", posture, project }
+          : { type: "pair", posture, project, conversation: options.conversation };
+      const { client, reply } = await firstLine(frame);
       if (reply.type !== "paired" || reply.token === undefined) {
         throw new Error(`pair was not answered with a token: ${JSON.stringify(reply)}`);
       }

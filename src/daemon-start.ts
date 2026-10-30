@@ -282,25 +282,11 @@ const serveOptionsOf = (
 /** What the bridge listener reads: the session's one harness and the daemon's own ports (SL-009 sec-2). */
 const bridgeHostOf = (
   session: Session,
-  conversations: Conversations,
-  defaults: ConversationDefaults,
-  config: Config,
-  catalog: ModelCatalog,
   satan: Pick<SatanTools, "call">,
   log: Log,
   now: () => number,
   attached: () => readonly ConversationId[],
-): BridgeHost => ({
-  session,
-  conversations,
-  defaults,
-  profile: config.execution.profile,
-  catalog,
-  satan,
-  log,
-  now,
-  attached,
-});
+): BridgeHost => ({ session, satan, log, now, attached });
 
 /**
  * The daemon's one stop, in reverse of the start: its sockets, the store, the
@@ -408,9 +394,7 @@ export async function startDaemon(config: Config, deps: StartDeps): Promise<Daem
         wakes.bindLate({ harness: opened.harness, conversations: shared });
         threads.bindLate({ harness: opened.harness });
         conversationsReady.resolve(shared);
-        bridgeHost.resolve(
-          bridgeHostOf(opened, shared, defaults, config, catalog, satan, log, now, attached),
-        );
+        bridgeHost.resolve(bridgeHostOf(opened, satan, log, now, attached));
       },
     });
     await startRoomTasks(config.execution.profile, wakes.deps, threads.deps, session, task);
