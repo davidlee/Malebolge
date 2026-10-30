@@ -628,12 +628,16 @@ tool.
 
 | precondition | checked from | refusal text (after the `malebolge: ` prefix) |
 |---|---|---|
-| the process reaches no network | `/sys/class/net` lists only `lo` | `mail refused: this process can reach the network` |
+| the process reaches no network | `/proc/net/dev` lists only `lo` | `mail refused: this process can reach the network` |
 | the interface list can be read | the same read | `mail refused: cannot list network interfaces` |
 | Jev's credentials directory is named | `MALEBOLGE_SCREWTAPE_CREDENTIALS` set and absolute | `mail refused: MALEBOLGE_SCREWTAPE_CREDENTIALS is not set` |
 
 One check at start suffices for the network: a process cannot leave its
-network namespace without privilege. Checks are pure over their inputs:
+network namespace without privilege. `/proc/net/dev` lists the reading
+process's own network namespace; a sysfs bound into a `--unshare-net` jail
+reflects the host's. A listing that names no interface counts as
+unreadable, since every namespace holds `lo`. Checks are pure over their
+inputs:
 
 ```ts
 /** The first failed precondition's refusal, or undefined. */
@@ -643,7 +647,8 @@ export function mailRefusal(facts: {
 }): string | undefined;
 ```
 
-`mailPart` reads the facts (`readdirSync("/sys/class/net")`, the config)
+`mailPart` reads the facts (`readFileSync("/proc/net/dev")` through the
+pure `interfaceNamesOf`, the config)
 and passes the result into `MailDeps` as `refusal`. `mailTool` returns it,
 as an error result with the `malebolge: ` prefix (§ Framing), before
 argument checks. Precondition refusals are the
@@ -712,7 +717,11 @@ knows nothing of the bridge.
 
 A dead bridge, a missing key file, or a gateway that refuses degrades to
 `unavailable`/`failed` items, withheld and counted in the header; only an
-unset variable refuses every call (§ Preconditions).
+unset variable refuses every call (§ Preconditions). The `127.0.0.1:4000`
+bridge predates this slice and is shared with the room model
+(`gateway-models.json` `baseUrl`): a dead bridge is a room outage. The
+degraded mail state above is therefore Jev unreachable while the model is
+up.
 
 <!-- doctrine:section sec-6 -->
 ## One tool call, end to end
@@ -771,12 +780,12 @@ export function projectListItem(summary: Summary, classified: Classification, he
 export function projectThreadItem(entry: ThreadItem, classified: Classification | undefined): ProjectedItem;
 export function projectNew(read: ReadData, classified: Classification, maxBytes: number, heldBack?: boolean): ProjectedItem;
 export function projectRead(read: ReadData, classified: Classification, maxBytes: number): ProjectedItem;
-/** `size` only when `item` is a read; held-back and `in_store` flags as the shown projector writes them. */
+/** Held-back, `in_store` and `size` flags as the shown projector writes them; `mail_new` and `mail_read` pass `size`. */
 export function projectWithheld(
   item: Summary | ReadData,
   outcome: ClassifyOutcome,
   withheld: Withheld,
-  flags: { heldBack?: boolean; inStore?: boolean },
+  flags: { heldBack?: boolean; inStore?: boolean; size?: number },
 ): ProjectedItem;
 ```
 
@@ -899,8 +908,10 @@ room mail conversation:
 2. a self-sent, agent-directed mail is withheld and the agent names it with
    its reason;
 3. `mail_report` logs to the journal, and the message is withheld after;
-4. with the bridge stopped, items are unclassified and withheld, the reason
-   in the header.
+4. Jev unreachable while the model is up: items are unclassified and
+   withheld, the reason in the header. Observed by VT (PHASE-02 VT-2,
+   PHASE-05 VT-2), not live, because stopping the bridge stops the room
+   (operator's choice, 2026-10-30).
 
 <!-- doctrine:section sec-9 -->
 ## Governance impact and open items

@@ -180,12 +180,13 @@ slips are left to red/green tests; the next review is of the plan.
 
 ## Harvest
 <!-- single-copy: updated in place each harvest; ids only, never restated content -->
-fresh-as-of: 2026-10-30 · reconcile (RV-028 done) · 38a3c8a + audit commit
+fresh-as-of: 2026-10-30 · close · reconcile applied (RV-028 outcome)
 
 ### Produced
 - PHASE-01..07 done (commits 616f2ec..d8d2466, /proc fix cc52b22); PHASE-08 VH-1 run live 2026-10-30 (steps 1–3 pass, step 4 by VT)
 - RV-028 audit: F-2, F-3, F-10 fixed; reconciliation brief for design.md § Preconditions, § One tool call, § Reaching Jev, § Verification, slice-007.md risks, DEC-049
 - minted: IMP-028 — default mail_new reports a max_bytes clamp
+- reconciled: design.md (4 sections), slice-007.md risks, DEC-049 choice via knowledge edit; REV-003 abandoned (a DEC is not a REV target)
 
 ### Learned
 - mem.fact.malebolge.screwtape-classify-window — classify strips PII before its byte cut

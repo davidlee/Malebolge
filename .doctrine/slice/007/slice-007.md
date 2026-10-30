@@ -114,6 +114,8 @@ DEC-060). Remaining:
 - **Risk:** Jev answers are adversarially influenceable; they are advice.
   Thresholds are uncalibrated until IMP-003.
 - **Risk:** a Jev outage withholds all mail, loudly, until Jev returns.
+  A bridge outage takes the whole room down, since the room model shares
+  the bridge.
 - **Dependency:** the `seen`-dependent work builds against screwtape's
   README contract and ships after screwtape SL-005 closes. A deployed
   screwtape without `seen` is a contract violation, so every item is

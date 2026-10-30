@@ -132,3 +132,40 @@ goes to /reconcile.
 
 Off-surface, noted only: plan.toml PHASE-04 EX-3 names `/sys/class/net`.
 Plan criteria are immutable, so it stays as history.
+
+## Reconciliation Outcome
+
+Applied 2026-10-30 with the operator's agreement.
+
+### Direct edits applied
+
+- design.md § Preconditions (F-4): the table's "checked from" column and the
+  `mailPart` paragraph name `/proc/net/dev` read through `interfaceNamesOf`.
+  Added: it lists the process's own netns, while a sysfs in a `--unshare-net`
+  jail reflects the host's; an empty listing counts as unreadable.
+- design.md § One tool call (F-5): the `projectWithheld` flags gain `size?`,
+  passed by `mail_new` and `mail_read`.
+- design.md § Reaching Jev from the jail (F-11): the `:4000` bridge is shared
+  with the room model, so a dead bridge is a room outage; the degraded mail
+  state is Jev unreachable while the model is up.
+- design.md § Verification (F-11): VH step 4 is observed by VT (PHASE-02
+  VT-2, PHASE-05 VT-2), per the operator's 2026-10-30 choice.
+- slice-007.md § Risks (F-11): a bridge outage takes the whole room down.
+
+### Governance
+
+- DEC-049 (F-4): choice text now says the extension reads `/proc/net/dev`,
+  with the reason; a reconciliation note was appended to its body. Landed
+  with `doctrine knowledge edit`, not a REV: REV rows target only
+  SPEC/PRD/REQ/ADR/POL/STD and refused a DEC. REV-003, opened for it, is
+  abandoned with that rationale and holds no rows.
+
+### Not written
+
+- plan.toml PHASE-04 EX-3 still names `/sys/class/net`. Plan criteria are
+  immutable, so it stays as history.
+- F-1, F-2, F-3, F-10: fixed in code during audit. F-6, F-7: follow-ups
+  (IMP-028, CHR-001). F-8: aligned. F-9: tolerated. Each rationale is in its
+  disposition.
+
+Reconcile pass complete — handoff to /close.
