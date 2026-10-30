@@ -107,7 +107,7 @@ describe("openPairing and isBridged (VT-4)", () => {
     expect(JSON.stringify(doc)).not.toContain("secret-token");
   });
 
-  it("resets a used document to a fresh pairing", () => {
+  it("resets a used document to a fresh pairing and keeps nextSeq", () => {
     const doc = withEntries(3);
     doc.spent = 4;
     endPairing(doc);
@@ -117,7 +117,7 @@ describe("openPairing and isBridged (VT-4)", () => {
       posture: "delegate",
       project: "other",
       ended: false,
-      nextSeq: 1,
+      nextSeq: 4,
       outbox: [],
       spent: 0,
     });

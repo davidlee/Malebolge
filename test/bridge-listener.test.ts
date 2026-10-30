@@ -3,7 +3,9 @@
 // listener on a private socket; PHASE-06 VT-2 adds the push (deliver) and the
 // per-entry ack. SL-011 PHASE-02 adds pair binding an existing conversation
 // (VT-1 to VT-3), written red first against
-// .doctrine/state/slice/011/phase-02-brief-tests.md.
+// .doctrine/state/slice/011/phase-02-brief-tests.md. SL-011 PHASE-03 adds the
+// re-pair supersede (VT-2) and the reopened-pairing line (VT-3), written red first
+// against .doctrine/state/slice/011/phase-03-brief-tests.md.
 
 import { chmod, stat } from "node:fs/promises";
 import { dirname, join } from "node:path";
@@ -11,7 +13,7 @@ import type { ConversationId } from "@earendil-works/pi-durable";
 import { describe, expect, it, onTestFinished, vi } from "vitest";
 import { BRIDGE_LINE_MAX_BYTES, type DaemonFrame, type MessageKind } from "../pi-bridge/wire.ts";
 import { serveBridge } from "../src/bridge/listener.ts";
-import { appendOutbox, hashToken } from "../src/bridge/pairing.ts";
+import { appendOutbox, hashToken, openPairing } from "../src/bridge/pairing.ts";
 import { context } from "../src/context.ts";
 import { IndexDocument } from "../src/topics.ts";
 import { PrivateDirectoryRefused } from "../src/unix-socket.ts";
@@ -582,5 +584,47 @@ describe("pair binds an existing conversation", () => {
       posture: "delegate",
       ended: false,
     });
+  });
+});
+
+// --- replacing a pairing (SL-011 PHASE-03, VT-2 and VT-3) ---
+
+describe("replacing a pairing (VT-2, VT-3)", () => {
+  it("a re-pair replaces the pairing: the old connection is superseded by a new pairing and the seq continues (RV-029 F-15)", async () => {
+    const world = await bridgeWorld();
+    const first = await world.pair();
+    await append(world, first.conversation, "one");
+    await append(world, first.conversation, "two");
+    await waitForDeliveries(first.client, [1, 2]);
+    // Read the two deliveries, so the refusal is the next frame the old client reads.
+    expect(await first.client.next()).toMatchObject({ type: "deliver", seq: 1 });
+    expect(await first.client.next()).toMatchObject({ type: "deliver", seq: 2 });
+    // The same default target through the attached set: the same conversation, a new token.
+    const second = await world.pair();
+    expect(second.conversation).toBe(first.conversation);
+    expect(second.token).not.toBe(first.token);
+    expect(await first.client.next()).toEqual(refused("superseded by a new pairing"));
+    await first.client.closed;
+    const stale = await world.resume(second.conversation, first.token);
+    expect(stale.reply).toEqual(refused("bad token"));
+    await stale.client.closed;
+    // The seq continues across the re-pair: the old pairing left nextSeq at 3.
+    await append(world, second.conversation, "three");
+    await waitForDeliveries(second.client, [3]);
+  });
+
+  it("a line on a connection whose pairing was reopened under a new token is refused, closed and nothing mutated (RV-029 F-16)", async () => {
+    const world = await bridgeWorld();
+    const { client, conversation } = await world.pair();
+    // Reopened behind the listener's back, under a token this connection never held.
+    await world.updatePairing(conversation, (doc) => {
+      openPairing(doc, "consult", "other", "another-token");
+    });
+    const before = await world.storedPairing(conversation);
+    await client.send({ type: "end" });
+    expect(await client.next()).toEqual(refused("superseded by a new pairing"));
+    await client.closed;
+    // Nothing mutated, in particular ended stays false: the line acted not at all.
+    expect(await world.storedPairing(conversation)).toEqual(before);
   });
 });

@@ -111,7 +111,11 @@ export const hashToken = (token: string): string => digest(token).toString("hex"
 const sameHash = (stored: string, token: string): boolean =>
   timingSafeEqual(digest(stored), digest(hashToken(token)));
 
-/** Open a pairing on `doc`: a fresh token hash, posture and project, and nothing else left over. */
+/**
+ * Open a pairing on `doc`: a fresh token hash, posture and project, an empty outbox and
+ * a whole budget. `nextSeq` is kept, so the seq continues across a replacement and a
+ * seq is never reused in a conversation (DEC-066, DEC-106).
+ */
 export function openPairing(
   doc: PairingDoc,
   posture: Posture,
@@ -122,7 +126,6 @@ export function openPairing(
   doc.posture = posture;
   doc.project = project;
   doc.ended = false;
-  doc.nextSeq = 1;
   doc.outbox = [];
   doc.spent = 0;
 }

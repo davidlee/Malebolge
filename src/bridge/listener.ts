@@ -32,6 +32,7 @@ import {
   type Check,
   checkToken,
   endPairing,
+  hashToken,
   mintToken,
   openPairing,
   type PairingDoc,
@@ -87,6 +88,17 @@ interface Connection {
   watch?: DocumentWatch<PairingDoc>;
   /** The highest seq delivered on this connection: a change sends only what is above it. */
   sent: number;
+  /** The pairing's token hash as this connection bound it: a reopened pairing no longer matches. */
+  tokenHash?: string;
+}
+
+/**
+ * What `bind` needs from the row that binds: the close reason the connection it
+ * supersedes is told, and the pairing's token hash this connection now holds (DEC-103).
+ */
+interface Binding {
+  reason: string;
+  tokenHash: string;
 }
 
 /** What a first-line row acts on: the connection and the host its line waited for. */
@@ -120,14 +132,22 @@ const endedRefusal = (frame: BoundFrame): RefusedFrame =>
 
 // --- bindings (DEC-065) ------------------------------------------------------
 
-/** Record `state` as `conversation`'s connection, telling and closing the one it supersedes. */
-function bind(state: Connection, conversation: ConversationId): void {
+/** Both supersede reasons, each told to the connection a newer one replaces (DEC-103). */
+const SUPERSEDED_BY_PAIRING = "superseded by a new pairing";
+const SUPERSEDED_BY_CONNECTION = "superseded by a newer connection";
+
+/**
+ * Record `state` as `conversation`'s connection under `binding`'s token hash, closing
+ * the one it supersedes with `binding`'s reason.
+ */
+function bind(state: Connection, conversation: ConversationId, binding: Binding): void {
   const { bindings } = state.listener;
   const previous = bindings.get(conversation);
   if (previous !== undefined && previous !== state) {
-    finish(previous, refused("superseded by a newer connection"));
+    finish(previous, refused(binding.reason));
   }
   state.bound = conversation;
+  state.tokenHash = binding.tokenHash;
   bindings.set(conversation, state);
 }
 
@@ -141,17 +161,18 @@ function unbind(state: Connection): void {
 }
 
 /**
- * Bind `state` to `conversation`, answer `paired`, then follow its pairing: deliver
- * what the outbox already holds, and every entry a later commit appends. A pairing
- * no commit ever wrote is not watched.
+ * Bind `state` to `conversation` under `binding`, answer `paired` (with `token`, for a
+ * pair), then follow its pairing: deliver what the outbox already holds, and every entry
+ * a later commit appends. A pairing no commit ever wrote is not watched.
  */
 async function bindAndFollow(
   state: Connection,
   host: BridgeHost,
   conversation: ConversationId,
+  binding: Binding,
   token?: string,
 ): Promise<void> {
-  bind(state, conversation);
+  bind(state, conversation, binding);
   state.sent = 0;
   write(state, paired(conversation, token));
   const watch = await watchPairing(host.session.harness, conversation);
@@ -285,7 +306,13 @@ async function pairRow(
     finish(state, refused(messageOf(error)));
     return;
   }
-  await bindAndFollow(state, host, id, token);
+  await bindAndFollow(
+    state,
+    host,
+    id,
+    { reason: SUPERSEDED_BY_PAIRING, tokenHash: hashToken(token) },
+    token,
+  );
 }
 
 // --- resume and end (DEC-065) ------------------------------------------------
@@ -306,7 +333,10 @@ async function resumeRow(
     finish(state, refused(check.reason));
     return;
   }
-  await bindAndFollow(state, host, conversation);
+  await bindAndFollow(state, host, conversation, {
+    reason: SUPERSEDED_BY_CONNECTION,
+    tokenHash: hashToken(frame.token),
+  });
 }
 
 /** ack: forget the entry with exactly `seq`; no reply, either way (an unknown or repeated seq is a no-op). */
@@ -439,7 +469,8 @@ async function firstLine(state: Connection, host: BridgeHost, line: string): Pro
 
 /**
  * A bound line: parse the bound vocabulary (a refusal is written and the connection
- * STAYS open), re-read the pairing — an ended one refuses every row — then dispatch.
+ * STAYS open), then re-read the pairing — one reopened under another token finishes the
+ * connection (DEC-103), an ended one refuses every row but `end` — then dispatch.
  */
 async function boundLine(
   state: Connection,
@@ -454,6 +485,11 @@ async function boundLine(
   }
   const frame = parsed.frame;
   const doc = await pairingSnapshot(host.session.harness, conversation);
+  // A pairing reopened under another token (or gone) is no longer this connection's.
+  if (doc?.tokenHash !== state.tokenHash) {
+    finish(state, refused(SUPERSEDED_BY_PAIRING));
+    return;
+  }
   if (doc?.ended === true && frame.type !== "end") {
     write(state, endedRefusal(frame));
     return;
