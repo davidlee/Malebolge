@@ -5,10 +5,10 @@ id = 22
 slug = "mail-classify-tool"
 title = "Mail tools call screwtape classify: classified mail_new"
 kind = "improvement"
-status = "open"
-resolution = ""                 # seeded empty so `backlog edit` sets it in place
+status = "resolved"
+resolution = "fixed"
 created = "2026-10-28"
-updated = "2026-10-28"
+updated = "2026-10-30"
 tags = ["jev", "mail", "screwtape"]
 
 # outbound-only. Cross-kind structural edges (e.g. references with a role
