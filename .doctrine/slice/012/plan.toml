@@ -60,8 +60,10 @@ exit_criteria = [
   { id = "EX-3", text = "foreignLine and messageIdUsable implement design sec-5's rules over code points; test/fixtures/text-rules.json holds the full case set (bidi override, Cc/Cf/Zl/Zp runs, whitespace collapse, truncation with `…`, every Message-ID refusal: empty, over 998, whitespace, `<`, `>`, `\"`, `\\`, leading `/`, non-ASCII) in the shape design sec-5 gives." },
   { id = "EX-4", text = "snapshotOf builds a PlanMessage from a screwtape read alone: header text through foreignLine with caps 128/254/200, first `from` or null, withheld as {reason, detail} with no score. buildPlan assembles the Plan (agent lines in order, the `none` line last when present); planIdOf gives `<conversation>-<YYYYMMDD>T<HHMMSSmmm>Z` UTC and throws on a conversation outside [A-Za-z0-9_-]." },
   { id = "EX-5", text = "`just check` green, coverage gate included." },
+  { id = "EX-6", text = "test/fixtures/mail-plans/basic.json is a golden file: buildPlan's output for a fixture input covering every action, a target, a withheld message and the none line. The TS suite asserts equality, so the elisp suite (PHASE-05) reads JSON the daemon actually writes." },
 ]
 verification = [
+  { id = "VT-3", expects = "golden: buildPlan over the fixture input equals test/fixtures/mail-plans/basic.json", test_file = "test/mail/plans.test.ts", keywords = ["mail-plans/basic.json", "buildPlan"], waived = false },
   { id = "VT-1", expects = "planInputOf refusal classes, imapPathOf (sec-3's four rows, missing parent, cycle), snapshotOf, buildPlan, planIdOf", test_file = "test/mail/plans.test.ts", keywords = ["planInputOf", "imapPathOf", "snapshotOf", "buildPlan", "planIdOf"], waived = false },
   { id = "VT-2", expects = "foreignLine and messageIdUsable iterate every case in the shared fixture", test_file = "test/mail/plans.test.ts", keywords = ["text-rules.json", "foreignLine", "messageIdUsable"], waived = false },
   { id = "VA-1", text = "src/mail/plans.ts imports no I/O (`rg -n 'node:fs|node:child_process' src/mail/plans.ts` is empty)." },
@@ -117,7 +119,7 @@ requirements = []
 [[phase]]
 id        = "PHASE-05"
 name      = "Elisp: validating reader, text rules, renderer, plan mode, act log, line status"
-objective = "emacs/malebolge-mail.el, feature `malebolge-mail`, without Gnus: settings, the two shared text rules over test/fixtures/text-rules.json, the org rule, the validating reader, the act record and append, line status, the pure renderer, malebolge-mail-plan-mode with malebolge-mail-plan / follow / g / dismiss (design sec-5, sec-6, sec-8 record and status)."
+objective = "emacs/malebolge-mail.el, feature `malebolge-mail`, without Gnus: settings, the two shared text rules over test/fixtures/text-rules.json, the org rule, the validating reader, the act record and append, line status, the pure renderer, malebolge-mail-plan-mode with malebolge-mail-plan / follow / g / dismiss (design sec-5, sec-6, sec-8 record and status). Fixture plans start from PHASE-02's golden test/fixtures/mail-plans/basic.json; invalid variants are derived from it in the test."
 entrance_criteria = [
   { id = "EN-1", text = "PHASE-02 completed (text-rules.json exists). PHASE-04 need not be complete: the elisp reads fixture plans." },
   { id = "EN-2", text = "Re-grep: the ERT conventions of test/malebolge-ert.el and the justfile `ert` recipe; `org-link-make-string`, `org-gnus-follow-link` in the installed Org." },
@@ -126,7 +128,7 @@ exit_criteria = [
   { id = "EX-1", text = "malebolge-mail--foreign-line and malebolge-mail--message-id-p pass every case in test/fixtures/text-rules.json; malebolge-mail--org-safe applies design sec-5's three substitutions; malebolge-mail--imap-path-p implements the path rule." },
   { id = "EX-2", text = "malebolge-mail--plan-of refuses wrong format/version, unknown action, bad line numbering, every Message-ID fixture case, a bad path, a bad id/conversation, and an id not equal to the file stem, signalling malebolge-mail-invalid-plan; malebolge-mail-plan skips an invalid newest plan for the next newest and lists only `*.json` not starting with `.`, outside dismissed/." },
   { id = "EX-3", text = "malebolge-mail--render PLAN ACTS SERVER is pure and produces design sec-6's first version: risk order, counts, ⟪…⟫ rationale after both rules, sender grouping past 10 with withheld rows apart, flag/unflag notes, plan notes for withheld_missing/overflow; links only via org-link-make-string with `malebolge-mail:<line>.<n>` targets carrying the `malebolge-mail-link` property." },
-  { id = "EX-4", text = "malebolge-mail-plan-mode is derived from org-mode, read-only, visits no file, keeps the plan and plan file buffer-local; RET is bound to a placeholder that PHASE-06 replaces; C-c C-o and mouse-1 run malebolge-mail-follow, which refuses any link without the property; `g` re-renders keeping the line; `d` renames malebolge-mail--plan-file into dismissed/ and appends a `dismissed` record." },
+  { id = "EX-4", text = "malebolge-mail-plan-mode is derived from org-mode, read-only, visits no file, keeps the plan and plan file buffer-local; RET is left for PHASE-06; C-c C-o and mouse-1 run malebolge-mail-follow, which refuses any link without the property; `g` re-renders keeping the line; `d` renames malebolge-mail--plan-file into dismissed/ and appends a `dismissed` record." },
   { id = "EX-5", text = "malebolge-mail--act-record is pure; malebolge-mail--append-act uses write-region append and display-warning on failure; malebolge-mail--line-status gives not_applied / applied / failed / varied with design sec-8's precedence and companion-record rule." },
   { id = "EX-6", text = "The justfile `ert` recipe loads test/malebolge-mail-ert.el and byte-compiles emacs/malebolge-mail.el with warnings as errors; `just ert` green." },
 ]
@@ -172,9 +174,9 @@ entrance_criteria = [
   { id = "EN-2", text = "Re-grep `mkJailedMalebolge` in ~/dev/satan/flake.nix and the malebolge feature in ~/flakes/features/satan/malebolge.nix; the operator agrees to the cross-repo edits before they are made." },
 ]
 exit_criteria = [
-  { id = "EX-1", text = "~/dev/satan flake.nix binds the plans directory read-write into the room jail and sets MALEBOLGE_MAIL_PLANS; ~/flakes passes the directory (suggested ~/.local/state/malebolge/mail-plans). Each committed in its own repo." },
+  { id = "EX-1", text = "~/dev/satan flake.nix binds the plans directory read-write into the room jail and sets MALEBOLGE_MAIL_PLANS; ~/flakes passes the directory (suggested ~/.local/state/malebolge/mail-plans). The host directory exists before the jail starts (a bind of a missing source fails). Each committed in its own repo." },
   { id = "EX-2", text = "README.md and docs/internals.md say seven mail tools (fixing the pre-existing `five`), that one writes plans outside every SATAN root, document MALEBOLGE_MAIL_PLANS, the jail bind, and loading `malebolge-mail` with malebolge-mail-plans-directory." },
-  { id = "EX-3", text = "The persona replacement sentence (design sec-9) is handed to the operator for ~/satan-corpus prompts/mail.txt; this slice does not edit the corpus." },
+  { id = "EX-3", text = "The persona replacement sentence (design sec-9) is handed to the operator for ~/satan-corpus prompts/mail.txt; this slice does not edit the corpus. The operator has made that edit before VH-1, or the agent may decline to propose." },
   { id = "EX-4", text = "VH-1 passed; a failure re-enters the owning phase." },
 ]
 verification = [

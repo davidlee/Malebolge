@@ -29,7 +29,13 @@ PHASE-01 probe (VH) ─┬─► 02 plans.ts ─► 03 store+config ─► 04 ma
   which both suites read; the elisp cannot start its rules without it.
   PHASE-03 is the only I/O the daemon gains (one writer) plus the setting that
   gates it. PHASE-04 composes them and is the largest TS phase because it also
-  threads `api` and withheld tracking through the existing read tools.
+  threads `api` and withheld tracking through the existing read tools. It is
+  kept whole: the tracking has no consumer but `mail_propose`, and splitting
+  it would land an unused map.
+- **One plan file, two readers.** PHASE-02's golden
+  `test/fixtures/mail-plans/basic.json` is what `buildPlan` writes; the ERT
+  suite reads the same file, so the reader is tested against the writer's
+  real output rather than a hand-written twin.
 - **Elisp split at Gnus.** PHASE-05 is everything testable from fixture
   files: the reader, rules, renderer, status, dismiss. PHASE-06 is everything
   that needs Gnus stubbed. The split keeps the security-relevant rendering
