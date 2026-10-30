@@ -74,7 +74,9 @@ a host daemon has no bridge path in its `Config`.
 **Wire: `pi-bridge/wire.ts`.** One module of frame types and a pure parser,
 imported by the daemon and the extension (DEC-073), so the two sides cannot
 disagree on a frame. Newline-delimited JSON, lines read through
-`boundedLineSplitter` with a line cap above the body cap (Messages, framing and caps), so an oversized line is refused, not buffered. Senders cut
+`boundedLineSplitter` with a line cap, `BRIDGE_LINE_MAX_BYTES` (6 × the body cap
++ 4 KiB, so a capped body is never refused by the line cap; “Messages”, framing
+and caps), so an oversized line is refused, not buffered. Senders cut
 first: `capHeadTail` lives in `pi-bridge/wire.ts`, so the extension and
 `malebolge-bridge` truncate head-and-tail to `BRIDGE_BODY_MAX_BYTES` before
 sending, and the line cap never refuses a well-behaved sender.
@@ -93,8 +95,9 @@ sending, and the line cap never refuses a well-behaved sender.
 | `end {}` | connection closed with a reason |
 
 The daemon also sends `deliver {seq, kind, text}` unprompted (“Messages”). Any frame
-the tables do not name is `refused {reason}`; the bridge parser knows no attach
-verb, so the full protocol is unreachable here.
+the tables do not name, or a frame with a key its type does not name, is
+`refused {reason}`; the bridge parser knows no attach verb, so the full
+protocol is unreachable here.
 
 **Dispatch.** `src/bridge/listener.ts` copies the `FIRST_LINE` shape:
 `BRIDGE_FIRST_LINE` and `BRIDGE_BOUND`, each a mapped type over its frame
@@ -109,15 +112,18 @@ supersedes the previous connection for that pairing, which is closed with
 `refused {reason: "superseded by a newer connection"}` (DEC-065).
 
 **Liveness.** Every request frame (`pair`, `resume`, `post`, `post-once`)
-has a reply deadline of `BRIDGE_POST_WAIT_MS` from send, client side. There
-is no heartbeat (“The pi side and deployment”).
+has a reply deadline of `BRIDGE_POST_WAIT_MS` (30 s) from send, client side.
+There is no heartbeat (“The pi side and deployment”).
 
 <!-- doctrine:section sec-3 -->
 ## 3. Pairing and the pairing document (DEC-065, DEC-072)
 
 **The document.** `src/bridge/pairing.ts` defines one pi-durable document,
 conversation scope, kind `malebolge.bridge`, modelled on
-`src/threads/tombstones.ts` (unexported token, one accessor `pairingDoc(tx)`):
+`src/threads/tombstones.ts` (unexported token). Three accessors:
+`pairingDoc(tx, conversation)` reads it in a commit; `pairingSnapshot` reads
+it without one, so a refused `resume` writes nothing; `watchPairing` watches it
+without creating it:
 
 ```
 PairingDoc = {
@@ -177,8 +183,13 @@ ordinary bridge-mode transcript: attachable, with `bridge_post` refused
 side and deployment”).
 
 **Posture.** Stored at pair, never changed (a new posture is a new pairing).
-`BRIDGE_SECTION` renders the posture's corpus text for SATAN; the extension
-renders its own for pi (“The pi side and deployment”). The two texts are corpus prose (DEC-040),
+Each side is also told where the other runs, whatever the posture (DEC-098).
+`BRIDGE_SECTION`, SATAN's `bridge` section, is untagged (a tag would wrap it
+in the envelope it tells the model to distrust) and renders the untrusted
+framing (“Messages”), then, for a bridged conversation only,
+`BRIDGE_ENVIRONMENT`, then the posture's text. pi's system prompt gains
+`PI_BRIDGE_ENVIRONMENT`, then pi's posture text (“The pi side and
+deployment”). The two posture texts are corpus prose (DEC-040),
 authored in the satan-corpus session; this slice ships placeholders keyed by
 posture and the test that pins which one renders.
 
@@ -377,8 +388,12 @@ The paired states (`resuming`, `bound`, `outage`) hold `{session,
 conversation, token, posture}`, the delivery buffer (“Messages”) and the
 pending posts. A `running` flag lives beside every state. `settlePending` is
 the one exit effect from a paired state: it completes each pending post
-(`outcome unknown` if sent, refused with the reason if not), empties the
-pending set and cancels the timers.
+`outcome unknown`, empties the pending set and cancels the timers.
+
+Each connection has a generation. Frames, closes and reply deadlines stamped
+with an older generation are stale and ignored. Reply deadlines come back into
+`step` as events, as does the shell's `persisted` report that an injected
+message's entry is in the session.
 
 | state | event | next | effects |
 |---|---|---|---|
@@ -394,11 +409,15 @@ pending set and cancels the timers.
 | resuming | connect failure, or reply deadline | outage | close socket; first failure of the outage notifies (below); retry timer |
 | bound | connection drops | outage | as above |
 | outage | retry timer | resuming | `resume` |
-| any paired | `/bridge end` answered, or `refused` `pairing ended` / `bad token` | unpaired | `settlePending`; `appendEntry` unpaired marker; clear credentials, posture, bash env; an intentional `end` is not an outage; a refusal notifies loudly and is not retried |
+| any paired | `/bridge end` answered, or `refused` `pairing ended` / `bad token` | unpaired | `settlePending`; `appendEntry` unpaired marker; clear credentials, posture, bash env; an intentional `end` is not an outage; a `refused` `pairing ended` answering an awaited `end` is its answer, an info notice `ended`; any other refusal notifies loudly and is not retried |
+| bound, `end` awaited | connection drops, or the `end` reply deadline | unpaired | `settlePending`; close socket; `appendEntry` unpaired marker; clear credentials, posture, bash env; loud notice `end unanswered`; a re-pair waiting on the `end` is dropped |
+| outage | `/bridge end` | unpaired | `settlePending`; close socket; `appendEntry` unpaired marker; clear credentials, posture, bash env; info notice `ended locally`; no frame, the daemon's pairing document is left as is (DEC-095) |
+| pairing, resuming | `/bridge end` | same | refused busy (DEC-095) |
 | resuming | any other `refused {reason}` | unpaired | as the terminal row: `settlePending`, marker, loud notice with the reason, no retry |
 | bound | `refused {reason}` answering no post (a refused `refill`, or any other) | bound | loud notice with the reason |
 | bound, resuming | `refused` `superseded by a newer connection` | unpaired | `settlePending`; in memory only, no marker (the pairing stays valid for its newer holder); notify with the reason; a later `session_start` may resume it (DEC-065) |
 | any | `session_shutdown` | unpaired | `settlePending`; close socket; no entry |
+| any | `persisted` | same | the message joins the session record; if bound to its pairing, `ack {seq}` |
 | any | `agent_start` | same | set `running` |
 | any | `agent_settled`, not aborted | same | clear `running`; flush notes up to the first buffered turn, then that turn as a turn (“Messages”) |
 | any | `agent_settled`, aborted | same | clear `running`; flush the whole buffer as notes (“Messages”) |
@@ -419,12 +438,20 @@ Outside the table, all states:
   naming the ends, not resent.
 - `deliver` from the current binding only → inject when `ctx.isIdle()` is
   true and `running` is clear, else buffer (“Messages”); a
-  frame from a stale socket is ignored. For `input`, see the `input` rows.
-- `before_agent_start` renders the stored posture's pi section into the
-  system prompt.
+  frame from a stale socket is ignored. A seq already in the session is
+  skipped and re-acked; one injected but not yet `persisted`, or buffered, is
+  skipped without an ack (the `persisted` row acks it). For `input`, see the
+  `input` rows.
+- `before_agent_start` appends `PI_BRIDGE_ENVIRONMENT`, then the stored
+  posture's pi section, to the system prompt (DEC-098).
+- **Status.** Each `setStatus` is also emitted as `powerbar:update` on pi's
+  event bus, segment `malebolge-bridge`, registered at `session_start`; a
+  cleared status clears the segment. No dependency on pi-powerbar (DEC-097).
 - **Bash env.** The spawn hook (ASM-008) sets `MALEBOLGE_BRIDGE_CONVERSATION`
   and `MALEBOLGE_BRIDGE_TOKEN` while paired, and prepends the mounted
-  extension directory to `PATH`. `MALEBOLGE_BRIDGE_SOCKET` reaches bash from
+  extension directory to `PATH`. A `user_bash` handler applies the same env
+  to the operator's `!` commands, on base `process.env`, since pi passes none
+  (DEC-096). `MALEBOLGE_BRIDGE_SOCKET` reaches bash from
   the jail's forwarded env (DEC-074 (2)); both sides fall back to
   `bridgeSocketPath`.
 
@@ -437,9 +464,10 @@ extension and the command alike.
 
 **`pi-bridge/malebolge-bridge`** (DEC-075): an executable script (shebang to
 the jail's `node`), reached through the `PATH` the spawn hook sets. `send
-[--turn]` reads stdin to end, sends `post-once`, prints only the ack; `tee`
-also copies stdin to stdout. Exit statuses: 0 accepted; 2 refused (reason on
-stderr); 3 outcome unknown (reply lost or deadline expired, never retried);
+[--turn]` reads stdin to end, sends `post-once` and prints `accepted`; `tee`
+copies stdin to stdout and prints no ack. Exit statuses: 0 accepted; 2
+refused, by the daemon or locally (no bridge env vars, bad arguments; reason
+on stderr); 3 outcome unknown (reply lost or deadline expired, never retried);
 1 connect failure (stderr line from `outageText`, best-effort `notify-send`).
 Same cap and truncation as a post (`capHeadTail` from `pi-bridge/wire.ts`
 runs before sending; the daemon caps again).
@@ -456,9 +484,14 @@ runs before sending; the daemon caps again).
 | path | change |
 |---|---|
 | `pi-bridge/wire.ts` | new: frame types and parser, `bridgeSocketPath`, `capHeadTail`, both sides (“Bridge listener and wire”) |
-| `pi-bridge/index.ts` | new: the extension shell (“The pi side and deployment”) |
+| `pi-bridge/index.ts` | new: the extension entry pi loads (“The pi side and deployment”) |
+| `pi-bridge/shell.ts` | new: the extension shell, performing `step`'s effects (“The pi side and deployment”) |
 | `pi-bridge/state.ts` | new: pairing/connection transition function `step` (“The pi side and deployment”) |
-| `pi-bridge/malebolge-bridge` | new: `send` / `tee`; executable, reached through `PATH` set by the spawn hook (“The pi side and deployment”) |
+| `pi-bridge/connection.ts` | new: one client connection, shared by the shell and the command |
+| `pi-bridge/notices.ts` | new: `outageText` and the loud failure texts (“The pi side and deployment”) |
+| `pi-bridge/posture.ts` | new: `PI_BRIDGE_ENVIRONMENT` and pi's posture texts (“Pairing and the pairing document”) |
+| `pi-bridge/command.ts`, `pi-bridge/malebolge-bridge` | new: `send` / `tee`; executable, reached through `PATH` set by the spawn hook (“The pi side and deployment”) |
+| `flake.nix` | runner `npmDepsHash` for the new dev dependency; `pi-bridge/wire.ts` in the runner's fileset (the daemon imports it); `installPhase` copies `pi-bridge/` |
 | `tsconfig.json` | include `pi-bridge` |
 | `vitest.config.ts` | coverage includes `pi-bridge/**/*.ts` |
 | `package.json`, lockfile | dev dependency `@earendil-works/pi-coding-agent`, for the extension's types and tests only (the jail loads pi's own, ASM-007) |
@@ -482,7 +515,7 @@ runs before sending; the daemon caps again).
 | `src/daemon.ts` | connection helpers moved out; `ServeOptions.onOperatorInput` from `act`'s input case (“Loop budget”) |
 | `src/daemon-start.ts`, `src/daemon-extensions.ts` | start the bridge listener (room), register the extension |
 | `test/bridge-*.test.ts`, `test/bridge-fixture.ts` | new: fake pi client, listener, pairing, inbound, outbox, budget (flat, as `threads-*`); the fixture passes a literal `ModelCatalog` stub to `conversations(…)` and `topicInit` |
-| `test/pi-bridge-*.test.ts` | new: extension against a fake daemon and a fake pi API |
+| `test/pi-bridge-*.test.ts`, `test/pi-bridge-fake-daemon.ts`, `test/pi-bridge-fake-pi.ts` | new: extension against a fake daemon and a fake pi API |
 | `test/toolsets.test.ts`, `test/wake-tools.test.ts`, `test/config.test.ts`, `test/daemon-sections.test.ts` | membership, wake reach, path rule, pinned section |
 | `test/structure.test.ts` | new rule: `pi-bridge/` imports nothing from `src/`; the wake/threads seam is already enforced |
 | `docs/internals.md`, `README.md` | bridge mode, socket, env vars, deployment contract |
@@ -528,5 +561,5 @@ Maps the slice's verification intent. VT by test, VH by human.
 | PATH | VT: bare `malebolge-bridge send` resolves from another cwd under the spawn hook; VH in the real jail | `test/pi-bridge-*.test.ts`, operator |
 | gate | VT: `pi-bridge/` passes typecheck, lint and coverage in the normal gate | CI gate |
 | assumptions | VA/VH in PHASE-01: ASM-004..ASM-008 | plan |
-| real jail | VH: a jailed pi pairs; each posture completes one exchange; a ro project mount refuses a write; a stopped daemon notifies the desktop | operator |
+| real jail | VH: a jailed pi pairs; each posture completes one exchange; a ro project mount refuses a write; a stopped daemon notifies inside pi (desktop `notify-send` is best-effort and fails in the jail: ASM-005, IMP-025) | operator |
 

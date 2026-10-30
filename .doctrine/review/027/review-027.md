@@ -65,3 +65,27 @@ One finding was withdrawn: F-10 took the PHASE-07 log's premise ("the host's bri
 - F-9 docs/internals.md § Bridge, README "Pairing a jailed pi": DEC-096/097/098.
 - F-13 RV-023 concluded.
 - F-14 src/daemon-start.ts `operatorRefillOf` comment.
+
+## Reconciliation Outcome
+
+### Direct edits applied (design.md; operator agreed 2026-10-30)
+- sec-7 (F-1): rows for `/bridge end` in outage (unpair locally, info `ended locally`, no frame) and in pairing/resuming (busy) per DEC-095; `user_bash` env for operator `!` commands (DEC-096); status also a `powerbar:update` segment (DEC-097).
+- sec-3 "Posture" + sec-7 `before_agent_start` (F-2): untagged section order untrusted framing → `BRIDGE_ENVIRONMENT` (bridged) → posture; pi `PI_BRIDGE_ENVIRONMENT` → posture (DEC-098).
+- sec-7 (F-3): `settlePending` completes every pending post `outcome unknown`; connection generations; deadlines and `persisted` as events; `persisted` row acks; injected-not-persisted deliveries skipped without ack; end-awaited drop/deadline = end unanswered; `refused pairing ended` answering `end` = info `ended`.
+- sec-2/3/7 (F-4): `BRIDGE_POST_WAIT_MS` 30 s; `BRIDGE_LINE_MAX_BYTES` 6 × body + 4 KiB; unknown keys refused; untagged `bridge` section; accessors `pairingDoc` / `pairingSnapshot` / `watchPairing`; `malebolge-bridge` exit 2 on local refusal, `send` prints `accepted`, `tee` no ack.
+- sec-8 (F-5 mirror): rows for `pi-bridge/{shell,connection,notices,posture,command}.ts`, `flake.nix`, the pi-bridge test fakes; `index.ts` relabelled as the entry.
+- sec-9 "real jail" (F-8): stopped daemon notifies inside pi; desktop `notify-send` best-effort, fails in the jail (ASM-005, IMP-025).
+- design run is locked: per the CLI, reconcile edits design.md directly and does not `design adopt`.
+
+### Selector registry
+- F-5: 15 paths upserted with intent `design-target`.
+- F-6: `test/pi-bridge-state.test.ts`, `test/pi-bridge-wire.test.ts` removed (shadowed by `test/pi-bridge-*.test.ts`).
+- `doctrine slice conformance 009`: undelivered 0, conformant 59; undeclared 85 = doctrine records and other slices' commits (F-7, tolerated).
+
+### REVs completed
+- none: no governance/spec item in the brief.
+
+### Withdrawn / tolerated
+- F-10 withdrawn; F-7 tolerated (see dispositions). F-9, F-13, F-14 landed fix-now in e3cf8ff.
+
+Reconcile pass complete — handoff to /close.

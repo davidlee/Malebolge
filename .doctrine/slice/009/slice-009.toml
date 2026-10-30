@@ -128,7 +128,7 @@ intent = "design-target"
 
 [[selector]]
 selector = "README.md"
-intent = "scope-relevant"
+intent = "design-target"
 
 [[selector]]
 selector = "src/persona.ts"
@@ -144,27 +144,23 @@ intent = "design-target"
 
 [[selector]]
 selector = "src/runner/control.ts"
-intent = "scope-relevant"
+intent = "design-target"
 
 [[selector]]
 selector = "src/connection-reply.ts"
 intent = "design-target"
 
 [[selector]]
-selector = "test/pi-bridge-wire.test.ts"
+selector = "tsconfig.json"
 intent = "design-target"
 
 [[selector]]
-selector = "tsconfig.json"
-intent = "scope-relevant"
-
-[[selector]]
 selector = "vitest.config.ts"
-intent = "scope-relevant"
+intent = "design-target"
 
 [[selector]]
 selector = "package.json"
-intent = "scope-relevant"
+intent = "design-target"
 
 [[selector]]
 selector = "eslint.config.js"
@@ -172,14 +168,46 @@ intent = "scope-relevant"
 
 [[selector]]
 selector = "biome.json"
-intent = "scope-relevant"
-
-[[selector]]
-selector = "test/pi-bridge-state.test.ts"
 intent = "design-target"
 
 [[selector]]
 selector = "package-lock.json"
+intent = "design-target"
+
+[[selector]]
+selector = "flake.nix"
+intent = "design-target"
+
+[[selector]]
+selector = "test/pi-bridge-fake-daemon.ts"
+intent = "design-target"
+
+[[selector]]
+selector = "test/pi-bridge-fake-pi.ts"
+intent = "design-target"
+
+[[selector]]
+selector = "test/conversations.test.ts"
+intent = "design-target"
+
+[[selector]]
+selector = "test/daemon-start.test.ts"
+intent = "design-target"
+
+[[selector]]
+selector = "test/persona.test.ts"
+intent = "design-target"
+
+[[selector]]
+selector = "test/queue-premises.test.ts"
+intent = "design-target"
+
+[[selector]]
+selector = "test/unix-socket.test.ts"
+intent = "design-target"
+
+[[selector]]
+selector = "test/wake-fixture.ts"
 intent = "design-target"
 
 [[relation]]
