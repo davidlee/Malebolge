@@ -74,6 +74,26 @@
       #     (noescape "\"$HOME/.local/share/doctrine/bin\""))
       #   (add-path "\"$HOME/.local/share/doctrine/bin\"")
       # After which `doctrineOptions` here goes away.
+      # SL-009 bridge jail (runbook P3). The
+      # deployment contract's four clauses (DEC-074) by hand until CHR-007
+      # lands in ~/flakes. Host paths resolve in the launching shell.
+      bridgeOptions = [
+        # (1) the socket directory only, read-only, at its host path; never
+        #     durable/room itself (it holds durable.sock)
+        # (2) the socket path; the jail has no XDG_RUNTIME_DIR to derive it
+        (combinators.add-runtime ''
+          bridgeDir="$XDG_RUNTIME_DIR/satan/durable/room/bridge"
+          RUNTIME_ARGS+=(--ro-bind-try "$bridgeDir" "$bridgeDir")
+          RUNTIME_ARGS+=(--setenv MALEBOLGE_BRIDGE_SOCKET "''${MALEBOLGE_BRIDGE_SOCKET:-$bridgeDir/bridge.sock}")
+        '')
+        # (3) the extension, read-only, in the jail home
+        (combinators.try-ro-bind
+          (combinators.noescape "~/dev/malebolge/pi-bridge")
+          (combinators.noescape "\"$HOME/.pi/agent/extensions/malebolge-bridge\""))
+        # (4) read-only project: after the launch dir's rw bind, so it wins
+        (combinators.unsafe-add-raw-args "--ro-bind \"$PWD\" \"/workspace/$(basename \"$PWD\")\"")
+      ];
+
       mkJail = maker: args:
         maker ({
             profile = "specDev";
@@ -87,6 +107,10 @@
         jailed-pi = mkJail jailLib.makeJailedPi {
           allowSelfAsSubagent = true;
           maxSubagentDepth = 2;
+        };
+        jailed-pi-bridge = mkJail jailLib.makeJailedPi {
+          name = "pi-bridge";
+          extraOptions = doctrineOptions ++ bridgeOptions;
         };
         jailed-pi-research = mkJail jailLib.makeJailedPi {
           name = "pi-research";
