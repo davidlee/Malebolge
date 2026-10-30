@@ -1,0 +1,33 @@
+schema = "doctrine.knowledge"
+version = 1
+
+id = 112
+slug = "opening-a-plan-line-in-gnus-uses-an-ephemeral-nnselect-group-built-from-a-scoped-gnus-search-on-its"
+title = "Opening a plan line in Gnus uses an ephemeral nnselect group built from a scoped gnus-search on its Message-IDs"
+record_kind = "decision"
+status = "accepted"
+created = "2026-10-30"
+updated = "2026-10-30"
+tags = []
+
+[facet]                         # every field typed; seeded empty (captured later)
+context = "Gnus already supports a group of chosen articles from several real groups (nnselect, stage/gnus/nnselect.el:26-41) and turns message-id: queries into IMAP HEADER Message-ID searches (gnus-search.el:588, :1296). Opening an ephemeral group selects no article, so nothing is marked read (gnus-group.el:2262, gnus-sum.el:4098). Hand-rolled lookups would need manual group-info bookkeeping."
+choice = "Opening a plan line runs one gnus-search-run-query for the line's Message-IDs, OR'd, scoped to the groups the plan names for those messages on the configured server, and opens an ephemeral nnselect group of the results. Results whose Message-ID is not exactly one of the line's are dropped (message-id: is a substring search); planned messages not found are shown and logged as not_found. The summary line shows the plan line's action and target beside Gnus's own headers through a %u user-format function. Marks are set by Message-ID, never by position. gnus-registry is not used (not enabled in the operator's config)."
+alternatives = ["Per-message gnus-request-head and manual mark/info bookkeeping (research thread 4): more plumbing, stale group info", "gnus-registry for Message-ID to group: not enabled"]
+rationale = "Gnus does the bookkeeping: marks write back per real group on exit, moves update destination groups."
+consequences = ["Live probe before building: multi-way or nesting (gnus-search.el:1191-1202), scoped search on Fastmail, UID MOVE, inbox-child path"]
+decided_by = "user (accepted agent proposal, 2026-10-30)"
+decided_on = "2026-10-30"
+
+[evidence]                      # free-text citations (supports / contradicts / notes)
+supports    = []
+contradicts = []
+notes       = []
+
+[relationships]                 # verb-written edges (set by doctrine supersede)
+supersedes    = []   # record ids this one replaces (set by doctrine supersede)
+superseded_by = []   # set on superseded predecessor (verb-written)
+
+[[relation]]
+label = "shapes"
+target = "SL-012"

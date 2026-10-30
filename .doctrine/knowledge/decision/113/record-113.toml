@@ -1,0 +1,33 @@
+schema = "doctrine.knowledge"
+version = 1
+
+id = 113
+slug = "opening-a-line-stages-its-proposed-actions-in-gnus-nothing-reaches-the-server-without-the-operators"
+title = "Opening a line stages its proposed actions in Gnus; nothing reaches the server without the operator's commit"
+record_kind = "decision"
+status = "accepted"
+created = "2026-10-30"
+updated = "2026-10-30"
+tags = []
+
+[facet]                         # every field typed; seeded empty (captured later)
+context = "In an nnselect summary, marks are pushed to the real groups when the summary exits with q and dropped with Q (nnselect-close-group, nnselect.el:790-800). Gnus moves execute immediately; there is no deferred move."
+choice = "Staging, not executing: opening a plan line in Gnus sets the line's proposed marks in the summary (mark_read, mark_unread, flag, unflag) and process-marks the messages of move, archive and delete lines, with the target shown. The operator commits with ordinary Gnus acts: q pushes marks, Q discards them; moves run with B m on the process-marked set or one malebolge command that moves the process-marked set to the line's target. archive targets the role-archive mailbox, delete the role-trash mailbox; a target group that does not exist on the server refuses the move. Each message's result is independent; there is no transaction. Flagging also marks read in Gnus (nnimap.el:1253); documented, not worked around."
+alternatives = ["Execute on apply, writing marks immediately: removes the operator's commit step and Gnus's own discard (Q)", "Execute from the plan document without Gnus: duplicates Gnus"]
+rationale = "The operator's commit stays the only path to the server, using Gnus's existing staging semantics."
+consequences = ["Whether staging and opening are one key or two is a UI-phase question"]
+decided_by = "user (operator direction, 2026-10-30)"
+decided_on = "2026-10-30"
+
+[evidence]                      # free-text citations (supports / contradicts / notes)
+supports    = []
+contradicts = []
+notes       = []
+
+[relationships]                 # verb-written edges (set by doctrine supersede)
+supersedes    = []   # record ids this one replaces (set by doctrine supersede)
+superseded_by = []   # set on superseded predecessor (verb-written)
+
+[[relation]]
+label = "shapes"
+target = "SL-012"

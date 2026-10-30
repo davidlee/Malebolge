@@ -1,0 +1,39 @@
+schema = "doctrine.knowledge"
+version = 1
+
+id = 110
+slug = "plans-live-in-malebolge-mail-plans-outside-every-satan-read-root-as-create-exclusive-json-files-the"
+title = "Plans live in MALEBOLGE_MAIL_PLANS, outside every SATAN read root, as create-exclusive JSON files; the room jail binds it read-write"
+record_kind = "decision"
+status = "accepted"
+created = "2026-10-30"
+updated = "2026-10-30"
+tags = []
+
+[facet]                         # every field typed; seeded empty (captured later)
+context = "RSK-002 gap 3: Q2 derivatives must stay outside every SATAN read root. malebolge's state root ~/.local/state/satan is itself one (satan:RFC-020 three roots; src/config.ts:332). The daemon has no file writer today. The attach stream reaches Emacs as pre-rendered text (src/attach.ts:1-2), so a structured plan over it would need a protocol change (DEC-002, DEC-016 skew)."
+choice = "A new environment variable MALEBOLGE_MAIL_PLANS: an absolute directory outside every SATAN read root (for example ~/.local/state/malebolge/mail-plans). Unset: mail_propose refuses every call with an explicit reason, the DEC-055 pattern; relative: startup refuses. Each plan is one file <dir>/<conversation>-<timestamp>.json, a versioned JSON document, written to a temporary name and renamed, created exclusively, never overwritten. Emacs reads the directory itself; no protocol change. The room jail (mkJailedMalebolge in ~/dev/satan/flake.nix, wired from ~/flakes) binds the directory read-write, in this slice."
+alternatives = ["Plans in the daemon's state root: a SATAN read root", "Plans through the attach client: protocol widening, and storage still in a SATAN root", "Leave the jail bind to a chore: the feature would not work end to end"]
+rationale = "A configured directory is the established pattern (DEC-055) and keeps Q2 material out of SATAN's reach without touching the attach protocol."
+consequences = ["Departs from satan:RFC-020 D4 (proposals under ~/.local/state/satan, written by a SATAN triage run, read by Emacs and Wormwood)", "Accepted exposure: other conversations executing in the same jail could reach the bound directory; recorded under RSK-002, audit is ISS-008", "Cross-repo change: the jail bind in ~/dev/satan and ~/flakes", "The mail conversation writes only through mail_propose: the mail toolset has no code, shell or file tools (DEC-029 VT-2)"]
+decided_by = "user (accepted agent proposal, 2026-10-30)"
+decided_on = "2026-10-30"
+
+[evidence]                      # free-text citations (supports / contradicts / notes)
+supports    = []
+contradicts = []
+notes       = []
+
+[relationships]                 # verb-written edges (set by doctrine supersede)
+supersedes    = []   # record ids this one replaces (set by doctrine supersede)
+superseded_by = []   # set on superseded predecessor (verb-written)
+
+[[relation]]
+label = "references"
+role = "concerns"
+descriptor = "follows the configured-path pattern"
+target = "DEC-055"
+
+[[relation]]
+label = "shapes"
+target = "SL-012"

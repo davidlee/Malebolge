@@ -1,0 +1,143 @@
+id = 12
+slug = "mail-action-plans"
+title = "Mail action plans: the mail agent proposes, the operator executes in Gnus"
+status = "design"
+created = "2026-10-30"
+updated = "2026-10-30"
+tags = []
+
+[relationships]
+needs = []                      # slice→work hard prerequisite
+after = []                      # slice→work soft sequence: { to, rank }
+
+[[selector]]
+selector = "src/mail/**"
+intent = "scope-relevant"
+
+[[selector]]
+selector = "emacs/**"
+intent = "scope-relevant"
+
+[[selector]]
+selector = "test/**"
+intent = "scope-relevant"
+
+[[selector]]
+selector = "README.md"
+intent = "design-target"
+note = "design §10 code impact; cross-repo jail bind in ~/dev/satan and ~/flakes is outside this repo"
+
+[[selector]]
+selector = "docs/internals.md"
+intent = "design-target"
+note = "design §10 code impact; cross-repo jail bind in ~/dev/satan and ~/flakes is outside this repo"
+
+[[selector]]
+selector = "src/mail/plans.ts"
+intent = "design-target"
+note = "design §10 code impact; cross-repo jail bind in ~/dev/satan and ~/flakes is outside this repo"
+
+[[selector]]
+selector = "src/mail/plan-store.ts"
+intent = "design-target"
+note = "design §10 code impact; cross-repo jail bind in ~/dev/satan and ~/flakes is outside this repo"
+
+[[selector]]
+selector = "src/mail/tools.ts"
+intent = "design-target"
+note = "design §10 code impact; cross-repo jail bind in ~/dev/satan and ~/flakes is outside this repo"
+
+[[selector]]
+selector = "src/mail/extension.ts"
+intent = "design-target"
+note = "design §10 code impact; cross-repo jail bind in ~/dev/satan and ~/flakes is outside this repo"
+
+[[selector]]
+selector = "src/config.ts"
+intent = "design-target"
+note = "design §10 code impact; cross-repo jail bind in ~/dev/satan and ~/flakes is outside this repo"
+
+[[selector]]
+selector = "src/daemon-start.ts"
+intent = "design-target"
+note = "design §10 code impact; cross-repo jail bind in ~/dev/satan and ~/flakes is outside this repo"
+
+[[selector]]
+selector = "emacs/malebolge-mail.el"
+intent = "design-target"
+note = "design §10 code impact; cross-repo jail bind in ~/dev/satan and ~/flakes is outside this repo"
+
+[[selector]]
+selector = "test/mail/plans.test.ts"
+intent = "design-target"
+note = "design §10 code impact; cross-repo jail bind in ~/dev/satan and ~/flakes is outside this repo"
+
+[[selector]]
+selector = "test/mail/plan-store.test.ts"
+intent = "design-target"
+note = "design §10 code impact; cross-repo jail bind in ~/dev/satan and ~/flakes is outside this repo"
+
+[[selector]]
+selector = "test/mail/tools.test.ts"
+intent = "design-target"
+note = "design §10 code impact; cross-repo jail bind in ~/dev/satan and ~/flakes is outside this repo"
+
+[[selector]]
+selector = "test/mail/mail-fixtures.ts"
+intent = "design-target"
+note = "design §10 code impact; cross-repo jail bind in ~/dev/satan and ~/flakes is outside this repo"
+
+[[selector]]
+selector = "test/config.test.ts"
+intent = "design-target"
+note = "design §10 code impact; cross-repo jail bind in ~/dev/satan and ~/flakes is outside this repo"
+
+[[selector]]
+selector = "test/toolsets.test.ts"
+intent = "design-target"
+note = "design §10 code impact; cross-repo jail bind in ~/dev/satan and ~/flakes is outside this repo"
+
+[[selector]]
+selector = "test/malebolge-mail-ert.el"
+intent = "design-target"
+note = "design §10 code impact; cross-repo jail bind in ~/dev/satan and ~/flakes is outside this repo"
+
+[[selector]]
+selector = "test/fixtures/mail-plans/**"
+intent = "design-target"
+note = "design §10 code impact; cross-repo jail bind in ~/dev/satan and ~/flakes is outside this repo"
+
+[[selector]]
+selector = "justfile"
+intent = "design-target"
+note = "design §10 code impact; cross-repo jail bind in ~/dev/satan and ~/flakes is outside this repo"
+
+[[selector]]
+selector = "test/fixtures/text-rules.json"
+intent = "design-target"
+note = "design §5/§10: shared TS/elisp rule cases"
+
+[[relation]]
+label = "fulfils"
+target = "IDE-005"
+
+[[relation]]
+label = "related"
+target = "SL-007"
+
+[[relation]]
+label = "related"
+target = "RSK-002"
+
+[[relation]]
+label = "related"
+target = "IDE-007"
+
+# STRUCTURAL relations are uniform `[[relation]]` rows, never a typed
+# `[relationships]` axis. Slices carry no typed STRUCTURAL
+# relation axes — the `[relationships]` table above holds only the dep/seq payload
+# (`needs`/`after`). Author a structural edge with the `doctrine link` verb
+# — it validates the (source, label) pair and resolves the target:
+#   doctrine link SL-NNN specs SPEC-NNN
+#   doctrine link SL-NNN governed_by ADR-NNN
+# `doctrine inspect SL-NNN` renders the inbound + outbound edges.

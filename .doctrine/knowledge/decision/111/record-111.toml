@@ -1,0 +1,33 @@
+schema = "doctrine.knowledge"
+version = 1
+
+id = 111
+slug = "a-plan-file-never-changes-its-status-is-derived-from-the-act-log-dismissing-moves-it-to-dismissed"
+title = "A plan file never changes; its status is derived from the act log; dismissing moves it to dismissed/"
+record_kind = "decision"
+status = "accepted"
+created = "2026-10-30"
+updated = "2026-10-30"
+tags = []
+
+[facet]                         # every field typed; seeded empty (captured later)
+context = "Plans need a lifecycle (not applied, applied, varied, dismissed) without giving the daemon or the agent a way to rewrite them."
+choice = "Plan files are immutable once written. Status per line is derived by Emacs from the act log, not stored. Dismissing a plan is an operator act in Emacs: the file moves to <dir>/dismissed/ and a dismissed record is appended to the act log. Nothing is deleted automatically; no retention policy yet."
+alternatives = ["A mutable status field in the plan file: a second writer and a consistency problem", "Supersession of earlier plans by later ones from the same conversation: unneeded while the operator opens the latest plan by default"]
+rationale = "One writer per file (daemon creates, Emacs only moves), and one source of truth for what happened (the act log)."
+consequences = ["satan:RFC-020 D4 left lifecycle after approval open; this answers it for mail"]
+decided_by = "user (accepted agent proposal, 2026-10-30)"
+decided_on = "2026-10-30"
+
+[evidence]                      # free-text citations (supports / contradicts / notes)
+supports    = []
+contradicts = []
+notes       = []
+
+[relationships]                 # verb-written edges (set by doctrine supersede)
+supersedes    = []   # record ids this one replaces (set by doctrine supersede)
+superseded_by = []   # set on superseded predecessor (verb-written)
+
+[[relation]]
+label = "shapes"
+target = "SL-012"

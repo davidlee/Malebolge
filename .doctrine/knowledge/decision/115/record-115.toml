@@ -1,0 +1,33 @@
+schema = "doctrine.knowledge"
+version = 1
+
+id = 115
+slug = "the-plan-ui-is-a-separate-emacs-feature-emacsmalebolge-mailel-in-the-malebolge-repo"
+title = "The plan UI is a separate Emacs feature, emacs/malebolge-mail.el in the malebolge repo"
+record_kind = "decision"
+status = "accepted"
+created = "2026-10-30"
+updated = "2026-10-30"
+tags = []
+
+[facet]                         # every field typed; seeded empty (captured later)
+context = "emacs/malebolge.el requires only comint, json and subr-x; no Gnus code exists in the repo. The operator's Gnus config (~/.config/emacs/apps/dl-gnus.el) names the nnimap server fastmail."
+choice = "A new file emacs/malebolge-mail.el, feature malebolge-mail, requiring Gnus and org only there. Settings: the Gnus server name (default fastmail) and the plans directory. Pure functions (plan parsing, sanitiser, renderer, query building, log records) are tested directly in ERT; Gnus entry points are stubbed with cl-letf, as dl-gnus-test.el does. just ert byte-compiles it with warnings as errors."
+alternatives = ["Put it in malebolge.el: couples the attach client to Gnus", "Put it in ~/.config/emacs: separates it from the plan format it must track"]
+rationale = "Keeps the plan format and its consumer in one repo while keeping the attach client free of Gnus."
+consequences = ["The operator loads malebolge-mail from their Emacs config"]
+decided_by = "user (accepted agent proposal, 2026-10-30)"
+decided_on = "2026-10-30"
+
+[evidence]                      # free-text citations (supports / contradicts / notes)
+supports    = []
+contradicts = []
+notes       = []
+
+[relationships]                 # verb-written edges (set by doctrine supersede)
+supersedes    = []   # record ids this one replaces (set by doctrine supersede)
+superseded_by = []   # set on superseded predecessor (verb-written)
+
+[[relation]]
+label = "shapes"
+target = "SL-012"

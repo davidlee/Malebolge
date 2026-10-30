@@ -1,0 +1,39 @@
+schema = "doctrine.knowledge"
+version = 1
+
+id = 109
+slug = "malebolge-derives-each-plan-messages-identity-and-header-snapshot-from-screwtape-withheld-and"
+title = "malebolge derives each plan message's identity and header snapshot from screwtape; withheld and reported mail must appear in the plan"
+record_kind = "decision"
+status = "accepted"
+created = "2026-10-30"
+updated = "2026-10-30"
+tags = []
+
+[facet]                         # every field typed; seeded empty (captured later)
+context = "The agent sees JMAP Email ids and mailbox ids, never the RFC 5322 Message-ID (dropped by projection, test/mail/project.test.ts:831). IMAP and Gnus cannot address JMAP ids; the Message-ID header is the only shared identity. screwtape read <id> --max-bytes 0 returns message_id (a list), mailbox_ids, keywords, from, subject, sent_at. screwtape mailboxes gives JMAP names with parent_id and role, no IMAP paths."
+choice = "For each id malebolge calls screwtape read <id> --max-bytes 0 and records, per message: the Message-ID, its mailboxes as IMAP paths, seen and flagged (advisory pre-state), and a header snapshot (from name and address, subject, date) for the operator's plan document. IMAP path rule: names from the root down joined by '/', the role-inbox mailbox spelled INBOX (operator's Gnus group list and test/mail/fixtures/real/mailboxes.json agree). The whole call is refused when an id is unknown to screwtape, has zero or several Message-IDs, or a move target mailbox does not exist. Withheld (DEC-063) and reported (DEC-062) mail the agent encountered must appear in the plan, flagged with its reason, with or without a proposed action: the plan is for the operator to read. Header snapshot fields are foreign text: single line, capped, control characters removed; the Emacs renderer also sanitises them."
+alternatives = ["Expose message_id to the agent: still needs validation against screwtape, so no saving", "Header text from the agent's own description: lets a batch misdescribe its messages", "An explicit mailbox-to-group config table: unnecessary while the tree derives the path"]
+rationale = "Every identity and every message description in the plan comes from the mail store, never from the agent; the agent contributes only grouping, action and rationale. The operator can spot an odd message in a batch by its real sender and subject."
+consequences = ["Assumption, unverified: a child of the inbox is INBOX/<name> over IMAP (fixture: family under Inbox); the live probe phase checks it", "The snapshot can be up to one screwtape sync tick (15 min) stale; Gnus is the live check when staging", "A non-human consumer of withheld-mail notices would need a different notification mechanism (operator, 2026-10-30)"]
+decided_by = "user (operator direction and accepted agent proposal, 2026-10-30)"
+decided_on = "2026-10-30"
+
+[evidence]                      # free-text citations (supports / contradicts / notes)
+supports    = []
+contradicts = []
+notes       = []
+
+[relationships]                 # verb-written edges (set by doctrine supersede)
+supersedes    = []   # record ids this one replaces (set by doctrine supersede)
+superseded_by = []   # set on superseded predecessor (verb-written)
+
+[[relation]]
+label = "references"
+role = "concerns"
+descriptor = "withheld mail must appear in plans"
+target = "DEC-063"
+
+[[relation]]
+label = "shapes"
+target = "SL-012"

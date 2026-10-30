@@ -1,0 +1,33 @@
+schema = "doctrine.knowledge"
+version = 1
+
+id = 116
+slug = "the-plan-document-is-the-batch-level-decision-surface-rendered-from-json-into-an-org-mode-buffer"
+title = "The plan document is the batch-level decision surface, rendered from JSON into an org-mode buffer with no file; Gnus is the message-level surface"
+record_kind = "decision"
+status = "accepted"
+created = "2026-10-30"
+updated = "2026-10-30"
+tags = []
+
+[facet]                         # every field typed; seeded empty (captured later)
+context = "The operator decides at batch level only with message-level information from a source the agent cannot shape. Org gives folding, tables, headings, properties and gnus: links for free, but org syntax is live: untrusted text can forge elisp: or shell: links, headings and blocks, and a file's Local Variables block (any line prefix) can carry eval:."
+choice = "Plan files stay JSON. M-x malebolge-mail-plan opens the latest plan (the common case); C-u chooses one. Emacs renders the plan into an org-mode buffer that visits no file, so no file-local variables are ever processed. One heading per plan line, riskiest first (delete, moves, marks, withheld with no action): action and target, message count, withheld count, the agent's rationale quoted and labelled as agent text, and a status tag from the act log (not applied, applied, failed, varied). Messages appear as table rows from the header snapshot (sender, subject, date, withheld reason), grouped by sender when collapsed. Every untrusted string is sanitised before insertion: one line, capped, no [[ or ]], | replaced, leading * and # neutralised. Only our code creates links (gnus: links from the derived Message-ID and group). Commands read the plan id and line from properties our renderer sets, never from rendered text. RET on a line opens and stages it in Gnus."
+alternatives = ["Gnus summary only: no plan overview, rationale repeated per message", "Document only, executing from it: duplicates Gnus and leaves the operator unable to read messages in place", "Write the org file to disk (daemon or Emacs): file-local variable injection becomes possible"]
+rationale = "Split roles keep Gnus doing what it already does well and give the operator an overview; rendering without a file and sanitising every untrusted string keep org's live syntax out of the agent's and senders' reach."
+consequences = ["Finer UI points (fold versus re-render for expanding a line, columns, keys) are settled in a VH phase with an agent after the first working version (operator, 2026-10-30)", "The renderer and sanitiser are pure functions, tested directly"]
+decided_by = "user (operator direction, 2026-10-30)"
+decided_on = "2026-10-30"
+
+[evidence]                      # free-text citations (supports / contradicts / notes)
+supports    = []
+contradicts = []
+notes       = []
+
+[relationships]                 # verb-written edges (set by doctrine supersede)
+supersedes    = []   # record ids this one replaces (set by doctrine supersede)
+superseded_by = []   # set on superseded predecessor (verb-written)
+
+[[relation]]
+label = "shapes"
+target = "SL-012"

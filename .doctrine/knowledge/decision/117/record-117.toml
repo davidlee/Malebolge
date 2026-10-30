@@ -1,0 +1,33 @@
+schema = "doctrine.knowledge"
+version = 1
+
+id = 117
+slug = "malebolge-tracks-withheld-mail-shown-per-conversation-and-adds-it-to-every-plan"
+title = "malebolge tracks the withheld mail each mail conversation was shown and adds it to every plan on a line of its own"
+record_kind = "decision"
+status = "accepted"
+created = "2026-10-30"
+updated = "2026-10-30"
+tags = []
+
+[facet]                         # every field typed; seeded empty (captured later)
+context = "DEC-109 requires withheld (DEC-063) and reported (DEC-062) mail the agent encountered to appear in every plan, for the operator to read. The threat is an infected agent, so a list the agent supplies can leave the hostile mail out unnoticed."
+choice = "Each mail tool that shows a withheld item records its id under the calling conversation in an in-memory set (cleared on restart, like the reported set; at most 100 ids per conversation, further ids counted but not kept). mail_propose adds every recorded id the agent's lines do not already name to one malebolge-written line with action none and no rationale. Every plan message, on any line, carries its withheld reason as malebolge computes it at propose time. A plan may consist of that line alone. No cap on plans per conversation: the plan command opens the latest plan by default (operator, 2026-10-30)."
+alternatives = ["The agent lists withheld ids in a parameter: an infected agent omits them silently", "Flag withheld mail on action lines only: narrows DEC-109", "A cap on plans per conversation: a directory scan per call against a nuisance the latest-plan default already absorbs"]
+rationale = "The agent cannot hide a withheld message from the plan; the state is bounded and of the same kind and lifetime as the reported set."
+consequences = ["Refines DEC-109; MailDeps gains the per-conversation withheld set", "The withheld line's ids count toward neither the 20-line nor the 100-message cap", "Withheld mail shown before a daemon restart is not carried into later plans"]
+decided_by = "user (accepted agent proposal, 2026-10-30)"
+decided_on = "2026-10-30"
+
+[evidence]                      # free-text citations (supports / contradicts / notes)
+supports    = []
+contradicts = []
+notes       = []
+
+[relationships]                 # verb-written edges (set by doctrine supersede)
+supersedes    = []   # record ids this one replaces (set by doctrine supersede)
+superseded_by = []   # set on superseded predecessor (verb-written)
+
+[[relation]]
+label = "shapes"
+target = "SL-012"

@@ -1,0 +1,39 @@
+schema = "doctrine.knowledge"
+version = 1
+
+id = 108
+slug = "mail-propose-writes-one-whole-plan-lines-of-one-action-over-a-set-of-messages-closed-action-set"
+title = "mail_propose writes one whole plan: lines of one action over a set of messages, closed action set, capped"
+record_kind = "decision"
+status = "accepted"
+created = "2026-10-30"
+updated = "2026-10-30"
+tags = []
+
+[facet]                         # every field typed; seeded empty (captured later)
+context = "Mail mode writes nothing (DEC-029, DEC-062 is the only side-effecting mail tool). SL-012 lets the mail agent propose actions the operator stages in Gnus (IDE-005)."
+choice = "A seventh mail tool, mail_propose({lines:[{ids, action, mailbox?, rationale}]}). One call writes one whole plan. A line is a batch: one action over a set of JMAP Email ids with one rationale. Actions: archive, move (mailbox required, a mailbox id from mail_mailboxes), mark_read, mark_unread, flag, unflag, delete (move to Trash; never expunge). Caps: at most 20 lines and 100 messages per plan; rationale one line of plain text, at most 280 bytes. A plan must also list every withheld or reported message the agent encountered, flagged, with or without an action (see the identity decision). replay is unsafe, like other side-effecting tools: an interrupted call is not rerun; the agent can propose again. The tool returns the plan id and its line and message counts."
+alternatives = ["Lines accumulated across calls into a draft plan: needs per-conversation state and a finish verb", "One action per message: no batch, no shared rationale, harder to review", "replay safe with idempotent writes: no gain over re-proposing"]
+rationale = "One call is the simplest write with no cross-call state. A line as batch is the unit the operator decides on. Caps bound review effort and screwtape lookups (one read per id)."
+consequences = ["Mail tool count goes six to seven (DEC-062, DEC-026 narrowing note, DEC-049 non-egress pin; VT-3 in test/toolsets.test.ts)", "Errors follow DEC-061 (malebolge: prefix) and DEC-028 (an invalid line refuses the whole call, nothing stored)", "Refusals name the line index, never echo agent text"]
+decided_by = "user (accepted agent proposal, 2026-10-30)"
+decided_on = "2026-10-30"
+
+[evidence]                      # free-text citations (supports / contradicts / notes)
+supports    = []
+contradicts = []
+notes       = []
+
+[relationships]                 # verb-written edges (set by doctrine supersede)
+supersedes    = []   # record ids this one replaces (set by doctrine supersede)
+superseded_by = []   # set on superseded predecessor (verb-written)
+
+[[relation]]
+label = "references"
+role = "concerns"
+descriptor = "amends: mail tool count six to seven"
+target = "DEC-062"
+
+[[relation]]
+label = "shapes"
+target = "SL-012"

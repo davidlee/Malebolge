@@ -1,0 +1,33 @@
+schema = "doctrine.knowledge"
+version = 1
+
+id = 114
+slug = "the-act-log-is-one-append-only-jsonl-file-beside-the-plans-it-records-every-act-on-a-plans-message"
+title = "The act log is one append-only JSONL file beside the plans; it records every act on a plan's message that reaches the server from a plan's Gnus summary"
+record_kind = "decision"
+status = "accepted"
+created = "2026-10-30"
+updated = "2026-10-30"
+tags = []
+
+[facet]                         # every field typed; seeded empty (captured later)
+context = "The operator wants a durable record of what they did with plans, with no read side yet (IDE-007 later). Gnus runs gnus-summary-article-move-hook after each successful move (gnus-sum.el:10280-10286) and gnus-after-set-mark-hook after each mark write with the real group and UID ranges (gnus-int.el:571-580)."
+choice = "Emacs appends to <plans dir>/acts.jsonl one versioned record per message per act: time, plan id, line, Message-ID, action, source group, target group or none, result (ok, failed, not_found) and how it was done (malebolge command or stock Gnus). Capture inside a plan's summary: moves through the move hook, marks through the after-set-mark hook (real group and UID mapped to Message-ID through the nnselect artlist), the malebolge move command directly. Dismissing a plan appends a dismissed record. Records are appended as each result lands, not at batch end. Variations from the plan are the plan minus the log; edits and drops are not logged separately (operator, 2026-10-30). Acts on plan messages in ordinary Gnus groups are not logged."
+alternatives = ["Explicit edited and dropped records: superseded by deriving variations", "Log at staging time: would record intentions, not acts"]
+rationale = "Logging at the server write records what actually happened, whatever command did it."
+consequences = ["The log is operator-sourced and stays out of every corpus and memory store (satan:RFC-020 constraint on mail-derived text; IDE-007 provenance)", "No read side in this slice beyond the plan document's status tags"]
+decided_by = "user (accepted agent proposal, 2026-10-30)"
+decided_on = "2026-10-30"
+
+[evidence]                      # free-text citations (supports / contradicts / notes)
+supports    = []
+contradicts = []
+notes       = []
+
+[relationships]                 # verb-written edges (set by doctrine supersede)
+supersedes    = []   # record ids this one replaces (set by doctrine supersede)
+superseded_by = []   # set on superseded predecessor (verb-written)
+
+[[relation]]
+label = "shapes"
+target = "SL-012"
