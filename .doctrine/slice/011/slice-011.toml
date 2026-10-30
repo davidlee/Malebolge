@@ -12,7 +12,7 @@ after = []                      # slice→work soft sequence: { to, rank }
 
 [[selector]]
 selector = "src/toolsets.ts"
-intent = "scope-relevant"
+intent = "design-target"
 
 [[selector]]
 selector = "src/bridge/**"
@@ -20,11 +20,11 @@ intent = "scope-relevant"
 
 [[selector]]
 selector = "src/session.ts"
-intent = "scope-relevant"
+intent = "design-target"
 
 [[selector]]
 selector = "src/conversations.ts"
-intent = "scope-relevant"
+intent = "design-target"
 
 [[selector]]
 selector = "pi-bridge/**"
@@ -36,19 +36,67 @@ intent = "scope-relevant"
 
 [[selector]]
 selector = "test/**"
-intent = "scope-relevant"
+intent = "design-target"
 
 [[selector]]
 selector = "src/daemon.ts"
-intent = "scope-relevant"
+intent = "design-target"
 
 [[selector]]
 selector = "src/daemon-start.ts"
-intent = "scope-relevant"
+intent = "design-target"
 
 [[selector]]
 selector = "src/threads/**"
 intent = "scope-relevant"
+
+[[selector]]
+selector = "src/persona.ts"
+intent = "design-target"
+
+[[selector]]
+selector = "src/topics.ts"
+intent = "design-target"
+
+[[selector]]
+selector = "src/bridge/listener.ts"
+intent = "design-target"
+
+[[selector]]
+selector = "src/bridge/extension.ts"
+intent = "design-target"
+
+[[selector]]
+selector = "src/threads/origin.ts"
+intent = "design-target"
+
+[[selector]]
+selector = "src/threads/admission.ts"
+intent = "design-target"
+
+[[selector]]
+selector = "pi-bridge/wire.ts"
+intent = "design-target"
+
+[[selector]]
+selector = "pi-bridge/state.ts"
+intent = "design-target"
+
+[[selector]]
+selector = "pi-bridge/shell.ts"
+intent = "design-target"
+
+[[selector]]
+selector = "pi-bridge/notices.ts"
+intent = "design-target"
+
+[[selector]]
+selector = "README.md"
+intent = "design-target"
+
+[[selector]]
+selector = "docs/internals.md"
+intent = "design-target"
 
 [[relation]]
 label = "related"
