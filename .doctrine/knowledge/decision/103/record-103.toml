@@ -1,0 +1,39 @@
+schema = "doctrine.knowledge"
+version = 1
+
+id = 103
+slug = "a-new-pair-on-a-bridged-conversation-replaces-its-pairing-the-old-connection-is-closed-with-a-reason"
+title = "A new pair on a bridged conversation replaces its pairing; the old connection is closed with a reason"
+record_kind = "decision"
+status = "accepted"
+created = "2026-10-30"
+updated = "2026-10-30"
+tags = []
+
+[facet]                         # every field typed; seeded empty (captured later)
+context = "One pairing document per conversation (src/bridge/pairing.ts). DEC-065's newest-wins was per connection within one pairing."
+choice = "pair on a conversation that already has a pairing reopens it (openPairing: new token, posture, project; outbox, seq and budget reset). A live connection for the old pairing is closed with refused superseded by a new pairing; its later resume gets bad token. Posts the daemon already accepted from the old pi stand."
+alternatives = ["Refuse pair while a pairing is live: needs an end path the operator may not have (pi gone)"]
+rationale = "Explicit and recoverable: the old side is told loudly, the new side owns the conversation."
+consequences = ["Refines DEC-065's newest-wins to the pairing level"]
+decided_by = "user (accepted agent proposal, 2026-10-30)"
+decided_on = "2026-10-30"
+
+[evidence]                      # free-text citations (supports / contradicts / notes)
+supports    = []
+contradicts = []
+notes       = []
+
+[relationships]                 # verb-written edges (set by doctrine supersede)
+supersedes    = []   # record ids this one replaces (set by doctrine supersede)
+superseded_by = []   # set on superseded predecessor (verb-written)
+
+[[relation]]
+label = "references"
+role = "concerns"
+descriptor = "amends"
+target = "DEC-065"
+
+[[relation]]
+label = "shapes"
+target = "SL-011"

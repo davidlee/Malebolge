@@ -1,0 +1,51 @@
+schema = "doctrine.knowledge"
+version = 1
+
+id = 100
+slug = "retire-the-bridge-mode-the-bridge-extension-joins-interactive-room-only"
+title = "Retire the bridge mode: the bridge extension joins interactive, room only"
+record_kind = "decision"
+status = "accepted"
+created = "2026-10-30"
+updated = "2026-10-30"
+tags = []
+
+[facet]                         # every field typed; seeded empty (captured later)
+context = "DEC-071 made bridge its own mode without threads and in no talk set, so jail-sourced text could not travel. Operator (SL-011): jail text reaching other conversations is acceptable; mail must talk to nothing."
+choice = "CATALOG loses bridge; interactive's list gains the bridge extension before SATAN, room only (ROOM_ONLY beside tasks and threads). PROFILE_TOOLSETS and TALK_SETS lose bridge. A bridged conversation is an ordinary interactive conversation: threads start, fork, post and wake into and out of it under the interactive talk set. bridge_post is always installed in room interactive conversations and refuses when unbridged (not a bridged conversation), as bookmarks refuse when unconfigured (DEC-055)."
+alternatives = ["Keep bridge as a mode and let pair accept interactive too: two modes with one purpose", "Interactive plus bridge minus threads: the operator's working conversations would lose threads"]
+rationale = "One mode for the operator's conversations; the isolation it removes is one the operator no longer wants."
+consequences = ["Supersedes DEC-071", "Amends DEC-029 (catalog), DEC-032 (bridge no longer the no-set precedent), DEC-076 (bridged conversations wake and are woken like any interactive one)", "Host profile never installs bridge"]
+decided_by = "user (accepted agent proposal, 2026-10-30)"
+decided_on = "2026-10-30"
+
+[evidence]                      # free-text citations (supports / contradicts / notes)
+supports    = []
+contradicts = []
+notes       = []
+
+[relationships]                 # verb-written edges (set by doctrine supersede)
+supersedes    = ["DEC-071"]   # record ids this one replaces (set by doctrine supersede)
+superseded_by = []   # set on superseded predecessor (verb-written)
+
+[[relation]]
+label = "references"
+role = "concerns"
+descriptor = "amends"
+target = "DEC-029"
+
+[[relation]]
+label = "references"
+role = "concerns"
+descriptor = "amends"
+target = "DEC-032"
+
+[[relation]]
+label = "references"
+role = "concerns"
+descriptor = "amends"
+target = "DEC-076"
+
+[[relation]]
+label = "shapes"
+target = "SL-011"

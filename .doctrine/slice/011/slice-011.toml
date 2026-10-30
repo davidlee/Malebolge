@@ -38,6 +38,18 @@ intent = "scope-relevant"
 selector = "test/**"
 intent = "scope-relevant"
 
+[[selector]]
+selector = "src/daemon.ts"
+intent = "scope-relevant"
+
+[[selector]]
+selector = "src/daemon-start.ts"
+intent = "scope-relevant"
+
+[[selector]]
+selector = "src/threads/**"
+intent = "scope-relevant"
+
 [[relation]]
 label = "related"
 target = "SL-009"

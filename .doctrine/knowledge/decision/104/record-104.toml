@@ -1,0 +1,33 @@
+schema = "doctrine.knowledge"
+version = 1
+
+id = 104
+slug = "pair-without-a-conversation-binds-the-one-conversation-an-operator-client-is-attached-to"
+title = "pair without a conversation binds the one conversation an operator client is attached to"
+record_kind = "decision"
+status = "accepted"
+created = "2026-10-30"
+updated = "2026-10-30"
+tags = []
+
+[facet]                         # every field typed; seeded empty (captured later)
+context = "Operator: no id should mean the currently active conversation, if cheap. The daemon tracks attachments per connection only; both listeners run in one process and already share an operator-input hook (onOperatorInput)."
+choice = "When pair names no conversation, the daemon looks at the conversations its attach listener currently has bound. Exactly one: pair binds it (subject to the interactive check). None: refused no operator client is attached; name a conversation. Several: refused several conversations are attached (N, M); name one. The attach listener exposes its bound conversations to the bridge host the way onOperatorInput is passed."
+alternatives = ["Require an id always: one fewer seam, but the operator must read and type an id every time", "Most recently created conversation: not what the operator is looking at"]
+rationale = "Matches what the operator means by active; explicit refusals when ambiguous."
+consequences = ["Supersedes DEC-092 and DEC-093: pair creates nothing, so no topic or model is chosen at pair", "An attach client from any source counts, Emacs or terminal"]
+decided_by = "user (accepted agent proposal, 2026-10-30)"
+decided_on = "2026-10-30"
+
+[evidence]                      # free-text citations (supports / contradicts / notes)
+supports    = []
+contradicts = []
+notes       = []
+
+[relationships]                 # verb-written edges (set by doctrine supersede)
+supersedes    = ["DEC-092", "DEC-093"]   # record ids this one replaces (set by doctrine supersede)
+superseded_by = []   # set on superseded predecessor (verb-written)
+
+[[relation]]
+label = "shapes"
+target = "SL-011"

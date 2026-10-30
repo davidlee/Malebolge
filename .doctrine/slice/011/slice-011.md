@@ -48,9 +48,8 @@ after:   pi /bridge pair <posture> <id> ──► daemon binds existing conversa
 3. **One live pairing per conversation.** A new `pair` on a conversation that
    already has one ends the old pairing (newest wins, one level up).
 4. **Emacs shows the conversation id** where the operator can read it to type
-   into pi (verify; add if absent).
-5. **Records:** supersede DEC-071 and DEC-065; settle the fate of DEC-092 and
-   DEC-093 per OQ-1; update SL-009's design where it is the living reference
+   into pi: already true (see Decisions).
+5. **Records:** see Decisions; update SL-009's design where it is the living reference
    (via reconcile, not in this scope document).
 
 Unchanged: the outbox (DEC-066), pi's inbound framing (DEC-067), turn budget
@@ -64,22 +63,24 @@ status (DEC-096/097/098).
 - Changing a conversation's model after creation.
 - Network policy for jails.
 
-## Open Questions
+## Decisions (design inquiry, 2026-10-30)
 
-- **OQ-1: pair with no id.** Operator's preference, if cheap: no id means
-  "the currently active conversation"; otherwise drop it and require an id.
-  The daemon has no "active" concept today (listings are newest by creation;
-  `src/conversations.ts:310`). Candidate: the one conversation an operator
-  client is attached to right now, refused with the attached ids when there
-  are none or several (both listeners live in one daemon process, DEC-064).
-  If dropped, DEC-092/093 (pair creates `<project>-bridge`) are superseded;
-  existing `<project>-bridge` topics and their `bridge`-mode conversations
-  need a migration answer (OQ-2).
-- **OQ-2: stored `bridge`-mode conversations.** Startup reconcile refuses a
-  stored mode the profile does not allow. Retiring the mode needs a
-  backfill (rewrite to interactive) or keeping `bridge` as an alias.
-- **OQ-3: tests and smoke.** Add an attach-from-Emacs path to the bridge's
-  verification, closing the gap that hid this issue.
+- DEC-099: pair binds an existing interactive conversation by id; refuses
+  unknown ids and non-interactive toolsets; creates nothing. Supersedes DEC-065.
+- DEC-100: the `bridge` mode is retired; the bridge extension joins
+  interactive, room only. Supersedes DEC-071; amends DEC-029, 032, 076.
+- DEC-101 (was OQ-2): startup reconcile rewrites stored `bridge` toolsets to
+  `interactive`, once. Refines DEC-025.
+- DEC-102: the bridge section renders only once a conversation has been bridged.
+- DEC-103: a new pair replaces the conversation's pairing; the old connection
+  is closed `superseded by a new pairing`.
+- DEC-104 (was OQ-1): pair with no id binds the one conversation an operator
+  client is attached to; refuses none or several. Supersedes DEC-092, 093.
+- DEC-105: a bridge-started turn opens a new origin (refines DEC-036).
+- Stale pairings are accepted; an attach-side end is IDE-010.
+- Verification (was OQ-3) includes an Emacs-attached VH.
+- Objective 4: Emacs already prints `attached to conversation N`
+  (`src/render.ts:372-376`); no Emacs change is required.
 
 ## Affected surface
 
@@ -87,7 +88,8 @@ status (DEC-096/097/098).
 - `src/bridge/**` (pairing, listener, extension)
 - `src/session.ts` (startup reconcile), `src/conversations.ts` (topicInit use by pair)
 - `pi-bridge/**` (`/bridge pair` argument, `malebolge-bridge` command)
-- `emacs/malebolge.el` (conversation id visibility)
+- `src/daemon.ts`, `src/daemon-start.ts` (attached-conversation set for DEC-104)
+- `src/threads/**` (origin kind for DEC-105)
 - `test/**`
 
 ## Verification intent

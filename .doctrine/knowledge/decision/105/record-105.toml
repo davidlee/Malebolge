@@ -1,0 +1,39 @@
+schema = "doctrine.knowledge"
+version = 1
+
+id = 105
+slug = "a-bridge-started-turn-opens-a-new-origin"
+title = "A bridge-started turn opens a new origin"
+record_kind = "decision"
+status = "accepted"
+created = "2026-10-30"
+updated = "2026-10-30"
+tags = []
+
+[facet]                         # every field typed; seeded empty (captured later)
+context = "DEC-036 counts thread families by origin. Bridge conversations had no thread tools; now a turn started by a satan.bridge input can start, post and wake."
+choice = "A satan.bridge input that starts a turn opens a new origin, as operator input does."
+alternatives = ["Inherit the conversation's last origin: unrelated work would share a cap"]
+rationale = "The trigger comes from outside malebolge, like the operator's own input; DEC-070's budget bounds bridge-started turns separately."
+consequences = ["Refines DEC-036"]
+decided_by = "user (accepted agent proposal, 2026-10-30)"
+decided_on = "2026-10-30"
+
+[evidence]                      # free-text citations (supports / contradicts / notes)
+supports    = []
+contradicts = []
+notes       = []
+
+[relationships]                 # verb-written edges (set by doctrine supersede)
+supersedes    = []   # record ids this one replaces (set by doctrine supersede)
+superseded_by = []   # set on superseded predecessor (verb-written)
+
+[[relation]]
+label = "references"
+role = "concerns"
+descriptor = "amends"
+target = "DEC-036"
+
+[[relation]]
+label = "shapes"
+target = "SL-011"

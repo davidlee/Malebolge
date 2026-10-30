@@ -1,0 +1,39 @@
+schema = "doctrine.knowledge"
+version = 1
+
+id = 101
+slug = "startup-reconcile-rewrites-stored-bridge-toolsets-to-interactive-once"
+title = "Startup reconcile rewrites stored bridge toolsets to interactive, once"
+record_kind = "decision"
+status = "accepted"
+created = "2026-10-30"
+updated = "2026-10-30"
+tags = []
+
+[facet]                         # every field typed; seeded empty (captured later)
+context = "Removing bridge from the allowed toolsets makes startup reconcile refuse any stored bridge topic or conversation (src/session.ts allowedToolsets), so the room daemon would not start. DEC-025 says a conversation's toolset never changes."
+choice = "The reconcile commit, before the allowed check, rewrites every stored topic and conversation entry whose toolset is bridge to interactive; the extension list is then re-derived as for any conversation. A narrow, named exception to DEC-025: a retired mode maps to the mode that superseded it."
+alternatives = ["Keep bridge as an alias of interactive in the catalog: a dead name kept forever", "Refuse and ask the operator to fix the store: no tool exists to do it"]
+rationale = "Interactive is a superset of bridge's tools plus threads, which the operator accepted; one rewrite, then the name is gone."
+consequences = ["Refines DEC-025 for retired modes", "Existing <project>-bridge topics remain as ordinary interactive topics"]
+decided_by = "user (accepted agent proposal, 2026-10-30)"
+decided_on = "2026-10-30"
+
+[evidence]                      # free-text citations (supports / contradicts / notes)
+supports    = []
+contradicts = []
+notes       = []
+
+[relationships]                 # verb-written edges (set by doctrine supersede)
+supersedes    = []   # record ids this one replaces (set by doctrine supersede)
+superseded_by = []   # set on superseded predecessor (verb-written)
+
+[[relation]]
+label = "references"
+role = "concerns"
+descriptor = "amends"
+target = "DEC-025"
+
+[[relation]]
+label = "shapes"
+target = "SL-011"

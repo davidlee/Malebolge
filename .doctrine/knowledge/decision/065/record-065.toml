@@ -7,7 +7,7 @@ title = "A pairing binds one pi session to one bridge-mode conversation by a tok
 record_kind = "decision"
 status = "accepted"
 created = "2026-10-29"
-updated = "2026-10-29"
+updated = "2026-10-30"
 tags = []
 
 [facet]                         # every field typed; seeded empty (captured later)
@@ -26,7 +26,7 @@ notes       = []
 
 [relationships]                 # verb-written edges (set by doctrine supersede)
 supersedes    = []   # record ids this one replaces (set by doctrine supersede)
-superseded_by = []   # set on superseded predecessor (verb-written)
+superseded_by = ["DEC-099"]   # set on superseded predecessor (verb-written)
 
 [[relation]]
 label = "shapes"

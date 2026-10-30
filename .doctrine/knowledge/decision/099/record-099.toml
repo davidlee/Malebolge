@@ -1,0 +1,33 @@
+schema = "doctrine.knowledge"
+version = 1
+
+id = 99
+slug = "pair-binds-an-existing-interactive-conversation-named-by-id-it-never-creates-one"
+title = "pair binds an existing interactive conversation named by id; it never creates one"
+record_kind = "decision"
+status = "accepted"
+created = "2026-10-30"
+updated = "2026-10-30"
+tags = []
+
+[facet]                         # every field typed; seeded empty (captured later)
+context = "DEC-065 had pair create a bridge-mode conversation in <project>-bridge. The operator works in conversations attached from Emacs and wants pi bridged to those (SL-011). Mode is fixed at creation (DEC-025); mail must reach nothing (RSK-002)."
+choice = "pair {posture, project, conversation?} binds the named conversation. Refused: an unknown id (no conversation N); a conversation whose toolset is not interactive (conversation N has toolset T, not interactive). pair creates no topic and no conversation. Token, resume and newest-connection-wins carry over from DEC-065 unchanged; project is a client assertion used only for display."
+alternatives = ["Keep creating in <project>-bridge (SL-009): the operator's attached conversations never gain the bridge", "Allow any toolset: mail would reach a jail"]
+rationale = "Binds where the operator already works; refusing non-interactive targets keeps mail and job conversations off the bridge without a new mechanism."
+consequences = ["Supersedes DEC-065", "No-id pairing: see the inq-6 decision", "pi notices name the conversation id, not <project>-bridge"]
+decided_by = "user (accepted agent proposal, 2026-10-30)"
+decided_on = "2026-10-30"
+
+[evidence]                      # free-text citations (supports / contradicts / notes)
+supports    = []
+contradicts = []
+notes       = []
+
+[relationships]                 # verb-written edges (set by doctrine supersede)
+supersedes    = ["DEC-065"]   # record ids this one replaces (set by doctrine supersede)
+superseded_by = []   # set on superseded predecessor (verb-written)
+
+[[relation]]
+label = "shapes"
+target = "SL-011"

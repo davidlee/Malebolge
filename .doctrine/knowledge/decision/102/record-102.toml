@@ -1,0 +1,33 @@
+schema = "doctrine.knowledge"
+version = 1
+
+id = 102
+slug = "the-bridge-prompt-section-renders-only-once-a-conversation-has-been-bridged"
+title = "The bridge prompt section renders only once a conversation has been bridged"
+record_kind = "decision"
+status = "accepted"
+created = "2026-10-30"
+updated = "2026-10-30"
+tags = []
+
+[facet]                         # every field typed; seeded empty (captured later)
+context = "Today the bridge section renders BRIDGE_UNTRUSTED even on a never-bridged conversation, harmless only because only bridge-mode conversations had it. All room interactive conversations now carry the extension."
+choice = "Never bridged (no pairing document, or tokenHash empty): no section. Once bridged, including after end: unchanged (untrusted framing; environment and posture text), since bridge messages stay in that conversation's context."
+alternatives = ["Render only while live (not ended): drops the untrusted framing while bridged text is still in context"]
+rationale = "The framing must cover every bridge message in context; a conversation never bridged has none."
+consequences = ["isBridged (tokenHash non-empty) is the gate"]
+decided_by = "user (accepted agent proposal, 2026-10-30)"
+decided_on = "2026-10-30"
+
+[evidence]                      # free-text citations (supports / contradicts / notes)
+supports    = []
+contradicts = []
+notes       = []
+
+[relationships]                 # verb-written edges (set by doctrine supersede)
+supersedes    = []   # record ids this one replaces (set by doctrine supersede)
+superseded_by = []   # set on superseded predecessor (verb-written)
+
+[[relation]]
+label = "shapes"
+target = "SL-011"
