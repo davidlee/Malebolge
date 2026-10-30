@@ -68,3 +68,30 @@ fresh-as-of: 2026-10-30 · ready (plan PHASE-01..08, none started) · 638c9d5
 
 ### Open
 - IDE-010 — attach-side end (out of scope)
+
+## Implementation run (2026-10-30, /super-orchestrator)
+
+Seat preflight, read by every charter:
+
+- **Host gate:** `just check` from the repo root. The seat's shell already carries
+  the flake devshell (direnv), so no `nix develop` wrapper. Green at 664b962:
+  115 files, 4177 tests.
+- **quotient forms:** `read` and `write` both have node, npx, just, biome, git
+  (guarded), eslint, tsc, vitest; network works; `write` root is writable.
+  Every `check` sub-recipe (fmt-check, lint, typecheck, test) passes in `write`.
+  `emacs` and `nix` are absent: `just ert` and `just smoke` are host-only (not in `check`).
+- **No sandbox-only failures.** Full suite is green in both.
+- **Never run two full `vitest run`s at once** (host and pi, or two pi workers):
+  they share `coverage/` and the coverage provider crashes. One full suite at a
+  time; workers run targeted tests, the full gate runs serially.
+- **Operator inputs:** none needed before PHASE-08. PHASE-08 VH-1 is human-run
+  (live room, Emacs, jailed pi). The run stops there; docs (PHASE-08 EX-1) may land
+  before it.
+- **Other writers:** another session owns SL-012. Leave alone:
+  `.doctrine/slice/012*`, `.doctrine/backlog/issue/007*`, `issue/008*`,
+  `.doctrine/knowledge/decision/108..117*`,
+  `.doctrine/memory/items/mem.fact.doctrine.design-review-decision-not-in-run`.
+  Commit by path only.
+- **Charters:** [01,02], [03], [04], [05,06], [07], [08 docs, halt before VH-1].
+
+## Autonomy log
