@@ -138,6 +138,7 @@ Seat preflight, read by every charter:
 - PHASE-08 docs (implement, $0.027, 19 req): README and internals rewritten from the facts brief, accurate to the code; four phrasings tightened by me; `just check` green. 934722f.
 - PHASE-08 (pre-VH-1, operator-directed): `PI_BRIDGE_ENVIRONMENT` now names the `malebolge-bridge send|tee [--turn]` command; it said only bridge_post reaches SATAN. Prompt text outside the design; no wording test (by rule). Flag for audit/reconcile. decided
 - PHASE-08 (pre-VH-1, operator-relayed pi feedback): `PI_BRIDGE_ENVIRONMENT` revised — paths count as shared references only with a named commit; verify on your own side; bridge_post starts a turn (pi claimed note-only: false, state.ts kind "turn"); the command's exit codes. Turn policy left to the posture corpus (DEC-040). Flag for audit/reconcile. decided
+- PHASE-08 VH-1 (EX-2): operator waived the structured run, 2026-10-30 ("going to skip the structured VH run, i think that was more useful anyway"). Substitute evidence: the operator's live pairing of a jailed pi (deck_of_dwarf) with a room conversation; multi-exchange use with SATAN, and pi's feedback on the prompt. Seat did not observe which checklist steps that covered; steps (3) refusal naming both ids, (4) non-interactive refusal and (5) replacement are not known to have been exercised live (all are VT-covered). Waived by the operator. escalated → user act
 
 ## VH-1 operator checklist
 
