@@ -32,6 +32,7 @@ const CATALOG: Readonly<Record<Toolset, readonly string[]>> = {
     "grep",
     "tasks",
     "threads",
+    "room-behind",
     "bookmarks",
     "bridge",
     SATAN,

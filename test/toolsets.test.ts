@@ -134,7 +134,10 @@ const extensionsOf = (profile: Profile): Extension[] => {
  * (PHASE-05), bookmarks (PHASE-07) and bridge (SL-011).
  */
 const withoutPostBaseline = (extensions: readonly Extension[]): Extension[] =>
-  extensions.filter(({ name }) => name !== "threads" && name !== "bookmarks" && name !== "bridge");
+  extensions.filter(
+    ({ name }) =>
+      name !== "threads" && name !== "bookmarks" && name !== "bridge" && name !== "room-behind",
+  );
 
 /** What a new interactive conversation offers on `profile`. */
 const snapshotOf = (profile: Profile): Promise<InteractiveSnapshot> =>
@@ -173,7 +176,11 @@ describe("toolset catalogue", () => {
       expect(snapshot.extensions).toEqual(
         toolsetList("interactive", profile).filter(
           (name) =>
-            name !== SATAN && name !== "threads" && name !== "bookmarks" && name !== "bridge",
+            name !== SATAN &&
+            name !== "threads" &&
+            name !== "bookmarks" &&
+            name !== "bridge" &&
+            name !== "room-behind",
         ),
       );
     }
@@ -185,7 +192,7 @@ describe("toolset catalogue", () => {
     expect(afterTasks).toBeGreaterThan(0);
     const extensions = [...baseline.extensions];
     extensions.splice(afterTasks, 0, "threads");
-    extensions.push("bookmarks", "bridge");
+    extensions.push("room-behind", "bookmarks", "bridge");
     const baselineKeys = Object.keys(promptSections(baseline));
 
     const room = await snapshotOf("room");
@@ -213,6 +220,7 @@ describe("toolset catalogue", () => {
         "thread_post",
         "thread_start",
         "thread_fork",
+        "room_behind",
         "bookmarks_search",
         "bookmarks_tags",
         "bookmarks_folders",
@@ -228,14 +236,20 @@ describe("toolset catalogue", () => {
       "bookmarks",
     ]);
     expect(host).toEqual({
-      extensions: [...hostBaseline.extensions, "bookmarks"],
+      extensions: [...hostBaseline.extensions, "room-behind", "bookmarks"],
       sections: [
         {
           ...promptSections(hostBaseline),
           bookmarks: `<bookmarks>\n${BOOKMARKS_SECTION}\n</bookmarks>`,
         },
       ],
-      tools: [...hostBaseline.tools, "bookmarks_search", "bookmarks_tags", "bookmarks_folders"],
+      tools: [
+        ...hostBaseline.tools,
+        "room_behind",
+        "bookmarks_search",
+        "bookmarks_tags",
+        "bookmarks_folders",
+      ],
     });
   });
 
@@ -287,7 +301,8 @@ describe("toolset catalogue", () => {
     const room = toolsetList("interactive", "room");
     expect(room).toContain("tasks");
     expect(room[room.indexOf("tasks") + 1]).toBe("threads");
-    expect(room[room.indexOf("threads") + 1]).toBe("bookmarks");
+    expect(room[room.indexOf("threads") + 1]).toBe("room-behind");
+    expect(room[room.indexOf("room-behind") + 1]).toBe("bookmarks");
     expect(toolsetList("interactive", "host")).not.toContain("tasks");
     expect(toolsetList("interactive", "host")).not.toContain("threads");
   });

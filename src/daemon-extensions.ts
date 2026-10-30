@@ -10,6 +10,7 @@ import { cwdExtension } from "./cwd.ts";
 import { grepExtension } from "./grep.ts";
 import { personaExtension } from "./persona.ts";
 import { projectContextExtension } from "./project-context.ts";
+import { roomBehindExtension } from "./room-behind.ts";
 import { type Skill, skillsExtension } from "./skills.ts";
 import { allowedNames, type DaemonToolset, requireInstalled } from "./toolsets.ts";
 
@@ -44,6 +45,7 @@ const builders = (parts: DaemonParts): ReadonlyMap<string, () => Extension> => {
     ["tasks", (): Extension => parts.tasks],
     ["threads", (): Extension => parts.threads],
     ["bookmarks", (): Extension => parts.bookmarks],
+    ["room-behind", (): Extension => roomBehindExtension],
     // Built unconditionally: only the room's policy installs it (design sec-6).
     ["bridge", (): Extension => bridgeExtension],
   ]);
