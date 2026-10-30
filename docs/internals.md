@@ -404,10 +404,10 @@ It needs node 23.6 or later in the jail (type stripping).
 
 The operator never sets the last two.
 
-**Posture texts** are placeholders keyed by posture (DEC-040):
-`BRIDGE_POSTURE_TEXT` in `src/bridge/extension.ts` for SATAN and
-`PI_POSTURE_TEXT` in `pi-bridge/posture.ts` for pi. Corpus prose replaces
-them later.
+**Posture texts**, keyed by posture (DEC-072): `PI_POSTURE_TEXT` in
+`pi-bridge/posture.ts` is pi's, the operator's text. `BRIDGE_POSTURE_TEXT` in
+`src/bridge/extension.ts` is SATAN's placeholder; corpus prose replaces it
+later (CHR-008).
 
 **Deployment contract** (DEC-074). Malebolge owns it; `~/flakes` implements
 it in the pi jail combinator (CHR-007):

@@ -1,0 +1,353 @@
+id    = 31
+slug  = "conformance-audit-of-sl-011"
+title = "Conformance audit of SL-011"
+# no status — a review's status is DERIVED from its findings, so
+# it is never stored (the storage rule forbids derived data in authored files).
+
+[review]
+facet     = "reconciliation"     # scope|design|plan|phase-plan|implementation|code-review|reconciliation
+raiser    = "raiser"
+responder = "responder"
+rounds_base = 0
+contests_base = 0
+concluded = true
+
+[[review.turn]]
+act = "conclude"
+role = "raiser"
+note = """
+Conformance audit of SL-011 at 6c2f699 (primary tree), against design.md (locked 0c2c9f2), plan.toml criteria and DEC-099..107. Examined:
+- `slice conformance` (every undeclared and undelivered path) and `slice verify-vt` (19/19 pass).
+- `just check` (4198 green). The plan's VA greps, re-run.
+- The PHASE-04 test-count dip, from the 01ef085 diff.
+- The four autonomy-log "flag for audit" shapes, in code.
+- The three post-run pi prompt commits: accuracy against pi-bridge/command.ts; fit with DEC-040, DEC-072, DEC-098, CHR-008 and IMP-030.
+- README and internals, for current-behaviour drift.
+- The VH-1 waiver and the VT coverage behind it.
+"""
+
+[target]                   # the outbound `reviews` edge: RV-NNN ──reviews──▶ <ref>
+ref   = "SL-011"
+
+[[finding]]
+id = "F-1"
+status = "verified"
+severity = "minor"
+title = "Design prose names shapes the code did not take (same behaviour): sec-3, sec-4, sec-6, sec-9"
+detail = """
+Expected: design.md describes the mechanism as built.
+Observed (each the same behaviour, per notes § Autonomy log and code read):
+- sec-4 Target: `attachedTarget(host)` → the code has `pairTarget(host, frame)` (project-length check + id choice, all before the commit) and `openPairOn(host, id, frame, token)` (the one commit). src/bridge/listener.ts:242-291.
+- sec-4 Attached set: "passes `() => daemon.attached()`" → `socket.attached()` (src/daemon-start.ts:393); plan PHASE-01 EX-3 already corrected this (daemon is `Daemon | undefined` there).
+- sec-3: `liveToolset` is `RETIRED[t] ?? t` with a RETIRED table → `t === "bridge" ? "interactive" : t`, no table (src/topics.ts:173-175). A Partial<Record> lookup cannot narrow without a cast (RV-029 F-1 bans casts).
+- sec-6: silent on a `satan.bridge` entry with no readable `data.kind` → the code skips it like a note (src/threads/admission.ts:77-80).
+- sec-9 table: section and fork cases listed under test/bridge-extension.test.ts → they live in test/daemon-sections.test.ts (plan PHASE-05 VT-1/VT-2 name that file).
+Not a finding: pi's pairing phase / pair event spread `PairRequest` flat (`{name:"pairing"} & PairRequest`). Design sec-7 names no nesting; plan PHASE-07 EX-2 says "the pairing phase's content". Aligned.
+"""
+disposition = "design-wrong"
+response = """
+The code's shapes are sound and keep the behaviour (pairTarget/openPairOn split pre-commit checks from the commit; the ternary avoids a cast RV-029 F-1 bans; skipping an unreadable bridge entry is fail-safe, since only a turn is known to be an input). The design text is wrong. Reconciliation Brief § Per-slice: design.md sec-3, sec-4 (Target, Attached set), sec-6, sec-9.
+"""
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "design-wrong"
+response = """
+The code's shapes are sound and keep the behaviour (pairTarget/openPairOn split pre-commit checks from the commit; the ternary avoids a cast RV-029 F-1 bans; skipping an unreadable bridge entry is fail-safe, since only a turn is known to be an input). The design text is wrong. Reconciliation Brief § Per-slice: design.md sec-3, sec-4 (Target, Attached set), sec-6, sec-9.
+"""
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+
+[[finding]]
+id = "F-2"
+status = "verified"
+severity = "minor"
+title = "Operator-directed pi prompt changes (6eaa43e, ffb8d61, e9698dc) are outside the design; pi-bridge/posture.ts is undeclared"
+detail = """
+Expected: design sec-7/sec-8 cover every source file changed, and design-target selectors cover them (conformance).
+Observed: `slice conformance SL-011` lists `M pi-bridge/posture.ts` as undeclared. Design sec-7 says "The `malebolge-bridge` command and env are unchanged" and sec-8 has no posture.ts row. After PHASE-08's docs, three operator-directed commits changed pi's prompt:
+- PI_BRIDGE_ENVIRONMENT: names the `malebolge-bridge send|tee [--turn]` command, its exit codes, the commit-named shared-reference rule, own-side checks, and that bridge_post starts a turn.
+- PI_POSTURE_TEXT: placeholders replaced by operator texts (consult: sounding board; delegate: bounded representative).
+Accuracy check, done here: the exit codes match `EXIT = {accepted:0, connectFailure:1, refused:2, unknown:3}` (pi-bridge/command.ts:24); `send` prints `accepted` (:146-148); `--turn` selects kind turn (:51-54); bridge_post is a turn (state.ts kind "turn", per notes). The text is accurate, so the defect is the design record and the selector registry, not the code.
+"""
+disposition = "design-wrong"
+response = """
+The prompt text is accurate to the code (checked against command.ts) and was operator-directed. The design and the selector registry are what's wrong. Reconciliation Brief § Per-slice: `doctrine slice selector add` for pi-bridge/posture.ts (load-bearing), plus a design.md sec-7 bullet and a sec-8 row as the human mirror.
+"""
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "design-wrong"
+response = """
+The prompt text is accurate to the code (checked against command.ts) and was operator-directed. The design and the selector registry are what's wrong. Reconciliation Brief § Per-slice: `doctrine slice selector add` for pi-bridge/posture.ts (load-bearing), plus a design.md sec-7 bullet and a sec-8 row as the human mirror.
+"""
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+
+[[finding]]
+id = "F-3"
+status = "verified"
+severity = "minor"
+title = "src/wake/tools.ts touched (comment only) outside the design and selectors"
+detail = """
+Expected: every edited path is declared.
+Observed: conformance lists `M src/wake/tools.ts` as undeclared. 01ef085 changed one stale comment ("bridge wakes only bridge"), which became false when PHASE-04 retired the toolset (notes § Autonomy log, PHASE-04). There's no behaviour change. Design sec-8 has no row for it.
+"""
+disposition = "design-wrong"
+response = """
+A comment-only correction that the retirement forced. The design and registry should declare it. Reconciliation Brief § Per-slice: `doctrine slice selector add` for src/wake/tools.ts, mirrored in a sec-8 row.
+"""
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "design-wrong"
+response = """
+A comment-only correction that the retirement forced. The design and registry should declare it. Reconciliation Brief § Per-slice: `doctrine slice selector add` for src/wake/tools.ts, mirrored in a sec-8 row.
+"""
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+
+[[finding]]
+id = "F-4"
+status = "verified"
+severity = "minor"
+title = "Posture-text status misdescribed: internals says both are placeholders; CHR-008 and a posture.ts comment expect corpus prose for pi"
+detail = """
+Expected: docs, comments and backlog say what the pi posture text now is.
+Observed:
+- docs/internals.md:406-409: "Posture texts are placeholders keyed by posture (DEC-040) … Corpus prose replaces them later." Stale for pi since e9698dc. SATAN's BRIDGE_POSTURE_TEXT is still a placeholder.
+- pi-bridge/posture.ts:1-2: "DEC-040's corpus prose may still replace it". Per DEC-072, SATAN's posture text renders from the corpus, but pi's section is the extension's own (code). pi has no corpus, and DEC-040 governs thread framing, not pi. The citation misattributes.
+- CHR-008: "Corpus prose … replaces both". pi's side is now authored in code. CHR-008's remaining scope is SATAN's text (and the turn-policy home, per notes § Harvest).
+"""
+disposition = "fix-now"
+response = """
+Fixed in this audit's commit:
+- docs/internals.md now says pi's text is the operator's and SATAN's is still a placeholder (CHR-008).
+- The pi-bridge/posture.ts header cites DEC-072 (pi's section is the extension's own) instead of DEC-040.
+- CHR-008's body gains an update: pi's side is done; SATAN's text and the turn-policy home remain.
+Comment and docs only. No code behaviour changes.
+"""
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "fix-now"
+response = """
+Fixed in this audit's commit:
+- docs/internals.md now says pi's text is the operator's and SATAN's is still a placeholder (CHR-008).
+- The pi-bridge/posture.ts header cites DEC-072 (pi's section is the extension's own) instead of DEC-040.
+- CHR-008's body gains an update: pi's side is done; SATAN's text and the turn-policy home remain.
+Comment and docs only. No code behaviour changes.
+"""
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+
+[[finding]]
+id = "F-5"
+status = "verified"
+severity = "minor"
+title = "The pair's environment texts disagree: SATAN's says don't compare files or commits with pi; pi's says commit-named paths are shared"
+detail = """
+Expected: the two sides of a pairing state consistent rules.
+Observed: src/bridge/extension.ts BRIDGE_ENVIRONMENT tells SATAN "Do not compare files or commits with pi; ask it to read or run what you need". pi-bridge/posture.ts PI_BRIDGE_ENVIRONMENT (ffb8d61) tells pi "A path and line are a shared reference only when you also name the commit your tree is at". Already captured as IMP-030 (proposed SATAN text, awaiting the operator's yes/no).
+"""
+disposition = "follow-up"
+response = """
+A prompt-text change on SATAN's side (code, not spec), owned by IMP-030. It awaits the operator's yes/no on the proposed text. Nothing in SL-011's design commits SATAN's environment text, so the slice can close with the asymmetry open.
+"""
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "follow-up"
+response = """
+A prompt-text change on SATAN's side (code, not spec), owned by IMP-030. It awaits the operator's yes/no on the proposed text. Nothing in SL-011's design commits SATAN's environment text, so the slice can close with the asymmetry open.
+"""
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+
+[[finding]]
+id = "F-6"
+status = "verified"
+severity = "minor"
+title = "DEC-098 says only bridge_post crosses; malebolge-bridge (DEC-075) also does"
+detail = """
+Expected: an accepted decision states the facts the prompts carry.
+Observed: DEC-098's choice says each side's environment text states "that only bridge_post crosses". From pi, the `malebolge-bridge` command (DEC-075, SL-009) also posts to SATAN. PI_BRIDGE_ENVIRONMENT now says "Only bridge_post and the malebolge-bridge command reach it" (6eaa43e). The decision text is narrower than both the mechanism and the prompt.
+"""
+disposition = "design-wrong"
+response = """
+Governance text is narrower than the mechanism. Reconciliation Brief § Governance: amend DEC-098's choice to say only bridge_post and (from pi) the malebolge-bridge command cross.
+"""
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "design-wrong"
+response = """
+Governance text is narrower than the mechanism. Reconciliation Brief § Governance: amend DEC-098's choice to say only bridge_post and (from pi) the malebolge-bridge command cross.
+"""
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+
+[[finding]]
+id = "F-7"
+status = "verified"
+severity = "minor"
+title = "Conformance PHASE-08 delta is open-ended and sweeps 54 paths from the concurrent SL-012 session"
+detail = """
+Expected: the source-delta registry holds only this slice's edits.
+Observed: phase-08 runtime log has `code_start_oid = f144e26` and no end. The range covers SL-012's interleaved commits (6e65b2d, 339ef00, a90abec, 7db9fa7). Conformance lists 54 undeclared paths under .doctrine/slice/012*, backlog/issue/007*,008*, knowledge/decision/108..117*, review/030*, and one memory item. All belong to the other session (handover § Environment). Also listed: `M .doctrine/slice/011/notes.md` (the slice's own notes, not code).
+"""
+disposition = "tolerated"
+response = """
+The other session's commits interleave with PHASE-08's range on `main`. A start..end range can't exclude interleaved commits, and an explicit end oid would still span them, since 6e65b2d..a90abec lie between f144e26 and 6eaa43e. Every swept path is under trees the handover names as SL-012's. The slice's own undeclared paths (posture.ts, wake/tools.ts) are separately dispositioned (F-2, F-3). Accepted as registry noise. Rationale: concurrent sessions on one branch, no exclusion verb.
+"""
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "tolerated"
+response = """
+The other session's commits interleave with PHASE-08's range on `main`. A start..end range can't exclude interleaved commits, and an explicit end oid would still span them, since 6e65b2d..a90abec lie between f144e26 and 6eaa43e. Every swept path is under trees the handover names as SL-012's. The slice's own undeclared paths (posture.ts, wake/tools.ts) are separately dispositioned (F-2, F-3). Accepted as registry noise. Rationale: concurrent sessions on one branch, no exclusion verb.
+"""
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+
+[[finding]]
+id = "F-8"
+status = "verified"
+severity = "minor"
+title = "VH-1 waived: live steps (3) two-attached refusal, (4) mail refusal, (5) replacement unexercised"
+detail = """
+Expected: PHASE-08 EX-2, VH-1 passed live.
+Observed: the operator waived the structured run on 2026-10-30 (notes § Autonomy log, 613cb4b). The substitute is live pairing of a jailed pi with a room conversation and multi-exchange use. That covers steps (1)-(2) in substance, and the seat didn't observe which. Steps 3-5 rest on VTs: PHASE-02 VT-1 (mail refused, `not interactive`) and VT-2 (several attached, naming the ids); PHASE-03 VT-2 (`superseded by a new pairing`, seq continues); PHASE-07 VT-2/VT-3 (pi unpairs on the new reason; a re-paired session receives the next message). All pass (`slice verify-vt`).
+"""
+disposition = "tolerated"
+response = """
+The operator waived VH-1 on 2026-10-30 (recorded user act, 613cb4b), and live use stands in for steps 1-2. Steps 3-5 each have a passing VT at the listener or pi-state level (PHASE-02 VT-1/VT-2, PHASE-03 VT-2, PHASE-07 VT-2/VT-3). The residual is the live wiring of the attached set from two real clients (Emacs plus a terminal) and of two jailed pi sessions. PHASE-01 VT-1 covers attached() at the daemon socket level. Accepted per the waiver.
+"""
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "tolerated"
+response = """
+The operator waived VH-1 on 2026-10-30 (recorded user act, 613cb4b), and live use stands in for steps 1-2. Steps 3-5 each have a passing VT at the listener or pi-state level (PHASE-02 VT-1/VT-2, PHASE-03 VT-2, PHASE-07 VT-2/VT-3). The residual is the live wiring of the attached set from two real clients (Emacs plus a terminal) and of two jailed pi sessions. PHASE-01 VT-1 covers attached() at the daemon socket level. Accepted per the waiver.
+"""
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+
+[[finding]]
+id = "F-9"
+status = "verified"
+severity = "nit"
+title = "PHASE-08 VA-1's literal grep hits current names (malebolge-bridge, pi-bridge/, the retirement log line)"
+detail = '''
+Expected: `rg -n 'bridge mode|-bridge\b|toolset bridge' README.md docs/internals.md` hits nothing that describes current behaviour.
+Observed (re-run at 6c2f699): 22 hits. Each is the current `malebolge-bridge` command, extension directory or powerbar segment; a `pi-bridge/` source path; or internals:89, the `toolset bridge retired, now interactive` log line. None describes bridge mode or a `<project>-bridge` topic. The criterion is VA (by agent), so its intent is the test. The handover says the operator was asked and hasn't ruled.
+'''
+disposition = "aligned"
+response = """
+VA-1 is an agent criterion, judged by intent ("describes current behaviour"). Every hit is a current name or the retirement log line, so the criterion is met. The regex is over-broad, which is a wording issue in an immutable plan criterion, not a docs defect. No change.
+"""
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "aligned"
+response = """
+VA-1 is an agent criterion, judged by intent ("describes current behaviour"). Every hit is a current name or the retirement log line, so the criterion is met. The regex is over-broad, which is a wording issue in an immutable plan criterion, not a docs defect. No change.
+"""
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+
+[[finding]]
+id = "F-10"
+status = "verified"
+severity = "nit"
+title = "Test count fell 4186→4182 at PHASE-04 (01ef085): confirm only bridge-toolset cases went"
+detail = """
+Expected: no coverage lost beyond the cases the retirement makes meaningless.
+Observed: the 01ef085 test diff removes 13 cases and adds 9 (net −4). Removed with no successor: persona `bridge` arm (×2 → one corpus case), "bridge belongs to no talk set", the two bridge-caller talk-set cases, the bridge-caller-waking-another-topic refusal, and the two bridge-self wake cases (→ one bridged-interactive case, VT-4). Each tested the `bridge` toolset, which no longer exists; plan PHASE-04 EX-4 names these deletions. Added: session reconcile (VT-2), liveToolset (VT-3), plus rewrites. `just check` at HEAD: 115 files, 4198 tests, green.
+"""
+disposition = "aligned"
+response = """
+Confirmed from the 01ef085 diff: only `bridge`-toolset cases went, as PHASE-04 EX-4 planned, and their successors (VT-2/3/4) were added. The suite is green at HEAD with 4198 tests.
+"""
+
+[[finding.turn]]
+act = "raise"
+role = "raiser"
+
+[[finding.turn]]
+act = "dispose"
+role = "responder"
+disposition = "aligned"
+response = """
+Confirmed from the 01ef085 diff: only `bridge`-toolset cases went, as PHASE-04 EX-4 planned, and their successors (VT-2/3/4) were added. The suite is green at HEAD with 4198 tests.
+"""
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+
+# Findings are append-only `[[finding]]` tables, added by `review raise`.
+# Empty here at creation — a fresh review is Active, awaiting the raiser.

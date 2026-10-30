@@ -1,0 +1,46 @@
+memory_uid = "mem_01a18c7278837021add285b50ab08c18"
+memory_key = "mem.fact.doctrine.conformance-sweeps-interleaved-sessions"
+schema_version = 1
+memory_type = "fact"
+status = "active"
+title = "slice conformance sweeps another session's commits interleaved in a phase's range"
+summary = "A phase delta is a start..end commit range; a concurrent session committing to the same branch inside it shows up as undeclared paths"
+created = "2026-10-30"
+updated = "2026-10-30"
+
+[scope]
+paths = []
+globs = []
+commands = ["doctrine slice conformance"]
+tags = ["doctrine", "audit"]
+workspace = "default"
+repo = "github.com/davidlee/Malebolge"
+repo_id_kind = "remote"
+repo_id_confidence = "high"
+
+[git]
+anchor_kind = "checkout_state"
+commit = ""
+tree = "369e77ab7fb8237c9ff1c68d11d6ee3f91bae3e1"
+ref_name = "refs/heads/main"
+checkout_state_id = "800e5b00252770cd758ce2f3f051828dc03871acf45350a4503edcacdf030644"
+base_commit = "6c2f699f45c2da4fdcc78fb341df04a724b6b951"
+verified_sha = ""
+normalizer = "forget.checkout.v1"
+
+[review]
+verification_state = "unverified"
+reviewed = ""
+review_by = ""
+
+[trust]
+trust_level = "medium"
+
+[ranking]
+severity = "none"
+weight = 0
+
+[[source]]
+kind = "review"
+ref = "RV-031"
+

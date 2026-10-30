@@ -51,26 +51,28 @@ refusal) and F-17 / DEC-107 (untrusted framing on forks).
 
 ## Harvest
 <!-- single-copy: updated in place each harvest; ids only, never restated content -->
-fresh-as-of: 2026-10-30 · PHASE-08 (all phases done; pre-audit) · e9698dc
+fresh-as-of: 2026-10-30 · audit (RV-031 concluded) · 6c2f699
 
 ### Produced
 - design locked 0c2c9f2 (RV-029; DEC-106, DEC-107); plan PHASE-01..08 (3a71ff5)
 - PHASE-01 6fd1650 · 02 d8cc727 · 03 f9753d9 · 04 01ef085 · 05 0c762be · 06 18342c0 · 07 acbc325 · 08 docs 934722f — via /super-orchestrator, pi workers only, no Claude spawns
 - post-run, operator-directed pi prompt changes: 6eaa43e, ffb8d61 (PI_BRIDGE_ENVIRONMENT), e9698dc (PI_POSTURE_TEXT; touches DEC-040)
 - VH-1 waived by operator; live use substituted (613cb4b); checklist steps 3-5 not known live-exercised
-- audit flags: § Autonomy log lines marked "flag for audit" (helper names, liveToolset form, bridge-entry skip, pair-event shape, prompt texts); test count dip 4186→4182 at PHASE-04 unexamined
+- audit flags: all adjudicated on RV-031 (F-1 shapes, F-2 prompt texts, F-10 test dip: only bridge-toolset cases)
 - gate `just check` green at e9698dc (4198 tests); all .doctrine changes committed
 - minted: IMP-030 — SATAN's file-comparison rule vs pi's; CHR-009 — drop malebolge flake's hand-rolled bridge jail
+- audit RV-031: 10 findings terminal, no blocker; brief → /reconcile (F-1/2/3 design + selectors, F-6 DEC-098); F-4 fixed in audit commit (internals, posture.ts comment, CHR-008 body)
 
 ### Learned
 - mem.fact.malebolge.pi-jails-carry-bridge — agents lib mounts the bridge in every pi jail
 - mem.fact.pi-durable.section-render-undefined-omits
 - mem.pattern.malebolge.vh-through-the-operators-client
 - mem.fact.doctrine.design-review-decision-not-in-run
+- mem.fact.doctrine.conformance-sweeps-interleaved-sessions — RV-031 F-7
 
 ### Open
-- DEC-040 — pi posture texts now operator-given; reconcile against the deferred corpus prose
-- CHR-008 — posture texts (pi side now authored; SATAN side and turn-policy home remain)
+- DEC-098 — choice text to amend at reconcile (RV-031 F-6)
+- CHR-008 — SATAN posture text and turn-policy home remain (body updated, RV-031 F-4)
 - IMP-030 — awaits operator yes/no
 - IDE-010 — attach-side end (out of scope)
 

@@ -15,6 +15,10 @@ placeholders keyed by posture:
 Corpus prose (the satan-corpus session) replaces both, keyed by `delegate`
 and `consult`.
 
+**Update 2026-10-30 (SL-011, RV-031 F-4):** pi's side is done. The operator
+authored `PI_POSTURE_TEXT` (e9698dc), and per DEC-072 it stays code, not corpus.
+What remains is SATAN's `BRIDGE_POSTURE_TEXT` and where turn policy lives.
+
 ## Inputs from the SL-009 real-jail run (2026-10-30)
 
 DEC-098 now carries the posture-independent facts on both sides (where the

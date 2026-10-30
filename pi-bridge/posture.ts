@@ -1,5 +1,5 @@
 // SL-009 design sec-3/sec-7: pi's posture section, keyed by posture. Operator
-// text (2026-10-30); DEC-040's corpus prose may still replace it.
+// text (2026-10-30); pi's section is the extension's own (DEC-072), not corpus prose.
 import type { Posture } from "./wire.ts";
 
 /** How pi treats SATAN, keyed by posture. */
