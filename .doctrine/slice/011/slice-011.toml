@@ -102,6 +102,16 @@ intent = "design-target"
 selector = "src/bridge/pairing.ts"
 intent = "design-target"
 
+[[selector]]
+selector = "pi-bridge/posture.ts"
+intent = "design-target"
+note = "RV-031 F-2/F-3"
+
+[[selector]]
+selector = "src/wake/tools.ts"
+intent = "design-target"
+note = "RV-031 F-2/F-3"
+
 [[relation]]
 label = "related"
 target = "SL-009"

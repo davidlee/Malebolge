@@ -77,9 +77,11 @@ the reconcile commit (its backfill). It gains the retirement rule, in one
 place, applied to both entries and topic records before they are returned:
 
 ```
-RETIRED: { bridge: "interactive" }
-stored toolset t  →  RETIRED[t] ?? t        (written back when changed)
+stored toolset t  →  t === "bridge" ? "interactive" : t        (written back when changed)
 ```
+
+No retirement table: a `Partial<Record>` lookup cannot narrow to
+`DaemonToolset` without a cast (RV-029 F-1), and one entry adds nothing.
 
 - A rewritten entry is logged by the existing step-3 path, because its
   extension list (the bridge list) differs from interactive's:
@@ -95,7 +97,7 @@ stored toolset t  →  RETIRED[t] ?? t        (written back when changed)
   with `StoredToolset = DaemonToolset | "bridge"`. `TopicRecord`,
   `NamedTopic`, `TopicChange` and `IndexEntry` keep `DaemonToolset`.
 - One pure function, `liveToolset(t: StoredToolset): DaemonToolset`
-  (`RETIRED[t] ?? t`), is the narrowing. `entryToolsets` uses it and writes
+  (the ternary above), is the narrowing. `entryToolsets` uses it and writes
   changed values back; the other narrowing readers (`storedEntry`,
   `storedTopic`, `topicsOf`, `indexConversation`'s fork copy) use it too, so
   no cast is needed. At runtime they never meet `bridge` once reconcile has
@@ -123,16 +125,18 @@ refuses a project over 255 bytes (`NAME_MAX`, the longest basename) as
 ```
 pairRow
   token := mintToken()                          (before any commit, as now)
-  id    := frame.conversation ? key or refuse "not a conversation id: X"
-                              : attachedTarget(host)       ── DEC-104
-  commit:
+  id    := pairTarget(host, frame)              (no commit; a refusal writes nothing)
+             project over 255 bytes → refuse "project longer than 255 bytes"
+             frame.conversation ? key or refuse "not a conversation id: X"
+                                : the one attached id   ── DEC-104
+  openPairOn(host, id, frame, token)            (one commit)
     entry := index entry for id   or refuse "no conversation N"
     entry.toolset == interactive  or refuse "conversation N has toolset T, not interactive"
     openPairing(pairingDoc(tx, id), posture, project, token)  ── DEC-103 overwrite
   bindAndFollow(state, host, id, token)          (closes an older pairing's connection)
 ```
 
-- `attachedTarget`: `host.attached()` returns the distinct conversation ids
+- The attached id (`pairTarget`): `host.attached()` returns the distinct conversation ids
   bound by live attach connections. One id → it. None → refuse
   `no operator client is attached; name a conversation`. Several → refuse
   `several conversations are attached (N, M); name one` (ids ascending).
@@ -190,7 +194,8 @@ is unchanged.
 `attached(): readonly ConversationId[]`: the distinct `bound.id` of live,
 not-ended connections. A listing connection binds nothing and does not
 count; root counts once bound (plain `M-x malebolge-attach` binds root).
-`daemon-start.ts` passes `() => daemon.attached()` into `bridgeHostOf`, and
+`daemon-start.ts` passes `() => socket.attached()` into `bridgeHostOf`
+(`daemon` is `Daemon | undefined` there; `socket` is the served value), and
 `BridgeHost` gains `attached`. This mirrors `onOperatorInput`, the
 existing cross-listener hook.
 <!-- doctrine:section sec-5 -->
@@ -228,7 +233,9 @@ Today `originOf` returns `undefined` for a bridge entry, so `callerOrigin`
 skips it and a bridge-started turn inherits the previous input's origin,
 sharing that family's cap. A bridge note (a write, DEC-069) starts no turn,
 so `originOf` still returns `undefined` for it: `callerOrigin` skips it as
-today, and the turn keeps the origin of the input that started it.
+today, and the turn keeps the origin of the input that started it. A
+`satan.bridge` entry with no readable `data.kind` opens no origin either:
+only a turn is known to be an input.
 
 Family and global caps, reaping and tombstones apply unchanged. Post
 entries serialise `origin.kind` into their data (`src/threads/task.ts`
@@ -258,6 +265,16 @@ entries serialise `origin.kind` into their data (`src/threads/task.ts`
   replaced a pairing.
 - The `malebolge-bridge` command and env are unchanged (they act on the
   paired conversation by id and token).
+- pi's prompt (operator-directed after PHASE-08: 6eaa43e, ffb8d61, e9698dc;
+  RV-031 F-2). `PI_BRIDGE_ENVIRONMENT` (`pi-bridge/posture.ts`) names
+  `malebolge-bridge send|tee [--turn]` and its exit codes (0 accepted, 1
+  outage, 2 refused, 3 unanswered). It says a path is a shared reference
+  only with a named commit, that a claim resting on a current tree is
+  checked on pi's own side, and that bridge_post starts a turn.
+  `PI_POSTURE_TEXT` carries the operator's texts (consult: a sounding board;
+  delegate: a representative with bounded authority). Per DEC-072, pi's
+  posture section is the extension's own, so these stay code. SATAN's side
+  of the shared-reference rule is IMP-030.
 <!-- doctrine:section sec-8 -->
 ## 8. Code impact
 
@@ -274,6 +291,8 @@ entries serialise `origin.kind` into their data (`src/threads/task.ts`
 | `src/conversations.ts` | header comment (DEC-093 superseded) |
 | `src/threads/origin.ts`, `src/threads/admission.ts` | `bridge` origin kind (sec-6) |
 | `pi-bridge/wire.ts`, `state.ts`, `shell.ts`, `notices.ts` | sec-7 |
+| `pi-bridge/posture.ts` | sec-7 prompt texts (operator-directed, RV-031 F-2) |
+| `src/wake/tools.ts` | a stale comment corrected when the toolset retired (RV-031 F-3) |
 | `README.md`, `docs/internals.md` | bridge mode and `<project>-bridge` text replaced by pairing an existing conversation |
 | tests | sec-9 |
 
@@ -297,8 +316,8 @@ VT (vitest):
 | re-pair replaces: old connection gets `superseded by a new pairing`; old token resumes `bad token`; seq continues after re-pair | `test/bridge-listener.test.ts` |
 | `openPairing` over a used pairing resets token, outbox and budget and keeps `nextSeq` | `test/bridge-pairing.test.ts` (its "resets a used document to a fresh pairing" case) |
 | a pi session re-pairs the same conversation and receives the new pairing's first message | pi-bridge state test |
-| section: never bridged → `BRIDGE_UNTRUSTED` alone; bridged → three parts; ended → still three parts | `test/daemon-sections.test.ts`, `test/bridge-extension.test.ts` |
-| fork a bridged conversation after a bridge entry: the fork's prompt carries `BRIDGE_UNTRUSTED`; its pairing is unpaired | `test/bridge-extension.test.ts` |
+| section: never bridged → `BRIDGE_UNTRUSTED` alone; bridged → three parts; ended → still three parts | `test/daemon-sections.test.ts` |
+| fork a bridged conversation after a bridge entry: the fork's prompt carries `BRIDGE_UNTRUSTED`; its pairing is unpaired | `test/daemon-sections.test.ts` |
 | a thread post from a bridge-started turn carries origin kind `bridge` | `test/threads-admission.test.ts` |
 | a bridge note after an operator input leaves the caller's origin kind `human` | `test/threads-admission.test.ts` |
 | a wake from a bridged conversation passes the talk-set check | `test/wake-tools.test.ts` (replaces the bridge-self-only case) |

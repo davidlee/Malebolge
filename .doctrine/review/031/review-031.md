@@ -122,3 +122,36 @@ used as the gate.
 - F-4: fixed in the audit commit (docs, comment, CHR-008 body).
 - F-5: IMP-030 (backlog, operator decision).
 - F-7, F-8: tolerated. F-9, F-10: aligned.
+
+## Reconciliation Outcome
+
+Operator agreed to items A–D on 2026-10-30 ("agreed").
+
+### Direct edits applied
+- Selector registry: `slice selector add 11 --intent design-target`
+  `pi-bridge/posture.ts src/wake/tools.ts` (F-2, F-3). Conformance now
+  reports these as conformant. The remaining undeclared paths are SL-012's
+  (F-7, tolerated) and SL-011's own notes.md.
+- SL-011 design.md:
+  - sec-3: `liveToolset` ternary, with the no-table reason (F-1).
+  - sec-4 Target: `pairTarget` / `openPairOn` (F-1).
+  - sec-4 Attached set: `socket.attached()` (F-1).
+  - sec-6: a bridge entry with no readable kind opens no origin (F-1).
+  - sec-7: a pi prompt bullet (F-2).
+  - sec-8: posture.ts and wake/tools.ts rows (F-2, F-3).
+  - sec-9: section and fork tests live in daemon-sections (F-1).
+- SL-009 design.md: pointer lines under sec-3 (DEC-099, 104), sec-4
+  (DEC-106) and sec-6 (DEC-100, 101), carried from SL-011 design sec-10.
+
+### Governance
+- DEC-098: choice amended to name the malebolge-bridge command, with a
+  dated amendment line in the body (F-6). Edited with `knowledge edit`. No
+  REV: no spec, requirement or ADR is involved, and REV rows target only
+  those.
+
+### Not reconciled here
+- F-4: fixed in the audit commit (440963b).
+- F-5: IMP-030, operator decision.
+- F-7, F-8: tolerated. F-9, F-10: aligned.
+
+Reconcile pass complete. Hand off to /close.

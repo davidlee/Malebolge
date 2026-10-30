@@ -118,6 +118,8 @@ There is no heartbeat (“The pi side and deployment”).
 <!-- doctrine:section sec-3 -->
 ## 3. Pairing and the pairing document (DEC-065, DEC-072)
 
+> Superseded in part by SL-011: pair binds an existing interactive conversation and creates nothing (DEC-099, DEC-104).
+
 **The document.** `src/bridge/pairing.ts` defines one pi-durable document,
 conversation scope, kind `malebolge.bridge`, modelled on
 `src/threads/tombstones.ts` (unexported token). Three accessors:
@@ -195,6 +197,8 @@ posture and the test that pins which one renders.
 
 <!-- doctrine:section sec-4 -->
 ## 4. Messages (DEC-066, DEC-067, DEC-068, DEC-069)
+
+> SL-011: a re-pair keeps the seq allocator, so a seq is never reused in a conversation (DEC-106 refines DEC-066).
 
 A message has kind `turn` (default) or `note`; how each enters each side is
 DEC-069's table. Each side's post tool returns a short ack and never echoes
@@ -343,6 +347,8 @@ Residual: a subverted pi can fake refills (DEC-070).
 
 <!-- doctrine:section sec-6 -->
 ## 6. Bridge mode and reach (DEC-071, DEC-076)
+
+> Retired by SL-011: the `bridge` mode is gone; the bridge extension joins interactive, room only (DEC-100, DEC-101).
 
 **Catalog** (`src/toolsets.ts`): `Toolset` gains `"bridge"`;
 `CATALOG.bridge` is interactive's list without `threads`, with `bridge`
