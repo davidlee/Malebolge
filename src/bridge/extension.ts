@@ -57,6 +57,7 @@ const bridgePost = defineTool({
   name: "bridge_post",
   description:
     "Send a message to the paired pi session; it starts a turn there. " +
+    "It works only once pi has paired with this conversation. " +
     `Refused when the pairing ended or pi has ${String(BRIDGE_OUTBOX_CAP)} unread messages. ` +
     "Returns sent #<seq>.",
   parameters: postParameters,

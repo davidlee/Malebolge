@@ -1,6 +1,6 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { defineExtension, MemoryStorage } from "@earendil-works/pi-durable";
+import { type Conversation, defineExtension, MemoryStorage } from "@earendil-works/pi-durable";
 import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite/node";
 import { afterEach, describe, expect, it } from "vitest";
 import type { Posture } from "../pi-bridge/wire.ts";
@@ -11,7 +11,14 @@ import {
   BRIDGE_UNTRUSTED,
   bridgeExtension,
 } from "../src/bridge/extension.ts";
-import { openPairing, pairingDoc } from "../src/bridge/pairing.ts";
+import { BRIDGE_ENTRY_KIND } from "../src/bridge/inbound.ts";
+import {
+  endPairing,
+  isBridged,
+  openPairing,
+  pairingDoc,
+  pairingSnapshot,
+} from "../src/bridge/pairing.ts";
 import { context } from "../src/context.ts";
 import { conversationExtension } from "../src/conversation-context.ts";
 import { conversations } from "../src/conversations.ts";
@@ -29,7 +36,7 @@ import {
 } from "../src/project-context.ts";
 import { DEFAULT_TOPIC } from "../src/protocol.ts";
 import { type Skill, skillsExtension } from "../src/skills.ts";
-import { selectionOf } from "../src/toolsets.ts";
+import { selectionOf, toolsetList } from "../src/toolsets.ts";
 import { renderBlock } from "../src/untrusted-block.ts";
 import { bookmarksPart } from "./bookmarks/bookmark-fixtures.ts";
 import { tempDir } from "./fixtures.ts";
@@ -37,9 +44,11 @@ import {
   closing,
   FAUX_CATALOG,
   FAUX_MODEL,
+  forkConversation,
   openFauxHarness,
   openTestHarness,
   systemPromptSections,
+  type TestHarness,
 } from "./harness-fixture.ts";
 import { fakeMailDeps } from "./mail/mail-fixtures.ts";
 
@@ -310,6 +319,86 @@ describe("BRIDGE_SECTION (VT-3)", () => {
     expect((bridgeExtension.sections ?? []).map(({ key, tag }) => [key, tag])).toEqual([
       ["bridge", false],
     ]);
+  });
+});
+
+/** A room interactive conversation: the room's extensions, root on the interactive toolset. */
+async function roomInteractiveHarness(): Promise<TestHarness> {
+  const test = await openFauxHarness(new MemoryStorage(), {
+    extensions: daemonExtensions(partsOf("room")),
+  });
+  await test.root.configure(
+    { extensions: selectionOf(toolsetList("interactive", "room")) },
+    context,
+  );
+  return test;
+}
+
+/**
+ * The bridge text the prompt `test` recorded for `conversation` carries: sections are
+ * re-sent only on change, so a prompt may carry none, and this reads the newest that
+ * does. It closes the harness, so read anything else from the harness first.
+ */
+async function bridgeTextIn(
+  test: TestHarness,
+  conversation: Conversation = test.root,
+): Promise<string> {
+  const texts = (await systemPromptSections(test, conversation))
+    .map((entry) => (isRecord(entry) ? entry["bridge"] : undefined))
+    .filter((text): text is string => typeof text === "string");
+  const [text] = texts;
+  if (text === undefined) {
+    throw new Error(`no bridge section in the prompts: ${JSON.stringify(texts)}`);
+  }
+  return text;
+}
+
+/** The three-part text a bridged pairing's section renders. */
+const THREE_PARTS = `${BRIDGE_UNTRUSTED}\n\n${BRIDGE_ENVIRONMENT}\n\n${BRIDGE_POSTURE_TEXT.consult}`;
+
+/** Open a consult pairing on `test`'s root, in a commit. */
+const pairRoot = (test: TestHarness): Promise<void> =>
+  test.harness.commit(async (tx) => {
+    openPairing(await pairingDoc(tx, test.root.id), "consult", "proj", "root-token");
+  }, context);
+
+describe("bridge framing in a room interactive conversation (SL-011 PHASE-05)", () => {
+  it("VT-1 a never bridged room conversation renders BRIDGE_UNTRUSTED alone", async () => {
+    expect(await bridgeTextIn(await roomInteractiveHarness())).toBe(BRIDGE_UNTRUSTED);
+  });
+
+  it("VT-1 a bridged room conversation renders all three parts", async () => {
+    const test = await roomInteractiveHarness();
+    await pairRoot(test);
+    expect(await bridgeTextIn(test)).toBe(THREE_PARTS);
+  });
+
+  it("VT-1 an ended room conversation renders all three parts", async () => {
+    const test = await roomInteractiveHarness();
+    await pairRoot(test);
+    await test.harness.commit(async (tx) => {
+      endPairing(await pairingDoc(tx, test.root.id));
+    }, context);
+    expect(await bridgeTextIn(test)).toBe(THREE_PARTS);
+  });
+
+  it("RV-029 F-17: a fork's prompt carries BRIDGE_UNTRUSTED, its pairing unpaired", async () => {
+    const test = await roomInteractiveHarness();
+    await pairRoot(test);
+    await test.harness.commit(
+      (tx) =>
+        tx.appendEntry(test.root.id, {
+          kind: BRIDGE_ENTRY_KIND,
+          data: { kind: "turn", project: "proj" },
+        }),
+      context,
+    );
+    const fork = await forkConversation(test.harness, test.root);
+    const page = await fork.entries({}, 50, undefined, context);
+    expect(page.items.filter((entry) => entry.kind === BRIDGE_ENTRY_KIND)).toHaveLength(1);
+    const doc = await pairingSnapshot(test.harness, fork.id);
+    expect(doc === undefined || !isBridged(doc)).toBe(true);
+    expect(await bridgeTextIn(test, fork)).toBe(BRIDGE_UNTRUSTED);
   });
 });
 
