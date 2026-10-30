@@ -132,4 +132,16 @@ None.
 
 ## Summary
 
+Done 2026-10-30. pair binds an existing room interactive conversation by id,
+or the one attached conversation, and creates nothing. The `bridge` mode is
+retired (stored records rewritten once at startup). A re-pair replaces the old
+pairing and keeps the seq. Every room interactive conversation frames bridge
+messages as untrusted. A bridge turn opens its own origin. Both sides' prompts
+treat commit-named paths as shared. Audit: RV-031 (no blocker); VH-1 waived by
+the operator, live use substituted.
+
 ## Follow-Ups
+
+- CHR-008: SATAN's posture text and where turn policy lives.
+- CHR-009: malebolge's flake still hand-rolls the bridge jail.
+- IDE-010: ending a pairing from the attach side.
