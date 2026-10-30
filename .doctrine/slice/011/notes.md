@@ -101,6 +101,8 @@ Seat preflight, read by every charter:
 - PHASE-02: added a contract case beyond the VTs: an unreconciled index entry (no toolset) is refused `no conversation N` (EX-2 names it; no VT keyword covers it). decided
 - PHASE-02: pi merged the brief's `attachedTarget` into `pairTarget(host, frame)` (project-length check + id choice, all pre-commit) with `openPairOn` owning the one commit; refusals inside the commit throw and roll back. Design sec-4 names `attachedTarget`; same behaviour, flag for audit. decided
 - PHASE-02: `create` in src/conversations.ts un-exported (its only outside user was the deleted bridge create path); dead `GHOST_REF` fixture export removed. decided
+- PHASE-03: replaced pi's `holdsPairingToken` (treated an absent snapshot or unset connection hash as "still holds", fail-open) with an inline `doc?.tokenHash !== state.tokenHash` check: fail-closed, both arms unreachable in practice. decided
+- PHASE-03: the supersede reasons are two module consts (`SUPERSEDED_BY_PAIRING`, `SUPERSEDED_BY_CONNECTION`); bind's caller data is one `Binding {reason, tokenHash}` object. Same behaviour as design sec-4. decided
 
 ## Review passes (pi runs)
 
@@ -108,3 +110,5 @@ Seat preflight, read by every charter:
 - PHASE-01 implement ($0.04, 32 req): red-first, all checks clean; weak listing test (fixed by me). 6fd1650.
 - PHASE-02 tests, red (implement, $0.066 + $0.011 continuation): 12 contract cases, red for the right reasons, old create block removed from bridge-pairing.test.ts. Missed the unreconciled-entry case until asked.
 - PHASE-02 code, green (implement, $0.041, 38 req): tests unedited, VA-1 empty, all checks clean. d8cc727.
+- PHASE-03 tests, red (implement, $0.021, 24 req): VT-1..VT-3, red for the right reasons, no fixture change. Clean.
+- PHASE-03 code, green (implement, $0.026, 30 req): tests unedited, all checks clean; one fail-open helper simplified by me. Negative control (restore `nextSeq = 1`): VT-2 fails `[1]` vs `[3]`. f9753d9.
