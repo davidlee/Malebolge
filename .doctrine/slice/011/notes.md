@@ -116,6 +116,9 @@ Seat preflight, read by every charter:
 - PHASE-07: pairing phase is `{ name: "pairing" } & PairRequest` and the pair event `{ type: "pair" } & PairRequest` (flat, not a nested `request` field); EX-2's "content"/"payload" read as the same fields. Flag for audit. decided
 - PHASE-07: F-3 shell case asserts `not.toContain(`${PROJECT}-bridge`)` rather than `-bridge`: the fake daemon's socket dir is `malebolge-bridge-*`, which every notice names. Test-strength unchanged for what EX-4 removes. decided
 - PHASE-07: simplified pi's pairFrame / pairingPhaseOf to spreads (exactOptionalPropertyTypes guarantees a PairRequest never holds `conversation: undefined`). Same behaviour. decided
+- PHASE-08: docs written by pi from a facts brief (`.doctrine/state/slice/011/phase-08-brief-docs.md`); I fixed four phrasings (host sentence, framing sentence, "fork starts unpaired", Reach subject). decided
+- PHASE-08: VA-1 read by intent: the remaining `-bridge\b` hits are the current `malebolge-bridge` command / extension dir / powerbar segment and `pi-bridge/` paths, and one `toolset bridge` hit is the retirement log line; none describes bridge mode or a `<project>-bridge` topic. decided
+- PHASE-08: phase left `in_progress`; VH-1 (EX-2) is the operator's, checklist under `## VH-1 operator checklist`. decided
 
 ## Review passes (pi runs)
 
@@ -132,3 +135,62 @@ Seat preflight, read by every charter:
 - PHASE-06 code, green (implement, $0.008, 13 req): tests unedited, no import cycle, no other Origin.kind reader affected. 18342c0.
 - PHASE-07 tests, red (implement, $0.067, 47 req): 13 red for the right reasons, VT-3 green as expected with an in-test dedupe control (seq 3 after re-pair is re-acked, not injected). One sound deviation (F-3 `-bridge`). Clean.
 - PHASE-07 code, green (implement, $0.035, 24 req): tests unedited (diff hash checked), tsc/lint clean, every pairFailed caller passes the conversation; two conditional builders simplified by me. acbc325.
+- PHASE-08 docs (implement, $0.027, 19 req): README and internals rewritten from the facts brief, accurate to the code; four phrasings tightened by me; `just check` green. 934722f.
+
+## VH-1 operator checklist
+
+PHASE-08 EX-2 / VH-1, run by the operator against the live room (SL-009's
+store) with a jailed pi carrying this tree's `pi-bridge/`. A failure re-enters
+the owning phase (EX-2), not a patch here. Commands run from this repo's root
+on the host unless marked "in pi".
+
+Settle what SATAN received from the stored record, not from SATAN's report
+(mem.pattern.malebolge.settle-model-input-from-stored-record). Read-only:
+
+```sh
+DB=~/.local/state/satan/durable/room/session.sqlite
+# pi -> SATAN messages in conversation N, newest first (the envelope as stored)
+sqlite3 "file:$DB?mode=ro" "select id, substr(record,1,400) from entries
+  where conversation_id = N and record like '%<bridge from=%' order by id desc limit 5"
+# SATAN's bridge_post calls in conversation N
+sqlite3 "file:$DB?mode=ro" "select id, substr(record,1,400) from entries
+  where conversation_id = N and record like '%bridge_post%' order by id desc limit 5"
+```
+
+pi side: `~/.local/share/jail.nix/home/agent/.pi/agent/sessions/--workspace-<project>--/*.jsonl`;
+a SATAN message is in pi's context once per seq, as one `custom_message` entry.
+
+1. **Restart over SL-009's store.** `systemctl --user restart malebolge-room`
+   (or `M-x malebolge-start`). Look for: it starts;
+   `journalctl --user -u malebolge-room -b | grep -E 'toolset bridge retired|list changed'`
+   shows `topic <project>-bridge: toolset bridge retired, now interactive` and a
+   `conversation N: toolset interactive list changed` line per conversation.
+   `node src/attach-main.ts --topics`: the old `<project>-bridge` topics show
+   TOOLSET `interactive`. `node src/attach-main.ts --list --topic <project>-bridge`
+   lists the old conversations; `node src/attach-main.ts --conversation N` attaches
+   one. A second restart logs no `retired` line (idempotent).
+2. **Pair root with no id.** Only Emacs attached: `M-x malebolge-attach` (root).
+   In pi: `/bridge pair consult`. Look for: pi's status line `malebolge bridge: bound`.
+   Ask SATAN (in Emacs) to message pi: it calls `bridge_post`, the message
+   starts a pi turn; pi answers with its `bridge_post`; `make test 2>&1 |
+   malebolge-bridge tee` in pi's `!` lands as a note. Stored record: root's
+   entries hold `<bridge from="pi" project="<project>" kind="turn">…</bridge>`
+   (and `kind="note"`); send a body containing `<b>` and check it is stored
+   escaped (`&lt;b&gt;`).
+3. **Two attached, then by id.** Keep Emacs on root; in a terminal
+   `node src/attach-main.ts --conversation N` (N another interactive
+   conversation). In pi: `/bridge end`, then `/bridge pair consult`. Look for the
+   refusal `several conversations are attached (R, N); name one` (ids
+   ascending), shown as `malebolge bridge: pairing failed: …`. Then
+   `/bridge pair consult N`: bound to N; an exchange lands in N's entries,
+   not root's.
+4. **Mail refused.** `node src/attach-main.ts --list` (or `--topics`, a mail
+   topic) to find a mail conversation M. In pi: `/bridge pair delegate M`.
+   Look for: `conversation M has toolset mail, not interactive`; M's entries
+   unchanged.
+5. **Replacement.** pi session A bound to N (step 3). Start a second jailed pi
+   session B and run `/bridge pair consult N` in B. Look for: A reports
+   `malebolge bridge: refused: superseded by a new pairing` and its status line
+   leaves `bound` (unpaired; A's next `/bridge pair` would start afresh). Ask
+   SATAN in N to message pi: B receives it (B's session `.jsonl` gains the
+   `custom_message`; A's does not), and its seq continues past A's last one.
