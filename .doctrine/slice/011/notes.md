@@ -95,3 +95,16 @@ Seat preflight, read by every charter:
 - **Charters:** [01,02], [03], [04], [05,06], [07], [08 docs, halt before VH-1].
 
 ## Autonomy log
+
+- PHASE-01: simplified VT-1's listing case to a lone `wireList` (pi's version paired it with a root attach, which made the assertion unable to tell a counted listing from root). Test-strength fix in phase files. decided
+- PHASE-01: accepted pi's reflow of one pre-existing comment in `startDaemon` to stay under `max-lines-per-function` (80). Cosmetic. decided
+- PHASE-02: added a contract case beyond the VTs: an unreconciled index entry (no toolset) is refused `no conversation N` (EX-2 names it; no VT keyword covers it). decided
+- PHASE-02: pi merged the brief's `attachedTarget` into `pairTarget(host, frame)` (project-length check + id choice, all pre-commit) with `openPairOn` owning the one commit; refusals inside the commit throw and roll back. Design sec-4 names `attachedTarget`; same behaviour, flag for audit. decided
+- PHASE-02: `create` in src/conversations.ts un-exported (its only outside user was the deleted bridge create path); dead `GHOST_REF` fixture export removed. decided
+
+## Review passes (pi runs)
+
+- PHASE-01 recon for PHASE-02 (research, $0.02): accurate file:line map, saved to `.doctrine/state/slice/011/phase-02-recon.md`.
+- PHASE-01 implement ($0.04, 32 req): red-first, all checks clean; weak listing test (fixed by me). 6fd1650.
+- PHASE-02 tests, red (implement, $0.066 + $0.011 continuation): 12 contract cases, red for the right reasons, old create block removed from bridge-pairing.test.ts. Missed the unreconciled-entry case until asked.
+- PHASE-02 code, green (implement, $0.041, 38 req): tests unedited, VA-1 empty, all checks clean. d8cc727.
