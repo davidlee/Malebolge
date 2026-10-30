@@ -1,0 +1,46 @@
+memory_uid = "mem_01a18bc7f81f78e3b29e0f296cf5bc60"
+memory_key = "mem.fact.doctrine.design-review-decision-not-in-run"
+schema_version = 1
+memory_type = "fact"
+status = "active"
+title = "A decision minted during a design run's review stage cannot join the run without reopening the graph"
+summary = "design adopt only re-baselines design.md; importing a new DEC needs new inquiry nodes, which reopen the graph and stale graph-reviewed/sufficiency"
+created = "2026-10-30"
+updated = "2026-10-30"
+
+[scope]
+paths = []
+globs = []
+commands = []
+tags = ["doctrine", "design-run"]
+workspace = "default"
+repo = "github.com/davidlee/Malebolge"
+repo_id_kind = "remote"
+repo_id_confidence = "high"
+
+[git]
+anchor_kind = "checkout_state"
+commit = ""
+tree = "e10437b1bccc30a2624bc6c039ff04a2a42989bc"
+ref_name = "refs/heads/main"
+checkout_state_id = "21292779b4ad7554eee97aecabb8b7e68dc829d5be7ead20b314914b5a468ac5"
+base_commit = "638c9d50d8bf2687c6a5934f4af0ae49bf1a4539"
+verified_sha = ""
+normalizer = "forget.checkout.v1"
+
+[review]
+verification_state = "unverified"
+reviewed = ""
+review_by = ""
+
+[trust]
+trust_level = "medium"
+
+[ranking]
+severity = "none"
+weight = 0
+
+[[source]]
+kind = "slice"
+ref = "SL-011"
+

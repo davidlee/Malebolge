@@ -51,21 +51,20 @@ refusal) and F-17 / DEC-107 (untrusted framing on forks).
 
 ## Harvest
 <!-- single-copy: updated in place each harvest; ids only, never restated content -->
-fresh-as-of: 2026-10-30 · design reviewing (run rev 21, RV-029 opened) · cbd01c3
+fresh-as-of: 2026-10-30 · ready (plan PHASE-01..08, none started) · 638c9d5
 
 ### Produced
-- scope (158dfd2); research round, two quotient threads → `research/research.md` (gitignored)
-- design inquiry: DEC-099..105; supersede DEC-065/071/092/093; amend refs DEC-025/029/032/036/065/076 (b02017d)
-- design drafted sec-1..10, design-target selectors, materialised (cbd01c3)
-- minted IDE-010 — end a pairing from the attach side
-- rough edge: materialise orders by id as text, so sec-10 renders second in design.md (fold into sec-9 or accept at review)
-- found: bridge-started turns inherit the prior origin today (`originOf` ignores `satan.bridge`); DEC-105 fixes it in this slice
-- no code changed; gate not applicable yet
+- design review RV-029 (F-1..F-20; verified, concluded) → design locked 0c2c9f2; DEC-106 (refines DEC-103/066), DEC-107 (refines DEC-102)
+- F-16/F-19/F-20/F-10 tolerated: token-hash check in boundLine, stated residual in sec-4 (operator chose this over a per-conversation lock)
+- DEC-106/107 not in the design run's graph (shapes links + design citations instead)
+- plan PHASE-01..08 (fbb22db; revised 55ab1b2, 3a71ff5 after pi + GPT plan review); phases materialised, status ready (638c9d5)
+- phase-sheet checks: PHASE-04 may have no pi-bridge-shell fixture change left; PHASE-07 VT keyword "injects" must appear in the test title
+- no code changed; gate not run
 
 ### Learned
 - mem.fact.pi-durable.section-render-undefined-omits
 - mem.pattern.malebolge.vh-through-the-operators-client
+- mem.fact.doctrine.design-review-decision-not-in-run
 
 ### Open
-- design review: policy not chosen (human / adversarial-then-human / adversarial); user was asked, no answer yet
 - IDE-010 — attach-side end (out of scope)
