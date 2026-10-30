@@ -221,6 +221,7 @@ describe("toolset catalogue", () => {
         "thread_start",
         "thread_fork",
         "room_behind",
+        "sync_room",
         "bookmarks_search",
         "bookmarks_tags",
         "bookmarks_folders",
@@ -246,6 +247,7 @@ describe("toolset catalogue", () => {
       tools: [
         ...hostBaseline.tools,
         "room_behind",
+        "sync_room",
         "bookmarks_search",
         "bookmarks_tags",
         "bookmarks_folders",

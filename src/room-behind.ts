@@ -5,6 +5,8 @@ import { defineExtension, defineTool } from "@earendil-works/pi-durable";
 const LIMIT = 64 * 1024;
 const DEADLINE_MS = 35_000;
 const SOCKET = "/run/user/1000/room-behind/room-behind.sock";
+const SYNC_SOCKET = "/run/user/1000/room-behind/sync-room.sock";
+const SYNC_DEADLINE_MS = 310_000;
 
 function parseResponse(body: string): string {
   const result: unknown = JSON.parse(body);
@@ -21,12 +23,12 @@ function parseResponse(body: string): string {
 }
 
 /** Read one bounded response from the host's socket-activated helper. */
-export function readRoomBehind(path = SOCKET): Promise<string> {
+export function readRoomBehind(path = SOCKET, deadlineMs = DEADLINE_MS): Promise<string> {
   return new Promise((resolve, reject) => {
     const socket = createConnection(path);
     const chunks: Buffer[] = [];
     let size = 0;
-    socket.setTimeout(DEADLINE_MS, () => socket.destroy(new Error("room-behind timed out")));
+    socket.setTimeout(deadlineMs, () => socket.destroy(new Error("host request timed out")));
     socket.on("data", (chunk: Buffer) => {
       size += chunk.length;
       if (size > LIMIT) {
@@ -64,6 +66,31 @@ export const roomBehindExtension = defineExtension({
               {
                 type: "text",
                 text: `room_behind: ${error instanceof Error ? error.message : String(error)}`,
+              },
+            ],
+            isError: true,
+          };
+        }
+      },
+    }),
+    defineTool({
+      name: "sync_room",
+      description:
+        "Push configured host branches and fast-forward clean room checkouts. Dirty or divergent checkouts are skipped. A failure or interruption may leave a partial sync; inspect the result before retrying.",
+      parameters: Type.Object({}),
+      replay: "unsafe",
+      execute: async () => {
+        try {
+          return {
+            output: [{ type: "text", text: await readRoomBehind(SYNC_SOCKET, SYNC_DEADLINE_MS) }],
+            isError: false,
+          };
+        } catch (error) {
+          return {
+            output: [
+              {
+                type: "text",
+                text: `sync_room may have partially completed: ${error instanceof Error ? error.message : String(error)}`,
               },
             ],
             isError: true,
