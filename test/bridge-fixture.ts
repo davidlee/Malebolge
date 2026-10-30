@@ -64,6 +64,11 @@ export interface BridgeHostWorld {
   satanCalls: readonly BridgeSatanCall[];
   /** Every line the bridge logged, in order. */
   logLines: readonly string[];
+  /**
+   * The conversations operator clients are attached to, as the bridge's `attached`
+   * port reads it: fixture-owned and mutable, empty until a test fills it.
+   */
+  attached: ConversationId[];
 }
 
 /** A room session with its conversations and the host record `serveBridge` takes. */
@@ -74,6 +79,8 @@ export async function bridgeHost(): Promise<BridgeHostWorld> {
   const clock = fakeClock(1_790_000_000_000);
   const satanCalls: BridgeSatanCall[] = [];
   const logLines: string[] = [];
+  // No daemon socket stands behind these tests: the attached set is theirs to set.
+  const attached: ConversationId[] = [];
   const log: Log = (text): void => {
     logLines.push(text);
   };
@@ -92,8 +99,9 @@ export async function bridgeHost(): Promise<BridgeHostWorld> {
     satan,
     log,
     now: clock.now,
+    attached: () => attached,
   };
-  return { test, conversations: made, host, satanCalls, logLines };
+  return { test, conversations: made, host, satanCalls, logLines, attached };
 }
 
 /** A fake pi: frames out, daemon frames in (each checked against the daemon vocabulary). */

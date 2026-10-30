@@ -289,6 +289,7 @@ const bridgeHostOf = (
   satan: Pick<SatanTools, "call">,
   log: Log,
   now: () => number,
+  attached: () => readonly ConversationId[],
 ): BridgeHost => ({
   session,
   conversations,
@@ -298,6 +299,7 @@ const bridgeHostOf = (
   satan,
   log,
   now,
+  attached,
 });
 
 /**
@@ -381,12 +383,12 @@ export async function startDaemon(config: Config, deps: StartDeps): Promise<Daem
     const conversationsReady = Promise.withResolvers<Conversations>();
     // The bridge listener's host, resolved beside it (SL-009 design sec-2).
     const bridgeHost = Promise.withResolvers<BridgeHost>();
-    // Room only, where an operator's input in a bridged conversation refills its
-    // loop budget (sec-5).
+    // Room only: an operator's input in a bridged conversation refills its loop budget (sec-5).
     const refill = operatorRefillOf(config, bridgeHost.promise);
-    daemon = await serve(
+    const socket = await serve(
       serveOptionsOf(config, satan, conversationsReady.promise, catalog, refill),
     );
+    daemon = socket; // the bridge's `attached` asks this socket, held by `beforeResume`.
     // Room only: `config.bridgeSocket` exists on no other profile's Config.
     if (config.bridgeSocket !== undefined) {
       bridge = await serveBridge({ path: config.bridgeSocket, host: bridgeHost.promise });
@@ -402,11 +404,12 @@ export async function startDaemon(config: Config, deps: StartDeps): Promise<Daem
       // The one Conversations: the socket's, and the wakes' (design § Daemon wiring, step 2).
       beforeResume: (opened) => {
         const shared = conversations(opened, defaults, config.execution.profile, catalog);
+        const attached = (): readonly ConversationId[] => socket.attached();
         wakes.bindLate({ harness: opened.harness, conversations: shared });
         threads.bindLate({ harness: opened.harness });
         conversationsReady.resolve(shared);
         bridgeHost.resolve(
-          bridgeHostOf(opened, shared, defaults, config, catalog, satan, log, now),
+          bridgeHostOf(opened, shared, defaults, config, catalog, satan, log, now, attached),
         );
       },
     });

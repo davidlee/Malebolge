@@ -1401,4 +1401,40 @@ describe("daemon", () => {
     await client.next(() => runEnds(client) === 2);
     expect(offered[1]).toContain("notes_read");
   });
+
+  describe("attached()", () => {
+    it("attached(): a listing connection binds nothing and does not count", async () => {
+      await start();
+      await wireList();
+      expect(daemon.attached()).toEqual([]);
+    });
+
+    it("attached(): root counts once bound", async () => {
+      await start();
+      expect(daemon.attached()).toEqual([]);
+      const passive = await lineClient(socketPath, toPrintable);
+      clients.push(passive);
+      // A connection that never sent a line is never bound, so it counts for nothing.
+      expect(daemon.attached()).toEqual([]);
+      await attach();
+      expect(daemon.attached()).toEqual([test.root.id]);
+    });
+
+    it("attached(): two clients on one conversation count once", async () => {
+      await start();
+      await attach();
+      await attach();
+      expect(daemon.attached()).toEqual([test.root.id]);
+    });
+
+    it("attached(): a closed connection drops out", async () => {
+      await start();
+      const client = await attach();
+      expect(daemon.attached()).toEqual([test.root.id]);
+      client.close();
+      await vi.waitFor(() => {
+        expect(daemon.attached()).toEqual([]);
+      });
+    });
+  });
 });

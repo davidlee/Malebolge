@@ -74,6 +74,8 @@ export interface BridgeHost {
   log: Log;
   /** The harness clock: a note's model timestamp. */
   now: () => number;
+  /** The conversations operator clients are attached to right now (SL-011, DEC-104). */
+  attached: () => readonly ConversationId[];
 }
 
 export interface BridgeListenerOptions {

@@ -25,7 +25,10 @@ import {
 } from "./protocol.ts";
 import { serveUnix, type UnixServer } from "./unix-socket.ts";
 
-export type Daemon = UnixServer;
+export type Daemon = UnixServer & {
+  /** The conversations live operator clients are attached to, each id once (SL-011, DEC-104). */
+  attached: () => readonly ConversationId[];
+};
 
 export interface ServeOptions {
   socketPath: string;
@@ -340,7 +343,11 @@ function enqueue(state: Connection, line: string): void {
  * here, at connect, before `conversations` resolves, so nothing is lost or
  * reordered while the daemon waits.
  */
-function startConnection(options: ServeOptions, socket: Socket): void {
+function startConnection(
+  options: ServeOptions,
+  connections: Set<Connection>,
+  socket: Socket,
+): void {
   const state: Connection = {
     socket,
     conversations: options.conversations,
@@ -351,8 +358,13 @@ function startConnection(options: ServeOptions, socket: Socket): void {
     ended: false,
     queue: Promise.resolve(),
   };
+  // The set's membership is the socket's life: added at connect, dropped at close.
+  connections.add(state);
   // Registered before any await: a close emitted while `conversations` opens is not replayed.
-  socket.on("close", () => void state.stream?.stop());
+  socket.on("close", () => {
+    connections.delete(state);
+    void state.stream?.stop();
+  });
   socket.on(
     "data",
     lineSplitter((line) => {
@@ -362,12 +374,30 @@ function startConnection(options: ServeOptions, socket: Socket): void {
 }
 
 /**
+ * The distinct conversations the live connections are bound to: a connection
+ * that ended (a listing, a refusal) or whose socket is gone is not attached.
+ */
+const attachedIds = (connections: Iterable<Connection>): readonly ConversationId[] => {
+  const ids = new Set<ConversationId>();
+  for (const state of connections) {
+    const { bound } = state;
+    if (bound !== undefined && !state.ended && !state.socket.destroyed) {
+      ids.add(bound.id);
+    }
+  }
+  return [...ids];
+};
+
+/**
  * Serve on a unix socket at `socketPath`: SocketInUse if a server answers there,
  * a stale socket replaced (serveUnix). Each connection waits for `conversations`
  * and binds one conversation by its first line; every input runs `beforeInput`.
+ * The live connections are this call's own state, for `attached`.
  */
-export function serve(options: ServeOptions): Promise<Daemon> {
-  return serveUnix(options.socketPath, (socket) => {
-    startConnection(options, socket);
+export async function serve(options: ServeOptions): Promise<Daemon> {
+  const connections = new Set<Connection>();
+  const server = await serveUnix(options.socketPath, (socket) => {
+    startConnection(options, connections, socket);
   });
+  return { ...server, attached: () => attachedIds(connections) };
 }
