@@ -10,13 +10,19 @@ raiser    = "raiser"
 responder = "responder"
 rounds_base = 0
 contests_base = 0
+concluded = true
+
+[[review.turn]]
+act = "conclude"
+role = "raiser"
+note = "Passes: pi deepseek first pass (F-1..F-14); GPT gpt-6.1-sol rounds 1-3 (F-15..F-20, round 3 minor folded into F-16 criterion); operator simplicity check (F-16 reshaped to boundLine hash check, residual tolerated). All findings verified against design.md at lock 0c2c9f2 via pi verify-only report."
 
 [target]                   # the outbound `reviews` edge: RV-NNN ──reviews──▶ <ref>
 ref   = "SL-011"
 
 [[finding]]
 id = "F-1"
-status = "answered"
+status = "verified"
 severity = "major"
 title = "sec-3 widening StoredToolset leaks bridge past the reconcile"
 detail = "sec-3 claims widening StoredEntry.toolset and the stored TopicRecord.toolset (src/topics.ts:48, :54) to StoredToolset means nothing past entryToolsets sees bridge. But TopicRecord is not a storage-only type: IndexDoc.topics holds it and the same type is returned by storedTopic (src/topics.ts:180-182), topicsOf (:359-364, NamedTopic = TopicRecord & {name}, :71), writeCreated's choose (src/conversations.ts:220, typed DaemonToolset) and the topic listing (src/conversations.ts:427). Likewise StoredEntry is read outside entryToolsets by storedEntry (src/topics.ts:190-196) and indexConversation's fork copy (:121-130). Widening as written fails typecheck at every one of these readers or forces casts. Source: pi first pass; verified."
@@ -39,9 +45,14 @@ response = """
 Accepted. The observation holds and extends to entries: storedEntry and indexConversation read StoredEntry outside entryToolsets. Fix in prose (R-1): IndexDoc holds honest stored types (StoredEntry and a new StoredTopicRecord, toolset StoredToolset); TopicRecord, NamedTopic and IndexEntry stay DaemonToolset. One pure function, liveToolset, maps StoredToolset to DaemonToolset by the RETIRED rule; entryToolsets uses it and writes back, and the existing narrowing readers (storedEntry, storedTopic, topicsOf, indexConversation's fork copy) use it too, so the types are honest without casts. The readers never meet bridge at runtime once reconcile has run; the claim in sec-3 is restated as that. Settled in this review; no DEC change (DEC-101 says rewrite once, which still holds).
 """
 
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "Reflected in design.md at lock 0c2c9f2; pi verify-only report (pi-verify.md) plus raiser spot-check."
+
 [[finding]]
 id = "F-2"
-status = "answered"
+status = "verified"
 severity = "minor"
 title = "sec-9 VH-3 cannot be reproduced from one Emacs"
 detail = "VH-3 asks for C-u M-x malebolge-attach to another conversation with root's client also attached. malebolge-attach with a target first calls malebolge--detach-waiting (emacs/malebolge.el:404-408, called at :465), which quits the live client; the transcript buffer holds one process. So at pair time only one conversation is attached and DEC-104's several-attached refusal never fires in the VH. Source: pi first pass; verified."
@@ -62,9 +73,14 @@ response = """
 Accepted. VH-3 uses two clients: Emacs attaches root (plain M-x malebolge-attach) and a terminal attach client (node src/attach-main.ts with a conversation id) attaches the other, as DEC-104's consequence anticipates (Emacs or terminal). R-2.
 """
 
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "Reflected in design.md at lock 0c2c9f2; pi verify-only report (pi-verify.md) plus raiser spot-check."
+
 [[finding]]
 id = "F-3"
-status = "answered"
+status = "verified"
 severity = "minor"
 title = "sec-8 names src/protocol.ts for the pair frame; it holds no bridge frames"
 detail = "sec-8 row 'src/protocol.ts (bridge frames) | pair.conversation optional'. src/protocol.ts is the daemon-socket vocabulary; grep finds no pair frame there. The pair frame is pi-bridge/wire.ts FIRST_LINE_FRAMES.pair (:172), which sec-4 and sec-8's pi-bridge row already name. Source: pi first pass; verified."
@@ -85,9 +101,14 @@ response = """
 Accepted. Delete the src/protocol.ts row; pi-bridge/wire.ts already carries the change. R-3.
 """
 
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "Reflected in design.md at lock 0c2c9f2; pi verify-only report (pi-verify.md) plus raiser spot-check."
+
 [[finding]]
 id = "F-4"
-status = "answered"
+status = "verified"
 severity = "major"
 title = "sec-6 opens a bridge origin on notes, beyond DEC-105"
 detail = "DEC-105: a satan.bridge input that starts a turn opens a new origin. sec-6 has originOf open an origin for every BRIDGE_ENTRY_KIND entry. Notes share that kind (src/bridge/inbound.ts:33, noteDraft :110-123, data.kind note, type write) and do not start a turn. callerOrigin (src/threads/admission.ts:81-98) takes the newest input entry's origin, so a note landing during an operator's turn re-origins the rest of that turn: its later thread calls count against a fresh bridge family instead of the operator's, sidestepping the family cap. sec-6's justification (it is what the turn is acting on) is asserted, not analysed. Source: pi first pass; verified."
@@ -110,9 +131,14 @@ response = """
 Accepted. sec-6 overreaches DEC-105, whose choice is a satan.bridge input that starts a turn. Fix (R-4): originOf opens a bridge origin only when the entry's data.kind is turn; a note returns undefined, is skipped by callerOrigin as today, and the turn keeps the origin of the input that started it. This restores DEC-105's own wording, so no decision changes. Add a VT: a bridge note landing after an operator input leaves the caller's origin kind human. Settled in this review.
 """
 
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "Reflected in design.md at lock 0c2c9f2; pi verify-only report (pi-verify.md) plus raiser spot-check."
+
 [[finding]]
 id = "F-5"
-status = "answered"
+status = "verified"
 severity = "nit"
 title = "sec-6 'wake notices and journals print kind already' is wrong"
 detail = "Nothing prints origin.kind: src/threads/task.ts:120-125 serialises it into post entry data; src/threads/reap.ts:105-106 prints originKey. The bridge envelope's kind is the message kind. Source: pi first pass; verified."
@@ -133,9 +159,14 @@ response = """
 Accepted. Replace the clause with: post entries serialise origin.kind into their data (src/threads/task.ts originData); journals print originKey, which does not carry kind. R-5.
 """
 
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "Reflected in design.md at lock 0c2c9f2; pi verify-only report (pi-verify.md) plus raiser spot-check."
+
 [[finding]]
 id = "F-6"
-status = "answered"
+status = "verified"
 severity = "minor"
 title = "sec-9 omits test/bridge-listener.test.ts"
 detail = "test/bridge-listener.test.ts exercises pair over the socket (world.pair() throughout). sec-9 assigns pair behaviour to test/bridge-pairing.test.ts, which tests the pure pairing document (openPairing, checkToken, appendOutbox). Socket-level properties (target resolution, refusal writes nothing, superseded close reason) have no stated home. Source: pi first pass; verified."
@@ -156,9 +187,14 @@ response = """
 Accepted. sec-9 names test/bridge-listener.test.ts for the socket-level pair cases (target by id, attached target, refusals writing nothing, superseded-by-a-new-pairing close) and keeps test/bridge-pairing.test.ts for the pure document (openPairing overwrite reset). R-6.
 """
 
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "Reflected in design.md at lock 0c2c9f2; pi verify-only report (pi-verify.md) plus raiser spot-check."
+
 [[finding]]
 id = "F-7"
-status = "answered"
+status = "verified"
 severity = "minor"
 title = "sec-9 does not say how the frozen-baseline toolset tests change"
 detail = "test/toolsets.test.ts VT-1 and VT-5 compare against a frozen baseline with withoutPostBaseline removing threads and bookmarks (:130-134, :163-215). Adding bridge to interactive breaks both. sec-9 only says it rewrites the bridge-catalogue and no-talk-set cases. Needed: bridge joins the post-baseline set; VT-5's expected room extensions and tools grow by bridge and bridge_post; its section stays absent for a never-bridged conversation (DEC-102). Source: pi first pass; verified."
@@ -179,9 +215,14 @@ response = """
 Accepted. sec-9's toolsets row states: bridge joins withoutPostBaseline's exclusions (it postdates the baseline); VT-5's expected room extensions gain bridge before satan and its tools gain bridge_post; no bridge section appears (the snapshot conversation was never bridged, DEC-102); host is unchanged. R-7.
 """
 
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "Reflected in design.md at lock 0c2c9f2; pi verify-only report (pi-verify.md) plus raiser spot-check."
+
 [[finding]]
 id = "F-8"
-status = "answered"
+status = "verified"
 severity = "minor"
 title = "sec-8 omits the wiring the deletions orphan"
 detail = "Deleting createBridged, bridgedInit, requireBridge leaves BridgeHost.conversations, .defaults and .catalog (src/bridge/listener.ts:62-70) and their construction in bridgeHostOf (src/daemon-start.ts:283-295) unused, plus imports (topicNameOf, isKnownTopic, topicInit...). Also Daemon is a bare alias of UnixServer (src/daemon.ts:28), so Daemon gaining attached() changes the alias to a distinct type. Source: pi first pass; verified."
@@ -202,9 +243,14 @@ response = """
 Accepted. sec-8 listener row adds: BridgeHost loses conversations, defaults, catalog and profile (profile's only use is topicInit in createBridged); bridgeHostOf in src/daemon-start.ts stops passing them; imports that go unused are dropped. daemon row: Daemon stops being a bare alias of UnixServer and becomes UnixServer plus attached(). R-8.
 """
 
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "Reflected in design.md at lock 0c2c9f2; pi verify-only report (pi-verify.md) plus raiser spot-check."
+
 [[finding]]
 id = "F-9"
-status = "answered"
+status = "verified"
 severity = "minor"
 title = "sec-3 topic-retirement log has no channel; step-3 log volume unstated"
 detail = "entryToolsets (src/topics.ts:327-348) takes no log; the reconcile logs in src/session.ts:162-174. sec-3 has a rewritten topic logged but does not say how session.ts learns which topics were rewritten. Separately, since the room interactive list gains bridge, step 3 rewrites and logs every room interactive conversation's list once at first start, not only the retired ones; sec-3 implies only rewritten entries log. Source: pi first pass; verified."
@@ -225,9 +271,14 @@ response = """
 Accepted. entryToolsets stays log-free and returns the names of topics it rewrote (retired); session.ts logs each. sec-3 also states that the first start after this slice rewrites and logs every room interactive conversation's list once, since the interactive list gains bridge; this is the existing step-3 behaviour and expected. R-9.
 """
 
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "Reflected in design.md at lock 0c2c9f2; pi verify-only report (pi-verify.md) plus raiser spot-check."
+
 [[finding]]
 id = "F-10"
-status = "answered"
+status = "verified"
 severity = "minor"
 title = "DEC-103 close lands after the replacing commit"
 detail = "pairRow commits openPairing (reset outbox, seq, budget) and only then bindAndFollow's bind closes the superseded connection (src/bridge/listener.ts:146-155). In between, the old connection's queued lines still pass boundLine's ended-only check (:457-475): it can post (spending the new pairing's budget) or ack. Proposed fix: close the superseded connection before the commit. Source: pi first pass; observation verified."
@@ -266,9 +317,14 @@ response = """
 Partial. Observation stands; the close-before-commit fix stays rejected (it would close the old connection on a refused pair). Settled with F-16's round-4 form: a boundLine token-hash check plus the tolerated residual stated there.
 """
 
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "Reflected in design.md at lock 0c2c9f2; pi verify-only report (pi-verify.md) plus raiser spot-check."
+
 [[finding]]
 id = "F-11"
-status = "answered"
+status = "verified"
 severity = "minor"
 title = "sec-7 re-pair after end cannot carry the conversation as typed"
 detail = "sec-7 says the re-pair after end keeps the conversation it was asked for, but the bound phase's ending is {then?: Posture} (pi-bridge/state.ts:57) and terminalRefusal rebuilds {type pair, posture, project} only (:380-399); pairEvent's askEnd passes {then: posture} (:672-683). Also unstated: a bound /bridge pair ends its own pairing first, so DEC-103's supersede is reachable only from a second client. Source: pi first pass; verified."
@@ -289,9 +345,14 @@ response = """
 Accepted. sec-7: the bound phase's ending becomes then: a pair request (posture and optional conversation) instead of a bare posture; pairEvent passes the event's conversation; terminalRefusal builds the pair frame with it. Add the sentence: a bound /bridge pair ends its own pairing before pairing again, so pi never meets its own supersede; superseded by a new pairing comes only from another client. R-11.
 """
 
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "Reflected in design.md at lock 0c2c9f2; pi verify-only report (pi-verify.md) plus raiser spot-check."
+
 [[finding]]
 id = "F-12"
-status = "answered"
+status = "verified"
 severity = "minor"
 title = "project loses its only validation"
 detail = "Today project is checked incidentally: topicNameOf(project + '-bridge') in pairRow (src/bridge/listener.ts:295). sec-4 deletes that path and keeps project as a client assertion stored on the pairing and re-emitted (escaped) in every bridge envelope (src/bridge/inbound.ts:43-49). The wire type is plain text (pi-bridge/wire.ts:172), bounded only by the line cap. Proposed fix: keep topicNameOf(project) or state a cap. Source: pi first pass; verified."
@@ -312,9 +373,14 @@ response = """
 Partial. Observation holds; reject reusing topicNameOf: project is pi's cwd basename (pi-bridge/command.ts), display-only now, and the topic rule would refuse ordinary basenames such as uppercase ones for no remaining reason. Fix (R-12): pair refuses a project longer than 255 bytes (NAME_MAX, the longest basename) with an explicit refusal naming the limit; the check runs before the commit with the other frame checks.
 """
 
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "Reflected in design.md at lock 0c2c9f2; pi verify-only report (pi-verify.md) plus raiser spot-check."
+
 [[finding]]
 id = "F-13"
-status = "answered"
+status = "verified"
 severity = "nit"
 title = "sec-3 cites allowedToolsets at src/session.ts:131-147"
 detail = "It is src/session.ts:127-142. Source: pi first pass; verified."
@@ -335,9 +401,14 @@ response = """
 Accepted. Correct the citation to src/session.ts:127-142. R-13.
 """
 
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "Reflected in design.md at lock 0c2c9f2; pi verify-only report (pi-verify.md) plus raiser spot-check."
+
 [[finding]]
 id = "F-14"
-status = "answered"
+status = "verified"
 severity = "nit"
 title = "sec-2 TALK_SETS bullet reads as if a change were expected"
 detail = "'TALK_SETS is unchanged in shape; with no bridge key there is nothing to remove' — 'unchanged' suffices. Source: pi first pass."
@@ -358,9 +429,14 @@ response = """
 Accepted. Shorten to: TALK_SETS is unchanged. R-14.
 """
 
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "Reflected in design.md at lock 0c2c9f2; pi verify-only report (pi-verify.md) plus raiser spot-check."
+
 [[finding]]
 id = "F-15"
-status = "answered"
+status = "verified"
 severity = "major"
 title = "Re-pair of the same conversation reuses seqs; pi drops new messages as duplicates"
 detail = """
@@ -385,9 +461,14 @@ response = """
 Accepted; the fix is HELD on the operator because it amends DEC-103's choice (seq reset). Recommended: openPairing keeps nextSeq across a re-pair, so a seq is never reused within a conversation; this extends DEC-066's own rule (a seq is never reused) from one pairing to the conversation. pi's key (conversation, seq) then stays unique, with no change on the pi side and no compatibility rule for stored session records. Outbox and budget still reset. Alternative: GPT's fix, a pairing-instance digest added to pi's MessageKey, which touches injection, persistence, ack and session-record compatibility. VT: a pi session re-pairs the same conversation and receives the new pairing's first message (pi-bridge state test plus listener test that seq continues).
 """
 
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "Reflected in design.md at lock 0c2c9f2; pi verify-only report (pi-verify.md) plus raiser spot-check."
+
 [[finding]]
 id = "F-16"
-status = "answered"
+status = "verified"
 severity = "major"
 title = "A superseded connection's in-flight end can end the replacing pairing"
 detail = """
@@ -442,9 +523,14 @@ response = """
 Accepted, then simplified on the operator's simplicity check (round 4); the per-conversation section, the deliver guard and the ordering matrix are withdrawn. Evidence: bind already finishes the superseded connection with superseded by a new pairing (src/bridge/listener.ts:146-154), handleLine drops every later queued line of an ended connection (:487-490) and deliver sends nothing to it (:197-199); so the exposure is only a handler of the old connection already between awaits when the replacing pair commits. pair is unauthenticated by design (DEC-099), so a lock is no security boundary. Fix kept: a connection records the token hash it bound under; boundLine compares it with the snapshot it already reads, beside the ended check, and on mismatch refuses superseded by a new pairing and finishes the connection; resumeRow keeps its token check. Tolerated residual: if a superseded pi connection has one line already in progress when a new pair commits on the same conversation, that line may act once on the new pairing (end it, post one untrusted-framed message, reset its budget, or, for a resume, take the binding and receive the new pairing's undelivered messages); each outcome is visible and recovered by re-pairing or resuming. Single VT: after the pairing is reopened under a new token (openPairing committed directly in the fixture), a line on the old bound connection is refused superseded by a new pairing, the connection is finished, and nothing is mutated.
 """
 
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "Reflected in design.md at lock 0c2c9f2; pi verify-only report (pi-verify.md) plus raiser spot-check."
+
 [[finding]]
 id = "F-17"
-status = "answered"
+status = "verified"
 severity = "major"
 title = "A fork of a bridged conversation keeps bridge text but loses its framing"
 detail = """
@@ -469,9 +555,14 @@ response = """
 Accepted; the fix is HELD on the operator because it changes DEC-102's gate. Recommended: render BRIDGE_UNTRUSTED in every room interactive conversation (it is constant, a paragraph), and add the environment and posture text only when the conversation's own pairing is bridged. No new state; covers operator forks, thread forks and any later copy path. Cost: one constant paragraph in every room interactive prompt, which DEC-102 chose to avoid. Alternative: a second, credential-free conversation document (bridge history, fork current) set in openPairing's commit; the section renders BRIDGE_UNTRUSTED alone when history is set but the own pairing is not bridged. Correct and prompt-minimal, but a new document. VT either way: fork a bridged conversation after a bridge entry; the fork's prompt carries BRIDGE_UNTRUSTED and its pairing stays unpaired.
 """
 
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "Reflected in design.md at lock 0c2c9f2; pi verify-only report (pi-verify.md) plus raiser spot-check."
+
 [[finding]]
 id = "F-18"
-status = "answered"
+status = "verified"
 severity = "minor"
 title = "VH-3 terminal attach command takes --conversation, not a positional id"
 detail = """
@@ -494,9 +585,14 @@ response = """
 Accepted. VH-3: node src/attach-main.ts --conversation N. R-18.
 """
 
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "Reflected in design.md at lock 0c2c9f2; pi verify-only report (pi-verify.md) plus raiser spot-check."
+
 [[finding]]
 id = "F-19"
-status = "answered"
+status = "verified"
 severity = "major"
 title = "The F-16 guard cannot reach submit; posts and notes still land after replacement"
 detail = """
@@ -531,9 +627,14 @@ response = """
 Observation stands; tolerated with F-16's residual (round 4 simplification). A post or note already past boundLine's snapshot when a replacing pair commits may be submitted once to the conversation, framed as untrusted bridge input. No hook into pi-durable's submit is needed.
 """
 
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "Reflected in design.md at lock 0c2c9f2; pi verify-only report (pi-verify.md) plus raiser spot-check."
+
 [[finding]]
 id = "F-20"
-status = "answered"
+status = "verified"
 severity = "major"
 title = "A stale resume displaces the replacing connection; binding and delivery are unguarded"
 detail = """
@@ -567,6 +668,11 @@ route = "review"
 response = """
 Observation stands; tolerated with F-16's residual (round 4 simplification). A resume whose token check passed before a replacing pair committed may bind after it, closing the new connection with superseded by a newer connection and receiving its undelivered outbox entries; its next bound line is refused by F-16's boundLine hash check and finished, so it cannot ack them away. Visible; recovered by the new pi resuming.
 """
+
+[[finding.turn]]
+act = "verify"
+role = "raiser"
+note = "Reflected in design.md at lock 0c2c9f2; pi verify-only report (pi-verify.md) plus raiser spot-check."
 
 # Findings are append-only `[[finding]]` tables, added by `review raise`.
 # Empty here at creation — a fresh review is Active, awaiting the raiser.

@@ -1,7 +1,7 @@
 id = 11
 slug = "bridge-existing-conversations"
 title = "Bridge existing conversations: pair pi with an interactive conversation by id"
-status = "design"
+status = "ready"
 created = "2026-10-30"
 updated = "2026-10-30"
 tags = []
