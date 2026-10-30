@@ -70,35 +70,37 @@ whole with its persona.
 
 | Toolset | Extensions, in system prompt and tool order | Used by |
 |---|---|---|
-| `interactive` | `persona`, `project_context`, `skills`, `cwd`, `conversation`, `coding-tools`, `grep`, `tasks`, `threads`, `bookmarks`, `satan` | the daemon |
+| `interactive` | `persona`, `project_context`, `skills`, `cwd`, `conversation`, `coding-tools`, `grep`, `tasks`, `threads`, `bookmarks`, `bridge`, `satan` | the daemon |
 | `mail` | `mail-persona`, `conversation`, `mail` | the daemon |
-| `bridge` | `persona`, `project_context`, `skills`, `cwd`, `conversation`, `coding-tools`, `grep`, `tasks`, `bookmarks`, `bridge`, `satan` | the daemon, room only ([Bridge](#bridge)) |
 | `job` | `job-tools`, `job-guard` | the runner |
 
 - `interactive` is the install order from before toolsets existed; the
   registry's list, with `satan` appended by discovery.
-- `tasks` and `threads` are room-only, so a host's `interactive` is the same
-  list without them; `bookmarks` is on both profiles (DEC-055). `mail` names
-  none of `coding-tools`, `grep`, `satan`, `tasks` or `bookmarks`: the
-  interactive toolset never includes mail, and a mail conversation holds
-  nothing but the five `mail_*` tools, the conversation section and its own
-  persona.
-- The name is a closed type, `Toolset = "interactive" | "mail" | "bridge" | "job"`, so
+- `tasks`, `threads` and `bridge` are room-only, so a host's `interactive` is
+  the same list without them (DEC-100); `bookmarks` is on both profiles
+  (DEC-055). `mail` names none of `coding-tools`, `grep`, `satan`, `tasks` or
+  `bookmarks`: the interactive toolset never includes mail, and a mail
+  conversation holds nothing but the five `mail_*` tools, the conversation
+  section and its own persona.
+- The name is a closed type, `Toolset = "interactive" | "mail" | "job"`, so
   a name outside the catalogue does not compile.
+- A stored `bridge` is retired, once: reconcile rewrites every topic and
+  conversation that names it to `interactive` and writes the index back,
+  logging `topic NAME: toolset bridge retired, now interactive` per topic and
+  the usual list change per conversation. A second start rewrites nothing
+  (DEC-101).
 - A persona belongs to the toolset too: `interactive` reads
   `system/scaffold.txt`, `prompts/interactive.txt` and
   `prompts/env/<profile>.txt`; `mail` reads `system/scaffold.txt` and
   `prompts/mail.txt`, with no environment file, since its tools run on the
   host whatever the profile. Both render the section key `persona`, so the
   two never meet in one conversation.
-  `bridge` reads interactive's persona files; its own prose is the `bridge`
-  section.
 
 **Policy per profile** (`PROFILE_TOOLSETS`):
 
 | Profile | Default for a new conversation | Allowed |
 |---|---|---|
-| `room` | `interactive` | `interactive`, `mail`, `bridge` |
+| `room` | `interactive` | `interactive`, `mail` |
 | `host` | `interactive` | `interactive` |
 
 The daemon installs the union of its allowed toolsets' lists and refuses to
@@ -294,38 +296,54 @@ unless it is owned by the daemon's user and closed to group and other, and the
 socket is left 0600. The directory exists so a pi jail can bind it alone,
 never `durable/room/`, which holds `durable.sock`.
 
-**Pairing.** `/bridge pair delegate|consult` in pi sends `pair {posture,
-project}`, the project being the basename of pi's cwd. The daemon creates one
-conversation in topic `<project>-bridge`, writing that topic with toolset
-`bridge` if the index lacks it; an existing topic with another toolset is
-refused (`topic <t> has toolset <x>, not bridge`), and a basename the topic
-rule rejects is refused as `topic must match …`. It mints a token per pairing
-and stores only its SHA-256. pi keeps the pairing as a session entry and
-resumes it on its next `session_start`; a newer connection for the same
-pairing wins (`superseded by a newer connection`). A fork of either side is
-not bridged. `/bridge end` ends the pairing; in an outage it unpairs pi alone
+**Pairing.** `/bridge pair delegate|consult [conversation]` in pi sends
+`pair {posture, project, conversation?}`. `project` is the basename of pi's
+cwd and display only; over 255 bytes it is refused (`project longer than 255
+bytes`). `conversation` is decimal digits; anything else is `not a
+conversation id: X`. With an id the daemon binds that conversation, refusing
+one the index does not list (`no conversation N`) and one on another
+toolset (`conversation N has toolset mail, not interactive`, so a mail
+conversation is refused); a fork of an interactive conversation may be
+paired. Without one it binds the conversation an operator client is attached
+to, root included, a `--list` connection not counting: none is `no operator
+client is attached; name a conversation`, several `several conversations are
+attached (N, M); name one`. A pair never creates a topic or a conversation,
+and the checks and the pairing write are one commit, so a refusal writes
+nothing. It mints a token per pairing and stores only its SHA-256. A new pair
+on an already-paired conversation replaces the pairing: new token, posture
+and project, outbox and budget reset, `seq` continuing and never reused. The
+old connection is closed `superseded by a new pairing`, which pi treats as
+terminal and unpairs, so its later resume gets `bad token`; a resume or newer
+connection on the same pairing is still `superseded by a newer connection`,
+and pi keeps the pairing and stops. pi keeps the pairing as a session entry
+and resumes it on its next `session_start`; a fork of either side starts
+unpaired. `/bridge end` ends the pairing; in an outage it unpairs pi alone
 and leaves the daemon's pairing as it is.
 
 **Messages.** SATAN's `bridge_post {text}` appends a turn to the pairing's
 outbox (at most 32 unread: `outbox full, pi is not draining`); the listener
 delivers it and pi acknowledges each entry once it is in pi's session. pi
 takes a delivery only while idle (DEC-090), and a turn starts a pi turn. pi →
-SATAN is
-pi's own `bridge_post {text}` tool (a turn) or `malebolge-bridge` (a note
-unless `--turn`). The daemon frames each as
-`<bridge from="pi" project="…" kind="…">…</bridge>`, and the `bridge` section
-tells the model the body is untrusted data from the jailed pi, never an
-instruction. In a bridged conversation the section then states where pi runs
-(`BRIDGE_ENVIRONMENT`, DEC-098): on the host, in the project's checkout, out of
-SATAN's sight, reachable only through `bridge_post`. Bodies are cut head-and-tail at 32 KiB (`capHeadTail`) on both
-sides.
+SATAN is pi's own `bridge_post {text}` tool (a turn) or `malebolge-bridge` (a
+note unless `--turn`). The daemon frames each as
+`<bridge from="pi" project="…" kind="…">…</bridge>`. The `bridge` section
+renders the untrusted-data text in every room interactive conversation,
+paired or not, so a body in its history stays framed as data, never an
+instruction, after `/bridge end` and in a fork (DEC-107). Once the
+conversation has been paired the section adds where pi runs
+(`BRIDGE_ENVIRONMENT`, DEC-098): on the host, in the project's checkout, out
+of SATAN's sight, reachable only through `bridge_post`, then the posture's
+text. Bodies are cut head-and-tail at 32 KiB (`capHeadTail`) on both sides.
 
-**Bridge mode's reach** (DEC-071, DEC-076). The `bridge` toolset is
-interactive's list without `threads`, with `bridge` before `satan`; the room
-allows it, the host does not. It has no talk set, so a bridge conversation
-holds no thread tools, its `wake_schedule` reaches only itself, and nothing
-but itself wakes into it. A wake into another conversation needs a shared
-talk set, which also means `interactive` no longer wakes `mail`.
+**Reach.** The bridge extension is in the room's `interactive` list
+(DEC-100), so a paired conversation is an ordinary interactive conversation:
+threads start, fork, post and wake into and out of it, and `interactive`
+still does not wake `mail`. A pi-started turn (a `bridge_post` from pi, or
+`malebolge-bridge --turn`) opens its own thread origin, kind `bridge`
+(`src/threads/origin.ts`, DEC-105); a note starts no turn and keeps the
+current origin. `bridge_post` is registered in every room interactive
+conversation and refuses (`not a bridged conversation`, `pairing ended`)
+until pi pairs.
 
 **Budget** (DEC-070, DEC-078). A pairing admits 10 pi-started turns
 (`BRIDGE_TURN_BUDGET`), spent in its own commit before the submit; a
@@ -336,16 +354,19 @@ by typing in the bridged conversation, or by typing in pi (an interactive
 
 **The pi side** (`pi-bridge/`, DEC-073). `index.ts` is the extension, a thin
 shell over the pure transition function `step` in `pi-bridge/state.ts`. It
-needs nothing from npm beyond pi's own packages. It registers `/bridge`,
-the `bridge_post` tool and a bash tool whose spawn hook prepends the
+needs nothing from npm beyond pi's own packages. It registers `/bridge`
+(`/bridge pair delegate|consult [conversation]`, `/bridge end`), the
+`bridge_post` tool and a bash tool whose spawn hook prepends the
 extension's directory to `PATH` and, while paired, sets
 `MALEBOLGE_BRIDGE_CONVERSATION` and `MALEBOLGE_BRIDGE_TOKEN` (removed
 otherwise, inherited values included). The operator's `!` commands get the
 same variables through a `user_bash` handler (DEC-096); pi passes that
 handler no env, so they run on pi's `process.env`, without pi's
-own bin directory or a configured `shellPath`. While paired, pi's system
-prompt gains where SATAN runs (`PI_BRIDGE_ENVIRONMENT`, DEC-098), then the
-posture's text. The status line reads
+own bin directory or a configured `shellPath`. `superseded by a new pairing`
+is terminal, as `pairing ended` and `bad token` are: pi unpairs and stops.
+While paired, pi's system prompt gains where SATAN runs
+(`PI_BRIDGE_ENVIRONMENT`, DEC-098), then the posture's text. The status line
+reads
 `malebolge bridge: <phase>`, or `malebolge bridge: outage (attempt N)`; the
 same text goes to pi-powerbar as segment `malebolge-bridge` over pi's event
 bus (DEC-097), shown where powerbar's settings enable it.

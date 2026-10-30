@@ -347,21 +347,20 @@ fixed list of extensions, chosen as a whole with the prompt that goes with it.
 
 | Toolset | Holds | Used by |
 |---|---|---|
-| `interactive` | the persona, project context, skills, cwd and conversation sections, coding tools (`read`, `write`, `edit`, `bash`), `grep`, `tasks`, the `thread_*` tools, the three `bookmarks_*` tools, SATAN's MCP tools | the daemon |
+| `interactive` | the persona, project context, skills, cwd and conversation sections, coding tools (`read`, `write`, `edit`, `bash`), `grep`, `tasks`, the `thread_*` tools, the three `bookmarks_*` tools, SATAN's MCP tools, and, room only, `bridge_post` and the `bridge` section ([Pairing a jailed pi](#pairing-a-jailed-pi)) | the daemon |
 | `mail` | a mail persona, the conversation section, the five `mail_*` tools | the daemon |
-| `bridge` | `interactive` without the `thread_*` tools, plus `bridge_post` and the `bridge` section | the daemon, room only ([Pairing a jailed pi](#pairing-a-jailed-pi)) |
 | `job` | the job tools and the job guard | the runner |
 
 `interactive` never includes mail, and `mail` holds no coding tool, no `grep`,
 no `tasks` and no SATAN tool: a conversation is one or the other. On the `host`
-profile `interactive` is the same list without `tasks`, which wakes a room
-only.
+profile `interactive` is the same list without `tasks`, `threads` and the
+bridge, which are room only.
 
 Each profile decides what its daemon offers:
 
 | Profile | Default for a new conversation | Allowed |
 |---|---|---|
-| `room` | `interactive` | `interactive`, `mail`, `bridge` |
+| `room` | `interactive` | `interactive`, `mail` |
 | `host` | `interactive` | `interactive` |
 
 So a host daemon holds no `mail_*` tool and needs no Screwtape setup, while a
@@ -423,16 +422,24 @@ In the jailed pi:
 
 | Type | Effect |
 |---|---|
-| `/bridge pair delegate` | pair; SATAN is told the operator is away |
-| `/bridge pair consult` | pair; SATAN is told the operator is present |
+| `/bridge pair delegate [N]` | pair conversation N, default the attached one; SATAN is told the operator is away |
+| `/bridge pair consult [N]` | pair conversation N, default the attached one; SATAN is told the operator is present |
 | `/bridge end` | end the pairing; in an outage, drop it on pi's side only |
 
-Pairing creates a conversation in topic `<project>-bridge`, `<project>` being
-the basename of pi's working directory. Attach to it to watch or join in:
+A pair binds an existing room `interactive` conversation and creates neither
+topic nor conversation. Name it by id (`/bridge pair consult 42`), or leave
+the id out and pi takes the conversation an operator client is attached to:
+with none it is refused `no operator client is attached; name a
+conversation`, with several `several conversations are attached (N, M); name
+one`. A mail conversation is refused (`conversation N has toolset mail, not
+interactive`), and so is one the index does not hold (`no conversation N`).
+Attach to the paired conversation to watch or join in, as to any other
+(`M-x malebolge-attach`, or `node src/attach-main.ts --conversation N`).
 
-```sh
-node src/attach-main.ts --topic <project>-bridge   # its latest conversation
-```
+A conversation holds one pairing: a second pi pairing it takes over, and the
+first is told `superseded by a new pairing` and unpairs. Every room
+interactive conversation, paired or not, tells SATAN that pi's messages are
+untrusted data, so they stay framed after `/bridge end` and in a fork.
 
 pi's status line shows `malebolge bridge: bound` (under pi-powerbar, enable
 its `malebolge-bridge` segment). SATAN posts to pi with
@@ -451,6 +458,9 @@ pi may start 10 SATAN turns before the operator types, in the conversation or
 in pi; past that it is refused `budget exhausted, waiting on the operator`.
 A lost connection is loud once (a notice naming the conversation and socket),
 then retried quietly; the pairing resumes when the daemon is back.
+
+Conversations an older daemon created in `bridge` mode become interactive at
+the first daemon start, their topic and pairings kept.
 
 ## Patch jobs
 
