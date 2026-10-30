@@ -98,6 +98,10 @@ intent = "design-target"
 selector = "docs/internals.md"
 intent = "design-target"
 
+[[selector]]
+selector = "src/bridge/pairing.ts"
+intent = "design-target"
+
 [[relation]]
 label = "related"
 target = "SL-009"

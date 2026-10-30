@@ -20,10 +20,12 @@ operator ─ attach --topic <project>-bridge ─► C   operator ─ M-x malebol
 | DEC-099 | pair binds an existing interactive conversation by id; never creates (supersedes DEC-065) |
 | DEC-100 | `bridge` mode retired; the bridge extension joins interactive, room only (supersedes DEC-071; amends DEC-029, 032, 076) |
 | DEC-101 | startup reconcile rewrites stored `bridge` toolsets to `interactive`, once (refines DEC-025) |
-| DEC-102 | the bridge section renders only once a conversation has been bridged |
+| DEC-102 | the bridge section's environment and posture text render only once a conversation has been bridged (refined by DEC-107) |
 | DEC-103 | a new pair replaces the conversation's pairing; the old connection is closed `superseded by a new pairing` |
 | DEC-104 | pair with no conversation binds the one an operator client is attached to (supersedes DEC-092, 093) |
 | DEC-105 | a bridge-started turn opens a new origin, kind `bridge` (refines DEC-036) |
+| DEC-106 | a re-pair keeps the conversation's seq allocator; a seq is never reused in a conversation (refines DEC-103, DEC-066) |
+| DEC-107 | every room interactive conversation renders `BRIDGE_UNTRUSTED`, so inherited bridge history stays framed (refines DEC-102) |
 
 Unchanged from SL-009: the listener and its vocabulary apart from `pair`'s new
 key (DEC-064), outbox and delivery (DEC-066, 080), inbound framing and
@@ -36,7 +38,8 @@ post-once (DEC-075), pi-side buffering and abort (DEC-079, 090), outage end
 
 At reconcile: SL-009's `design.md` sections on pairing, the bridge mode and
 `<project>-bridge` gain a pointer to this design (superseded by DEC-099,
-100, 104); `README.md` and `docs/internals.md` updated in code (sec-8).
+100, 104), and its outbox section notes that seq now continues across
+pairings (DEC-106 refines DEC-066); `README.md` and `docs/internals.md` updated in code (sec-8).
 CHR-008 (posture texts) is unaffected. IDE-010 (end from the attach side)
 stays in the backlog.
 <!-- doctrine:section sec-2 -->
@@ -52,8 +55,7 @@ stays in the backlog.
 - `ROOM_ONLY` gains `"bridge"`: `toolsetList` drops it on host, as it drops
   `tasks` and `threads`. Host never installs or builds-and-requires it.
 - `PROFILE_TOOLSETS.room.allowed` becomes `["interactive", "mail"]`.
-- `TALK_SETS` is unchanged in shape; with no `bridge` key there is nothing to
-  remove. Bridged conversations are interactive and so in the room's
+- `TALK_SETS` is unchanged. Bridged conversations are interactive and so in the room's
   interactive talk set: threads start, fork, post and wake into and out of
   them (DEC-100 amends DEC-032, DEC-076).
 
@@ -66,7 +68,7 @@ Mail stays off the bridge by two independent facts: mail's list has no
 <!-- doctrine:section sec-3 -->
 ## 3. Retiring stored `bridge` toolsets (DEC-101)
 
-Without a remap, `allowedToolsets` (`src/session.ts:131-147`) refuses any
+Without a remap, `allowedToolsets` (`src/session.ts:127-142`) refuses any
 stored topic or conversation entry whose toolset is `bridge`, and the room
 daemon will not start. SL-009's live run created such records.
 
@@ -81,20 +83,29 @@ stored toolset t  →  RETIRED[t] ?? t        (written back when changed)
 
 - A rewritten entry is logged by the existing step-3 path, because its
   extension list (the bridge list) differs from interactive's:
-  `conversation N: toolset interactive list changed`. A rewritten topic is
-  logged `topic NAME: toolset bridge retired, now interactive`.
-- The index document is typed, not parsed: `StoredEntry.toolset` and the
-  stored `TopicRecord.toolset` (`src/topics.ts:48`, `:54`) widen to a
-  `StoredToolset = DaemonToolset | "bridge"`, and `entryToolsets` narrows to
-  `DaemonToolset`, so nothing past it sees `bridge`. Topic readers that run
-  outside the reconcile (`topicInit`'s `choose`, listings) only ever see
-  rewritten records, since reconcile runs before the session serves.
+  `conversation N: toolset interactive list changed`. `entryToolsets` stays
+  log-free and also returns `retired`, the names of the topics it rewrote;
+  `src/session.ts` logs `topic NAME: toolset bridge retired, now interactive`
+  for each.
+- The first start after this slice rewrites and logs every room interactive
+  conversation's list once, because the interactive list gains `bridge`
+  (sec-2). This is expected step-3 behaviour.
+- `IndexDoc` holds the stored types: `StoredEntry` (`toolset?:
+  StoredToolset`) and a new `StoredTopicRecord` (`toolset?: StoredToolset`),
+  with `StoredToolset = DaemonToolset | "bridge"`. `TopicRecord`,
+  `NamedTopic`, `TopicChange` and `IndexEntry` keep `DaemonToolset`.
+- One pure function, `liveToolset(t: StoredToolset): DaemonToolset`
+  (`RETIRED[t] ?? t`), is the narrowing. `entryToolsets` uses it and writes
+  changed values back; the other narrowing readers (`storedEntry`,
+  `storedTopic`, `topicsOf`, `indexConversation`'s fork copy) use it too, so
+  no cast is needed. At runtime they never meet `bridge` once reconcile has
+  run, and it runs before the session serves.
 - `<project>-bridge` topics survive as ordinary interactive topics with no
   directory. Their conversations keep their pairing documents; pi sessions
   holding those pairings resume them unchanged.
 - Idempotent: a second start finds nothing to rewrite.
 <!-- doctrine:section sec-4 -->
-## 4. Pair (DEC-099, DEC-103, DEC-104)
+## 4. Pair (DEC-099, DEC-103, DEC-104, DEC-106)
 
 ### Frame
 
@@ -103,7 +114,9 @@ parsed like `resume`'s with `conversationKeyOf` (strict decimal). The one
 vocabulary both ends share, `pi-bridge/wire.ts` `FIRST_LINE_FRAMES.pair`,
 gains `conversation: optional(text)` (the listener imports it,
 `src/bridge/listener.ts:20`, `:445`). `project`
-stays a client assertion, stored on the pairing for display only.
+stays a client assertion, stored on the pairing for display only; pair
+refuses a project over 255 bytes (`NAME_MAX`, the longest basename) as
+`project longer than 255 bytes`, before the commit.
 
 ### Target
 
@@ -129,11 +142,15 @@ pairRow
   creation are deleted; `src/conversations.ts`'s header comment reverts to
   "no frame ever creates a topic implicitly" (DEC-093 superseded).
 
-### Replacing a pairing (DEC-103)
+### Replacing a pairing (DEC-103, DEC-106)
 
-`openPairing` already resets token, posture, project, ended, seq, outbox and
-spent. A live connection for the old pairing is the one in
-`listener.bindings` for that conversation; `bind` closes it. The reason
+`openPairing` resets token, posture, project, ended, outbox and spent. It
+keeps `nextSeq`: the seq continues, so a seq is never reused in a
+conversation (DEC-066), and pi, which dedupes by conversation and seq, never
+drops a new pairing's message as a duplicate.
+
+A live connection for the old pairing is the one in `listener.bindings` for
+that conversation; `bind` closes it. The reason
 becomes context-specific:
 
 - resume or a newer pair connection on the **same** token → `superseded by a
@@ -143,9 +160,28 @@ becomes context-specific:
   would get `bad token` anyway.
 
 `bind` takes the reason from its caller: `pairRow` passes the new reason,
-`resumeRow` the old. Posts the old connection had accepted stand (their
+`resumeRow` the old. `resumeRow` keeps its existing token check. Posts the old connection had accepted stand (their
 inputs are committed); its unanswered posts are answered by the close as
 today (pi's `settlePending`).
+
+A connection records the token hash it bound under (pair: the minted token;
+resume: the presented one). `boundLine` compares it with the pairing snapshot
+it already reads, beside the ended check; on a mismatch it refuses
+`superseded by a new pairing` and finishes the connection. `bind` already
+finishes the superseded connection, and an ended connection's queued lines
+are dropped and nothing is delivered to it.
+
+Accepted residual: a line of the superseded connection already in progress
+when the new pair commits may act once on the new pairing: end it, post one
+untrusted-framed message, reset its budget, or (a resume) take the binding
+and receive its undelivered messages, its next line then refused. Each is
+visible and recovered by re-pairing or resuming. pair is unauthenticated
+(DEC-099), so this is not a security boundary.
+
+The operator-input refill (`operatorRefill` via `onOperatorInput`,
+DEC-070, DEC-078) has no connection and checks no token hash: operator
+input refills whichever pairing the conversation holds now. `refillBridged`
+is unchanged.
 
 ### Attached set
 
@@ -158,20 +194,23 @@ count; root counts once bound (plain `M-x malebolge-attach` binds root).
 `BridgeHost` gains `attached`. This mirrors `onOperatorInput`, the
 existing cross-listener hook.
 <!-- doctrine:section sec-5 -->
-## 5. The SATAN-side extension (DEC-102)
+## 5. The SATAN-side extension (DEC-102, DEC-107)
 
 `src/bridge/extension.ts`:
 
-- `bridgeSectionText(doc)` returns `undefined` (no section) when
-  `doc === undefined || !isBridged(doc)`; otherwise unchanged:
-  `BRIDGE_UNTRUSTED`, `BRIDGE_ENVIRONMENT`, the posture text. `isBridged` is
+- `bridgeSectionText(doc)` is unchanged (`src/bridge/extension.ts:41-46`):
+  `BRIDGE_UNTRUSTED` always; `BRIDGE_ENVIRONMENT` and the posture text only
+  when `isBridged(doc)`. Now that every room interactive conversation has
+  the extension, every one renders `BRIDGE_UNTRUSTED`. `isBridged` is
   `tokenHash !== ""` (`src/bridge/pairing.ts:100`), true from the first pair
-  onwards, including after `end`, so bridge messages still in context stay
-  framed as untrusted.
-- pi-durable's `PromptSection.render` may return `undefined`, which renders
-  no section (`node_modules/@earendil-works/pi-durable/dist/harness/prompt.js:38`).
-  A render that throws keeps the section last shown (`:29-35`), so a failed
-  pairing read never drops the framing from a bridged conversation.
+  onwards, including after `end`.
+- So bridge messages are framed as untrusted wherever they are in context:
+  in the paired conversation, after `end`, and in a fork of a bridged
+  conversation, whose pairing document forks initial (unpaired) but whose
+  history carries the bridge entries.
+- A render that throws keeps the section last shown
+  (`node_modules/@earendil-works/pi-durable/dist/harness/prompt.js:29-35`),
+  so a failed pairing read never drops the framing.
 - `bridge_post` stays registered unconditionally and refuses through
   `appendOutbox` (`not a bridged conversation`, `pairing ended`), as now.
   Its tool description gains one clause: it works only once pi has paired
@@ -181,17 +220,20 @@ existing cross-listener hook.
 
 `src/threads/origin.ts`: `Origin.kind` becomes `"human" | "wake" | "bridge"`;
 `isOrigin` accepts it. `src/threads/admission.ts` `originOf`: an entry of kind
-`BRIDGE_ENTRY_KIND` (`satan.bridge`, `src/bridge/inbound.ts:33`) opens
+`BRIDGE_ENTRY_KIND` (`satan.bridge`, `src/bridge/inbound.ts:33`) whose
+`data.kind` is `"turn"` opens
 `{conversation: caller, entry: entry.id, kind: "bridge"}`.
 
 Today `originOf` returns `undefined` for a bridge entry, so `callerOrigin`
 skips it and a bridge-started turn inherits the previous input's origin,
-sharing that family's cap. A bridge note (a write, DEC-069) is an input entry
-of the same kind; it opens an origin only if it is the newest input when a
-thread tool is called, which is correct: it is what the turn is acting on.
+sharing that family's cap. A bridge note (a write, DEC-069) starts no turn,
+so `originOf` still returns `undefined` for it: `callerOrigin` skips it as
+today, and the turn keeps the origin of the input that started it.
 
-Family and global caps, reaping and tombstones apply unchanged. Wake
-notices and journals print `kind` already; `bridge` appears there as-is.
+Family and global caps, reaping and tombstones apply unchanged. Post
+entries serialise `origin.kind` into their data (`src/threads/task.ts`
+`originData`), so `isOrigin` must accept `bridge`; journals print
+`originKey`, which carries no kind.
 <!-- doctrine:section sec-7 -->
 ## 7. pi side
 
@@ -202,7 +244,12 @@ notices and journals print `kind` already; `bridge` appears there as-is.
   (`pi-bridge/state.ts` pair event and the frame built at `:673-676`, and the
   re-pair after `end` at `:394`, which keeps the conversation it was asked
   for).
-- `TERMINAL_REASONS` gains `superseded by a new pairing` (sec-4).
+- The bound phase's `ending` becomes `{ then?: PairRequest }`, with
+  `PairRequest = { posture, conversation? }`: `pairEvent` passes the event's
+  conversation, and `terminalRefusal` builds the pair frame from it.
+- `TERMINAL_REASONS` gains `superseded by a new pairing` (sec-4). A bound
+  `/bridge pair` ends its own pairing first, so pi never meets its own
+  supersede; `superseded by a new pairing` comes only from another client.
 - Notices: `topicOf`/`Ends.topic` (`pi-bridge/notices.ts`, `shell.ts:593`)
   go; ends name the conversation id when known. `pairFailedText`'s
   `mayHaveCreated` clause becomes: when the pair timed out after sending,
@@ -218,12 +265,12 @@ notices and journals print `kind` already; `bridge` appears there as-is.
 |---|---|
 | `src/toolsets.ts` | sec-2 |
 | `src/persona.ts` | drop `bridge` arm |
-| `src/topics.ts` | `entryToolsets` retires `bridge` for entries and topics; stored-toolset read accepts `bridge` (sec-3) |
-| `src/session.ts` | topic-rewrite log line; otherwise unchanged (sec-3) |
-| `src/bridge/listener.ts` | `pairRow` target resolution, interactive check, overwrite; delete `createBridged`, `bridgedInit`, `requireBridge`; `bind` takes its close reason (sec-4) |
-| `src/protocol.ts` (bridge frames) | `pair.conversation` optional |
-| `src/bridge/extension.ts` | section gating; `bridge_post` description (sec-5) |
-| `src/daemon.ts`, `src/daemon-start.ts` | live-connection set, `Daemon.attached()`, `BridgeHost.attached` (sec-4) |
+| `src/topics.ts` | `StoredToolset`, `StoredTopicRecord`, `liveToolset`; `entryToolsets` retires `bridge` for entries and topics and returns `retired`; narrowing readers use `liveToolset` (sec-3) |
+| `src/session.ts` | logs each `retired` topic; otherwise unchanged (sec-3) |
+| `src/bridge/listener.ts` | `pairRow` target resolution, interactive check, project length check, overwrite; delete `createBridged`, `bridgedInit`, `requireBridge`; `bind` takes its close reason; the connection's recorded token hash, checked in `boundLine` beside the ended check (sec-4); `BridgeHost` gains `attached` and loses `conversations`, `defaults`, `catalog` and `profile` (their sole use was `createBridged`'s `topicInit`), and their now-unused imports go (sec-4) |
+| `src/bridge/pairing.ts` | `openPairing` keeps `nextSeq` (sec-4) |
+| `src/bridge/extension.ts` | `bridge_post` description (sec-5) |
+| `src/daemon.ts`, `src/daemon-start.ts` | live-connection set; `Daemon` changes from a bare alias of `UnixServer` to `UnixServer & { attached(): readonly ConversationId[] }`; `bridgeHostOf` passes `attached` and stops passing the four dropped fields (sec-4) |
 | `src/conversations.ts` | header comment (DEC-093 superseded) |
 | `src/threads/origin.ts`, `src/threads/admission.ts` | `bridge` origin kind (sec-6) |
 | `pi-bridge/wire.ts`, `state.ts`, `shell.ts`, `notices.ts` | sec-7 |
@@ -231,7 +278,7 @@ notices and journals print `kind` already; `bridge` appears there as-is.
 | tests | sec-9 |
 
 Not changed: `emacs/malebolge.el` (the transcript already says `attached to
-conversation N`, `src/render.ts:372-376`), `src/bridge/pairing.ts`,
+conversation N`, `src/render.ts:372-376`),
 `src/bridge/inbound.ts`, `pi-bridge/command.ts`, the jail contract.
 <!-- doctrine:section sec-9 -->
 ## 9. Verification
@@ -240,15 +287,22 @@ VT (vitest):
 
 | criterion | test |
 |---|---|
-| room interactive list contains `bridge` before `satan`; host's does not; `bridge` is no toolset and not allowed | `test/toolsets.test.ts` (rewrites the bridge-catalogue and no-talk-set cases) |
+| room interactive list contains `bridge` before `satan`; host's does not; `bridge` is no toolset and not allowed. `bridge` joins `withoutPostBaseline`'s exclusions (it postdates the baseline); VT-5's room expectation gains extension `bridge` before `satan` and tool `bridge_post`, and a `bridge` section of `BRIDGE_UNTRUSTED` alone (never bridged, DEC-107); host unchanged | `test/toolsets.test.ts` (rewrites the bridge-catalogue and no-talk-set cases) |
 | reconcile rewrites a stored `bridge` entry and topic to `interactive`, re-derives the list, logs, and is idempotent | `test/session.test.ts` |
-| pair by id binds an existing interactive conversation and answers `paired` with a token; creates no topic or conversation | `test/bridge-pairing.test.ts` (rewrites create-in-topic cases) |
-| pair refuses an unknown id, a non-decimal id, and a mail conversation, writing nothing | `test/bridge-pairing.test.ts` |
-| pair without id: one attached → binds it; none / several → refused naming ids | `test/bridge-pairing.test.ts` + daemon `attached()` unit |
-| re-pair replaces: old connection gets `superseded by a new pairing`; old token resumes `bad token`; outbox, seq and budget reset | `test/bridge-pairing.test.ts` |
-| section: never bridged → none; bridged → three parts; ended → still framed | `test/daemon-sections.test.ts`, `test/bridge-extension.test.ts` |
+| pair by id binds an existing interactive conversation and answers `paired` with a token; creates no topic or conversation | `test/bridge-listener.test.ts` (replaces the create-in-topic cases now in `test/bridge-pairing.test.ts`'s "pair, through the listener" block) |
+| pair refuses an unknown id, a non-decimal id, a mail conversation and a project over 255 bytes, writing nothing | `test/bridge-listener.test.ts` |
+| pair without id: one attached → binds it; none / several → refused naming ids | `test/bridge-listener.test.ts` |
+| `attached()`: a listing connection binds nothing and does not count; root counts once bound; an ended connection drops out | `test/daemon.test.ts` |
+| pair binds a fork of an interactive conversation | `test/bridge-listener.test.ts` |
+| re-pair replaces: old connection gets `superseded by a new pairing`; old token resumes `bad token`; seq continues after re-pair | `test/bridge-listener.test.ts` |
+| `openPairing` over a used pairing resets token, outbox and budget and keeps `nextSeq` | `test/bridge-pairing.test.ts` (its "resets a used document to a fresh pairing" case) |
+| a pi session re-pairs the same conversation and receives the new pairing's first message | pi-bridge state test |
+| section: never bridged → `BRIDGE_UNTRUSTED` alone; bridged → three parts; ended → still three parts | `test/daemon-sections.test.ts`, `test/bridge-extension.test.ts` |
+| fork a bridged conversation after a bridge entry: the fork's prompt carries `BRIDGE_UNTRUSTED`; its pairing is unpaired | `test/bridge-extension.test.ts` |
 | a thread post from a bridge-started turn carries origin kind `bridge` | `test/threads-admission.test.ts` |
+| a bridge note after an operator input leaves the caller's origin kind `human` | `test/threads-admission.test.ts` |
 | a wake from a bridged conversation passes the talk-set check | `test/wake-tools.test.ts` (replaces the bridge-self-only case) |
+| a line on a bound connection after its pairing was reopened under a new token is refused `superseded by a new pairing`, the connection finished, nothing mutated | `test/bridge-listener.test.ts` |
 | pi: `/bridge pair consult 12` sends `conversation: "12"`; bad second word → usage; new reason is terminal | `test/pi-bridge-shell.test.ts`, state tests |
 
 `test/bridge-fixture.ts`'s `pair()` helper takes a target conversation and
@@ -261,8 +315,9 @@ VH (operator, live room + jailed pi), closing the gap that hid this:
 2. `M-x malebolge-attach` (root). In pi: `/bridge pair consult` with no id →
    bound to root. Exchange both ways; SATAN calls `bridge_post`; pi's
    messages arrive framed.
-3. `C-u M-x malebolge-attach` to another conversation, with root's client
-   also attached: `/bridge pair consult` → refused, naming both ids;
+3. Emacs attached to root (plain `M-x malebolge-attach`); a terminal attach
+   client (`node src/attach-main.ts --conversation N`) attached to another conversation.
+   `/bridge pair consult` → refused, naming both ids;
    `/bridge pair consult <id>` → bound.
 4. `/bridge pair delegate <mail conversation id>` → refused, `not interactive`.
 5. A second pi session pairs the same conversation: the first pi reports

@@ -1,0 +1,39 @@
+schema = "doctrine.knowledge"
+version = 1
+
+id = 107
+slug = "bridge-framing-covers-inherited-bridge-history"
+title = "Bridge framing covers inherited bridge history"
+record_kind = "decision"
+status = "accepted"
+created = "2026-10-30"
+updated = "2026-10-30"
+tags = []
+
+[facet]                         # every field typed; seeded empty (captured later)
+context = "DEC-102 gates the bridge section on the conversation's own pairing. The pairing document forks initial, so a fork of a bridged conversation carries bridge messages with no untrusted framing (RV-029 F-17)."
+choice = "Every room interactive conversation renders BRIDGE_UNTRUSTED; the environment and posture text render only when the conversation's own pairing is bridged (tokenHash non-empty), including after end."
+alternatives = ["A credential-free bridge-history document that forks current and is set by openPairing's commit; BRIDGE_UNTRUSTED alone renders when it is set and the own pairing is not: no constant paragraph but a new document"]
+rationale = "Covers forks and every later copy path with no new state; the cost is one constant paragraph per room interactive prompt."
+consequences = ["Refines DEC-102 (its gate)"]
+decided_by = 'user (accepted agent proposal, 2026-10-30: "Q1 - yes / Q2 - yes")'
+decided_on = "2026-10-30"
+
+[evidence]                      # free-text citations (supports / contradicts / notes)
+supports    = []
+contradicts = []
+notes       = []
+
+[relationships]                 # verb-written edges (set by doctrine supersede)
+supersedes    = []   # record ids this one replaces (set by doctrine supersede)
+superseded_by = []   # set on superseded predecessor (verb-written)
+
+[[relation]]
+label = "references"
+role = "concerns"
+descriptor = "refines"
+target = "DEC-102"
+
+[[relation]]
+label = "shapes"
+target = "SL-011"

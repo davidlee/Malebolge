@@ -1,0 +1,45 @@
+schema = "doctrine.knowledge"
+version = 1
+
+id = 106
+slug = "a-re-pair-keeps-the-conversations-seq-allocator"
+title = "A re-pair keeps the conversation's seq allocator"
+record_kind = "decision"
+status = "accepted"
+created = "2026-10-30"
+updated = "2026-10-30"
+tags = []
+
+[facet]                         # every field typed; seeded empty (captured later)
+context = "DEC-103 resets outbox, seq and budget on re-pair. pi dedupes deliveries by conversation and seq and keeps its session's keys across pairings, so a re-pair of the same conversation reuses seqs and pi drops new messages as duplicates (RV-029 F-15)."
+choice = "openPairing keeps nextSeq: a seq is never reused within a conversation, across pairings. Token, posture, project, ended, outbox and budget still reset as DEC-103 says."
+alternatives = ["Key pi's dedupe by a pairing-instance digest of the token: touches injection; persistence; ack and stored session-record compatibility"]
+rationale = "Extends DEC-066's own rule (a seq is never reused) from one pairing to the conversation; one line on the daemon side and nothing on pi's."
+consequences = ["Refines DEC-103 (seq is no longer reset)", "Refines DEC-066"]
+decided_by = 'user (accepted agent proposal, 2026-10-30: "Q1 - yes / Q2 - yes")'
+decided_on = "2026-10-30"
+
+[evidence]                      # free-text citations (supports / contradicts / notes)
+supports    = []
+contradicts = []
+notes       = []
+
+[relationships]                 # verb-written edges (set by doctrine supersede)
+supersedes    = []   # record ids this one replaces (set by doctrine supersede)
+superseded_by = []   # set on superseded predecessor (verb-written)
+
+[[relation]]
+label = "references"
+role = "concerns"
+descriptor = "refines"
+target = "DEC-103"
+
+[[relation]]
+label = "references"
+role = "concerns"
+descriptor = "refines"
+target = "DEC-066"
+
+[[relation]]
+label = "shapes"
+target = "SL-011"

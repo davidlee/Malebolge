@@ -3,3 +3,7 @@
 <!-- Knowledge record body — context, detail, links. The structured, queried
      fields live in the sister `record-NNN.toml`; this prose is free-form and is
      never structurally parsed (the storage rule). -->
+
+## Refined
+
+Refined by DEC-106 (2026-10-30): a re-pair no longer resets seq; seq is never reused within a conversation.

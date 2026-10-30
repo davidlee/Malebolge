@@ -38,6 +38,17 @@ Evidence: `research/research.md` (gitignored; raw thread output beside it).
 - The live room store may hold `bridge`-mode conversations from SL-009's
   VH run (3949, 4524). Not checked; the remap must handle any number.
 
+## Design review (2026-10-30)
+
+Further passes (review.passes): no further design pass. Across RV-029 the
+findings narrowed from missing mechanism (pi round 1, GPT rounds 1-2) to one
+minor (GPT round 3). The simplicity pass removed F-16's lock: the operator
+chose the token-hash check in `boundLine` plus the stated residual. A pi
+verify-only pass came back clean. The next adversarial pass belongs to the
+plan: phase criteria for F-4 (bridge notes keep the caller's origin), F-15 /
+DEC-106 (seq continues across re-pair), F-16's single VT (stale-line
+refusal) and F-17 / DEC-107 (untrusted framing on forks).
+
 ## Harvest
 <!-- single-copy: updated in place each harvest; ids only, never restated content -->
 fresh-as-of: 2026-10-30 · design reviewing (run rev 21, RV-029 opened) · cbd01c3
